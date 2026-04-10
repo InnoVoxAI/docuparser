@@ -5,13 +5,7 @@ services:
     build: ./frontend
     ports:
       - "3000:3000"
-    develop:
-      watch:
-        - action: sync
-          path: ./frontend
-          target: /app
-          ignore:
-            - node_modules/
+    
     networks:
       - docuparse-network
     depends_on:

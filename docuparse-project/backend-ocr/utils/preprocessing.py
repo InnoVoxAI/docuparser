@@ -94,10 +94,7 @@ def preprocess_digital_pdf(image: np.ndarray) -> np.ndarray:
 
     return gray
 
-
-# -------------------------------
-# FUNÇÃO PRINCIPAL
-# -------------------------------
+#MAIN
 
 def preprocess_image(image_bytes: Any, classification: str) -> np.ndarray:
     image = decode_image(image_bytes)

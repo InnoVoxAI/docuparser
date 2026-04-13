@@ -49,7 +49,9 @@ class Transcription(BaseModel):
     entities: Entities
     tables: List[TableRow]
     totals: Totals
+    raw_text: Optional[str] = None
     raw_text_fallback: Optional[str] = None
+    ocr_meta: Optional[Dict[str, Any]] = None
 
 
 class OCRResponse(BaseModel):
@@ -57,7 +59,8 @@ class OCRResponse(BaseModel):
     detected_type: str
     tools_used: List[str]
     transcription: Transcription
-    processing_time_ms: float
+    processing_time: str
+    
 
 
 class EngineOption(BaseModel):
@@ -105,13 +108,14 @@ async def process_document(
 
     processing_time = result.get("_meta", {}).get(
         "processing_time_ms", (time.time() - start_time) * 1000)
+    processing_time_seconds = processing_time / 1000
 
     return {
         "filename": filename,
         "detected_type": result.get("classification", "unknown"),
         "tools_used": result.get("tools_used", []),
         "transcription": result.get("transcription", {}),
-        "processing_time_ms": processing_time
+        "processing_time": f"{processing_time_seconds:.1f}s",
     }
 
     # except Exception as e:

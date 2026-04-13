@@ -50,6 +50,12 @@ require_cmd() {
   }
 }
 
+venv_has_module() {
+  local venv_python="$1"
+  local module_name="$2"
+  "$venv_python" -c "import ${module_name}" >/dev/null 2>&1
+}
+
 kill_port_if_busy() {
   local port="$1"
   local pids=""
@@ -106,14 +112,33 @@ start_backend_ocr() {
 
   if [[ ! -d ".venv" ]]; then
     python3 -m venv .venv
-    source .venv/bin/activate
-    pip install -U pip
-    pip install -r requirements.txt
-  else
-    source .venv/bin/activate
   fi
 
-  nohup .venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8001 \
+  source .venv/bin/activate
+  pip install -U pip >/dev/null
+
+  if [[ -f "requirements.txt" ]]; then
+    pip install -r requirements.txt >/dev/null
+  else
+    log "backend-ocr requirements.txt not found, installing bootstrap dependencies..."
+    pip install \
+      fastapi \
+      "uvicorn[standard]" \
+      python-multipart \
+      "numpy==1.26.4" \
+      "opencv-python-headless==4.10.0.84" \
+      pytesseract \
+      pypdfium2 \
+      pillow \
+      openai >/dev/null
+  fi
+
+  if ! venv_has_module ".venv/bin/python" "uvicorn"; then
+    log "uvicorn missing in backend-ocr venv, installing..."
+    pip install "uvicorn[standard]" >/dev/null
+  fi
+
+  nohup .venv/bin/python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001 \
     > "$RUNTIME_DIR/backend-ocr.log" 2>&1 &
   echo $! > "$RUNTIME_DIR/backend-ocr.pid"
   deactivate || true
@@ -126,11 +151,15 @@ start_backend_core() {
 
   if [[ ! -d ".venv" ]]; then
     python3 -m venv .venv
-    source .venv/bin/activate
-    pip install -U pip
-    pip install -r requirements.txt
-  else
-    source .venv/bin/activate
+  fi
+
+  source .venv/bin/activate
+  pip install -U pip >/dev/null
+  pip install -r requirements.txt >/dev/null
+
+  if ! venv_has_module ".venv/bin/python" "django"; then
+    log "django missing in backend-core venv, reinstalling requirements..."
+    pip install -r requirements.txt >/dev/null
   fi
 
   export BACKEND_OCR_URL="http://127.0.0.1:8001"

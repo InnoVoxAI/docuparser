@@ -10,7 +10,6 @@ from engines.deepseek_engine import DeepSeekEngine
 from engines.docling_engine import DoclingEngine
 from engines.llamaparse_engine import LlamaParseEngine
 from engines.tesseract_engine import TesseractEngine
-from utils.preprocessing import preprocess_image
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,9 +37,11 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
         if resolved_engine == "tesseract":
             tools_used.append("pytesseract")
             prepared_content, input_meta = _prepare_content_for_ocr(content, filename)
-            preprocessed = preprocess_image(prepared_content, classification)
             engine = TesseractEngine()
-            data = engine.process({"original": prepared_content, "preprocessed": preprocessed})
+            data = engine.process_with_classification(
+                image_bytes=prepared_content,
+                classification=classification,
+            )
             data["input_meta"] = input_meta
 
         elif resolved_engine == "easyocr":
@@ -58,9 +59,11 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                     str(import_err),
                 )
                 tools_used.extend(["easyocr_unavailable", "pytesseract_fallback"])
-                preprocessed = preprocess_image(prepared_content, classification)
                 engine = TesseractEngine()
-                data = engine.process({"original": prepared_content, "preprocessed": preprocessed})
+                data = engine.process_with_classification(
+                    image_bytes=prepared_content,
+                    classification=classification,
+                )
                 data["input_meta"] = input_meta
                 data["raw_text_fallback"] = "EasyOCR indisponível no ambiente; fallback para Tesseract aplicado."
 
@@ -115,9 +118,6 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
         "selected_engine": resolved_engine,
         "tools_used": tools_used,
         "transcription": normalized_data,
-        "_meta": {
-            "processing_time_ms": processing_time
-        }
     }
 
 
@@ -183,7 +183,9 @@ def _normalize_output(data: Dict[str, Any]) -> Dict[str, Any]:
         "entities": data.get("entities", {}),
         "tables": data.get("tables", []),  # Ensure lists
         "totals": data.get("totals", {}),
-        "raw_text_fallback": data.get("raw_text_fallback", "")
+        "raw_text": data.get("raw_text") or data.get("raw_text_fallback", ""),
+        "raw_text_fallback": data.get("raw_text_fallback", ""),
+        "ocr_meta": data.get("_meta", {}),
     }
 
 
@@ -193,5 +195,6 @@ def _mock_extract(content: bytes) -> Dict[str, Any]:
         "entities": {},
         "tables": [],
         "totals": {},
+        "raw_text": "",
         "raw_text_fallback": "Content processed (mock)"
     }

@@ -1,19 +1,14 @@
 import argparse
 import json
-import time
 from pathlib import Path
 
 import cv2
 import numpy as np
-import pytesseract
-from pytesseract import Output
 from fastapi.testclient import TestClient
 
 from ..agent.classifier import classify_document
 from ..engines.tesseract_engine import TesseractEngine
 from ..main import app
-
-from ..utils.preprocessing import preprocess_image
 
 
 client = TestClient(app)
@@ -67,64 +62,6 @@ def _load_input_as_image_bytes(input_path: Path) -> tuple[bytes, dict]:
     )
 
 
-def _format_seconds(seconds_value: float) -> str:
-    return f"({seconds_value:.1f}s)"
-
-
-def _build_term_metrics(preprocessed: np.ndarray, ocr_meta: dict, total_seconds: float) -> dict:
-    lang = ocr_meta.get("lang_used", "eng")
-    psm = ocr_meta.get("psm_used", 6)
-    config = f"--oem 3 --psm {psm}"
-
-    data = pytesseract.image_to_data(
-        preprocessed,
-        lang=lang,
-        config=config,
-        output_type=Output.DICT,
-    )
-
-    terms = []
-    for text, conf in zip(data.get("text", []), data.get("conf", [])):
-        normalized = str(text).strip()
-        if not normalized:
-            continue
-
-        try:
-            conf_value = float(conf)
-        except (TypeError, ValueError):
-            continue
-
-        if conf_value < 0:
-            continue
-
-        terms.append((normalized, conf_value))
-
-    if not terms:
-        return {
-            "confidence_by_term": {},
-            "conversion_time_by_term": {},
-            "total_conversion_time": _format_seconds(total_seconds),
-        }
-
-    total_weight = sum(max(len(term), 1) for term, _ in terms)
-
-    confidence_by_term = {}
-    conversion_time_by_term = {}
-    for index, (term, confidence) in enumerate(terms, start=1):
-        term_key = f"{index}:{term}"
-        confidence_by_term[term_key] = [round(confidence, 2)]
-
-        weight = max(len(term), 1)
-        term_seconds = total_seconds * (weight / total_weight) if total_weight else 0.0
-        conversion_time_by_term[term_key] = _format_seconds(term_seconds)
-
-    return {
-        "confidence_by_term": confidence_by_term,
-        "conversion_time_by_term": conversion_time_by_term,
-        "total_conversion_time": _format_seconds(total_seconds),
-    }
-
-
 def run_workflow(
     input_path: Path, save_preprocessed: bool = False, also_test_api: bool = False
 ) -> dict:
@@ -136,25 +73,14 @@ def run_workflow(
 
     classification = classify_document(input_path.name, original_bytes)
 
-    preprocessed = preprocess_image(image_bytes, classification)
+    engine = TesseractEngine()
+    preprocessed = engine.preprocess_for_classification(image_bytes=image_bytes, classification=classification)
 
     if save_preprocessed:
         output_img = input_path.with_name(f"{input_path.stem}_preprocessed.png")
         cv2.imwrite(str(output_img), preprocessed)
 
-    engine = TesseractEngine()
-    start_time = time.perf_counter()
     ocr_result = engine.process({"original": image_bytes, "preprocessed": preprocessed})
-    total_ocr_seconds = time.perf_counter() - start_time
-
-    ocr_meta = ocr_result.get("_meta", {})
-    term_metrics = _build_term_metrics(
-        preprocessed=preprocessed,
-        ocr_meta=ocr_meta,
-        total_seconds=total_ocr_seconds,
-    )
-    ocr_meta.update(term_metrics)
-    ocr_result["_meta"] = ocr_meta
 
     api_result = None
     if also_test_api:
@@ -183,8 +109,7 @@ def run_workflow(
         "ocr_result": ocr_result,
         "api_current_flow": api_result,
         "note": (
-            "The API route_and_process still uses mock extraction for scanned_image. "
-            "This script validates the full classify + preprocess + real tesseract flow directly."
+            "This script validates the same classify + preprocess + Tesseract flow used by the API router."
         ),
     }
 

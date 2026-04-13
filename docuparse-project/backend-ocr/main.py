@@ -1,5 +1,5 @@
 import time
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -59,13 +59,33 @@ class OCRResponse(BaseModel):
     processing_time_ms: float
 
 
+class EngineOption(BaseModel):
+    value: str
+    label: str
+
+
 @app.get("/")
 def health_check():
     return {"status": "ok"}
 
 
+@app.get("/engines", response_model=List[EngineOption])
+def list_engines():
+    # Keep this list simple and explicit for the UI dropdown.
+    return [
+        {"value": "tesseract", "label": "Tesseract"},
+        {"value": "easyocr", "label": "EasyOCR"},
+        {"value": "docling", "label": "Docling"},
+        {"value": "deepseek", "label": "DeepSeek"},
+        {"value": "llamaparse", "label": "LlamaParse"},
+    ]
+
+
 @app.post("/process", response_model=OCRResponse)
-async def process_document(file: UploadFile = File(...)):
+async def process_document(
+    file: UploadFile = File(...),
+    engine: Optional[str] = Form(default=None),
+):
     start_time = time.time()
 
     try:
@@ -73,21 +93,17 @@ async def process_document(file: UploadFile = File(...)):
         filename = file.filename
 
         # Call the router
-        from agent.classifier import classify_document
         from agent.router import route_and_process
 
-        # 1. Classify
-        classification = classify_document(filename, contents)
-
-        # 2. Process
-        result = route_and_process(classification, contents)
+        # 1) Classify + 2) Process with selected engine (or auto route)
+        result = route_and_process(filename=filename, content=contents, selected_engine=engine)
 
         processing_time = result.get("_meta", {}).get(
             "processing_time_ms", (time.time() - start_time) * 1000)
 
         return {
             "filename": filename,
-            "detected_type": classification,
+            "detected_type": result.get("classification", "unknown"),
             "tools_used": result.get("tools_used", []),
             "transcription": result.get("transcription", {}),
             "processing_time_ms": processing_time

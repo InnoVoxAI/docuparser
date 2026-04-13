@@ -17,7 +17,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'accounts',
     'documents',
 ]
 
@@ -66,5 +65,8 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+
+# Simple static API-only setup for this PoC workflow.
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 BACKEND_OCR_URL = os.environ.get('BACKEND_OCR_URL', 'http://backend-ocr:8080')

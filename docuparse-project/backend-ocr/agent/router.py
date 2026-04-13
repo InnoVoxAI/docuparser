@@ -3,11 +3,11 @@ import time
 import logging
 import cv2
 import numpy as np
+import pytesseract
 
 from agent.classifier import classify_document
 from engines.deepseek_engine import DeepSeekEngine
 from engines.docling_engine import DoclingEngine
-from engines.easyocr_engine import EasyOCREngine
 from engines.llamaparse_engine import LlamaParseEngine
 from engines.tesseract_engine import TesseractEngine
 from utils.preprocessing import preprocess_image
@@ -44,11 +44,25 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
             data["input_meta"] = input_meta
 
         elif resolved_engine == "easyocr":
-            tools_used.append("easyocr")
             prepared_content, input_meta = _prepare_content_for_ocr(content, filename)
-            engine = EasyOCREngine()
-            data = engine.process(prepared_content)
-            data["input_meta"] = input_meta
+            try:
+                from engines.easyocr_engine import EasyOCREngine
+
+                tools_used.append("easyocr")
+                engine = EasyOCREngine()
+                data = engine.process(prepared_content)
+                data["input_meta"] = input_meta
+            except (ModuleNotFoundError, RuntimeError) as import_err:
+                logger.warning(
+                    "EasyOCR unavailable (%s). Falling back to Tesseract.",
+                    str(import_err),
+                )
+                tools_used.extend(["easyocr_unavailable", "pytesseract_fallback"])
+                preprocessed = preprocess_image(prepared_content, classification)
+                engine = TesseractEngine()
+                data = engine.process({"original": prepared_content, "preprocessed": preprocessed})
+                data["input_meta"] = input_meta
+                data["raw_text_fallback"] = "EasyOCR indisponível no ambiente; fallback para Tesseract aplicado."
 
         elif resolved_engine == "deepseek":
             tools_used.append("deepseek-ocr")
@@ -69,8 +83,22 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
             tools_used.append("basic_fallback")
             data = _mock_extract(content)
 
+    except pytesseract.TesseractNotFoundError:
+        logger.error("Tesseract binary is not installed or not available in PATH")
+        tools_used.append("tesseract_unavailable")
+        data = _mock_extract(content)
+        data["raw_text_fallback"] = (
+            "Tesseract não está instalado no sistema (binário ausente no PATH). "
+            "Instale o pacote 'tesseract-ocr' e reinicie o serviço backend-ocr."
+        )
+    except (FileNotFoundError, OSError) as os_err:
+        logger.error("OCR runtime error: %s", str(os_err))
+        tools_used.append("ocr_runtime_error")
+        data = _mock_extract(content)
+        data["raw_text_fallback"] = f"OCR indisponível no ambiente: {str(os_err)}"
     except Exception as e:
         logger.error(f"Routing error: {e}")
+        tools_used.append("processing_error")
         data = _mock_extract(content)
         data["raw_text_fallback"] = f"Processing Error: {str(e)}"
 

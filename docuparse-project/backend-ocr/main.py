@@ -1,4 +1,5 @@
 import time
+import importlib.util
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -72,13 +73,17 @@ def health_check():
 @app.get("/engines", response_model=List[EngineOption])
 def list_engines():
     # Keep this list simple and explicit for the UI dropdown.
-    return [
+    engines = [
         {"value": "tesseract", "label": "Tesseract"},
-        {"value": "easyocr", "label": "EasyOCR"},
         {"value": "docling", "label": "Docling"},
         {"value": "deepseek", "label": "DeepSeek"},
         {"value": "llamaparse", "label": "LlamaParse"},
     ]
+
+    if importlib.util.find_spec("easyocr") is not None:
+        engines.insert(1, {"value": "easyocr", "label": "EasyOCR"})
+
+    return engines
 
 
 @app.post("/process", response_model=OCRResponse)
@@ -88,26 +93,26 @@ async def process_document(
 ):
     start_time = time.time()
 
-    try:
-        contents = await file.read()
-        filename = file.filename
+    # try:
+    contents = await file.read()
+    filename = file.filename
 
-        # Call the router
-        from agent.router import route_and_process
+    # Call the router
+    from agent.router import route_and_process
 
-        # 1) Classify + 2) Process with selected engine (or auto route)
-        result = route_and_process(filename=filename, content=contents, selected_engine=engine)
+    # 1) Classify + 2) Process with selected engine (or auto route)
+    result = route_and_process(filename=filename, content=contents, selected_engine=engine)
 
-        processing_time = result.get("_meta", {}).get(
-            "processing_time_ms", (time.time() - start_time) * 1000)
+    processing_time = result.get("_meta", {}).get(
+        "processing_time_ms", (time.time() - start_time) * 1000)
 
-        return {
-            "filename": filename,
-            "detected_type": result.get("classification", "unknown"),
-            "tools_used": result.get("tools_used", []),
-            "transcription": result.get("transcription", {}),
-            "processing_time_ms": processing_time
-        }
+    return {
+        "filename": filename,
+        "detected_type": result.get("classification", "unknown"),
+        "tools_used": result.get("tools_used", []),
+        "transcription": result.get("transcription", {}),
+        "processing_time_ms": processing_time
+    }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=str(e))

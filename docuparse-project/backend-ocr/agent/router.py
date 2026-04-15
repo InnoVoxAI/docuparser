@@ -31,6 +31,7 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
     tools_used: List[str] = []
     data: Dict[str, Any] = {}
     classification = classify_document(filename, content)
+    logger.info(f"--- Document classified as: {classification}")
     resolved_engine = _resolve_engine(classification, selected_engine)
 
     try:

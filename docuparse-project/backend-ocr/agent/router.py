@@ -123,7 +123,9 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
 
 def _resolve_engine(classification: str, selected_engine: str | None) -> str:
     if selected_engine:
-        return selected_engine.lower().strip()
+        normalized_engine = selected_engine.lower().strip()
+        if normalized_engine not in {"", "none", "null"}:
+            return normalized_engine
 
     if classification in {"digital_pdf", "scanned_image"}:
         return "tesseract"

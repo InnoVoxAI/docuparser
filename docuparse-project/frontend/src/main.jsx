@@ -3,10 +3,149 @@ import ReactDOM from 'react-dom/client'
 import axios from 'axios'
 import './index.css'
 
+function JsonPrimitive({ value }) {
+    if (value === null) {
+        return <span className="text-slate-400 italic">null</span>
+    }
+
+    if (typeof value === 'string') {
+        return <span className="text-emerald-300">{JSON.stringify(value)}</span>
+    }
+
+    if (typeof value === 'number') {
+        return <span className="text-amber-300">{value}</span>
+    }
+
+    if (typeof value === 'boolean') {
+        return <span className="text-violet-300">{String(value)}</span>
+    }
+
+    return <span className="text-slate-100">{String(value)}</span>
+}
+
+function JsonNode({ value, depth = 0, label = null, isLast = true }) {
+    const isArray = Array.isArray(value)
+    const isObject = value !== null && typeof value === 'object' && !isArray
+    const isContainer = isArray || isObject
+    const entries = isArray ? value.map((item, index) => [index, item]) : isObject ? Object.entries(value) : []
+    const hasChildren = entries.length > 0
+    const [isOpen, setIsOpen] = useState(depth < 1)
+
+    const indentStyle = { paddingLeft: `${depth * 16}px` }
+    const openToken = isArray ? '[' : '{'
+    const closeToken = isArray ? ']' : '}'
+    const compactToken = isArray ? '[...]' : '{...}'
+
+    const labelPrefix = () => {
+        if (label === null) {
+            return null
+        }
+
+        if (typeof label === 'number') {
+            return (
+                <>
+                    <span className="text-slate-400">{label}</span>
+                    <span className="text-slate-300">: </span>
+                </>
+            )
+        }
+
+        return (
+            <>
+                <span className="text-sky-300">{JSON.stringify(label)}</span>
+                <span className="text-slate-300">: </span>
+            </>
+        )
+    }
+
+    if (!isContainer) {
+        return (
+            <div className="font-mono text-xs leading-6" style={indentStyle}>
+                {labelPrefix()}
+                <JsonPrimitive value={value} />
+                {!isLast ? <span className="text-slate-500">,</span> : null}
+            </div>
+        )
+    }
+
+    if (!hasChildren) {
+        return (
+            <div className="font-mono text-xs leading-6" style={indentStyle}>
+                {labelPrefix()}
+                <span className="text-slate-200">{openToken}{closeToken}</span>
+                {!isLast ? <span className="text-slate-500">,</span> : null}
+            </div>
+        )
+    }
+
+    if (!isOpen) {
+        return (
+            <div className="font-mono text-xs leading-6" style={indentStyle}>
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(true)}
+                    className="mr-1 text-slate-400 hover:text-slate-200"
+                    aria-label="Expandir campo"
+                >
+                    ▸
+                </button>
+                {labelPrefix()}
+                <span className="text-slate-200">{compactToken}</span>
+                {!isLast ? <span className="text-slate-500">,</span> : null}
+            </div>
+        )
+    }
+
+    return (
+        <div>
+            <div className="font-mono text-xs leading-6" style={indentStyle}>
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="mr-1 text-slate-400 hover:text-slate-200"
+                    aria-label="Recolher campo"
+                >
+                    ▾
+                </button>
+                {labelPrefix()}
+                <span className="text-slate-200">{openToken}</span>
+            </div>
+
+            {entries.map(([entryKey, entryValue], index) => (
+                <JsonNode
+                    key={`${depth}-${String(entryKey)}-${index}`}
+                    value={entryValue}
+                    label={entryKey}
+                    depth={depth + 1}
+                    isLast={index === entries.length - 1}
+                />
+            ))}
+
+            <div className="font-mono text-xs leading-6 text-slate-200" style={indentStyle}>
+                {closeToken}
+                {!isLast ? <span className="text-slate-500">,</span> : null}
+            </div>
+        </div>
+    )
+}
+
+function JsonViewer({ value }) {
+    if (value !== null && typeof value === 'object') {
+        return <JsonNode value={value} />
+    }
+
+    return (
+        <div className="font-mono text-xs leading-6">
+            <JsonPrimitive value={value} />
+        </div>
+    )
+}
+
 
 function App() {
+    const SYSTEM_ENGINE_VALUE = ''
     const [engines, setEngines] = useState([])
-    const [selectedEngine, setSelectedEngine] = useState('tesseract')
+    const [selectedEngine, setSelectedEngine] = useState(SYSTEM_ENGINE_VALUE)
     const [file, setFile] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
@@ -19,10 +158,6 @@ function App() {
                 const response = await axios.get('/api/ocr/engines')
                 const options = response.data?.engines ?? []
                 setEngines(options)
-
-                if (options.length > 0) {
-                    setSelectedEngine(options[0].value)
-                }
             } catch (fetchError) {
                 setError('Could not load OCR engine options.')
             }
@@ -31,7 +166,18 @@ function App() {
         fetchEngines()
     }, [])
 
-    const canStart = useMemo(() => Boolean(file) && Boolean(selectedEngine) && !loading, [file, selectedEngine, loading])
+    const canStart = useMemo(() => Boolean(file) && !loading, [file, loading])
+    const parsedResult = useMemo(() => {
+        if (typeof result !== 'string') {
+            return result
+        }
+
+        try {
+            return JSON.parse(result)
+        } catch {
+            return result
+        }
+    }, [result])
 
     const onStart = async () => {
         if (!canStart) {
@@ -45,7 +191,10 @@ function App() {
         // Send file + selected engine to backend-core, which orchestrates backend-ocr.
         const formData = new FormData()
         formData.append('file', file)
-        formData.append('engine', selectedEngine)
+
+        if (selectedEngine !== SYSTEM_ENGINE_VALUE) {
+            formData.append('engine', selectedEngine)
+        }
 
         try {
             const response = await axios.post('/api/ocr/process', formData, {
@@ -86,6 +235,7 @@ function App() {
                             onChange={(event) => setSelectedEngine(event.target.value)}
                             className="block w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-100 focus:border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-700/40"
                         >
+                            <option value={SYSTEM_ENGINE_VALUE}>Utilizar a indicação do sistema</option>
                             {engines.map((engine) => (
                                 <option key={engine.value} value={engine.value}>
                                     {engine.label}
@@ -106,11 +256,11 @@ function App() {
 
                 {error && <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>}
 
-                {result && (
+                {result !== null && (
                     <div className="mt-7 space-y-2">
                         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-300">Result</h2>
                         <pre className="max-h-[420px] overflow-auto rounded-lg border border-slate-700 bg-slate-950/90 p-4 text-xs text-slate-100">
-                            {JSON.stringify(result, null, 2)}
+                            <JsonViewer value={parsedResult} />
                         </pre>
                     </div>
                 )}

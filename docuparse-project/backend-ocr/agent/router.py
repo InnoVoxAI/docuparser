@@ -8,7 +8,9 @@ import pytesseract
 from agent.classifier import classify_document
 from engines.deepseek_engine import DeepSeekEngine
 from engines.docling_engine import DoclingEngine
+from engines.easyocr_engine import EasyOCREngine
 from engines.llamaparse_engine import LlamaParseEngine
+from engines.paddle_engine import PaddleOCREngine
 from engines.tesseract_engine import TesseractEngine
 
 # Configure logging
@@ -17,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 # Capabilities Dictionary
 CAPABILITIES = {
-    "digital_pdf": ["pdfplumber", "docling"],
-    "scanned_image": ["opencv-python", "pytesseract", "easyocr"],
-    "handwritten_complex": ["deepseek-ocr", "llama-parse", "unstructured"]
+    "digital_pdf": ["docling", "llamaparse"],
+    "scanned_image": ["paddleocr", "easyocr"],
+    "handwritten_complex": ["paddleocr", "deepseek-ocr"]
 }
 
 
@@ -68,6 +70,60 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                 data["input_meta"] = input_meta
                 data["raw_text_fallback"] = "EasyOCR indisponível no ambiente; fallback para Tesseract aplicado."
 
+        elif resolved_engine == "paddle":
+            tools_used.append("paddleocr")
+            prepared_content, input_meta = _prepare_content_for_ocr(content, filename)
+            engine = PaddleOCREngine()
+            data = engine.process(prepared_content)
+            data["input_meta"] = input_meta
+
+            # TODO Verificar também se os campos críticos estão vazios, além da confiança, para acionar fallback.
+            if _should_trigger_fallback(data):
+                logger.warning(
+                    "PaddleOCR avg_confidence abaixo de 70%% (%.2f). Aplicando fallback EasyOCR.",
+                    _extract_avg_confidence(data),
+                )
+                try:
+                    fallback_engine = EasyOCREngine()
+                    fallback_data = fallback_engine.process(prepared_content)
+                    fallback_data["input_meta"] = input_meta
+                    data = _merge_fallback_result(data, fallback_data, primary_engine="paddleocr", fallback_engine="easyocr")
+                    tools_used.append("easyocr_fallback")
+                except Exception as fallback_err:
+                    tools_used.append("easyocr_fallback_unavailable")
+                    data["raw_text_fallback"] = (
+                        f"Fallback EasyOCR indisponível: {str(fallback_err)}"
+                    )
+
+        elif resolved_engine == "paddle_deepseek":
+            tools_used.append("paddleocr")
+            prepared_content, input_meta = _prepare_content_for_ocr(content, filename)
+            paddle_engine = PaddleOCREngine()
+            paddle_data = paddle_engine.process(prepared_content)
+            paddle_data["input_meta"] = input_meta
+
+            # Hybrid approach for handwritten/complex docs:
+            # PaddleOCR handles printed content, DeepSeek is activated as fallback
+            # only when avg_confidence is below threshold.
+            # TODO Verificar também se os campos críticos estão vazios, além da confiança, para acionar fallback.
+            if _should_trigger_fallback(paddle_data):
+                logger.warning(
+                    "PaddleOCR avg_confidence abaixo de 70%% (%.2f). Aplicando DeepSeek para conteúdo manuscrito/complexo.",
+                    _extract_avg_confidence(paddle_data),
+                )
+                tools_used.append("deepseek_hybrid_fallback")
+                deepseek_engine = DeepSeekEngine()
+                deepseek_data = deepseek_engine.process(prepared_content)
+                deepseek_data["input_meta"] = input_meta
+                data = _merge_fallback_result(
+                    paddle_data,
+                    deepseek_data,
+                    primary_engine="paddleocr",
+                    fallback_engine="deepseek-ocr",
+                )
+            else:
+                data = paddle_data
+
         elif resolved_engine == "deepseek":
             tools_used.append("deepseek-ocr")
             engine = DeepSeekEngine()
@@ -77,6 +133,17 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
             tools_used.append("docling")
             engine = DoclingEngine()
             data = engine.process(content)
+
+            # TODO Verificar também se os campos críticos estão vazios, além da confiança, para acionar fallback.
+            if _should_trigger_fallback(data):
+                logger.warning(
+                    "Docling avg_confidence abaixo de 70%% (%.2f). Aplicando fallback LlamaParse.",
+                    _extract_avg_confidence(data),
+                )
+                fallback_engine = LlamaParseEngine()
+                fallback_data = fallback_engine.process(content)
+                data = _merge_fallback_result(data, fallback_data, primary_engine="docling", fallback_engine="llamaparse")
+                tools_used.append("llamaparse_fallback")
 
         elif resolved_engine == "llamaparse":
             tools_used.append("llamaparse")
@@ -123,18 +190,104 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
 
 
 def _resolve_engine(classification: str, selected_engine: str | None) -> str:
+    aliases = {
+        "paddleocr": "paddle",
+        "paddle_ocr": "paddle",
+        "llama-parse": "llamaparse",
+        "deepseek-ocr": "deepseek",
+        "hybrid": "paddle_deepseek",
+    }
+
     if selected_engine:
         normalized_engine = selected_engine.lower().strip()
+        normalized_engine = aliases.get(normalized_engine, normalized_engine)
         if normalized_engine not in {"", "none", "null"}:
             return normalized_engine
 
-    if classification in {"digital_pdf", "scanned_image"}:
-        return "tesseract"
+    if classification == "digital_pdf":
+        return "docling"
+
+    if classification == "scanned_image":
+        return "paddle"
 
     if classification == "handwritten_complex":
-        return "deepseek"
+        return "paddle_deepseek"
 
     return "tesseract"
+
+
+def _extract_avg_confidence(data: Dict[str, Any]) -> float | None:
+    if not isinstance(data, dict):
+        return None
+
+    meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
+    candidates = [
+        meta.get("avg_confidence"),
+        meta.get("average_confidence"),
+        meta.get("confidence"),
+        data.get("avg_confidence"),
+    ]
+
+    for candidate in candidates:
+        if candidate is None:
+            continue
+
+        try:
+            value = float(candidate)
+        except (TypeError, ValueError):
+            continue
+
+        if 0.0 <= value <= 1.0:
+            value *= 100.0
+
+        return max(0.0, min(100.0, value))
+
+    return None
+
+
+def _should_trigger_fallback(data: Dict[str, Any], min_confidence: float = 70.0) -> bool:
+    avg_confidence = _extract_avg_confidence(data)
+    return avg_confidence is not None and avg_confidence < min_confidence
+
+
+def _merge_fallback_result(
+    primary_data: Dict[str, Any],
+    fallback_data: Dict[str, Any],
+    primary_engine: str,
+    fallback_engine: str,
+) -> Dict[str, Any]:
+    """
+    Combina o resultado do OCR primário com o resultado do fallback.
+
+    Objetivo:
+    - preservar tudo que já veio do engine primário;
+    - sobrescrever apenas campos úteis quando o fallback trouxer valor real;
+    - registrar no _meta que houve fallback e qual engine foi usado.
+    """
+    # Começa com uma cópia do resultado primário para manter o baseline.
+    merged = dict(primary_data)
+
+    # Atualiza apenas os campos principais quando o fallback trouxer conteúdo não vazio.
+    for key in ["document_info", "entities", "tables", "totals", "raw_text", "raw_text_fallback"]:
+        fallback_value = fallback_data.get(key)
+        if fallback_value not in (None, "", [], {}):
+            merged[key] = fallback_value
+
+    # Lê metadados de ambos os resultados de forma segura.
+    primary_meta = primary_data.get("_meta") if isinstance(primary_data.get("_meta"), dict) else {}
+    fallback_meta = fallback_data.get("_meta") if isinstance(fallback_data.get("_meta"), dict) else {}
+
+    # Consolida metadados e marca explicitamente o contexto do fallback.
+    merged["_meta"] = {
+        **primary_meta,
+        **fallback_meta,
+        "primary_engine": primary_engine,
+        "fallback_engine": fallback_engine,
+        "primary_avg_confidence": _extract_avg_confidence(primary_data),
+        "fallback_triggered": True,
+    }
+
+    return merged
 
 
 def _prepare_content_for_ocr(content: bytes, filename: str) -> Tuple[bytes, Dict[str, Any]]:

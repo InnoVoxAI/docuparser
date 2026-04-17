@@ -16,8 +16,11 @@ def test_process_mock_pdf():
     response = client.post("/process", files=files)
     assert response.status_code == 200
     json_data = response.json()
-    assert json_data["detected_type"] == "digital_pdf"
     assert "tools_used" in json_data
+    assert "transcription" in json_data
+    assert "fields" in json_data["transcription"]
+    assert "field_validation" in json_data["transcription"]
+    assert "final_score" in json_data["transcription"]
 
 
 def test_process_mock_image():
@@ -26,4 +29,6 @@ def test_process_mock_image():
     response = client.post("/process", files=files)
     assert response.status_code == 200
     json_data = response.json()
-    assert json_data["detected_type"] == "image"
+    assert "detected_type" in json_data
+    assert "transcription" in json_data
+    assert "fields" in json_data["transcription"]

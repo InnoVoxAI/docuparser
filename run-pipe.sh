@@ -84,6 +84,23 @@ healthcheck() {
   echo "To stop: docker compose -f $COMPOSE_FILE down"
 }
 
+check_backend_ocr_deps() {
+  log "Checking backend-ocr Python dependencies inside container..."
+
+  local check_cmd
+  check_cmd="from importlib import util; required=['fastapi','cv2','pytesseract','pypdfium2','httpx','openai','paddle','paddleocr']; missing=[m for m in required if util.find_spec(m) is None]; print('missing=' + ','.join(missing) if missing else 'all_required_modules_ok')"
+
+  set +e
+  $DOCKER_CMD -f "$COMPOSE_FILE" exec -T backend-ocr python -c "$check_cmd"
+  local deps_status=$?
+  set -e
+
+  if [[ $deps_status -ne 0 ]]; then
+    echo "[run-pipe] WARNING: could not validate backend-ocr dependencies in container."
+    echo "[run-pipe] Run manually: $DOCKER_CMD -f $COMPOSE_FILE exec backend-ocr python -c \"$check_cmd\""
+  fi
+}
+
 resolve_docker_compose_cmd() {
   if docker compose version >/dev/null 2>&1; then
     echo "docker compose"
@@ -132,6 +149,7 @@ main() {
   $DOCKER_CMD -f "$COMPOSE_FILE" up --build -d
 
   healthcheck
+  check_backend_ocr_deps
 }
 
 main "$@"

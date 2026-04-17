@@ -4,9 +4,13 @@ import base64
 import json
 import os
 import time
+import logging
 from typing import Any, Dict, Union
 
 from utils.preprocessing import preprocess_for_deepseek_engine
+
+
+logger = logging.getLogger(__name__)
 
 
 class DeepSeekEngine:
@@ -17,16 +21,30 @@ class DeepSeekEngine:
         self.model = os.getenv("OLLAMA_MODEL", "deepseek-r1")
 
         self._init_error: str | None = None
+        self._http_client = None
         self.client = None
         try:
             from openai import OpenAI
+            import httpx
+
+            self._http_client = httpx.Client(
+                timeout=httpx.Timeout(60.0, connect=10.0),
+            )
 
             self.client = OpenAI(
                 base_url=self.base_url,
                 api_key=self.api_key,
+                http_client=self._http_client,
             )
         except Exception as exc:
             self._init_error = str(exc)
+            logger.warning("DeepSeek client init failed: %s", self._init_error)
+
+    def is_available(self) -> bool:
+        return self.client is not None
+
+    def get_init_error(self) -> str | None:
+        return self._init_error
 
     def _encode_image(self, image_path_or_bytes: Union[str, bytes]) -> str:
         if isinstance(image_path_or_bytes, str):

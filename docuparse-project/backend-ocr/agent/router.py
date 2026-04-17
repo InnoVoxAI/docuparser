@@ -163,26 +163,53 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                     classification=classification,
                     engine_name="deepseek",
                 )
-                _log_main_flow(
-                    classification=classification,
-                    selected_engine="deepseek_fallback",
-                    input_meta=deepseek_meta,
-                )
-                deepseek_data = deepseek_engine.process(deepseek_content)
-                deepseek_meta = {**deepseek_meta, "triggered_by": "paddle_low_confidence"}
-                deepseek_data["input_meta"] = input_meta
-                deepseek_data["input_meta_fallback"] = deepseek_meta
-                data = _merge_fallback_result(
-                    paddle_data,
-                    deepseek_data,
-                    primary_engine="paddleocr",
-                    fallback_engine="deepseek-ocr",
-                )
+                if not deepseek_engine.is_available():
+                    deepseek_reason = deepseek_engine.get_init_error() or "unknown_error"
+                    logger.warning(
+                        "DeepSeek unavailable in hybrid flow (%s). Keeping PaddleOCR result.",
+                        deepseek_reason,
+                    )
+                    tools_used.append("deepseek_unavailable")
+                    paddle_data.setdefault("_meta", {})
+                    paddle_data["_meta"]["deepseek_unavailable_reason"] = deepseek_reason
+                    paddle_data["raw_text_fallback"] = (
+                        paddle_data.get("raw_text_fallback")
+                        or f"DeepSeek indisponível no ambiente ({deepseek_reason}). Resultado mantido com PaddleOCR."
+                    )
+                    data = paddle_data
+                else:
+                    _log_main_flow(
+                        classification=classification,
+                        selected_engine="deepseek_fallback",
+                        input_meta=deepseek_meta,
+                    )
+                    deepseek_data = deepseek_engine.process(deepseek_content)
+                    if _is_engine_error_fallback(deepseek_data):
+                        logger.warning("DeepSeek fallback returned engine error. Keeping PaddleOCR result.")
+                        tools_used.append("deepseek_fallback_failed")
+                        paddle_data.setdefault("_meta", {})
+                        paddle_data["_meta"]["deepseek_fallback_error"] = (
+                            deepseek_data.get("_meta", {}).get("error")
+                            if isinstance(deepseek_data.get("_meta"), dict)
+                            else "unknown_error"
+                        )
+                        data = paddle_data
+                    else:
+                        deepseek_meta = {**deepseek_meta, "triggered_by": "paddle_low_confidence"}
+                        deepseek_data["input_meta"] = input_meta
+                        deepseek_data["input_meta_fallback"] = deepseek_meta
+                        data = _merge_fallback_result(
+                            paddle_data,
+                            deepseek_data,
+                            primary_engine="paddleocr",
+                            fallback_engine="deepseek-ocr",
+                        )
             else:
                 data = paddle_data
 
         elif resolved_engine == "deepseek":
             tools_used.append("deepseek-ocr")
+            logger.warning("######### deepseek selecionado!")
             engine = DeepSeekEngine()
             prepared_content, input_meta = _prepare_content_for_engine(
                 content=content,
@@ -195,8 +222,25 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                 selected_engine=resolved_engine,
                 input_meta=input_meta,
             )
-            data = engine.process(prepared_content)
-            data["input_meta"] = input_meta
+            if not engine.is_available():
+                init_error = engine.get_init_error() or "unknown_error"
+                logger.warning(
+                    "DeepSeek unavailable (%s). Falling back to Tesseract.",
+                    init_error,
+                )
+                tools_used.extend(["deepseek_unavailable", "pytesseract_fallback"])
+                fallback_engine = TesseractEngine()
+                data = fallback_engine.process_with_classification(
+                    image_bytes=prepared_content,
+                    classification=classification,
+                )
+                data["input_meta"] = input_meta
+                data["raw_text_fallback"] = (
+                    f"DeepSeek indisponível no ambiente ({init_error}). Fallback para Tesseract aplicado."
+                )
+            else:
+                data = engine.process(prepared_content)
+                data["input_meta"] = input_meta
 
         elif resolved_engine == "docling":
             tools_used.append("docling")
@@ -353,6 +397,18 @@ def _extract_avg_confidence(data: Dict[str, Any]) -> float | None:
 def _should_trigger_fallback(data: Dict[str, Any], min_confidence: float = 70.0) -> bool:
     avg_confidence = _extract_avg_confidence(data)
     return avg_confidence is not None and avg_confidence < min_confidence
+
+
+def _is_engine_error_fallback(data: Dict[str, Any]) -> bool:
+    if not isinstance(data, dict):
+        return True
+
+    meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
+    if meta.get("error"):
+        return True
+
+    raw_text_fallback = str(data.get("raw_text_fallback", "") or "")
+    return raw_text_fallback.startswith("Failed to process with")
 
 
 def _merge_fallback_result(

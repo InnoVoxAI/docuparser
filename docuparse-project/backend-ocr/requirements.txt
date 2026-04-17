@@ -1,15 +1,10 @@
-fastapi==0.109.0
-uvicorn==0.27.0
-python-multipart==0.0.6
-# opencv-python-headless==4.9.0.80
-# pytesseract==0.3.10
-# easyocr==1.7.1
-# pdfplumber==0.10.4
-# docling==1.0.0  # Placeholder, verify version
-# unstructured==0.12.0 # Placeholder
-# llama-index==0.9.40 # Placeholder
-# llama-parse==0.3.0 # Placeholder
-numpy
-requests
-pydantic
-openai
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+pytesseract==0.3.13
+pypdfium2==4.30.0
+pillow==10.4.0
+openai==1.51.2

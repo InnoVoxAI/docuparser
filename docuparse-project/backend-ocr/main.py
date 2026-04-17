@@ -1,5 +1,6 @@
 import time
-from fastapi import FastAPI, UploadFile, File, HTTPException
+import importlib.util
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -48,7 +49,9 @@ class Transcription(BaseModel):
     entities: Entities
     tables: List[TableRow]
     totals: Totals
+    raw_text: Optional[str] = None
     raw_text_fallback: Optional[str] = None
+    ocr_meta: Optional[Dict[str, Any]] = None
 
 
 class OCRResponse(BaseModel):
@@ -56,7 +59,13 @@ class OCRResponse(BaseModel):
     detected_type: str
     tools_used: List[str]
     transcription: Transcription
-    processing_time_ms: float
+    processing_time: str
+    
+
+
+class EngineOption(BaseModel):
+    value: str
+    label: str
 
 
 @app.get("/")
@@ -64,34 +73,50 @@ def health_check():
     return {"status": "ok"}
 
 
+@app.get("/engines", response_model=List[EngineOption])
+def list_engines():
+    # Keep this list simple and explicit for the UI dropdown.
+    engines = [
+        {"value": "tesseract", "label": "Tesseract"},
+        {"value": "docling", "label": "Docling"},
+        {"value": "deepseek", "label": "DeepSeek"},
+        {"value": "llamaparse", "label": "LlamaParse"},
+    ]
+
+    if importlib.util.find_spec("easyocr") is not None:
+        engines.insert(1, {"value": "easyocr", "label": "EasyOCR"})
+
+    return engines
+
+
 @app.post("/process", response_model=OCRResponse)
-async def process_document(file: UploadFile = File(...)):
+async def process_document(
+    file: UploadFile = File(...),
+    engine: Optional[str] = Form(default=None),
+):
     start_time = time.time()
 
-    try:
-        contents = await file.read()
-        filename = file.filename
+    # try:
+    contents = await file.read()
+    filename = file.filename
 
-        # Call the router
-        from agent.classifier import classify_document
-        from agent.router import route_and_process
+    # Call the router
+    from agent.router import route_and_process
 
-        # 1. Classify
-        classification = classify_document(filename, contents)
+    # 1) Classify + 2) Process with selected engine (or auto route)
+    result = route_and_process(filename=filename, content=contents, selected_engine=engine)
 
-        # 2. Process
-        result = route_and_process(classification, contents)
+    processing_time = result.get("_meta", {}).get(
+        "processing_time_ms", (time.time() - start_time) * 1000)
+    processing_time_seconds = processing_time / 1000
 
-        processing_time = result.get("_meta", {}).get(
-            "processing_time_ms", (time.time() - start_time) * 1000)
+    return {
+        "filename": filename,
+        "detected_type": result.get("classification", "unknown"),
+        "tools_used": result.get("tools_used", []),
+        "transcription": result.get("transcription", {}),
+        "processing_time": f"{processing_time_seconds:.1f}s",
+    }
 
-        return {
-            "filename": filename,
-            "detected_type": classification,
-            "tools_used": result.get("tools_used", []),
-            "transcription": result.get("transcription", {}),
-            "processing_time_ms": processing_time
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=str(e))

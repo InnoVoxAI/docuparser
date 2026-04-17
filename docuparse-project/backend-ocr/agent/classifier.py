@@ -20,6 +20,22 @@ CLASS_SCANNED_IMAGE = "scanned_image"
 CLASS_HANDWRITTEN_COMPLEX = "handwritten_complex"
 
 
+CLASSIFICATION_ENGINE_PREPROCESSING_HINTS = {
+    CLASS_DIGITAL_PDF: {
+        "docling": "prefer_original_pdf",
+        "llamaparse": "prefer_original_pdf",
+    },
+    CLASS_SCANNED_IMAGE: {
+        "paddle": "natural_rgb_with_clahe_and_light_deskew",
+        "easyocr": "denoise_contrast_deskew_upscale",
+    },
+    CLASS_HANDWRITTEN_COMPLEX: {
+        "deepseek": "roi_focus_rgb_deskew_perspective",
+        "paddle": "natural_rgb_with_clahe_and_light_deskew",
+    },
+}
+
+
 def classify_document(filename: str, content: bytes) -> str:
     """
     Classificador robusto por múltiplos sinais (nome + estrutura do conteúdo).
@@ -55,6 +71,10 @@ def classify_document(filename: str, content: bytes) -> str:
 
     # Fallback conservador: desconhecido tende a fluxo OCR padrão do sistema.
     return CLASS_SCANNED_IMAGE
+
+
+def get_engine_preprocessing_hints_for_class(classification: str) -> Dict[str, str]:
+    return dict(CLASSIFICATION_ENGINE_PREPROCESSING_HINTS.get(classification, {}))
 
 
 def _classify_pdf(content: bytes, name_signals: Dict[str, bool]) -> str:

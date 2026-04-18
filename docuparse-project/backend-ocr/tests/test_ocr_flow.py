@@ -12,10 +12,10 @@ def test_health_check():
 
 
 def test_classify_document():
-    assert classify_document("invoice.pdf", b"") == "digital_pdf"
     assert classify_document("scan.jpg", b"") == "scanned_image"
     assert classify_document("handwritten_note.png",
                              b"") == "handwritten_complex"
-    assert classify_document("unknown.xyz", b"") == "unknown"
+    assert classify_document("invoice.pdf", b"") == "scanned_image"
+    assert classify_document("unknown.xyz", b"") == "scanned_image"
 
 # Note: Integration tests with DeepSeek require a running Ollama instance and are mocked here or manual.

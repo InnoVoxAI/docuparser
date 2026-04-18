@@ -30,7 +30,7 @@ CLASSIFICATION_ENGINE_PREPROCESSING_HINTS = {
         "easyocr": "denoise_contrast_deskew_upscale",
     },
     CLASS_HANDWRITTEN_COMPLEX: {
-        "deepseek": "roi_focus_rgb_deskew_perspective",
+        "easyocr": "denoise_contrast_deskew_upscale_handwritten",
         "paddle": "natural_rgb_with_clahe_and_light_deskew",
     },
 }

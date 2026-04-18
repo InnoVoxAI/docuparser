@@ -1,6 +1,6 @@
 import time
 import importlib.util
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -20,38 +20,25 @@ app.add_middleware(
 )
 
 
-class DocumentInfo(BaseModel):
-    type: Optional[str] = None
-    number: Optional[str] = None
-    date: Optional[str] = None
-
-
-class Entities(BaseModel):
-    issuer: Optional[str] = None
-    recipient: Optional[str] = None
-
-
-class TableRow(BaseModel):
-    description: Optional[str] = None
-    quantity: Optional[Any] = None
-    unit_price: Optional[Any] = None
-    total: Optional[Any] = None
-
-
-class Totals(BaseModel):
-    subtotal: Optional[float] = None
-    tax: Optional[float] = None
-    grand_total: Optional[float] = None
-
-
 class Transcription(BaseModel):
-    document_info: DocumentInfo
-    entities: Entities
-    tables: List[TableRow]
-    totals: Totals
+    fields: Dict[str, str]
+    required_fields: List[str]
+    field_validation: Dict[str, Any]
+    field_confidence: Optional[Dict[str, Any]] = None
+    low_confidence_fields: Optional[List[str]] = None
+    field_score: float
+    ocr_confidence: float
+    final_score: float
+    fallback_needed: bool
+    source: str
+    fallback_engine: str
+    fields_from_fallback: List[str]
+    totals: Dict[str, Any]
     raw_text: Optional[str] = None
     raw_text_fallback: Optional[str] = None
     ocr_meta: Optional[Dict[str, Any]] = None
+    field_positions: Optional[Dict[str, Any]] = None
+    field_positions_meta: Optional[Dict[str, Any]] = None
 
 
 class OCRResponse(BaseModel):

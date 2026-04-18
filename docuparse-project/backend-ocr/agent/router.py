@@ -1,6 +1,8 @@
 from typing import Dict, Any, List, Tuple
 import time
 import logging
+import re
+import unicodedata
 import cv2
 import numpy as np
 import pytesseract
@@ -23,6 +25,7 @@ from utils.validate_fields import (
     REQUIRED_FIELDS,
     compute_field_pipeline_quality,
     extract_avg_confidence,
+    merge_field_confidence,
     merge_fields_by_validation,
     resolve_field_fallback_engine,
 )
@@ -40,7 +43,7 @@ logger = logging.getLogger(__name__)
 CAPABILITIES = {
     "digital_pdf": ["docling", "llamaparse"],
     "scanned_image": ["paddleocr", "easyocr"],
-    "handwritten_complex": ["paddleocr", "deepseek-ocr"]
+    "handwritten_complex": ["paddleocr", "easyocr"]
 }
 
 
@@ -137,8 +140,6 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                 input_meta=input_meta,
             )
             try:
-                from engines.easyocr_engine import EasyOCREngine
-
                 tools_used.append("easyocr")
                 engine = EasyOCREngine()
                 data = engine.process(prepared_content)
@@ -192,7 +193,7 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                         f"Fallback EasyOCR indisponível: {str(fallback_err)}"
                     )
 
-        elif resolved_engine == "paddle_deepseek":
+        elif resolved_engine in {"paddle_deepseek", "paddle_easyocr"}:
             tools_used.append("paddleocr")
             prepared_content, input_meta = _prepare_content_for_engine(
                 content=content,
@@ -210,63 +211,61 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
             paddle_data["input_meta"] = input_meta
 
             # Hybrid approach for handwritten/complex docs:
-            # PaddleOCR handles printed content, DeepSeek is activated as fallback
-            # only when avg_confidence is below threshold.
+            # PaddleOCR handles printed content and EasyOCR is used as fallback.
             # TODO Verificar também se os campos críticos estão vazios, além da confiança, para acionar fallback.
             if should_trigger_fallback(paddle_data):
                 logger.warning(
-                    "PaddleOCR avg_confidence abaixo de 70%% (%.2f). Aplicando DeepSeek para conteúdo manuscrito/complexo.",
+                    "PaddleOCR avg_confidence abaixo de 70%% (%.2f). Aplicando EasyOCR para conteúdo manuscrito/complexo.",
                     extract_avg_confidence(paddle_data),
                 )
-                tools_used.append("deepseek_hybrid_fallback")
-                deepseek_engine = DeepSeekEngine()
-                deepseek_content, deepseek_meta = _prepare_content_for_engine(
+                tools_used.append("easyocr_hybrid_fallback")
+                easyocr_content, easyocr_meta = _prepare_content_for_engine(
                     content=content,
                     filename=filename,
                     classification=classification,
-                    engine_name="deepseek",
+                    engine_name="easyocr",
                 )
-                if not deepseek_engine.is_available():
-                    deepseek_reason = deepseek_engine.get_init_error() or "unknown_error"
-                    logger.warning(
-                        "DeepSeek unavailable in hybrid flow (%s). Keeping PaddleOCR result.",
-                        deepseek_reason,
-                    )
-                    tools_used.append("deepseek_unavailable")
-                    paddle_data.setdefault("_meta", {})
-                    paddle_data["_meta"]["deepseek_unavailable_reason"] = deepseek_reason
-                    paddle_data["raw_text_fallback"] = (
-                        paddle_data.get("raw_text_fallback")
-                        or f"DeepSeek indisponível no ambiente ({deepseek_reason}). Resultado mantido com PaddleOCR."
-                    )
-                    data = paddle_data
-                else:
+                try:
                     _log_main_flow(
                         classification=classification,
-                        selected_engine="deepseek_fallback",
-                        input_meta=deepseek_meta,
+                        selected_engine="easyocr_fallback",
+                        input_meta=easyocr_meta,
                     )
-                    deepseek_data = deepseek_engine.process(deepseek_content)
-                    if is_engine_error_fallback(deepseek_data):
-                        logger.warning("DeepSeek fallback returned engine error. Keeping PaddleOCR result.")
-                        tools_used.append("deepseek_fallback_failed")
+                    easyocr_engine = EasyOCREngine()
+                    easyocr_data = easyocr_engine.process(easyocr_content)
+                    if is_engine_error_fallback(easyocr_data):
+                        logger.warning("EasyOCR fallback returned engine error. Keeping PaddleOCR result.")
+                        tools_used.append("easyocr_fallback_failed")
                         paddle_data.setdefault("_meta", {})
-                        paddle_data["_meta"]["deepseek_fallback_error"] = (
-                            deepseek_data.get("_meta", {}).get("error")
-                            if isinstance(deepseek_data.get("_meta"), dict)
+                        paddle_data["_meta"]["easyocr_fallback_error"] = (
+                            easyocr_data.get("_meta", {}).get("error")
+                            if isinstance(easyocr_data.get("_meta"), dict)
                             else "unknown_error"
                         )
                         data = paddle_data
                     else:
-                        deepseek_meta = {**deepseek_meta, "triggered_by": "paddle_low_confidence"}
-                        deepseek_data["input_meta"] = input_meta
-                        deepseek_data["input_meta_fallback"] = deepseek_meta
+                        easyocr_meta = {**easyocr_meta, "triggered_by": "paddle_low_confidence"}
+                        easyocr_data["input_meta"] = input_meta
+                        easyocr_data["input_meta_fallback"] = easyocr_meta
                         data = merge_fallback_result(
                             paddle_data,
-                            deepseek_data,
+                            easyocr_data,
                             primary_engine="paddleocr",
-                            fallback_engine="deepseek-ocr",
+                            fallback_engine="easyocr",
                         )
+                except Exception as easyocr_error:
+                    logger.warning(
+                        "EasyOCR unavailable in hybrid flow (%s). Keeping PaddleOCR result.",
+                        str(easyocr_error),
+                    )
+                    tools_used.append("easyocr_unavailable")
+                    paddle_data.setdefault("_meta", {})
+                    paddle_data["_meta"]["easyocr_unavailable_reason"] = str(easyocr_error)
+                    paddle_data["raw_text_fallback"] = (
+                        paddle_data.get("raw_text_fallback")
+                        or f"EasyOCR indisponível no ambiente ({str(easyocr_error)}). Resultado mantido com PaddleOCR."
+                    )
+                    data = paddle_data
             else:
                 data = paddle_data
 
@@ -418,11 +417,17 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                         (extract_avg_confidence(data) or 0.0),
                         (extract_avg_confidence(fallback_data) or 0.0),
                     )
+                    merged_field_confidence = merge_field_confidence(
+                        primary_confidence=field_quality.get("field_confidence", {}),
+                        fallback_confidence=fallback_quality.get("field_confidence", {}),
+                        fields_from_fallback=fields_from_fallback,
+                    )
 
                     field_quality = compute_field_pipeline_quality(
                         data,
                         override_fields=merged_fields,
                         override_ocr_confidence=merged_confidence_pct,
+                        override_field_confidence=merged_field_confidence,
                     )
                     field_quality["source"] = "fallback" if fields_from_fallback else "primary"
                     field_quality["fallback_engine"] = fallback_engine_name
@@ -452,6 +457,25 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
     # Standardization
     normalized_data = _normalize_output(data, field_quality)
 
+    try:
+        field_positions_payload = _compute_field_positions(
+            filename=filename,
+            content=content,
+            fields=normalized_data.get("fields", {}),
+        )
+    except Exception as field_position_error:
+        logger.warning("Could not compute field positions: %s", str(field_position_error))
+        field_positions_payload = {
+            "field_positions": {},
+            "field_positions_meta": {
+                "available": False,
+                "reason": str(field_position_error),
+            },
+        }
+
+    normalized_data["field_positions"] = field_positions_payload.get("field_positions", {})
+    normalized_data["field_positions_meta"] = field_positions_payload.get("field_positions_meta", {})
+
     return {
         "classification": classification,
         "selected_engine": resolved_engine,
@@ -466,7 +490,8 @@ def _resolve_engine(classification: str, selected_engine: str | None) -> str:
         "paddle_ocr": "paddle",
         "llama-parse": "llamaparse",
         "deepseek-ocr": "deepseek",
-        "hybrid": "paddle_deepseek",
+        "hybrid": "paddle_easyocr",
+        "paddle_deepseek": "paddle_easyocr",
     }
 
     if selected_engine:
@@ -482,7 +507,7 @@ def _resolve_engine(classification: str, selected_engine: str | None) -> str:
         return "paddle"
 
     if classification == "handwritten_complex":
-        return "paddle_deepseek"
+        return "paddle_easyocr"
 
     return "tesseract"
 
@@ -498,7 +523,7 @@ def _prepare_content_for_ocr(content: bytes, filename: str) -> Tuple[bytes, Dict
             "rendered_from_pdf": False,
         }
 
-    # For PDFs we render the first page as PNG before preprocessing/OCR.
+    # For PDFs we render all pages as one stacked image before preprocessing/OCR.
     if suffix == "pdf":
         import pypdfium2 as pdfium
 
@@ -506,13 +531,36 @@ def _prepare_content_for_ocr(content: bytes, filename: str) -> Tuple[bytes, Dict
         if len(pdf) == 0:
             raise ValueError("PDF has no pages")
 
-        page = pdf.get_page(0)
-        bitmap = page.render(scale=2.0)
-        pil_image = bitmap.to_pil()
+        page_images: List[np.ndarray] = []
+        max_width = 0
+        for page_idx in range(len(pdf)):
+            page = pdf.get_page(page_idx)
+            bitmap = page.render(scale=2.0)
+            pil_image = bitmap.to_pil()
+            image_rgb = np.array(pil_image)
+            image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+            page_images.append(image_bgr)
+            max_width = max(max_width, image_bgr.shape[1])
 
-        image_rgb = np.array(pil_image)
-        image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
-        ok, encoded = cv2.imencode(".png", image_bgr)
+        if not page_images:
+            raise ValueError("PDF rendering returned no pages")
+
+        separator_height = 24
+        stacked_parts: List[np.ndarray] = []
+        for page_idx, page_image in enumerate(page_images):
+            height, width = page_image.shape[:2]
+            if width < max_width:
+                right_pad = np.full((height, max_width - width, 3), 255, dtype=np.uint8)
+                page_image = np.concatenate([page_image, right_pad], axis=1)
+
+            stacked_parts.append(page_image)
+            if page_idx < len(page_images) - 1:
+                separator = np.full((separator_height, max_width, 3), 255, dtype=np.uint8)
+                stacked_parts.append(separator)
+
+        stacked_image = np.concatenate(stacked_parts, axis=0)
+
+        ok, encoded = cv2.imencode(".png", stacked_image)
         if not ok:
             raise ValueError("Could not convert PDF page to image bytes")
 
@@ -520,7 +568,8 @@ def _prepare_content_for_ocr(content: bytes, filename: str) -> Tuple[bytes, Dict
             "input_type": "pdf",
             "source_extension": ".pdf",
             "rendered_from_pdf": True,
-            "rendered_page": 1,
+            "rendered_page": "all",
+            "stacked_pages": len(page_images),
             "pdf_page_count": len(pdf),
         }
 
@@ -633,6 +682,8 @@ def _normalize_output(data: Dict[str, Any], field_quality: Dict[str, Any] | None
         "fields": normalized_fields,
         "required_fields": REQUIRED_FIELDS,
         "field_validation": field_quality.get("validation", {}),
+        "field_confidence": field_quality.get("field_confidence", {}),
+        "low_confidence_fields": field_quality.get("low_confidence_fields", []),
         "field_score": field_quality.get("field_score", 0.0),
         "ocr_confidence": field_quality.get("ocr_confidence", 0.0),
         "final_score": field_quality.get("final_score", 0.0),
@@ -644,6 +695,203 @@ def _normalize_output(data: Dict[str, Any], field_quality: Dict[str, Any] | None
         "raw_text": data.get("raw_text") or data.get("raw_text_fallback", ""),
         "raw_text_fallback": data.get("raw_text_fallback", ""),
         "ocr_meta": data.get("_meta", {}),
+    }
+
+
+def _normalize_text_for_match(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", str(value or "").lower())
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _tokenize_for_match(value: str) -> List[str]:
+    return [token for token in _normalize_text_for_match(value).split() if len(token) >= 2]
+
+
+def _extract_layout_tokens(image_bytes: bytes) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if image is None or image.size == 0:
+        raise ValueError("Could not decode image to extract field positions")
+
+    image_height, image_width = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    data = pytesseract.image_to_data(gray, lang="por+eng", config="--oem 3 --psm 6", output_type=pytesseract.Output.DICT)
+
+    tokens: List[Dict[str, Any]] = []
+    size = len(data.get("text", []))
+    for idx in range(size):
+        text = str(data.get("text", [""])[idx] or "").strip()
+        if not text:
+            continue
+
+        try:
+            confidence = float(data.get("conf", ["-1"])[idx])
+        except (TypeError, ValueError):
+            confidence = -1.0
+
+        if confidence < 0:
+            continue
+
+        left = int(data.get("left", [0])[idx] or 0)
+        top = int(data.get("top", [0])[idx] or 0)
+        width = int(data.get("width", [0])[idx] or 0)
+        height = int(data.get("height", [0])[idx] or 0)
+
+        if width <= 0 or height <= 0:
+            continue
+
+        normalized_text = _normalize_text_for_match(text)
+        if not normalized_text:
+            continue
+
+        tokens.append({
+            "index": idx,
+            "text": text,
+            "norm": normalized_text,
+            "left": left,
+            "top": top,
+            "width": width,
+            "height": height,
+            "confidence": confidence,
+        })
+
+    metadata = {
+        "image_width": image_width,
+        "image_height": image_height,
+        "token_count": len(tokens),
+    }
+    return tokens, metadata
+
+
+def _build_bbox_from_tokens(tokens: List[Dict[str, Any]], image_width: int, image_height: int) -> Dict[str, Any]:
+    min_left = min(token["left"] for token in tokens)
+    min_top = min(token["top"] for token in tokens)
+    max_right = max(token["left"] + token["width"] for token in tokens)
+    max_bottom = max(token["top"] + token["height"] for token in tokens)
+
+    width = max_right - min_left
+    height = max_bottom - min_top
+
+    safe_width = max(image_width, 1)
+    safe_height = max(image_height, 1)
+
+    return {
+        "x": min_left,
+        "y": min_top,
+        "width": width,
+        "height": height,
+        "normalized_bbox": {
+            "x": round(min_left / safe_width, 6),
+            "y": round(min_top / safe_height, 6),
+            "width": round(width / safe_width, 6),
+            "height": round(height / safe_height, 6),
+        },
+    }
+
+
+def _match_field_tokens(field_value: str, tokens: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    normalized_value = _normalize_text_for_match(field_value)
+    if not normalized_value:
+        return []
+
+    value_tokens = _tokenize_for_match(field_value)
+    if not value_tokens:
+        return []
+
+    max_window = max(2, min(len(value_tokens) + 3, 10))
+    best_span: List[Dict[str, Any]] = []
+    best_score = -1.0
+
+    for start_idx in range(len(tokens)):
+        window = tokens[start_idx:start_idx + max_window]
+        if not window:
+            continue
+
+        matched = [token for token in window if token["norm"] in normalized_value or normalized_value in token["norm"]]
+        if not matched:
+            continue
+
+        covered_chars = sum(len(token["norm"]) for token in matched)
+        proximity_penalty = (matched[-1]["index"] - matched[0]["index"]) * 0.02
+        score = covered_chars - proximity_penalty
+
+        if score > best_score:
+            best_score = score
+            best_span = matched
+
+    if best_span:
+        return best_span
+
+    fallback_matches = [token for token in tokens if token["norm"] in normalized_value or normalized_value in token["norm"]]
+    if fallback_matches:
+        fallback_matches.sort(key=lambda token: len(token["norm"]), reverse=True)
+        return [fallback_matches[0]]
+
+    return []
+
+
+def _compute_field_positions(filename: str, content: bytes, fields: Dict[str, str]) -> Dict[str, Any]:
+    if not isinstance(fields, dict) or not fields:
+        return {
+            "field_positions": {},
+            "field_positions_meta": {
+                "available": False,
+                "reason": "no_fields",
+            },
+        }
+
+    rendered_image_bytes, input_meta = _prepare_content_for_ocr(content, filename)
+    tokens, layout_meta = _extract_layout_tokens(rendered_image_bytes)
+
+    if not tokens:
+        return {
+            "field_positions": {},
+            "field_positions_meta": {
+                "available": False,
+                "reason": "no_layout_tokens",
+                "input_meta": input_meta,
+                **layout_meta,
+            },
+        }
+
+    image_width = layout_meta["image_width"]
+    image_height = layout_meta["image_height"]
+
+    field_positions: Dict[str, Any] = {}
+    for field_name, field_value in fields.items():
+        value_text = str(field_value or "").strip()
+        if not value_text:
+            continue
+
+        matched_tokens = _match_field_tokens(value_text, tokens)
+        if not matched_tokens:
+            continue
+
+        bbox = _build_bbox_from_tokens(matched_tokens, image_width, image_height)
+        field_positions[field_name] = {
+            "bbox": {
+                "x": bbox["x"],
+                "y": bbox["y"],
+                "width": bbox["width"],
+                "height": bbox["height"],
+            },
+            "normalized_bbox": bbox["normalized_bbox"],
+            "page": 1,
+            "matched_text": " ".join(token["text"] for token in matched_tokens).strip(),
+            "confidence": round(sum(token["confidence"] for token in matched_tokens) / len(matched_tokens), 2),
+        }
+
+    return {
+        "field_positions": field_positions,
+        "field_positions_meta": {
+            "available": bool(field_positions),
+            "input_meta": input_meta,
+            **layout_meta,
+            "coordinates_basis": "rendered_input_image",
+            "coordinate_space": "pixels_and_normalized",
+        },
     }
 
 

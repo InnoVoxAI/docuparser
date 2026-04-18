@@ -24,6 +24,8 @@ class Transcription(BaseModel):
     fields: Dict[str, str]
     required_fields: List[str]
     field_validation: Dict[str, Any]
+    field_confidence: Optional[Dict[str, Any]] = None
+    low_confidence_fields: Optional[List[str]] = None
     field_score: float
     ocr_confidence: float
     final_score: float
@@ -35,6 +37,8 @@ class Transcription(BaseModel):
     raw_text: Optional[str] = None
     raw_text_fallback: Optional[str] = None
     ocr_meta: Optional[Dict[str, Any]] = None
+    field_positions: Optional[Dict[str, Any]] = None
+    field_positions_meta: Optional[Dict[str, Any]] = None
 
 
 class OCRResponse(BaseModel):

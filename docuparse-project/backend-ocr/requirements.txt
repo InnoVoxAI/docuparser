@@ -11,3 +11,4 @@ httpx==0.27.2
 openai==1.51.2
 paddleocr==2.8.1
 paddlepaddle==2.6.2
+easyocr==1.7.2

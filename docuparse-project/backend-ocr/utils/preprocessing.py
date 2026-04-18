@@ -200,6 +200,19 @@ def sharpen_moderate(image: np.ndarray) -> np.ndarray:
     return cv2.filter2D(image, -1, kernel)
 
 
+def enhance_blue_ink_light(image: np.ndarray) -> np.ndarray:
+    # Ajuste manuscrito: realça traços de caneta azul sem destruir texto impresso.
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    h_channel, s_channel, v_channel = cv2.split(hsv)
+
+    blue_mask = ((h_channel >= 80) & (h_channel <= 135)).astype(np.uint8)
+    s_channel = np.where(blue_mask > 0, np.clip(s_channel.astype(np.int16) + 35, 0, 255), s_channel).astype(np.uint8)
+    v_channel = np.where(blue_mask > 0, np.clip(v_channel.astype(np.int16) + 10, 0, 255), v_channel).astype(np.uint8)
+
+    boosted = cv2.merge((h_channel, s_channel, v_channel))
+    return cv2.cvtColor(boosted, cv2.COLOR_HSV2BGR)
+
+
 def upscale_if_low_resolution(image: np.ndarray, min_side: int = 1200, max_scale: float = 2.0) -> np.ndarray:
     h, w = image.shape[:2]
     current_min = min(h, w)
@@ -299,6 +312,30 @@ def preprocess_digital_pdf(image: np.ndarray) -> np.ndarray:
 def preprocess_for_paddle_engine(image_bytes: Any, classification: str = "") -> tuple[bytes, dict]:
     image = decode_image(image_bytes)
 
+    if classification in {"handwritten_complex", "handwritten"}:
+        # Ajuste manuscrito: pipeline preserva traço fino e tinta azul.
+        image = warp_perspective_if_photo(image)
+        image = deskew_simple(image)
+        image = enhance_blue_ink_light(image)
+        image = apply_clahe_local_contrast(image)
+        image = denoise_light(image)
+        image = sharpen_moderate(image)
+        image = upscale_if_low_resolution(image, min_side=1350, max_scale=2.2)
+
+        return encode_png_bytes(image), {
+            "engine_preprocessing": "paddleocr_handwritten",
+            "classification_hint": classification,
+            "steps": [
+                "warp_perspective_if_photo",
+                "deskew_simple",
+                "enhance_blue_ink_light",
+                "clahe_local_contrast",
+                "denoise_light",
+                "sharpen_moderate",
+                "upscale_if_low_resolution",
+            ],
+        }
+
     image = warp_perspective_if_photo(image)
     image = deskew_simple(image)
     image = apply_clahe_local_contrast(image)
@@ -324,6 +361,30 @@ def preprocess_for_paddle_engine(image_bytes: Any, classification: str = "") -> 
 
 def preprocess_for_easyocr_engine(image_bytes: Any, classification: str = "") -> tuple[bytes, dict]:
     image = decode_image(image_bytes)
+
+    if classification in {"handwritten_complex", "handwritten"}:
+        # Ajuste manuscrito: EasyOCR com preprocess direcionado a assinatura/anotações.
+        image = warp_perspective_if_photo(image)
+        image = deskew_simple(image)
+        image = enhance_blue_ink_light(image)
+        image = denoise_light(image)
+        image = apply_clahe_local_contrast(image)
+        image = sharpen_moderate(image)
+        image = upscale_if_low_resolution(image, min_side=1500, max_scale=2.4)
+
+        return encode_png_bytes(image), {
+            "engine_preprocessing": "easyocr_handwritten",
+            "classification_hint": classification,
+            "steps": [
+                "warp_perspective_if_photo",
+                "deskew_simple",
+                "enhance_blue_ink_light",
+                "denoise_light",
+                "clahe_local_contrast",
+                "sharpen_moderate",
+                "upscale_if_low_resolution",
+            ],
+        }
 
     image = denoise_moderate(image)
     image = apply_clahe_local_contrast(image)

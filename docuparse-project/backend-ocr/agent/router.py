@@ -13,17 +13,23 @@ from engines.docling_engine import DoclingEngine
 from engines.easyocr_engine import EasyOCREngine
 from engines.llamaparse_engine import LlamaParseEngine
 from engines.paddle_engine import PaddleOCREngine
+from engines.trocr_engine import TrOCREngine
 from engines.tesseract_engine import TesseractEngine
 from utils.preprocessing import (
+    decode_image,
+    encode_png_bytes,
     preprocess_for_deepseek_engine,
     preprocess_for_docling_engine,
     preprocess_for_easyocr_engine,
     preprocess_for_llamaparse_engine,
     preprocess_for_paddle_engine,
+    preprocess_for_trocr_engine,
+    segment_handwritten_regions,
 )
 from utils.validate_fields import (
     REQUIRED_FIELDS,
     compute_field_pipeline_quality,
+    extract_dynamic_document_fields,
     extract_avg_confidence,
     merge_field_confidence,
     merge_fields_by_validation,
@@ -43,7 +49,7 @@ logger = logging.getLogger(__name__)
 CAPABILITIES = {
     "digital_pdf": ["docling", "llamaparse"],
     "scanned_image": ["paddleocr", "easyocr"],
-    "handwritten_complex": ["paddleocr", "easyocr"]
+    "handwritten_complex": ["trocr", "paddleocr", "signature_tag", "easyocr"]
 }
 
 
@@ -91,6 +97,9 @@ def _run_engine_by_name(
     elif normalized_engine == "llamaparse":
         engine = LlamaParseEngine()
         result = engine.process(prepared_content)
+    elif normalized_engine == "trocr":
+        engine = TrOCREngine()
+        result = engine.process(prepared_content)
     else:
         raise ValueError(f"Unsupported fallback engine: {normalized_engine}")
 
@@ -111,7 +120,18 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
     logger.info("--- Engine selected: %s", resolved_engine)
 
     try:
-        if resolved_engine == "tesseract":
+        if classification == "handwritten_complex":
+            tools_used.extend(["region_segmentation", "paddleocr", "trocr"])
+            data, input_meta = _process_handwritten_complex_by_regions(content=content, filename=filename)
+            data["input_meta"] = input_meta
+            _log_main_flow(
+                classification=classification,
+                selected_engine="handwritten_region_pipeline",
+                input_meta=input_meta,
+                default_preprocessing="region_segmentation_then_specialized_ocr",
+            )
+
+        elif resolved_engine == "tesseract":
             tools_used.append("pytesseract")
             prepared_content, input_meta = _prepare_content_for_ocr(content, filename)
             _log_main_flow(
@@ -178,20 +198,44 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
             # TODO Verificar também se os campos críticos estão vazios, além da confiança, para acionar fallback.
             if should_trigger_fallback(data):
                 logger.warning(
-                    "PaddleOCR avg_confidence abaixo de 70%% (%.2f). Aplicando fallback EasyOCR.",
+                    "PaddleOCR avg_confidence abaixo de 70%% (%.2f). Aplicando fallback TrOCR (prioritário).",
                     extract_avg_confidence(data),
                 )
                 try:
-                    fallback_engine = EasyOCREngine()
-                    fallback_data = fallback_engine.process(prepared_content)
-                    fallback_data["input_meta"] = input_meta
-                    data = merge_fallback_result(data, fallback_data, primary_engine="paddleocr", fallback_engine="easyocr")
-                    tools_used.append("easyocr_fallback")
-                except Exception as fallback_err:
-                    tools_used.append("easyocr_fallback_unavailable")
-                    data["raw_text_fallback"] = (
-                        f"Fallback EasyOCR indisponível: {str(fallback_err)}"
+                    trocr_content, trocr_meta = _prepare_content_for_engine(
+                        content=content,
+                        filename=filename,
+                        classification=classification,
+                        engine_name="trocr",
                     )
+                    _log_main_flow(
+                        classification=classification,
+                        selected_engine="trocr_fallback",
+                        input_meta=trocr_meta,
+                    )
+                    fallback_engine = TrOCREngine()
+                    fallback_data = fallback_engine.process(trocr_content)
+                    fallback_data["input_meta"] = input_meta
+                    fallback_data["input_meta_fallback"] = trocr_meta
+                    data = merge_fallback_result(data, fallback_data, primary_engine="paddleocr", fallback_engine="trocr")
+                    tools_used.append("trocr_fallback")
+                except Exception as trocr_fallback_err:
+                    logger.warning(
+                        "TrOCR fallback indisponível (%s). Aplicando fallback EasyOCR como contingência.",
+                        str(trocr_fallback_err),
+                    )
+                    try:
+                        fallback_engine = EasyOCREngine()
+                        fallback_data = fallback_engine.process(prepared_content)
+                        fallback_data["input_meta"] = input_meta
+                        data = merge_fallback_result(data, fallback_data, primary_engine="paddleocr", fallback_engine="easyocr")
+                        tools_used.append("easyocr_fallback_contingency")
+                    except Exception as fallback_err:
+                        tools_used.append("ocr_fallback_unavailable")
+                        data["raw_text_fallback"] = (
+                            "Fallback TrOCR indisponível; fallback EasyOCR também falhou: "
+                            f"{str(fallback_err)}"
+                        )
 
         elif resolved_engine in {"paddle_deepseek", "paddle_easyocr"}:
             tools_used.append("paddleocr")
@@ -394,9 +438,28 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
     field_quality["fallback_engine"] = ""
     field_quality["fields_from_fallback"] = []
 
+    logger.info(
+        "FIELD_FALLBACK_CHECK | needed=%s | classification=%s | primary_engine=%s | final_score=%.4f",
+        field_quality.get("fallback_needed"),
+        classification,
+        resolved_engine,
+        float(field_quality.get("final_score", 0.0)),
+    )
+
     if field_quality["fallback_needed"]:
         fallback_engine_name = resolve_field_fallback_engine(classification, resolved_engine)
+
+        # TrOCR prioritário para documentos manuscritos complexos.
+        if classification == "handwritten_complex" and fallback_engine_name in {None, "easyocr", "paddle"}:
+            fallback_engine_name = "trocr"
+
         if fallback_engine_name:
+            logger.info(
+                "FIELD_FALLBACK_START | classification=%s | primary_engine=%s | fallback_engine=%s",
+                classification,
+                resolved_engine,
+                fallback_engine_name,
+            )
             try:
                 fallback_data = _run_engine_by_name(
                     engine_name=fallback_engine_name,
@@ -433,6 +496,14 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                     field_quality["fallback_engine"] = fallback_engine_name
                     field_quality["fields_from_fallback"] = fields_from_fallback
 
+                    logger.info(
+                        "FIELD_FALLBACK_RESULT | fallback_engine=%s | fields_from_fallback=%s | merged_final_score=%.4f | source=%s",
+                        fallback_engine_name,
+                        fields_from_fallback,
+                        float(field_quality.get("final_score", 0.0)),
+                        field_quality.get("source"),
+                    )
+
                     if fields_from_fallback:
                         data = merge_fallback_result(
                             data,
@@ -442,6 +513,10 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                         )
                         tools_used.append(f"{fallback_engine_name}_field_fallback")
                 else:
+                    logger.warning(
+                        "FIELD_FALLBACK_ENGINE_ERROR | fallback_engine=%s | reason=engine_error_payload",
+                        fallback_engine_name,
+                    )
                     field_quality["fallback_engine"] = fallback_engine_name
                     field_quality["source"] = "primary"
             except Exception as fallback_error:
@@ -453,6 +528,32 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                 field_quality["fallback_engine"] = fallback_engine_name
                 field_quality["source"] = "primary"
                 field_quality["fallback_error"] = str(fallback_error)
+        else:
+            logger.info(
+                "FIELD_FALLBACK_SKIPPED | reason=no_engine_mapping | classification=%s | primary_engine=%s",
+                classification,
+                resolved_engine,
+            )
+    else:
+        logger.info(
+            "FIELD_FALLBACK_SKIPPED | reason=quality_ok | classification=%s | primary_engine=%s",
+            classification,
+            resolved_engine,
+        )
+
+    dynamic_fields = extract_dynamic_document_fields(
+        data=data,
+        base_fields=field_quality.get("fields", {}),
+        classification=classification,
+        engine_name=resolved_engine,
+    )
+    field_quality["dynamic_fields"] = dynamic_fields
+    logger.info(
+        "DYNAMIC_FIELDS | total=%d | classification=%s | engine=%s",
+        len(dynamic_fields),
+        classification,
+        resolved_engine,
+    )
 
     # Standardization
     normalized_data = _normalize_output(data, field_quality)
@@ -507,7 +608,7 @@ def _resolve_engine(classification: str, selected_engine: str | None) -> str:
         return "paddle"
 
     if classification == "handwritten_complex":
-        return "paddle_easyocr"
+        return "handwritten_region"
 
     return "tesseract"
 
@@ -604,6 +705,8 @@ def _prepare_content_for_engine(
         processed_content, preprocess_meta = preprocess_for_docling_engine(base_content, classification=classification)
     elif normalized_engine == "llamaparse":
         processed_content, preprocess_meta = preprocess_for_llamaparse_engine(base_content, classification=classification)
+    elif normalized_engine == "trocr":
+        processed_content, preprocess_meta = preprocess_for_trocr_engine(base_content, classification=classification)
     else:
         return base_content, {
             **base_meta,
@@ -615,6 +718,111 @@ def _prepare_content_for_engine(
         **preprocess_meta,
         "classification_preprocessing_hints": classification_hints,
     }
+
+
+def _process_handwritten_complex_by_regions(content: bytes, filename: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    prepared_content, base_meta = _prepare_content_for_ocr(content, filename)
+    image_bgr = decode_image(prepared_content)
+
+    # PASSO CRÍTICO: segmenta e classifica regiões antes de executar OCR.
+    regions = segment_handwritten_regions(image_bgr)
+
+    paddle_engine = PaddleOCREngine()
+    trocr_engine = TrOCREngine()
+
+    merged_text_parts: List[str] = []
+    region_outputs: List[Dict[str, Any]] = []
+    region_confidences: List[float] = []
+
+    for region in regions:
+        region_type = str(region.get("type") or "printed").strip().lower()
+        bbox = region.get("bbox") if isinstance(region.get("bbox"), dict) else {}
+        region_image = region.get("image")
+
+        if not isinstance(region_image, np.ndarray) or region_image.size == 0:
+            continue
+
+        text_output = ""
+        used_engine = ""
+
+        try:
+            if region_type == "signature":
+                text_output = "[ASSINATURA]"
+                used_engine = "signature_tag"
+                region_confidences.append(100.0)
+
+            elif region_type == "handwritten":
+                trocr_result = trocr_engine.process_region(region_image)
+                text_output = str(trocr_result.get("text") or "").strip()
+                used_engine = "trocr"
+                region_confidences.append(90.0 if text_output else 0.0)
+
+            else:
+                region_bytes = encode_png_bytes(region_image)
+                processed_bytes, _ = preprocess_for_paddle_engine(
+                    region_bytes,
+                    classification="scanned_image",
+                )
+                paddle_result = paddle_engine.process(processed_bytes)
+                text_output = str(paddle_result.get("raw_text") or paddle_result.get("raw_text_fallback") or "").strip()
+                used_engine = "paddleocr"
+                region_meta = paddle_result.get("_meta") if isinstance(paddle_result.get("_meta"), dict) else {}
+                region_confidences.append(float(region_meta.get("avg_confidence") or 0.0))
+
+        except Exception as region_error:
+            logger.warning(
+                "Region OCR failed | type=%s | bbox=%s | reason=%s",
+                region_type,
+                bbox,
+                str(region_error),
+            )
+            text_output = ""
+            used_engine = f"{region_type}_error"
+            region_confidences.append(0.0)
+
+        if text_output:
+            merged_text_parts.append(text_output)
+
+        region_outputs.append(
+            {
+                "id": region.get("id"),
+                "type": region_type,
+                "bbox": bbox,
+                "engine": used_engine,
+                "text": text_output,
+            }
+        )
+
+    merged_text = " ".join(part for part in merged_text_parts if part).strip()
+    avg_confidence = float(np.mean(region_confidences)) if region_confidences else 0.0
+
+    data: Dict[str, Any] = {
+        "raw_text": merged_text,
+        "raw_text_fallback": merged_text or "Pipeline regional para manuscrito não extraiu texto suficiente.",
+        "document_info": {},
+        "entities": {},
+        "tables": [],
+        "totals": {},
+        "_meta": {
+            "engine": "handwritten_region_pipeline",
+            "avg_confidence": round(avg_confidence, 2),
+            "fallback_recommended": avg_confidence < 70.0,
+            "segmentation": {
+                "total_regions": len(region_outputs),
+                "printed_regions": sum(1 for item in region_outputs if item.get("type") == "printed"),
+                "handwritten_regions": sum(1 for item in region_outputs if item.get("type") == "handwritten"),
+                "signature_regions": sum(1 for item in region_outputs if item.get("type") == "signature"),
+                "regions": region_outputs,
+            },
+        },
+    }
+
+    input_meta = {
+        **base_meta,
+        "engine_preprocessing": "handwritten_region_pipeline",
+        "segmentation_enabled": True,
+    }
+    return data, input_meta
 
 
 def _build_pdf_parser_meta(content: bytes, engine_name: str) -> Dict[str, Any]:
@@ -672,11 +880,19 @@ def _normalize_output(data: Dict[str, Any], field_quality: Dict[str, Any] | None
     Ensures the output follows the strict JSON schema.
     """
     field_quality = field_quality or {}
-    fields = field_quality.get("fields") if isinstance(field_quality.get("fields"), dict) else {}
-    normalized_fields = {
-        field_name: str(fields.get(field_name) or "").strip()
-        for field_name in [*REQUIRED_FIELDS, "cnpj_tomador"]
-    }
+    dynamic_fields = field_quality.get("dynamic_fields") if isinstance(field_quality.get("dynamic_fields"), dict) else {}
+    if dynamic_fields:
+        normalized_fields = {
+            str(field_name).strip(): str(field_value or "").strip()
+            for field_name, field_value in dynamic_fields.items()
+            if str(field_name or "").strip() and str(field_value or "").strip()
+        }
+    else:
+        fields = field_quality.get("fields") if isinstance(field_quality.get("fields"), dict) else {}
+        normalized_fields = {
+            field_name: str(fields.get(field_name) or "").strip()
+            for field_name in [*REQUIRED_FIELDS, "cnpj_tomador"]
+        }
 
     return {
         "fields": normalized_fields,

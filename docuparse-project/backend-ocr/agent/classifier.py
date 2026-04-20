@@ -32,6 +32,8 @@ CLASSIFICATION_ENGINE_PREPROCESSING_HINTS = {
     CLASS_HANDWRITTEN_COMPLEX: {
         "easyocr": "denoise_contrast_deskew_upscale_handwritten",
         "paddle": "natural_rgb_with_clahe_and_light_deskew",
+        "trocr": "natural_image_denoise_clahe_blueink_resize",
+        "handwritten_region": "segment_regions_then_specialized_ocr",
     },
 }
 

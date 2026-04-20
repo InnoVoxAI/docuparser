@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Tuple
 import re
+import unicodedata
 
 
 REQUIRED_FIELDS = [
@@ -71,6 +72,17 @@ COMPANY_HINT_TOKENS = [
     "comercio",
     "servicos",
 ]
+
+
+DYNAMIC_FIELD_LABEL_STOPWORDS = {
+    "nfs-e",
+    "nfse",
+    "danfse",
+    "servico prestado",
+    "tributacao municipal",
+    "tributacao federal",
+    "informacoes complementares",
+}
 
 
 def _normalize_digits(value: str) -> str:
@@ -520,6 +532,310 @@ def _pick_best_candidate(candidates: List[Tuple[str, float]]) -> Tuple[str, floa
     return "", 0.0
 
 
+def _normalize_dynamic_field_key(label: str) -> str:
+    normalized = unicodedata.normalize("NFD", str(label or "").lower())
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = re.sub(r"[^a-z0-9]+", "_", normalized)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+
+    if not normalized:
+        return ""
+
+    if normalized[0].isdigit():
+        normalized = f"campo_{normalized}"
+
+    return normalized[:64]
+
+
+def _is_dynamic_label_candidate(label: str) -> bool:
+    cleaned = _clean_line(label)
+    if len(cleaned) < 2 or len(cleaned) > 80:
+        return False
+
+    lowered = cleaned.lower()
+    lowered_normalized = unicodedata.normalize("NFD", lowered)
+    lowered_normalized = "".join(
+        char for char in lowered_normalized if unicodedata.category(char) != "Mn"
+    )
+
+    if lowered_normalized in DYNAMIC_FIELD_LABEL_STOPWORDS:
+        return False
+
+    if re.fullmatch(r"[\d\W_]+", cleaned):
+        return False
+
+    if sum(1 for char in cleaned if char.isalpha()) < 2:
+        return False
+
+    return True
+
+
+def _insert_dynamic_field(result: Dict[str, str], key: str, value: str) -> None:
+    if key not in result:
+        result[key] = value
+        return
+
+    if result[key] == value:
+        return
+
+    suffix = 2
+    while f"{key}_{suffix}" in result:
+        if result[f"{key}_{suffix}"] == value:
+            return
+        suffix += 1
+
+    result[f"{key}_{suffix}"] = value
+
+
+def _is_dynamic_value_plausible(field_key: str, field_value: str) -> bool:
+    value = _clean_line(field_value)
+    if not value:
+        return False
+
+    # Descarta ruído típico de OCR (ex.: "e" isolado em labels com NFS-e).
+    if len(value) == 1 and value.isalpha():
+        return False
+
+    key = str(field_key or "").lower()
+    digits = _normalize_digits(value)
+
+    if "chave_de_acesso" in key and len(digits) < 20:
+        return False
+
+    if "cnpj" in key and digits and len(digits) != 14:
+        return False
+
+    if "numero_da_nfs" in key and len(digits) == 0:
+        return False
+
+    return True
+
+
+def _extract_dynamic_fields_from_raw_text(raw_text: str, max_fields: int) -> Dict[str, str]:
+    extracted: Dict[str, str] = {}
+    if not raw_text.strip():
+        return extracted
+
+    label_colon_pattern = re.compile(
+        r"^([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9\s()/%\-.]{1,80})\s*:\s*(.+)$"
+    )
+    label_dash_pattern = re.compile(
+        r"^([A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9\s()/%\-.]{1,80})\s+-\s+(.+)$"
+    )
+
+    for raw_line in raw_text.splitlines():
+        line = _clean_line(raw_line)
+        if not line:
+            continue
+
+        match = label_colon_pattern.match(line)
+        if not match:
+            match = label_dash_pattern.match(line)
+        if not match:
+            continue
+
+        label = _clean_line(match.group(1))
+        value = _clean_line(match.group(2))
+
+        if not value or _is_header_like_value(value):
+            continue
+
+        if not _is_dynamic_label_candidate(label):
+            continue
+
+        key = _normalize_dynamic_field_key(label)
+        if not key:
+            continue
+
+        if not _is_dynamic_value_plausible(key, value):
+            continue
+
+        if len(value) > 500:
+            value = value[:500].strip()
+
+        _insert_dynamic_field(extracted, key, value)
+        if len(extracted) >= max_fields:
+            break
+
+    return extracted
+
+
+def _normalize_search_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", str(value or "").lower())
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def _extract_nfse_access_key(lines: List[str], start_idx: int) -> str:
+    for probe_idx in range(start_idx, min(len(lines), start_idx + 5)):
+        digits = _normalize_digits(lines[probe_idx])
+        if len(digits) >= 44:
+            return digits
+
+        inline_match = re.search(r"\b\d{44}\b", lines[probe_idx])
+        if inline_match:
+            return inline_match.group(0)
+
+    return ""
+
+
+def _is_probable_multiline_label(label: str) -> bool:
+    cleaned = _clean_line(label)
+    if not _is_dynamic_label_candidate(cleaned):
+        return False
+
+    if ":" in cleaned or re.search(r"\s+-\s+", cleaned):
+        return False
+
+    # Linha predominantemente numérica tende a ser valor, não rótulo.
+    digits = _normalize_digits(cleaned)
+    if digits and len(digits) >= max(8, int(len(cleaned) * 0.4)):
+        return False
+
+    if re.search(r"R\$\s*[\d\.,]+", cleaned, flags=re.IGNORECASE):
+        return False
+
+    return True
+
+
+def _extract_dynamic_fields_for_docling_digital_pdf(raw_text: str, max_fields: int) -> Dict[str, str]:
+    extracted: Dict[str, str] = {}
+    lines = [_clean_line(line) for line in raw_text.splitlines() if _clean_line(line)]
+    if not lines:
+        return extracted
+
+    for idx, line in enumerate(lines):
+        if len(extracted) >= max_fields:
+            break
+
+        normalized_line = _normalize_search_text(line)
+        if "chave de acesso" in normalized_line and ("nfs-e" in normalized_line or "nfse" in normalized_line):
+            access_key = _extract_nfse_access_key(lines, idx)
+            if access_key:
+                _insert_dynamic_field(extracted, "chave_de_acesso_da_nfs_e", access_key)
+
+    for idx, line in enumerate(lines):
+        if len(extracted) >= max_fields:
+            break
+
+        if not _is_probable_multiline_label(line):
+            continue
+
+        key = _normalize_dynamic_field_key(line)
+        if not key:
+            continue
+
+        value = ""
+        for probe_idx in range(idx + 1, min(len(lines), idx + 4)):
+            candidate = _clean_line(lines[probe_idx])
+            if not candidate:
+                continue
+
+            if _is_probable_multiline_label(candidate):
+                break
+
+            if _is_header_like_value(candidate):
+                continue
+
+            value = candidate
+            break
+
+        if not value:
+            continue
+
+        if len(value) > 500:
+            value = value[:500].strip()
+
+        if not _is_dynamic_value_plausible(key, value):
+            continue
+
+        _insert_dynamic_field(extracted, key, value)
+
+    return extracted
+
+
+def _extract_dynamic_fields_from_structured_sources(data: Dict[str, Any], max_fields: int) -> Dict[str, str]:
+    extracted: Dict[str, str] = {}
+
+    for source_name in ["document_info", "entities", "totals"]:
+        source_data = data.get(source_name)
+        if not isinstance(source_data, dict):
+            continue
+
+        for field_name, field_value in source_data.items():
+            if isinstance(field_value, (dict, list, tuple, set)):
+                continue
+
+            value = _clean_line(field_value)
+            if not value:
+                continue
+
+            key = _normalize_dynamic_field_key(field_name)
+            if not key:
+                continue
+
+            if not _is_dynamic_value_plausible(key, value):
+                continue
+
+            _insert_dynamic_field(extracted, key, value)
+            if len(extracted) >= max_fields:
+                return extracted
+
+    return extracted
+
+
+def extract_dynamic_document_fields(
+    data: Dict[str, Any],
+    base_fields: Dict[str, str] | None = None,
+    classification: str | None = None,
+    engine_name: str | None = None,
+    max_fields: int = 120,
+) -> Dict[str, str]:
+    dynamic_fields: Dict[str, str] = {}
+
+    if isinstance(base_fields, dict):
+        for field_name, field_value in base_fields.items():
+            key = str(field_name or "").strip()
+            value = _clean_line(field_value)
+            if key and value:
+                dynamic_fields[key] = value
+
+    raw_text = _get_raw_text(data)
+
+    meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
+    resolved_classification = str(classification or meta.get("document_type") or "").strip().lower()
+    resolved_engine_name = str(engine_name or meta.get("engine") or "").strip().lower()
+
+    if resolved_classification == "digital_pdf" and resolved_engine_name == "docling":
+        from_docling_pdf = _extract_dynamic_fields_for_docling_digital_pdf(
+            raw_text,
+            max_fields=max_fields,
+        )
+        for field_name, field_value in from_docling_pdf.items():
+            if len(dynamic_fields) >= max_fields:
+                break
+            _insert_dynamic_field(dynamic_fields, field_name, field_value)
+
+    from_text = _extract_dynamic_fields_from_raw_text(raw_text, max_fields=max_fields)
+    for field_name, field_value in from_text.items():
+        if len(dynamic_fields) >= max_fields:
+            break
+        _insert_dynamic_field(dynamic_fields, field_name, field_value)
+
+    if len(dynamic_fields) < max_fields:
+        from_structured = _extract_dynamic_fields_from_structured_sources(
+            data,
+            max_fields=max_fields - len(dynamic_fields),
+        )
+        for field_name, field_value in from_structured.items():
+            if len(dynamic_fields) >= max_fields:
+                break
+            _insert_dynamic_field(dynamic_fields, field_name, field_value)
+
+    return dynamic_fields
+
+
 def extract_critical_fields(data: Dict[str, Any]) -> Dict[str, str]:
     fields, _ = extract_critical_fields_with_confidence(data)
     return fields
@@ -799,8 +1115,10 @@ def resolve_field_fallback_engine(classification: str, primary_engine: str) -> s
     alternatives = {
         "llamaparse": "docling",
         "easyocr": "tesseract",
+        "trocr": "easyocr",
         "deepseek": "paddle",
         "paddle": "easyocr",
+        "handwritten_region": "easyocr",
         "docling": "llamaparse",
         "tesseract": "easyocr",
     }
@@ -808,6 +1126,8 @@ def resolve_field_fallback_engine(classification: str, primary_engine: str) -> s
     normalized_primary = primary_engine.lower().strip()
     if normalized_primary in {"paddle_deepseek", "paddle_easyocr"}:
         normalized_primary = "paddle"
+    if normalized_primary in {"handwritten_region_pipeline", "handwritten_region"}:
+        normalized_primary = "handwritten_region"
 
     candidate = preferred.get(classification)
     if not candidate:

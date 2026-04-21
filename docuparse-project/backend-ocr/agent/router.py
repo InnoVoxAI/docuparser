@@ -25,6 +25,7 @@ from utils.preprocessing import (
     preprocess_for_paddle_engine,
     preprocess_for_trocr_engine,
     segment_handwritten_regions,
+    segment_text_lines,
 )
 from utils.validate_fields import (
     REQUIRED_FIELDS,
@@ -98,8 +99,7 @@ def _run_engine_by_name(
         engine = LlamaParseEngine()
         result = engine.process(prepared_content)
     elif normalized_engine == "trocr":
-        engine = TrOCREngine()
-        result = engine.process(prepared_content)
+        result = _process_trocr_page(prepared_content, classification)
     else:
         raise ValueError(f"Unsupported fallback engine: {normalized_engine}")
 
@@ -213,8 +213,7 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                         selected_engine="trocr_fallback",
                         input_meta=trocr_meta,
                     )
-                    fallback_engine = TrOCREngine()
-                    fallback_data = fallback_engine.process(trocr_content)
+                    fallback_data = _process_trocr_page(trocr_content, classification)
                     fallback_data["input_meta"] = input_meta
                     fallback_data["input_meta_fallback"] = trocr_meta
                     data = merge_fallback_result(data, fallback_data, primary_engine="paddleocr", fallback_engine="trocr")
@@ -403,6 +402,18 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
                 input_meta=input_meta,
             )
             data = engine.process(prepared_content)
+            data["input_meta"] = input_meta
+
+        elif resolved_engine == "trocr":
+            tools_used.append("trocr")
+            prepared_content, input_meta = _prepare_content_for_ocr(content, filename)
+            _log_main_flow(
+                classification=classification,
+                selected_engine=resolved_engine,
+                input_meta=input_meta,
+                default_preprocessing="trocr_region_pipeline",
+            )
+            data = _process_trocr_page(prepared_content, classification)
             data["input_meta"] = input_meta
 
         else:
@@ -823,6 +834,91 @@ def _process_handwritten_complex_by_regions(content: bytes, filename: str) -> Tu
         "segmentation_enabled": True,
     }
     return data, input_meta
+
+
+def _process_trocr_page(prepared_bytes: bytes, classification: str) -> Dict[str, Any]:
+    """
+    Full-page TrOCR: segments the image into regions, then into text lines,
+    and runs TrOCR on each line crop. TrOCR is designed for single-line input —
+    feeding it a full page produces garbage (hence the "0 1" symptom).
+    """
+    image_bgr = decode_image(prepared_bytes)
+    regions = segment_handwritten_regions(image_bgr)
+
+    trocr_engine = TrOCREngine()
+    merged_text_parts: List[str] = []
+    region_outputs: List[Dict[str, Any]] = []
+    region_confidences: List[float] = []
+
+    for region in regions:
+        region_type = str(region.get("type") or "printed").strip().lower()
+        bbox = region.get("bbox") if isinstance(region.get("bbox"), dict) else {}
+        region_image = region.get("image")
+
+        if not isinstance(region_image, np.ndarray) or region_image.size == 0:
+            continue
+
+        text_output = ""
+        used_engine = "trocr"
+
+        try:
+            if region_type == "signature":
+                text_output = "[ASSINATURA]"
+                used_engine = "signature_tag"
+                region_confidences.append(100.0)
+            else:
+                # Segment region into individual lines before feeding to TrOCR.
+                line_crops = segment_text_lines(region_image)
+                line_texts: List[str] = []
+                for line_crop in line_crops:
+                    line_result = trocr_engine.process_region(line_crop)
+                    line_text = str(line_result.get("text") or "").strip()
+                    if line_text:
+                        line_texts.append(line_text)
+                text_output = " ".join(line_texts).strip()
+                region_confidences.append(90.0 if text_output else 0.0)
+        except Exception as region_error:
+            logger.warning(
+                "TrOCR page region failed | type=%s | bbox=%s | reason=%s",
+                region_type,
+                bbox,
+                str(region_error),
+            )
+            text_output = ""
+            used_engine = f"{region_type}_error"
+            region_confidences.append(0.0)
+
+        if text_output:
+            merged_text_parts.append(text_output)
+
+        region_outputs.append({
+            "id": region.get("id"),
+            "type": region_type,
+            "bbox": bbox,
+            "engine": used_engine,
+            "text": text_output,
+        })
+
+    merged_text = " ".join(part for part in merged_text_parts if part).strip()
+    avg_confidence = float(np.mean(region_confidences)) if region_confidences else 0.0
+
+    return {
+        "raw_text": merged_text,
+        "raw_text_fallback": merged_text or "TrOCR não extraiu texto suficiente da imagem.",
+        "document_info": {},
+        "entities": {},
+        "tables": [],
+        "totals": {},
+        "_meta": {
+            "engine": "trocr",
+            "avg_confidence": round(avg_confidence, 2),
+            "fallback_recommended": avg_confidence < 70.0,
+            "segmentation": {
+                "total_regions": len(region_outputs),
+                "regions": region_outputs,
+            },
+        },
+    }
 
 
 def _build_pdf_parser_meta(content: bytes, engine_name: str) -> Dict[str, Any]:

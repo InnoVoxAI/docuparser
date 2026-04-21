@@ -40,25 +40,25 @@ class TrOCREngine:
 
 	@staticmethod
 	def _normalize_text(text: str) -> str:
-		# PASSO CRÍTICO: normaliza ambiguidades OCR em tokens numéricos.
 		if not text:
 			return ""
 
-		replacements = {
-			"O": "0",
-			"I": "1",
-			"S": "5",
-			"o": "0",
-			"i": "1",
-			"s": "5",
-		}
+		# Only normalize tokens that look like numeric identifiers (CNPJs, RGs, etc.).
+		# Tokens with regular alphabetic content are left completely untouched to avoid
+		# destroying handwritten words (e.g. "Recibo", "servico").
+		digit_substitutions = {"O": "0", "o": "0", "I": "1", "l": "1", "S": "5", "B": "8", "Z": "2"}
+		numeric_candidate_chars = set("0123456789/.-,") | set(digit_substitutions.keys())
 
 		tokens = text.split()
 		normalized_tokens = []
 		for token in tokens:
-			has_digit_or_symbol = bool(re.search(r"[\d/\-.]", token))
-			if has_digit_or_symbol:
-				token = "".join(replacements.get(char, char) for char in token)
+			is_numeric_identifier = (
+				len(token) >= 2
+				and any(c.isdigit() for c in token)
+				and all(c in numeric_candidate_chars for c in token)
+			)
+			if is_numeric_identifier:
+				token = "".join(digit_substitutions.get(c, c) for c in token)
 			normalized_tokens.append(token)
 
 		return " ".join(normalized_tokens).strip()
@@ -117,9 +117,19 @@ class TrOCREngine:
 		image_bgr = self._decode_to_bgr(source_for_ocr)
 		region_result = self.process_region(image_bgr)
 		text = str(region_result.get("text") or "").strip()
+		token_count = len([token for token in text.split() if token.strip()])
 
 		total_ocr_seconds = time.perf_counter() - process_start
-		heuristic_confidence = 92.0 if text else 0.0
+		if not text:
+			heuristic_confidence = 0.0
+		elif len(text) < 20 or token_count < 4:
+			heuristic_confidence = 45.0
+		elif len(text) < 80 or token_count < 10:
+			heuristic_confidence = 70.0
+		else:
+			heuristic_confidence = 88.0
+
+		fallback_recommended = heuristic_confidence < 70.0
 
 		return {
 			"raw_text": text,
@@ -133,6 +143,6 @@ class TrOCREngine:
 				"avg_confidence": round(heuristic_confidence, 2),
 				"ocr_time_seconds": round(total_ocr_seconds, 4),
 				"text_length": len(text),
-				"fallback_recommended": len(text) == 0,
+				"fallback_recommended": fallback_recommended,
 			},
 		}

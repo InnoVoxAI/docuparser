@@ -444,6 +444,45 @@ def segment_handwritten_regions(image: np.ndarray) -> List[Dict[str, Any]]:
     ]
 
 
+def segment_text_lines(region_image: np.ndarray, min_line_height: int = 8, gap_threshold: int = 2) -> List[np.ndarray]:
+    """Split a region into individual line crops via horizontal projection for line-level OCR."""
+    image = _ensure_bgr(region_image)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    _, binary_inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    h_proj = np.sum(binary_inv > 0, axis=1)
+
+    kernel_size = max(1, min_line_height // 2)
+    smoothed = np.convolve(h_proj, np.ones(kernel_size) / kernel_size, mode="same")
+    in_text = smoothed > gap_threshold
+
+    line_slices: List[tuple] = []
+    start = None
+    for row_idx in range(len(in_text)):
+        if in_text[row_idx] and start is None:
+            start = row_idx
+        elif not in_text[row_idx] and start is not None:
+            if row_idx - start >= min_line_height:
+                line_slices.append((start, row_idx))
+            start = None
+    if start is not None and len(in_text) - start >= min_line_height:
+        line_slices.append((start, len(in_text)))
+
+    if not line_slices:
+        return [image]
+
+    lines: List[np.ndarray] = []
+    for y0, y1 in line_slices:
+        margin = 3
+        y0_m = max(0, y0 - margin)
+        y1_m = min(image.shape[0], y1 + margin)
+        line_crop = image[y0_m:y1_m, :]
+        if line_crop.size > 0:
+            lines.append(line_crop)
+
+    return lines if lines else [image]
+
+
 def upscale_if_low_resolution(image: np.ndarray, min_side: int = 1200, max_scale: float = 2.0) -> np.ndarray:
     h, w = image.shape[:2]
     current_min = min(h, w)

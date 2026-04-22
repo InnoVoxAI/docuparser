@@ -361,6 +361,11 @@ def _classify_region(region_image: np.ndarray) -> str:
     if (edge_variance >= 90.0 and edge_density >= 0.08) or (ink_density >= 0.22 and edge_variance >= 70.0):
         return "handwritten"
 
+    # Misto: rótulos impressos com preenchimento manuscrito (ex.: "Eu, [NOME], CPF [DÍGITOS]").
+    # Irregularidade moderada que não atinge limiares de manuscrito puro.
+    # if edge_variance >= 50.0 and edge_density >= 0.04 and ink_density >= 0.03:
+    #     return "mixed"
+
     return "printed"
 
 

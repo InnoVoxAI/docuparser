@@ -25,7 +25,11 @@ class Transcription(BaseModel):
     required_fields: List[str]
     field_validation: Dict[str, Any]
     field_confidence: Optional[Dict[str, Any]] = None
+    critical_field_scores: Optional[Dict[str, float]] = None
     low_confidence_fields: Optional[List[str]] = None
+    low_confidence_critical_fields: Optional[Dict[str, str]] = None
+    low_confidence_threshold: Optional[float] = None
+    llm_should_run: Optional[bool] = None
     field_score: float
     ocr_confidence: float
     final_score: float

@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 # Capabilities Dictionary
 CAPABILITIES = {
     "digital_pdf": ["docling", "llamaparse"],
-    "scanned_image": ["paddleocr", "easyocr"],
+    "scanned_image": ["trocr", "paddleocr", "easyocr"],
     "handwritten_complex": ["trocr", "paddleocr", "signature_tag", "easyocr"]
 }
 
@@ -396,7 +396,12 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
 
         elif resolved_engine == "trocr":
             tools_used.append("trocr")
-            prepared_content, input_meta = _prepare_content_for_ocr(content, filename)
+            prepared_content, input_meta = _prepare_content_for_engine(
+                content=content,
+                filename=filename,
+                classification=classification,
+                engine_name="trocr",
+            )
             _log_main_flow(
                 classification=classification,
                 selected_engine=resolved_engine,

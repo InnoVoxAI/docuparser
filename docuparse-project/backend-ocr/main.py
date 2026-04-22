@@ -1,5 +1,4 @@
 import time
-import importlib.util
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -66,17 +65,16 @@ def health_check():
 
 @app.get("/engines", response_model=List[EngineOption])
 def list_engines():
-    # Keep this list simple and explicit for the UI dropdown.
     engines = [
+        {"value": "trocr", "label": "TrOCR"},
+        {"value": "paddle", "label": "PaddleOCR"},
+        {"value": "easyocr", "label": "EasyOCR"},
         {"value": "tesseract", "label": "Tesseract"},
         {"value": "docling", "label": "Docling"},
-        {"value": "deepseek", "label": "DeepSeek"},
         {"value": "llamaparse", "label": "LlamaParse"},
+        {"value": "deepseek", "label": "DeepSeek"},
+        {"value": "paddle_easyocr", "label": "Paddle + EasyOCR (híbrido)"},
     ]
-
-    if importlib.util.find_spec("easyocr") is not None:
-        engines.insert(1, {"value": "easyocr", "label": "EasyOCR"})
-
     return engines
 
 

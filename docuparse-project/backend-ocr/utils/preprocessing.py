@@ -329,11 +329,20 @@ def _is_signature_like(region_gray: np.ndarray, binary_inv: np.ndarray) -> bool:
     edge_density = float(np.count_nonzero(edges)) / float(edges.size)
     lap_var = float(cv2.Laplacian(region_gray, cv2.CV_64F).var())
 
+    # Printed text lines have many connected components per unit width (one per character/stroke).
+    # Signatures have few, larger irregular strokes — typically 1–4 per 100px of width.
+    # This is the key discriminator: a text line "Valor: R$ 150,00" at scan resolution
+    # will have ~8+ components/100px; a cursive signature will have ~1–3.
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_inv, connectivity=8)
+    valid_components = sum(1 for i in range(1, num_labels) if stats[i, cv2.CC_STAT_AREA] >= 12)
+    components_per_100px = float(valid_components) / max(1.0, w / 100.0)
+
     return (
         aspect_ratio >= 2.4
-        and 0.01 <= ink_density <= 0.25
-        and 0.01 <= edge_density <= 0.18
+        and 0.01 <= ink_density <= 0.20
+        and 0.01 <= edge_density <= 0.15
         and lap_var >= 25.0
+        and components_per_100px <= 4.0
     )
 
 

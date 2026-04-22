@@ -820,23 +820,6 @@ def _process_handwritten_complex_by_regions(content: bytes, filename: str) -> Tu
                 used_engine = "trocr"
                 region_confidences.append(90.0 if text_output else 0.0)
 
-            # elif region_type == "mixed":
-            #     # Rótulos impressos + preenchimento manuscrito: EasyOCR cobre ambos melhor que TrOCR ou Paddle isolados.
-            #     region_bytes = encode_png_bytes(region_image)
-            #     processed_bytes, _ = preprocess_for_easyocr_engine(region_bytes, classification="scanned_image")
-            #     try:
-            #         easy_engine_local = EasyOCREngine()
-            #         easy_result = easy_engine_local.process(processed_bytes)
-            #         text_output = str(easy_result.get("raw_text") or "").strip()
-            #         used_engine = "easyocr_mixed"
-            #         easy_meta = easy_result.get("_meta") if isinstance(easy_result.get("_meta"), dict) else {}
-            #         region_confidences.append(float(easy_meta.get("avg_confidence") or 0.0))
-            #     except Exception as mix_err:
-            #         logger.warning("EasyOCR for mixed region failed (%s); falling back to TrOCR.", mix_err)
-            #         trocr_result = trocr_engine.process_region(region_image)
-            #         text_output = str(trocr_result.get("text") or "").strip()
-            #         used_engine = "trocr_mixed_fallback"
-            #         region_confidences.append(70.0 if text_output else 0.0)
 
             else:
                 region_bytes = encode_png_bytes(region_image)

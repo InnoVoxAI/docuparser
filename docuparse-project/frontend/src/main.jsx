@@ -575,6 +575,24 @@ function App() {
                             <div className="max-h-[620px] overflow-auto rounded-lg border border-slate-700 bg-slate-950/70">
                                 {activeTab === RESULT_TABS.FIELDS && (
                                     <div className="p-4">
+                                        {/* Indicador de confiança baseado no final_score: < 0.75 → aviso, >= 0.75 → sucesso */}
+                                        {transcription && typeof transcription.final_score === 'number' && (
+                                            <div className={`mb-4 rounded-lg border px-3 py-2.5 text-xs ${
+                                                transcription.final_score >= 0.75
+                                                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                                    : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                                            }`}>
+                                                <div className="font-semibold">
+                                                    {transcription.final_score >= 0.75
+                                                        ? 'Boa confiança! Valores extraídos corretamente'
+                                                        : 'Confiança média baixa, recomenda-se inserir manualmente os valores dos campos do arquivo enviado'}
+                                                </div>
+                                                <div className="mt-0.5 text-slate-400">
+                                                    Score de confiança: {(transcription.final_score * 100).toFixed(1)}%
+                                                </div>
+                                            </div>
+                                        )}
+
                                         <div className="mb-3 text-xs text-slate-400">
                                             Campos capturados: {fieldsEntries.length}
                                         </div>

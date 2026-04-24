@@ -335,6 +335,8 @@ function App() {
         }
 
         return Object.entries(fields)
+            .filter(([fieldName, fieldValue]) => String(fieldName ?? '').trim().length > 0 && String(fieldValue ?? '').trim().length > 0)
+            .sort(([leftKey], [rightKey]) => String(leftKey).localeCompare(String(rightKey), 'pt-BR'))
     }, [transcription])
     const rawText = useMemo(() => {
         const rawValue = transcription?.raw_text
@@ -416,7 +418,7 @@ function App() {
                 <p className="mt-2 text-sm text-slate-300">Envie o arquivo, visualize o documento e acompanhe os dados extraídos por abas.</p>
 
                 <div className="mt-7 grid gap-6 lg:grid-cols-[1.15fr_1fr]">
-                    <section className="space-y-5 rounded-xl border border-slate-700/70 bg-slate-900/70 p-4 md:p-5">
+                    <section className="min-w-0 space-y-5 rounded-xl border border-slate-700/70 bg-slate-900/70 p-4 md:p-5">
                         <div className="space-y-2">
                             <label className="block text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">File</label>
                             <input
@@ -536,7 +538,7 @@ function App() {
                         </div>
                     </section>
 
-                    <section className="space-y-4 rounded-xl border border-slate-700/70 bg-slate-900/70 p-4 md:p-5">
+                    <section className="min-w-0 space-y-4 rounded-xl border border-slate-700/70 bg-slate-900/70 p-4 md:p-5">
                         <h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">Resultado</h2>
 
                         <div className="flex flex-wrap gap-2">
@@ -573,30 +575,53 @@ function App() {
                             <div className="max-h-[620px] overflow-auto rounded-lg border border-slate-700 bg-slate-950/70">
                                 {activeTab === RESULT_TABS.FIELDS && (
                                     <div className="p-4">
+                                        {/* Indicador de confiança baseado no final_score: < 0.75 → aviso, >= 0.75 → sucesso */}
+                                        {transcription && typeof transcription.final_score === 'number' && (
+                                            <div className={`mb-4 rounded-lg border px-3 py-2.5 text-xs ${
+                                                transcription.final_score >= 0.75
+                                                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                                    : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                                            }`}>
+                                                <div className="font-semibold">
+                                                    {transcription.final_score >= 0.75
+                                                        ? 'Boa confiança! Valores extraídos corretamente'
+                                                        : 'Confiança média baixa, recomenda-se inserir manualmente os valores dos campos do arquivo enviado'}
+                                                </div>
+                                                <div className="mt-0.5 text-slate-400">
+                                                    Score de confiança: {(transcription.final_score * 100).toFixed(1)}%
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="mb-3 text-xs text-slate-400">
+                                            Campos capturados: {fieldsEntries.length}
+                                        </div>
                                         {fieldsEntries.length === 0 ? (
                                             <div className="text-sm text-slate-400">Nenhum campo encontrado em fields.</div>
                                         ) : (
-                                            <table className="w-full border-collapse text-sm">
-                                                <thead>
-                                                    <tr className="border-b border-slate-700 text-left text-xs uppercase tracking-[0.12em] text-slate-400">
-                                                        <th className="px-3 py-2">Campo</th>
-                                                        <th className="px-3 py-2">Valor</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {fieldsEntries.map(([fieldName, fieldValue]) => (
-                                                        <tr
-                                                            key={fieldName}
-                                                            className={`border-b border-slate-800/70 text-slate-200 ${activeMarkerKey === fieldName ? 'bg-blue-950/50' : ''}`}
-                                                            onMouseEnter={() => setActiveMarkerKey(fieldName)}
-                                                            onMouseLeave={() => setActiveMarkerKey('')}
-                                                        >
-                                                            <td className="px-3 py-2 font-medium text-slate-100">{fieldName}</td>
-                                                            <td className="px-3 py-2 break-words">{formatMetricValue(fieldValue)}</td>
+                                            <div className="overflow-x-auto">
+                                                <table className="min-w-max border-collapse text-sm">
+                                                    <thead>
+                                                        <tr className="border-b border-slate-700 text-left text-xs uppercase tracking-[0.12em] text-slate-400">
+                                                            <th className="w-[220px] px-3 py-2 whitespace-nowrap">Campo</th>
+                                                            <th className="px-3 py-2">Valor</th>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                                    </thead>
+                                                    <tbody>
+                                                        {fieldsEntries.map(([fieldName, fieldValue]) => (
+                                                            <tr
+                                                                key={fieldName}
+                                                                className={`border-b border-slate-800/70 text-slate-200 ${activeMarkerKey === fieldName ? 'bg-blue-950/50' : ''}`}
+                                                                onMouseEnter={() => setActiveMarkerKey(fieldName)}
+                                                                onMouseLeave={() => setActiveMarkerKey('')}
+                                                            >
+                                                                <td className="px-3 py-2 font-medium whitespace-nowrap text-slate-100">{fieldName}</td>
+                                                                <td className="px-3 py-2 whitespace-nowrap">{formatMetricValue(fieldValue)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
                                         )}
                                     </div>
                                 )}

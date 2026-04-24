@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from typing import Any
+from typing import Any, Dict, List
 
 
 def decode_image(image_bytes: Any) -> np.ndarray:
@@ -211,6 +211,285 @@ def enhance_blue_ink_light(image: np.ndarray) -> np.ndarray:
 
     boosted = cv2.merge((h_channel, s_channel, v_channel))
     return cv2.cvtColor(boosted, cv2.COLOR_HSV2BGR)
+
+
+def _ensure_bgr(image: np.ndarray) -> np.ndarray:
+    if image is None or image.size == 0:
+        raise ValueError("Invalid image provided")
+
+    if len(image.shape) == 2:
+        return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+    if image.shape[2] == 4:
+        return cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+
+    return image
+
+
+def _resize_min_side_keep_ratio(image: np.ndarray, min_side: int = 384, max_side: int = 2048) -> np.ndarray:
+    h, w = image.shape[:2]
+    current_min = min(h, w)
+    if current_min <= 0:
+        return image
+
+    scale = max(1.0, float(min_side) / float(current_min))
+    new_w = int(round(w * scale))
+    new_h = int(round(h * scale))
+
+    longest_side = max(new_h, new_w)
+    if longest_side > max_side:
+        downscale = float(max_side) / float(longest_side)
+        new_w = max(1, int(round(new_w * downscale)))
+        new_h = max(1, int(round(new_h * downscale)))
+
+    if new_w == w and new_h == h:
+        return image
+
+    return cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+
+
+def preprocess_for_trocr_region(region_image: np.ndarray) -> np.ndarray:
+    # PASSO CRÍTICO: TrOCR performa melhor com imagem natural (sem binarização agressiva).
+    image = _ensure_bgr(region_image)
+    image = denoise_light(image)
+    image = apply_clahe_local_contrast(image)
+    image = enhance_blue_ink_light(image)
+    image = _resize_min_side_keep_ratio(image, min_side=384, max_side=2048)
+    return image
+
+
+def preprocess_for_trocr_engine(image_bytes: Any, classification: str = "") -> tuple[bytes, dict]:
+    image = decode_image(image_bytes)
+    image = preprocess_for_trocr_region(image)
+
+    return encode_png_bytes(image), {
+        "engine_preprocessing": "trocr_handwritten",
+        "classification_hint": classification,
+        "steps": [
+            "denoise_light",
+            "clahe_local_contrast",
+            "enhance_blue_ink_light",
+            "resize_min_side_keep_ratio",
+        ],
+    }
+
+
+def _boxes_overlap_or_close(box_a: tuple[int, int, int, int], box_b: tuple[int, int, int, int], margin: int = 12) -> bool:
+    ax, ay, aw, ah = box_a
+    bx, by, bw, bh = box_b
+    a_left, a_top, a_right, a_bottom = ax - margin, ay - margin, ax + aw + margin, ay + ah + margin
+    b_left, b_top, b_right, b_bottom = bx, by, bx + bw, by + bh
+    return not (a_right < b_left or b_right < a_left or a_bottom < b_top or b_bottom < a_top)
+
+
+def _merge_two_boxes(box_a: tuple[int, int, int, int], box_b: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    ax, ay, aw, ah = box_a
+    bx, by, bw, bh = box_b
+    x0 = min(ax, bx)
+    y0 = min(ay, by)
+    x1 = max(ax + aw, bx + bw)
+    y1 = max(ay + ah, by + bh)
+    return x0, y0, x1 - x0, y1 - y0
+
+
+def _merge_candidate_boxes(boxes: List[tuple[int, int, int, int]]) -> List[tuple[int, int, int, int]]:
+    if not boxes:
+        return []
+
+    merged = boxes[:]
+    changed = True
+    while changed:
+        changed = False
+        next_boxes: List[tuple[int, int, int, int]] = []
+        while merged:
+            base = merged.pop(0)
+            idx = 0
+            while idx < len(merged):
+                if _boxes_overlap_or_close(base, merged[idx]):
+                    base = _merge_two_boxes(base, merged.pop(idx))
+                    changed = True
+                else:
+                    idx += 1
+            next_boxes.append(base)
+        merged = next_boxes
+
+    return merged
+
+
+def _is_signature_like(region_gray: np.ndarray, binary_inv: np.ndarray) -> bool:
+    h, w = region_gray.shape[:2]
+    if h < 18 or w < 60:
+        return False
+
+    aspect_ratio = w / max(float(h), 1.0)
+    ink_density = float(np.count_nonzero(binary_inv)) / float(binary_inv.size)
+
+    # Assinatura costuma ser horizontal, com baixa densidade de tinta e traço irregular.
+    edges = cv2.Canny(region_gray, 70, 170)
+    edge_density = float(np.count_nonzero(edges)) / float(edges.size)
+    lap_var = float(cv2.Laplacian(region_gray, cv2.CV_64F).var())
+
+    # Printed text lines have many connected components per unit width (one per character/stroke).
+    # Signatures have few, larger irregular strokes — typically 1–4 per 100px of width.
+    # This is the key discriminator: a text line "Valor: R$ 150,00" at scan resolution
+    # will have ~8+ components/100px; a cursive signature will have ~1–3.
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_inv, connectivity=8)
+    valid_components = sum(1 for i in range(1, num_labels) if stats[i, cv2.CC_STAT_AREA] >= 12)
+    components_per_100px = float(valid_components) / max(1.0, w / 100.0)
+
+    return (
+        aspect_ratio >= 2.4
+        and 0.01 <= ink_density <= 0.20
+        and 0.01 <= edge_density <= 0.15
+        and lap_var >= 25.0
+        and components_per_100px <= 4.0
+    )
+
+
+def _classify_region(region_image: np.ndarray) -> str:
+    region = _ensure_bgr(region_image)
+    gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+    binary_inv = cv2.adaptiveThreshold(
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        31,
+        11,
+    )
+
+    if _is_signature_like(gray, binary_inv):
+        return "signature"
+
+    ink_density = float(np.count_nonzero(binary_inv)) / float(binary_inv.size)
+    edges = cv2.Canny(gray, 60, 180)
+    edge_density = float(np.count_nonzero(edges)) / float(edges.size)
+    edge_variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+    # Heurística inicial para manuscrito: maior irregularidade e densidade de bordas.
+    if (edge_variance >= 90.0 and edge_density >= 0.08) or (ink_density >= 0.22 and edge_variance >= 70.0):
+        return "handwritten"
+
+    return "printed"
+
+
+def segment_handwritten_regions(image: np.ndarray) -> List[Dict[str, Any]]:
+    # PASSO CRÍTICO: segmenta regiões para aplicar OCR especializado por tipo.
+    source = _ensure_bgr(image)
+    gray = cv2.cvtColor(source, cv2.COLOR_BGR2GRAY)
+
+    binary_inv = cv2.adaptiveThreshold(
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        35,
+        9,
+    )
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 5))
+    connected = cv2.morphologyEx(binary_inv, cv2.MORPH_CLOSE, kernel, iterations=1)
+    connected = cv2.dilate(connected, np.ones((3, 3), dtype=np.uint8), iterations=1)
+
+    contours, _ = cv2.findContours(connected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    image_area = float(source.shape[0] * source.shape[1])
+    min_area = max(220.0, image_area * 0.0009)
+    max_area = image_area * 0.95
+
+    raw_boxes: List[tuple[int, int, int, int]] = []
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        area = float(w * h)
+        if area < min_area or area > max_area:
+            continue
+        if w < 20 or h < 14:
+            continue
+        raw_boxes.append((x, y, w, h))
+
+    merged_boxes = _merge_candidate_boxes(raw_boxes)
+    merged_boxes = sorted(merged_boxes, key=lambda box: (box[1], box[0]))[:80]
+
+    regions: List[Dict[str, Any]] = []
+    for idx, (x, y, w, h) in enumerate(merged_boxes):
+        x0 = max(0, x - 4)
+        y0 = max(0, y - 4)
+        x1 = min(source.shape[1], x + w + 4)
+        y1 = min(source.shape[0], y + h + 4)
+        cropped = source[y0:y1, x0:x1]
+        if cropped.size == 0:
+            continue
+
+        region_type = _classify_region(cropped)
+        regions.append(
+            {
+                "id": idx + 1,
+                "type": region_type,
+                "bbox": {
+                    "x": int(x0),
+                    "y": int(y0),
+                    "width": int(x1 - x0),
+                    "height": int(y1 - y0),
+                },
+                "image": cropped,
+            }
+        )
+
+    if regions:
+        return regions
+
+    # Fallback resiliente: se não segmentar, processa a página inteira como manuscrita.
+    return [
+        {
+            "id": 1,
+            "type": "handwritten",
+            "bbox": {
+                "x": 0,
+                "y": 0,
+                "width": int(source.shape[1]),
+                "height": int(source.shape[0]),
+            },
+            "image": source,
+        }
+    ]
+
+
+def segment_text_lines(region_image: np.ndarray, min_line_height: int = 8, gap_threshold: int = 2) -> List[np.ndarray]:
+    """Split a region into individual line crops via horizontal projection for line-level OCR."""
+    image = _ensure_bgr(region_image)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    _, binary_inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    h_proj = np.sum(binary_inv > 0, axis=1)
+
+    kernel_size = max(1, min_line_height // 2)
+    smoothed = np.convolve(h_proj, np.ones(kernel_size) / kernel_size, mode="same")
+    in_text = smoothed > gap_threshold
+
+    line_slices: List[tuple] = []
+    start = None
+    for row_idx in range(len(in_text)):
+        if in_text[row_idx] and start is None:
+            start = row_idx
+        elif not in_text[row_idx] and start is not None:
+            if row_idx - start >= min_line_height:
+                line_slices.append((start, row_idx))
+            start = None
+    if start is not None and len(in_text) - start >= min_line_height:
+        line_slices.append((start, len(in_text)))
+
+    if not line_slices:
+        return [image]
+
+    lines: List[np.ndarray] = []
+    for y0, y1 in line_slices:
+        margin = 3
+        y0_m = max(0, y0 - margin)
+        y1_m = min(image.shape[0], y1 + margin)
+        line_crop = image[y0_m:y1_m, :]
+        if line_crop.size > 0:
+            lines.append(line_crop)
+
+    return lines if lines else [image]
 
 
 def upscale_if_low_resolution(image: np.ndarray, min_side: int = 1200, max_scale: float = 2.0) -> np.ndarray:

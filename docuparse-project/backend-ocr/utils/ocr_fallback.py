@@ -3,6 +3,30 @@ from typing import Any, Dict
 from utils.validate_fields import compute_field_pipeline_quality, extract_avg_confidence
 
 
+def _text_coverage_metrics(data: Dict[str, Any]) -> tuple[int, int]:
+    raw_text = str(data.get("raw_text") or "").strip()
+    text_length = int((data.get("_meta") or {}).get("text_length") or len(raw_text))
+    token_count = len([token for token in raw_text.split() if token.strip()])
+    return text_length, token_count
+
+
+def _should_replace_raw_text(primary_data: Dict[str, Any], fallback_data: Dict[str, Any]) -> bool:
+    primary_len, primary_tokens = _text_coverage_metrics(primary_data)
+    fallback_len, fallback_tokens = _text_coverage_metrics(fallback_data)
+
+    if fallback_len == 0:
+        return False
+
+    # Evita regressão como "0 1": fallback com cobertura muito menor não substitui texto primário.
+    if primary_len > 0:
+        if fallback_len < int(primary_len * 0.6):
+            return False
+        if fallback_tokens < max(3, int(primary_tokens * 0.6)):
+            return False
+
+    return True
+
+
 def _has_low_text_coverage(data: Dict[str, Any]) -> bool:
     raw_text = str(data.get("raw_text") or "").strip()
     text_length = int((data.get("_meta") or {}).get("text_length") or len(raw_text))
@@ -51,11 +75,18 @@ def merge_fallback_result(
     fallback_engine: str,
 ) -> Dict[str, Any]:
     merged = dict(primary_data)
+    replace_raw_text = _should_replace_raw_text(primary_data, fallback_data)
 
-    for key in ["document_info", "entities", "tables", "totals", "raw_text", "raw_text_fallback"]:
+    for key in ["document_info", "entities", "tables", "totals"]:
         fallback_value = fallback_data.get(key)
         if fallback_value not in (None, "", [], {}):
             merged[key] = fallback_value
+
+    if replace_raw_text:
+        for key in ["raw_text", "raw_text_fallback"]:
+            fallback_value = fallback_data.get(key)
+            if fallback_value not in (None, ""):
+                merged[key] = fallback_value
 
     primary_meta = primary_data.get("_meta") if isinstance(primary_data.get("_meta"), dict) else {}
     fallback_meta = fallback_data.get("_meta") if isinstance(fallback_data.get("_meta"), dict) else {}
@@ -67,6 +98,7 @@ def merge_fallback_result(
         "fallback_engine": fallback_engine,
         "primary_avg_confidence": extract_avg_confidence(primary_data),
         "fallback_triggered": True,
+        "fallback_raw_text_replaced": replace_raw_text,
     }
 
     return merged

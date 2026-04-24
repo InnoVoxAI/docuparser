@@ -1,5 +1,4 @@
 import time
-import importlib.util
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -25,7 +24,11 @@ class Transcription(BaseModel):
     required_fields: List[str]
     field_validation: Dict[str, Any]
     field_confidence: Optional[Dict[str, Any]] = None
+    critical_field_scores: Optional[Dict[str, float]] = None
     low_confidence_fields: Optional[List[str]] = None
+    low_confidence_critical_fields: Optional[Dict[str, str]] = None
+    low_confidence_threshold: Optional[float] = None
+    llm_should_run: Optional[bool] = None
     field_score: float
     ocr_confidence: float
     final_score: float
@@ -62,17 +65,16 @@ def health_check():
 
 @app.get("/engines", response_model=List[EngineOption])
 def list_engines():
-    # Keep this list simple and explicit for the UI dropdown.
     engines = [
+        {"value": "trocr", "label": "TrOCR"},
+        {"value": "paddle", "label": "PaddleOCR"},
+        {"value": "easyocr", "label": "EasyOCR"},
         {"value": "tesseract", "label": "Tesseract"},
         {"value": "docling", "label": "Docling"},
-        {"value": "deepseek", "label": "DeepSeek"},
         {"value": "llamaparse", "label": "LlamaParse"},
+        {"value": "deepseek", "label": "DeepSeek"},
+        {"value": "paddle_easyocr", "label": "Paddle + EasyOCR (híbrido)"},
     ]
-
-    if importlib.util.find_spec("easyocr") is not None:
-        engines.insert(1, {"value": "easyocr", "label": "EasyOCR"})
-
     return engines
 
 

@@ -32,6 +32,8 @@ CLASSIFICATION_ENGINE_PREPROCESSING_HINTS = {
     CLASS_HANDWRITTEN_COMPLEX: {
         "easyocr": "denoise_contrast_deskew_upscale_handwritten",
         "paddle": "natural_rgb_with_clahe_and_light_deskew",
+        "trocr": "natural_image_denoise_clahe_blueink_resize",
+        "handwritten_region": "segment_regions_then_specialized_ocr",
     },
 }
 
@@ -151,9 +153,13 @@ def _classify_pdf(content: bytes, name_signals: Dict[str, bool]) -> str:
         # A) Fortes sinais de manuscrito/complexidade -> handwritten_complex.
         #    Requeremos um limiar mais alto para reduzir falso-positivo em PDFs
         #    com estrutura tabular densa (ex.: nota fiscal bem formatada).
-        if name_signals["handwritten"] or (
-            avg_handwriting_score >= 0.68 and text_chars_total < 900
-        ):
+        # A document labeled as both "scanned" and "handwritten" (e.g. a digitized receipt
+        # with a signature field) must rely on visual evidence, not the name alone.
+        # "digitalizado com assinatura" = scanned doc with signature, not a handwritten doc.
+        force_handwritten = name_signals["handwritten"] and not name_signals["scanned"]
+        visual_handwritten = avg_handwriting_score >= 0.68 and text_chars_total < 900
+
+        if force_handwritten or visual_handwritten:
             logger.info(f"\nLinha 1 PDF classified as HANDWRITTEN_COMPLEX by handwriting_score: {avg_handwriting_score:.3f}\n")
             return CLASS_HANDWRITTEN_COMPLEX
 
@@ -237,7 +243,7 @@ def _classify_image(content: bytes, name_signals: Dict[str, bool]) -> str:
 
     visual_features = _extract_visual_features(image)
 
-    if name_signals["handwritten"]:
+    if name_signals["handwritten"] and not name_signals["scanned"]:
         logger.info(f"Linha 6 IMAGE classified as HANDWRITTEN_COMPLEX by handwriting_score: {visual_features['handwriting_score']:.3f}")
         return CLASS_HANDWRITTEN_COMPLEX
 

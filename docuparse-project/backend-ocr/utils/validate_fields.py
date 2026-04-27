@@ -1772,13 +1772,13 @@ def compute_field_pipeline_quality(
     )
     llm_decision = should_run_llm(low_conf_critical_fields)
 
-    logger.warning(
-        "FIELD_SCORE_CRITICAL | threshold=%.2f | scores=%s | low_conf_fields=%s | run_llm=%s",
-        float(LOW_CONFIDENCE_THRESHOLD),
-        field_scores,
-        list(low_conf_critical_fields.keys()),
-        llm_decision,
-    )
+    # logger.warning(
+    #     "FIELD_SCORE_CRITICAL | threshold=%.2f | scores=%s | low_conf_fields=%s | run_llm=%s",
+    #     float(LOW_CONFIDENCE_THRESHOLD),
+    #     field_scores,
+    #     list(low_conf_critical_fields.keys()),
+    #     llm_decision,
+    # )
 
     return {
         "fields": fields,

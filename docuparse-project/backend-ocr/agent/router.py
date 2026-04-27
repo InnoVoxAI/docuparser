@@ -117,9 +117,9 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
     tools_used: List[str] = []
     data: Dict[str, Any] = {}
     classification = classify_document(filename, content)
-    logger.info(f"--- Document classified as: {classification}")
+    # logger.info(f"--- Document classified as: {classification}")
     resolved_engine = _resolve_engine(classification, selected_engine)
-    logger.info("--- Engine selected: %s", resolved_engine)
+    # logger.info("--- Engine selected: %s", resolved_engine)
 
     try:
         from engines.openrouter_engine import OpenRouterOCREngine
@@ -164,113 +164,113 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
     field_quality["fallback_engine"] = ""
     field_quality["fields_from_fallback"] = []
 
-    logger.info(
-        "FIELD_FALLBACK_CHECK | needed=%s | classification=%s | primary_engine=%s | final_score=%.4f",
-        field_quality.get("fallback_needed"),
-        classification,
-        resolved_engine,
-        float(field_quality.get("final_score", 0.0)),
-    )
+    # logger.info(
+    #     "FIELD_FALLBACK_CHECK | needed=%s | classification=%s | primary_engine=%s | final_score=%.4f",
+    #     field_quality.get("fallback_needed"),
+    #     classification,
+    #     resolved_engine,
+    #     float(field_quality.get("final_score", 0.0)),
+    # )
 
-    if field_quality["fallback_needed"]:
-        fallback_engine_name = resolve_field_fallback_engine(classification, resolved_engine)
+    # if field_quality["fallback_needed"]:
+    #     fallback_engine_name = resolve_field_fallback_engine(classification, resolved_engine)
 
-        # TrOCR prioritário para documentos manuscritos complexos.
-        if classification == "handwritten_complex" and fallback_engine_name in {None, "easyocr", "paddle"}:
-            fallback_engine_name = "trocr"
+    #     # TrOCR prioritário para documentos manuscritos complexos.
+    #     if classification == "handwritten_complex" and fallback_engine_name in {None, "easyocr", "paddle"}:
+    #         fallback_engine_name = "trocr"
 
-        if fallback_engine_name:
-            logger.info(
-                "FIELD_FALLBACK_START | classification=%s | primary_engine=%s | fallback_engine=%s",
-                classification,
-                resolved_engine,
-                fallback_engine_name,
-            )
-            try:
-                fallback_data = _run_engine_by_name(
-                    engine_name=fallback_engine_name,
-                    classification=classification,
-                    content=content,
-                    filename=filename,
-                )
+    #     if fallback_engine_name:
+    #         logger.info(
+    #             "FIELD_FALLBACK_START | classification=%s | primary_engine=%s | fallback_engine=%s",
+    #             classification,
+    #             resolved_engine,
+    #             fallback_engine_name,
+    #         )
+    #         try:
+    #             fallback_data = _run_engine_by_name(
+    #                 engine_name=fallback_engine_name,
+    #                 classification=classification,
+    #                 content=content,
+    #                 filename=filename,
+    #             )
 
-                if not is_engine_error_fallback(fallback_data):
-                    if not isinstance(fallback_data.get("_meta"), dict):
-                        fallback_data["_meta"] = {}
-                    fallback_data["_meta"].setdefault("document_type", classification)
-                    fallback_data["_meta"].setdefault("engine", fallback_engine_name)
+    #             if not is_engine_error_fallback(fallback_data):
+    #                 if not isinstance(fallback_data.get("_meta"), dict):
+    #                     fallback_data["_meta"] = {}
+    #                 fallback_data["_meta"].setdefault("document_type", classification)
+    #                 fallback_data["_meta"].setdefault("engine", fallback_engine_name)
 
-                    fallback_quality = compute_field_pipeline_quality(fallback_data)
-                    merged_fields, fields_from_fallback = merge_fields_by_validation(
-                        primary_fields=field_quality["fields"],
-                        fallback_fields=fallback_quality["fields"],
-                        fallback_validation=fallback_quality["validation"],
-                    )
+    #                 fallback_quality = compute_field_pipeline_quality(fallback_data)
+    #                 merged_fields, fields_from_fallback = merge_fields_by_validation(
+    #                     primary_fields=field_quality["fields"],
+    #                     fallback_fields=fallback_quality["fields"],
+    #                     fallback_validation=fallback_quality["validation"],
+    #                 )
 
-                    merged_confidence_pct = max(
-                        (extract_avg_confidence(data) or 0.0),
-                        (extract_avg_confidence(fallback_data) or 0.0),
-                    )
-                    merged_field_confidence = merge_field_confidence(
-                        primary_confidence=field_quality.get("field_confidence", {}),
-                        fallback_confidence=fallback_quality.get("field_confidence", {}),
-                        fields_from_fallback=fields_from_fallback,
-                    )
+    #                 merged_confidence_pct = max(
+    #                     (extract_avg_confidence(data) or 0.0),
+    #                     (extract_avg_confidence(fallback_data) or 0.0),
+    #                 )
+    #                 merged_field_confidence = merge_field_confidence(
+    #                     primary_confidence=field_quality.get("field_confidence", {}),
+    #                     fallback_confidence=fallback_quality.get("field_confidence", {}),
+    #                     fields_from_fallback=fields_from_fallback,
+    #                 )
 
-                    field_quality = compute_field_pipeline_quality(
-                        data,
-                        override_fields=merged_fields,
-                        override_ocr_confidence=merged_confidence_pct,
-                        override_field_confidence=merged_field_confidence,
-                    )
-                    field_quality["source"] = "fallback" if fields_from_fallback else "primary"
-                    field_quality["fallback_engine"] = fallback_engine_name
-                    field_quality["fields_from_fallback"] = fields_from_fallback
+    #                 field_quality = compute_field_pipeline_quality(
+    #                     data,
+    #                     override_fields=merged_fields,
+    #                     override_ocr_confidence=merged_confidence_pct,
+    #                     override_field_confidence=merged_field_confidence,
+    #                 )
+    #                 field_quality["source"] = "fallback" if fields_from_fallback else "primary"
+    #                 field_quality["fallback_engine"] = fallback_engine_name
+    #                 field_quality["fields_from_fallback"] = fields_from_fallback
 
-                    logger.info(
-                        "FIELD_FALLBACK_RESULT | fallback_engine=%s | fields_from_fallback=%s | merged_final_score=%.4f | source=%s",
-                        fallback_engine_name,
-                        fields_from_fallback,
-                        float(field_quality.get("final_score", 0.0)),
-                        field_quality.get("source"),
-                    )
+    #                 logger.info(
+    #                     "FIELD_FALLBACK_RESULT | fallback_engine=%s | fields_from_fallback=%s | merged_final_score=%.4f | source=%s",
+    #                     fallback_engine_name,
+    #                     fields_from_fallback,
+    #                     float(field_quality.get("final_score", 0.0)),
+    #                     field_quality.get("source"),
+    #                 )
 
-                    if fields_from_fallback:
-                        data = merge_fallback_result(
-                            data,
-                            fallback_data,
-                            primary_engine=resolved_engine,
-                            fallback_engine=fallback_engine_name,
-                        )
-                        tools_used.append(f"{fallback_engine_name}_field_fallback")
-                else:
-                    logger.warning(
-                        "FIELD_FALLBACK_ENGINE_ERROR | fallback_engine=%s | reason=engine_error_payload",
-                        fallback_engine_name,
-                    )
-                    field_quality["fallback_engine"] = fallback_engine_name
-                    field_quality["source"] = "primary"
-            except Exception as fallback_error:
-                logger.warning(
-                    "Field-driven fallback failed for engine %s: %s",
-                    fallback_engine_name,
-                    str(fallback_error),
-                )
-                field_quality["fallback_engine"] = fallback_engine_name
-                field_quality["source"] = "primary"
-                field_quality["fallback_error"] = str(fallback_error)
-        else:
-            logger.info(
-                "FIELD_FALLBACK_SKIPPED | reason=no_engine_mapping | classification=%s | primary_engine=%s",
-                classification,
-                resolved_engine,
-            )
-    else:
-        logger.info(
-            "FIELD_FALLBACK_SKIPPED | reason=quality_ok | classification=%s | primary_engine=%s",
-            classification,
-            resolved_engine,
-        )
+    #                 if fields_from_fallback:
+    #                     data = merge_fallback_result(
+    #                         data,
+    #                         fallback_data,
+    #                         primary_engine=resolved_engine,
+    #                         fallback_engine=fallback_engine_name,
+    #                     )
+    #                     tools_used.append(f"{fallback_engine_name}_field_fallback")
+    #             else:
+    #                 logger.warning(
+    #                     "FIELD_FALLBACK_ENGINE_ERROR | fallback_engine=%s | reason=engine_error_payload",
+    #                     fallback_engine_name,
+    #                 )
+    #                 field_quality["fallback_engine"] = fallback_engine_name
+    #                 field_quality["source"] = "primary"
+    #         except Exception as fallback_error:
+    #             logger.warning(
+    #                 "Field-driven fallback failed for engine %s: %s",
+    #                 fallback_engine_name,
+    #                 str(fallback_error),
+    #             )
+    #             field_quality["fallback_engine"] = fallback_engine_name
+    #             field_quality["source"] = "primary"
+    #             field_quality["fallback_error"] = str(fallback_error)
+    #     else:
+    #         logger.info(
+    #             "FIELD_FALLBACK_SKIPPED | reason=no_engine_mapping | classification=%s | primary_engine=%s",
+    #             classification,
+    #             resolved_engine,
+    #         )
+    # else:
+    #     logger.info(
+    #         "FIELD_FALLBACK_SKIPPED | reason=quality_ok | classification=%s | primary_engine=%s",
+    #         classification,
+    #         resolved_engine,
+    #     )
 
     critical_fields_payload = {
         field_name: str(field_quality.get("fields", {}).get(field_name) or "")
@@ -281,17 +281,17 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
     llm_run_decision = should_run_llm(low_conf_critical_fields)
     field_quality["llm_should_run"] = llm_run_decision
 
-    logger.warning(
-        "CRITICAL_FIELDS_EXTRACTED | fields=%s",
-        critical_fields_payload,
-    )
-    logger.warning(
-        "LLM_SEMANTIC_DECISION | run_llm=%s | low_confidence_threshold=%.2f | low_conf_fields=%s | critical_field_scores=%s",
-        llm_run_decision,
-        float(field_quality.get("low_confidence_threshold", 0.75)),
-        list(low_conf_critical_fields.keys()) if isinstance(low_conf_critical_fields, dict) else [],
-        critical_field_scores,
-    )
+    # logger.warning(
+    #     "CRITICAL_FIELDS_EXTRACTED | fields=%s",
+    #     critical_fields_payload,
+    # )
+    # logger.warning(
+    #     "LLM_SEMANTIC_DECISION | run_llm=%s | low_confidence_threshold=%.2f | low_conf_fields=%s | critical_field_scores=%s",
+    #     llm_run_decision,
+    #     float(field_quality.get("low_confidence_threshold", 0.75)),
+    #     list(low_conf_critical_fields.keys()) if isinstance(low_conf_critical_fields, dict) else [],
+    #     critical_field_scores,
+    # )
 
     dynamic_fields = extract_dynamic_document_fields(
         data=data,
@@ -300,12 +300,12 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
         engine_name=resolved_engine,
     )
     field_quality["dynamic_fields"] = dynamic_fields
-    logger.info(
-        "DYNAMIC_FIELDS | total=%d | classification=%s | engine=%s",
-        len(dynamic_fields),
-        classification,
-        resolved_engine,
-    )
+    # logger.info(
+    #     "DYNAMIC_FIELDS | total=%d | classification=%s | engine=%s",
+    #     len(dynamic_fields),
+    #     classification,
+    #     resolved_engine,
+    # )
 
     # DEBUG payload: candidate values for critical fields from raw OCR text.
     # Build before normalization so schema serializer can always include the key.
@@ -322,19 +322,19 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
             for field_name in REQUIRED_FIELDS
         }
 
-        logger.warning(
-            "FIELDS_CANDIDATES | classification=%s | engine=%s | fields_candidates=%s",
-            classification,
-            resolved_engine,
-            data["critical_fields_candidates"],
-        )
+        # logger.warning(
+        #     "FIELDS_CANDIDATES | classification=%s | engine=%s | fields_candidates=%s",
+        #     classification,
+        #     resolved_engine,
+        #     data["critical_fields_candidates"],
+        # )
     except Exception as candidates_error:
-        logger.warning(
-            "FIELDS_CANDIDATES_ERROR | classification=%s | engine=%s | error=%s",
-            classification,
-            resolved_engine,
-            str(candidates_error),
-        )
+        # logger.warning(
+        #     "FIELDS_CANDIDATES_ERROR | classification=%s | engine=%s | error=%s",
+        #     classification,
+        #     resolved_engine,
+        #     str(candidates_error),
+        # )
         data["fields_candidates"] = {}
         data["critical_fields_candidates"] = {field_name: [] for field_name in REQUIRED_FIELDS}
 

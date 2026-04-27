@@ -8,6 +8,7 @@ dependencies = [
     "agent>=0.1.3",
     "docling>=2.91.0",
     "fastapi>=0.135.3",
+    "fitz>=0.0.1.dev2",
     "httpx>=0.28.1",
     "ipykernel>=7.2.0",
     "matplotlib>=3.10.9",

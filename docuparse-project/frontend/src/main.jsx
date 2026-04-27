@@ -153,120 +153,6 @@ function formatMetricValue(value) {
     return String(value)
 }
 
-function collectTextTerms(ocrMeta) {
-    const byTerm = ocrMeta?.confidence_by_term
-    if (!byTerm || typeof byTerm !== 'object') {
-        return []
-    }
-
-    const terms = []
-    Object.keys(byTerm).forEach((key, index) => {
-        const separator = key.indexOf(':')
-        const term = separator >= 0 ? key.slice(separator + 1).trim() : key.trim()
-        if (!term) {
-            return
-        }
-
-        terms.push({
-            term,
-            index,
-        })
-    })
-
-    return terms
-}
-
-function normalizeText(value) {
-    return String(value ?? '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-}
-
-function buildFieldMarkers(fields, rawText, ocrMeta, fieldPositions) {
-    if (!fields || typeof fields !== 'object') {
-        return []
-    }
-
-    const terms = collectTextTerms(ocrMeta)
-    const rawTextNormalized = normalizeText(rawText)
-    const denominator = Math.max(rawTextNormalized.length, 1)
-
-    const markers = []
-
-    Object.entries(fields).forEach(([fieldName, fieldValue]) => {
-        const valueText = typeof fieldValue === 'string' ? fieldValue.trim() : ''
-        if (!valueText) {
-            return
-        }
-
-        const exactPosition = fieldPositions?.[fieldName]?.normalized_bbox
-        if (
-            exactPosition
-            && Number.isFinite(exactPosition.x)
-            && Number.isFinite(exactPosition.y)
-            && Number.isFinite(exactPosition.width)
-            && Number.isFinite(exactPosition.height)
-        ) {
-            const xRatio = Math.min(0.99, Math.max(0.01, exactPosition.x + (exactPosition.width / 2)))
-            const yRatio = Math.min(0.99, Math.max(0.01, exactPosition.y + (exactPosition.height / 2)))
-
-            markers.push({
-                key: fieldName,
-                label: fieldName,
-                value: valueText,
-                xRatio,
-                yRatio,
-                source: 'field_positions',
-                hasExactBox: true,
-                boxRatio: {
-                    x: Math.max(0, exactPosition.x),
-                    y: Math.max(0, exactPosition.y),
-                    width: Math.max(0.005, exactPosition.width),
-                    height: Math.max(0.005, exactPosition.height),
-                },
-            })
-            return
-        }
-
-        const normalizedValue = normalizeText(valueText)
-        let yRatio = null
-        let source = 'not-found'
-
-        const matchInRawText = rawTextNormalized.indexOf(normalizedValue)
-        if (matchInRawText >= 0) {
-            yRatio = Math.min(0.95, Math.max(0.05, matchInRawText / denominator))
-            source = 'raw_text'
-        }
-
-        if (yRatio === null && terms.length > 0) {
-            const matchedTerm = terms.find(({ term }) => normalizeText(term).includes(normalizedValue) || normalizedValue.includes(normalizeText(term)))
-            if (matchedTerm) {
-                const termRatio = terms.length > 1 ? matchedTerm.index / (terms.length - 1) : 0.5
-                yRatio = Math.min(0.95, Math.max(0.05, termRatio))
-                source = 'ocr_meta'
-            }
-        }
-
-        if (yRatio === null) {
-            return
-        }
-
-        markers.push({
-            key: fieldName,
-            label: fieldName,
-            value: valueText,
-            xRatio: 0.5,
-            yRatio,
-            source,
-            hasExactBox: false,
-            boxRatio: null,
-        })
-    })
-
-    return markers
-}
-
 
 function App() {
     const SYSTEM_ENGINE_VALUE = ''
@@ -280,9 +166,6 @@ function App() {
         'field_score',
         'ocr_confidence',
         'final_score',
-        'fallback_needed',
-        'source',
-        'fallback_engine',
         'ocr_meta',
         'processing_time',
     ]
@@ -294,8 +177,7 @@ function App() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [result, setResult] = useState(null)
-    const [activeTab, setActiveTab] = useState(RESULT_TABS.FIELDS)
-    const [activeMarkerKey, setActiveMarkerKey] = useState('')
+    const [activeTab, setActiveTab] = useState(RESULT_TABS.RAW_TEXT)
 
     // Load engine options once so the dropdown reflects backend capabilities.
     useEffect(() => {
@@ -342,12 +224,6 @@ function App() {
         const rawValue = transcription?.raw_text
         return typeof rawValue === 'string' ? rawValue : ''
     }, [transcription])
-    const fieldPositions = transcription?.field_positions
-    const fieldPositionsMeta = transcription?.field_positions_meta
-    const markers = useMemo(
-        () => buildFieldMarkers(transcription?.fields, rawText, transcription?.ocr_meta, fieldPositions),
-        [transcription, rawText, fieldPositions],
-    )
     const metricsEntries = useMemo(() => {
         if (!transcription) {
             return []
@@ -374,10 +250,6 @@ function App() {
         }
     }, [transcription])
 
-    useEffect(() => {
-        setActiveMarkerKey('')
-    }, [result])
-
     const onStart = async () => {
         if (!canStart) {
             return
@@ -402,7 +274,7 @@ function App() {
                 },
             })
             setResult(response.data)
-            setActiveTab(RESULT_TABS.FIELDS)
+            setActiveTab(RESULT_TABS.RAW_TEXT)
         } catch (requestError) {
             const backendError = requestError?.response?.data?.error
             setError(backendError || 'OCR processing failed.')
@@ -475,64 +347,6 @@ function App() {
                                         )}
                                     </div>
 
-                                    {markers.map((marker) => {
-                                        const isActive = activeMarkerKey === marker.key
-
-                                        return (
-                                            <React.Fragment key={marker.key}>
-                                                {marker.boxRatio && (
-                                                    <div
-                                                        className={`pointer-events-none absolute z-[8] border-2 transition ${isActive ? 'border-cyan-300 bg-cyan-400/20' : 'border-blue-300/80 bg-blue-500/10'}`}
-                                                        style={{
-                                                            left: `${marker.boxRatio.x * 100}%`,
-                                                            top: `${marker.boxRatio.y * 100}%`,
-                                                            width: `${marker.boxRatio.width * 100}%`,
-                                                            height: `${marker.boxRatio.height * 100}%`,
-                                                        }}
-                                                    />
-                                                )}
-
-                                                <button
-                                                    type="button"
-                                                    title={`${marker.label}: ${marker.value}`}
-                                                    onMouseEnter={() => setActiveMarkerKey(marker.key)}
-                                                    onMouseLeave={() => setActiveMarkerKey('')}
-                                                    onClick={() => setActiveMarkerKey((current) => (current === marker.key ? '' : marker.key))}
-                                                    className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border text-[10px] font-semibold transition ${isActive ? 'h-8 w-8 border-blue-200 bg-blue-500/80 text-white' : 'h-6 w-6 border-slate-100 bg-blue-500/65 text-slate-50 hover:bg-blue-500/80'}`}
-                                                    style={{
-                                                        left: `${marker.xRatio * 100}%`,
-                                                        top: `${marker.yRatio * 100}%`,
-                                                    }}
-                                                    aria-label={`Local do campo ${marker.label}`}
-                                                >
-                                                    {marker.label.slice(0, 1).toUpperCase()}
-                                                </button>
-                                            </React.Fragment>
-                                        )
-                                    })}
-                                </div>
-                            )}
-
-                            {markers.length > 0 && (
-                                <div className="rounded-lg border border-slate-700/80 bg-slate-950/50 p-3 text-xs text-slate-300">
-                                    {activeMarkerKey
-                                        ? (() => {
-                                            const activeMarker = markers.find((marker) => marker.key === activeMarkerKey)
-                                            if (!activeMarker) {
-                                                return 'Passe o mouse em um marcador para ver o campo correspondente.'
-                                            }
-
-                                            return `Campo: ${activeMarker.label} • Valor: ${activeMarker.value} • Origem da posição: ${activeMarker.source}`
-                                        })()
-                                        : 'Passe o mouse ou clique em um marcador para ver qual campo foi identificado nessa região.'}
-                                </div>
-                            )}
-
-                            {result && (
-                                <div className="rounded-lg border border-slate-700/80 bg-slate-950/50 p-3 text-xs text-slate-300">
-                                    {fieldPositionsMeta?.available
-                                        ? `Posicionamento por coordenadas reais ativo (${Object.keys(fieldPositions || {}).length} campos mapeados).`
-                                        : 'Coordenadas reais indisponíveis neste arquivo; exibindo posição inferida quando possível.'}
                                 </div>
                             )}
                         </div>
@@ -544,10 +358,18 @@ function App() {
                         <div className="flex flex-wrap gap-2">
                             <button
                                 type="button"
+                                onClick={() => setActiveTab(RESULT_TABS.RAW_TEXT)}
+                                className={`rounded-md px-3 py-2 text-xs font-semibold transition ${activeTab === RESULT_TABS.RAW_TEXT ? 'bg-blue-800 text-slate-50' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                            >
+                                Texto Bruto
+                            </button>
+
+                            <button
+                                type="button"
                                 onClick={() => setActiveTab(RESULT_TABS.FIELDS)}
                                 className={`rounded-md px-3 py-2 text-xs font-semibold transition ${activeTab === RESULT_TABS.FIELDS ? 'bg-blue-800 text-slate-50' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
                             >
-                                Fields
+                                Campos
                             </button>
 
                             <button
@@ -556,14 +378,6 @@ function App() {
                                 className={`rounded-md px-3 py-2 text-xs font-semibold transition ${activeTab === RESULT_TABS.METRICS ? 'bg-blue-800 text-slate-50' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
                             >
                                 Métricas
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab(RESULT_TABS.RAW_TEXT)}
-                                className={`rounded-md px-3 py-2 text-xs font-semibold transition ${activeTab === RESULT_TABS.RAW_TEXT ? 'bg-blue-800 text-slate-50' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
-                            >
-                                Raw Text
                             </button>
                         </div>
 
@@ -575,20 +389,19 @@ function App() {
                             <div className="max-h-[620px] overflow-auto rounded-lg border border-slate-700 bg-slate-950/70">
                                 {activeTab === RESULT_TABS.FIELDS && (
                                     <div className="p-4">
-                                        {/* Indicador de confiança baseado no final_score: < 0.75 → aviso, >= 0.75 → sucesso */}
-                                        {transcription && typeof transcription.final_score === 'number' && (
+                                        {transcription && typeof transcription.ocr_confidence === 'number' && (
                                             <div className={`mb-4 rounded-lg border px-3 py-2.5 text-xs ${
-                                                transcription.final_score >= 0.75
+                                                transcription.ocr_confidence >= 0.75
                                                     ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
                                                     : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
                                             }`}>
                                                 <div className="font-semibold">
-                                                    {transcription.final_score >= 0.75
+                                                    {transcription.ocr_confidence >= 0.75
                                                         ? 'Boa confiança! Valores extraídos corretamente'
                                                         : 'Confiança média baixa, recomenda-se inserir manualmente os valores dos campos do arquivo enviado'}
                                                 </div>
                                                 <div className="mt-0.5 text-slate-400">
-                                                    Score de confiança: {(transcription.final_score * 100).toFixed(1)}%
+                                                    Score de confiança: {(transcription.ocr_confidence * 100).toFixed(1)}%
                                                 </div>
                                             </div>
                                         )}
@@ -611,9 +424,7 @@ function App() {
                                                         {fieldsEntries.map(([fieldName, fieldValue]) => (
                                                             <tr
                                                                 key={fieldName}
-                                                                className={`border-b border-slate-800/70 text-slate-200 ${activeMarkerKey === fieldName ? 'bg-blue-950/50' : ''}`}
-                                                                onMouseEnter={() => setActiveMarkerKey(fieldName)}
-                                                                onMouseLeave={() => setActiveMarkerKey('')}
+                                                                className="border-b border-slate-800/70 text-slate-200"
                                                             >
                                                                 <td className="px-3 py-2 font-medium whitespace-nowrap text-slate-100">{fieldName}</td>
                                                                 <td className="px-3 py-2 whitespace-nowrap">{formatMetricValue(fieldValue)}</td>

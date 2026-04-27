@@ -1,17 +1,10 @@
-version: '3.8'
-
 services:
   frontend:
     build: ./frontend
+    command: npm run dev -- --host 0.0.0.0 --port 5173
     ports:
-      - "3000:3000"
-    develop:
-      watch:
-        - action: sync
-          path: ./frontend
-          target: /app
-          ignore:
-            - node_modules/
+      - "5173:5173"
+    
     networks:
       - docuparse-network
     depends_on:

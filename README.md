@@ -51,15 +51,21 @@ A forma mais simples de rodar o DocuParse é utilizando o Docker Compose, que or
     - Crie um arquivo `.env` baseado no exemplo disponível (se houver) ou configure as chaves de API necessárias e endpoints.
 
 3.  **Subir os containers**:
-    Dentro da pasta `docuparse-project`, execute:
+    Na raiz do repositório, execute:
     ```bash
-    docker-compose up --build
+    bash run-pipe.sh
     ```
 
 4.  **Acessar as Aplicações**:
-    - **Frontend**: [http://localhost:3000](http://localhost:3000)
+    - **Frontend**: [http://localhost:5173](http://localhost:5173)
     - **API Core (Django)**: [http://localhost:8000](http://localhost:8000)
     - **API OCR (FastAPI)**: [http://localhost:8080](http://localhost:8080)
+
+5.  **Parar os containers**:
+    ```bash
+    cd docuparse-project
+    docker compose down
+    ```
 
 ---
 

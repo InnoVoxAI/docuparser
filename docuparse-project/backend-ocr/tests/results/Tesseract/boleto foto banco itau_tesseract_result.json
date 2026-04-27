@@ -1,0 +1,944 @@
+{
+  "input_file": "/home/gpcmoura/Documents/Work/InnoVox/Repositories/docuparser/docuparse-project/backend-ocr/tests/images/boleto foto banco itau.jpg",
+  "input_meta": {
+    "input_type": "image",
+    "source_extension": ".jpg",
+    "rendered_from_pdf": false
+  },
+  "classification": "scanned_image",
+  "preprocessing": {
+    "status": "ok",
+    "shape": [
+      899,
+      1599
+    ],
+    "dtype": "uint8"
+  },
+  "ocr_engine": "tesseract",
+  "ocr_result": {
+    "raw_text": "ited J oo ae \\ y, liom “—entes nesta les u h Bee, Perm S 8 rae adiante a4 4 7170, 7 as Se] 34191 20900 eed 6 id vv 3 3012370009 7 1egtoaed24/S53 ANC TAU SA VENCIMENTO 22+ 22/2028 Totar JE SAGANENTO roy Desomerte Ace.tc em aud Raver Institurcsc Bansarria AGENCLA/COIOIGO ZENE = bee BRAS Beye .CcARSQ, BArLANA Jz5 VeBUIDORA JE SAS Cor CAPs c 2 2323. 33122 -7 = CED 25534900 - TPOILCA-3E 46 =] 35687000102 Sa 3¢ DORTYARTS s/h, Toes JOC CAT FRC. NOSSC NUHERO aw ea OCUMENTS N. JSCIMENTS 24/14/2025 £99 33722363-2 22/2625 93222363 LP Tas yuck DOCUMENTS = oS. 30 ANCL CAR sath ESPECI el QUAN: <DADE faLoR - 23,= =) REAL VeiLESCONT 7 ABA” MENS E> DE TESPINGAD SL LDADE DC BENERLClSR20 oNS AUCs “pos yenciument:, coerar vulca ge ab 49,52 aocs 3 yersimerss, csorar “07a ay I _-—— “= apes se 3$ 2,3) Tye MAS DELUCSES = Nac sag a ~ noses no tnctusac em o“gac ~ 22 PAasSTTMUISS TaNGRas MUL econ 3295 vENC MULT. os 1237 2.2287 MCV JIARTA Taye RSS ANKESCLNSS score = awe, great sERTE as \"C7. «wR = Wigs s = - Teck Se SRADE x *: one Ot a ne. hal #3: a eRe Tae me Recrss 4> es PA“R72 7, 32297 rye wo iar ‘tut an L-peahte o7 ate = Wwe SS Vow ColoNTAL = CPE ENP]: 9 wy PN Bs, agt aN eae fe: - 3Ac sat ee os eara ut ACAS RECTEE 3f p (0! weeny Re EICHA DE COMBENSACAC AUTENTICAR NC 4ERSO . \\ | I i EIN SING, gee. ge Ge DB TO a",
+    "raw_text_fallback": "ited J oo ae \\ y, liom “—entes nesta les u h Bee, Perm S 8 rae adiante a4 4 7170, 7 as Se] 34191 20900 eed 6 id vv 3 3012370009 7 1egtoaed24/S53 ANC TAU SA VENCIMENTO 22+ 22/2028 Totar JE SAGANENTO roy Desomerte Ace.tc em aud Raver Institurcsc Bansarria AGENCLA/COIOIGO ZENE = bee BRAS Beye .CcARSQ, BArLANA Jz5 VeBUIDORA JE SAS Cor CAPs c 2 2323. 33122 -7 = CED 25534900 - TPOILCA-3E 46 =] 35687000102 Sa 3¢ DORTYARTS s/h, Toes JOC CAT FRC. NOSSC NUHERO aw ea OCUMENTS N. JSCIMENTS 24/14/2025 £99 33722363-2 22/2625 93222363 LP Tas yuck DOCUMENTS = oS. 30 ANCL CAR sath ESPECI el QUAN: <DADE faLoR - 23,= =) REAL VeiLESCONT 7 ABA” MENS E> DE TESPINGAD SL LDADE DC BENERLClSR20 oNS AUCs “pos yenciument:, coerar vulca ge ab 49,52 aocs 3 yersimerss, csorar “07a ay I _-—— “= apes se 3$ 2,3) Tye MAS DELUCSES = Nac sag a ~ noses no tnctusac em o“gac ~ 22 PAasSTTMUISS TaNGRas MUL econ 3295 vENC MULT. os 1237 2.2287 MCV JIARTA Taye RSS ANKESCLNSS score = awe, great sERTE as \"C7. «wR = Wigs s = - Teck Se SRADE x *: one Ot a ne. hal #3: a eRe Tae me Recrss 4> es PA“R72 7, 32297 rye wo iar ‘tut an L-peahte o7 ate = Wwe SS Vow ColoNTAL = CPE ENP]: 9 wy PN Bs, agt aN eae fe: - 3Ac sat ee os eara ut ACAS RECTEE 3f p (0! weeny Re EICHA DE COMBENSACAC AUTENTICAR NC 4ERSO . \\ | I i EIN SING, gee. ge Ge DB TO a",
+    "document_info": {},
+    "entities": {},
+    "tables": [],
+    "totals": {},
+    "_meta": {
+      "engine": "tesseract",
+      "variant_used": "adaptive",
+      "lang_used": "por+eng",
+      "psm_used": 11,
+      "avg_confidence": 36.01,
+      "confidence_by_term": {
+        "1:ar-": [
+          0.0
+        ],
+        "2:i": [
+          73.0
+        ],
+        "3:\\": [
+          73.0
+        ],
+        "4:Atjitiem": [
+          1.0
+        ],
+        "5:33": [
+          49.0
+        ],
+        "6:duas": [
+          54.0
+        ],
+        "7:co": [
+          15.0
+        ],
+        "8:entes": [
+          0.0
+        ],
+        "9:Nesta": [
+          87.0
+        ],
+        "10:Pera": [
+          72.0
+        ],
+        "11:ca": [
+          3.0
+        ],
+        "12:San": [
+          72.0
+        ],
+        "13:adiante": [
+          89.0
+        ],
+        "14:.": [
+          27.0
+        ],
+        "15:aa": [
+          21.0
+        ],
+        "16:8": [
+          21.0
+        ],
+        "17:344": [
+          53.0
+        ],
+        "18:24191": [
+          74.0
+        ],
+        "19:29900": [
+          69.0
+        ],
+        "20:2129": [
+          63.0
+        ],
+        "21:rs": [
+          37.0
+        ],
+        "22:3)": [
+          56.0
+        ],
+        "23:bPrS": [
+          0.0
+        ],
+        "24:“7": [
+          19.0
+        ],
+        "25:312370009": [
+          16.0
+        ],
+        "26:7": [
+          83.0
+        ],
+        "27:L291o0Rez47S5S": [
+          0.0
+        ],
+        "28:ANC": [
+          0.0
+        ],
+        "29:TAU": [
+          33.0
+        ],
+        "30:SH": [
+          47.0
+        ],
+        "31:“Te": [
+          32.0
+        ],
+        "32:“f": [
+          3.0
+        ],
+        "33:VENCIMENTO": [
+          90.0
+        ],
+        "34:Total": [
+          25.0
+        ],
+        "35:JE": [
+          79.0
+        ],
+        "36:AGAMENTC": [
+          42.0
+        ],
+        "37:2B": [
+          58.0
+        ],
+        "38:2/2028": [
+          64.0
+        ],
+        "39:tee": [
+          41.0
+        ],
+        "40:eres": [
+          0.0
+        ],
+        "41:amerce": [
+          37.0
+        ],
+        "42:Acette": [
+          0.0
+        ],
+        "43:am": [
+          63.0
+        ],
+        "44:audvaver_Instituicac": [
+          26.0
+        ],
+        "45:Banzar.a": [
+          0.0
+        ],
+        "46:RIBUIDORA": [
+          66.0
+        ],
+        "47:JE": [
+          95.0
+        ],
+        "48:GAS": [
+          66.0
+        ],
+        "49:oF.": [
+          4.0
+        ],
+        "50:CNP": [
+          51.0
+        ],
+        "51:AGENCTA/": [
+          0.0
+        ],
+        "52:COOIGO": [
+          28.0
+        ],
+        "53:2EN": [
+          29.0
+        ],
+        "54:BE": [
+          54.0
+        ],
+        "55:FICIARTO.": [
+          2.0
+        ],
+        "56:BAFcANA": [
+          0.0
+        ],
+        "57:2": [
+          62.0
+        ],
+        "58:2": [
+          70.0
+        ],
+        "59:463": [
+          85.0
+        ],
+        "60:4": [
+          94.0
+        ],
+        "61:6325687000102": [
+          13.0
+        ],
+        "62:2": [
+          95.0
+        ],
+        "63:3.350237": [
+          15.0
+        ],
+        "64:PORTYARTS": [
+          67.0
+        ],
+        "65:sch,": [
+          55.0
+        ],
+        "66:34390": [
+          60.0
+        ],
+        "67:-": [
+          60.0
+        ],
+        "68:TPOILCA-PE": [
+          0.0
+        ],
+        "69:ZTE": [
+          21.0
+        ],
+        "70:TATA": [
+          71.0
+        ],
+        "71:2R9C.": [
+          16.0
+        ],
+        "72:NOSSC": [
+          35.0
+        ],
+        "73:NUHERO": [
+          0.0
+        ],
+        "74:ary": [
+          51.0
+        ],
+        "75:SOCUMENTS": [
+          28.0
+        ],
+        "76:i": [
+          50.0
+        ],
+        "77:pia": [
+          36.0
+        ],
+        "78:CAMENTS": [
+          17.0
+        ],
+        "79:~r2e": [
+          0.0
+        ],
+        "80:JOC": [
+          48.0
+        ],
+        "81:92722363->": [
+          0.0
+        ],
+        "82:et": [
+          31.0
+        ],
+        "83:2@25": [
+          40.0
+        ],
+        "84:3377": [
+          66.0
+        ],
+        "85:36": [
+          66.0
+        ],
+        "86:24/14/2025": [
+          72.0
+        ],
+        "87:we": [
+          40.0
+        ],
+        "88:SANCS": [
+          0.0
+        ],
+        "89:SCaTZOROE": [
+          0.0
+        ],
+        "90:errr": [
+          29.0
+        ],
+        "91:SOCUNE": [
+          0.0
+        ],
+        "92:NT": [
+          3.0
+        ],
+        "93:a3": [
+          65.0
+        ],
+        "94:3,32": [
+          67.0
+        ],
+        "95:=": [
+          80.0
+        ],
+        "96:Pry": [
+          50.0
+        ],
+        "97:[ALOR": [
+          26.0
+        ],
+        "98:DaRLe": [
+          0.0
+        ],
+        "99:Arte": [
+          30.0
+        ],
+        "100:if": [
+          32.0
+        ],
+        "101:ON": [
+          31.0
+        ],
+        "102:G7": [
+          46.0
+        ],
+        "103:ABA": [
+          42.0
+        ],
+        "104:LENS": [
+          12.0
+        ],
+        "105:INS": [
+          83.0
+        ],
+        "106:ACTED": [
+          25.0
+        ],
+        "107:DE": [
+          66.0
+        ],
+        "108:TESS": [
+          0.0
+        ],
+        "109:£3:": [
+          40.0
+        ],
+        "110:SauDADE": [
+          0.0
+        ],
+        "111:JC": [
+          81.0
+        ],
+        "112:BE": [
+          89.0
+        ],
+        "113:ven": [
+          91.0
+        ],
+        "114:ner,": [
+          44.0
+        ],
+        "115:7:": [
+          35.0
+        ],
+        "116:rar": [
+          79.0
+        ],
+        "117:mulca": [
+          0.0
+        ],
+        "118:ge": [
+          67.0
+        ],
+        "119:8$": [
+          0.0
+        ],
+        "120:49,52": [
+          49.0
+        ],
+        "121:aocs": [
+          2.0
+        ],
+        "122:3": [
+          78.0
+        ],
+        "123:yarcimerto,": [
+          23.0
+        ],
+        "124:coonar": [
+          17.0
+        ],
+        "125:mova": [
+          37.0
+        ],
+        "126:dt": [
+          73.0
+        ],
+        "127:Tepe": [
+          0.0
+        ],
+        "128:MAS": [
+          27.0
+        ],
+        "129:JECUCLES": [
+          7.0
+        ],
+        "130:RB": [
+          26.0
+        ],
+        "131:E": [
+          0.0
+        ],
+        "132:-": [
+          0.0
+        ],
+        "133:ae": [
+          62.0
+        ],
+        "134:cascuticcc": [
+          0.0
+        ],
+        "135:Nac": [
+          57.0
+        ],
+        "136:sagts": [
+          16.0
+        ],
+        "137:cata": [
+          53.0
+        ],
+        "138:te": [
+          36.0
+        ],
+        "139:inciusac": [
+          0.0
+        ],
+        "140:em": [
+          89.0
+        ],
+        "141:o7gat": [
+          0.0
+        ],
+        "142:ToL": [
+          0.0
+        ],
+        "143:NG": [
+          0.0
+        ],
+        "144:Ray": [
+          0.0
+        ],
+        "145:UL": [
+          11.0
+        ],
+        "146:>a,": [
+          28.0
+        ],
+        "147:3298": [
+          48.0
+        ],
+        "148:vENC": [
+          72.0
+        ],
+        "149:i": [
+          26.0
+        ],
+        "150:TE": [
+          50.0
+        ],
+        "151:DR": [
+          42.0
+        ],
+        "152:-": [
+          61.0
+        ],
+        "153:2.4287": [
+          55.0
+        ],
+        "154:WCU": [
+          40.0
+        ],
+        "155:JIARTA": [
+          0.0
+        ],
+        "156:Tree": [
+          3.0
+        ],
+        "157:ROS": [
+          58.0
+        ],
+        "158:ACRES:": [
+          51.0
+        ],
+        "159:ond": [
+          49.0
+        ],
+        "160:CeNSS": [
+          0.0
+        ],
+        "161:as": [
+          80.0
+        ],
+        "162:C7": [
+          17.0
+        ],
+        "163:we": [
+          39.0
+        ],
+        "164:ie": [
+          46.0
+        ],
+        "165:35": [
+          11.0
+        ],
+        "166:SAL": [
+          0.0
+        ],
+        "167:ee": [
+          0.0
+        ],
+        "168:wo": [
+          27.0
+        ],
+        "169:SADC": [
+          27.0
+        ],
+        "170:Sa": [
+          43.0
+        ],
+        "171:aed": [
+          21.0
+        ],
+        "172:st": [
+          27.0
+        ],
+        "173:Sc:": [
+          16.0
+        ],
+        "174:add": [
+          12.0
+        ],
+        "175:#:": [
+          8.0
+        ],
+        "176:onut": [
+          0.0
+        ],
+        "177:Pa": [
+          62.0
+        ],
+        "178:pat": [
+          75.0
+        ],
+        "179:a": [
+          46.0
+        ],
+        "180:“eS": [
+          0.0
+        ],
+        "181:Sine": [
+          8.0
+        ],
+        "182:EDIF": [
+          69.0
+        ],
+        "183:trtee.": [
+          0.0
+        ],
+        "184:TEIo": [
+          0.0
+        ],
+        "185:RE!": [
+          66.0
+        ],
+        "186:Fz": [
+          45.0
+        ],
+        "187:COLSNTAL": [
+          0.0
+        ],
+        "188:~": [
+          48.0
+        ],
+        "189:CPE": [
+          9.0
+        ],
+        "190:‘CNP": [
+          0.0
+        ],
+        "191:I:": [
+          0.0
+        ],
+        "192:923523799097": [
+          0.0
+        ],
+        "193:Sao": [
+          37.0
+        ],
+        "194:REL": [
+          30.0
+        ],
+        "195:TOS": [
+          35.0
+        ],
+        "196:a7": [
+          25.0
+        ],
+        "197:a": [
+          17.0
+        ],
+        "198:FACS": [
+          14.0
+        ],
+        "199:2": [
+          92.0
+        ],
+        "200:To": [
+          35.0
+        ],
+        "201:ECIES": [
+          28.0
+        ],
+        "202:=": [
+          65.0
+        ],
+        "203:SE": [
+          0.0
+        ],
+        "204:a": [
+          57.0
+        ],
+        "205:BD": [
+          23.0
+        ],
+        "206:Loe": [
+          32.0
+        ],
+        "207:a=": [
+          26.0
+        ],
+        "208:ays": [
+          27.0
+        ],
+        "209:4)": [
+          47.0
+        ],
+        "210:BICHA": [
+          0.0
+        ],
+        "211:QE": [
+          82.0
+        ],
+        "212:COMPENSACAC": [
+          85.0
+        ],
+        "213:AUTENTICAR": [
+          91.0
+        ],
+        "214:NC": [
+          83.0
+        ],
+        "215:VERSO": [
+          1.0
+        ],
+        "216:WMA": [
+          35.0
+        ],
+        "217:|": [
+          88.0
+        ],
+        "218:SSNS,": [
+          40.0
+        ],
+        "219:se.": [
+          29.0
+        ],
+        "220:gE": [
+          35.0
+        ],
+        "221:ee": [
+          0.0
+        ],
+        "222:CMAN": [
+          3.0
+        ],
+        "223:>": [
+          57.0
+        ],
+        "224:T": [
+          0.0
+        ],
+        "225:eal": [
+          14.0
+        ],
+        "226:ae": [
+          24.0
+        ]
+      },
+      "conversion_time_by_term": {
+        "1:ar-": "(0.1s)",
+        "2:i": "(0.0s)",
+        "3:\\": "(0.0s)",
+        "4:Atjitiem": "(0.3s)",
+        "5:33": "(0.1s)",
+        "6:duas": "(0.1s)",
+        "7:co": "(0.1s)",
+        "8:entes": "(0.2s)",
+        "9:Nesta": "(0.2s)",
+        "10:Pera": "(0.1s)",
+        "11:ca": "(0.1s)",
+        "12:San": "(0.1s)",
+        "13:adiante": "(0.2s)",
+        "14:.": "(0.0s)",
+        "15:aa": "(0.1s)",
+        "16:8": "(0.0s)",
+        "17:344": "(0.1s)",
+        "18:24191": "(0.2s)",
+        "19:29900": "(0.2s)",
+        "20:2129": "(0.1s)",
+        "21:rs": "(0.1s)",
+        "22:3)": "(0.1s)",
+        "23:bPrS": "(0.1s)",
+        "24:“7": "(0.1s)",
+        "25:312370009": "(0.3s)",
+        "26:7": "(0.0s)",
+        "27:L291o0Rez47S5S": "(0.5s)",
+        "28:ANC": "(0.1s)",
+        "29:TAU": "(0.1s)",
+        "30:SH": "(0.1s)",
+        "31:“Te": "(0.1s)",
+        "32:“f": "(0.1s)",
+        "33:VENCIMENTO": "(0.3s)",
+        "34:Total": "(0.2s)",
+        "35:JE": "(0.1s)",
+        "36:AGAMENTC": "(0.3s)",
+        "37:2B": "(0.1s)",
+        "38:2/2028": "(0.2s)",
+        "39:tee": "(0.1s)",
+        "40:eres": "(0.1s)",
+        "41:amerce": "(0.2s)",
+        "42:Acette": "(0.2s)",
+        "43:am": "(0.1s)",
+        "44:audvaver_Instituicac": "(0.6s)",
+        "45:Banzar.a": "(0.3s)",
+        "46:RIBUIDORA": "(0.3s)",
+        "47:JE": "(0.1s)",
+        "48:GAS": "(0.1s)",
+        "49:oF.": "(0.1s)",
+        "50:CNP": "(0.1s)",
+        "51:AGENCTA/": "(0.3s)",
+        "52:COOIGO": "(0.2s)",
+        "53:2EN": "(0.1s)",
+        "54:BE": "(0.1s)",
+        "55:FICIARTO.": "(0.3s)",
+        "56:BAFcANA": "(0.2s)",
+        "57:2": "(0.0s)",
+        "58:2": "(0.0s)",
+        "59:463": "(0.1s)",
+        "60:4": "(0.0s)",
+        "61:6325687000102": "(0.4s)",
+        "62:2": "(0.0s)",
+        "63:3.350237": "(0.3s)",
+        "64:PORTYARTS": "(0.3s)",
+        "65:sch,": "(0.1s)",
+        "66:34390": "(0.2s)",
+        "67:-": "(0.0s)",
+        "68:TPOILCA-PE": "(0.3s)",
+        "69:ZTE": "(0.1s)",
+        "70:TATA": "(0.1s)",
+        "71:2R9C.": "(0.2s)",
+        "72:NOSSC": "(0.2s)",
+        "73:NUHERO": "(0.2s)",
+        "74:ary": "(0.1s)",
+        "75:SOCUMENTS": "(0.3s)",
+        "76:i": "(0.0s)",
+        "77:pia": "(0.1s)",
+        "78:CAMENTS": "(0.2s)",
+        "79:~r2e": "(0.1s)",
+        "80:JOC": "(0.1s)",
+        "81:92722363->": "(0.3s)",
+        "82:et": "(0.1s)",
+        "83:2@25": "(0.1s)",
+        "84:3377": "(0.1s)",
+        "85:36": "(0.1s)",
+        "86:24/14/2025": "(0.3s)",
+        "87:we": "(0.1s)",
+        "88:SANCS": "(0.2s)",
+        "89:SCaTZOROE": "(0.3s)",
+        "90:errr": "(0.1s)",
+        "91:SOCUNE": "(0.2s)",
+        "92:NT": "(0.1s)",
+        "93:a3": "(0.1s)",
+        "94:3,32": "(0.1s)",
+        "95:=": "(0.0s)",
+        "96:Pry": "(0.1s)",
+        "97:[ALOR": "(0.2s)",
+        "98:DaRLe": "(0.2s)",
+        "99:Arte": "(0.1s)",
+        "100:if": "(0.1s)",
+        "101:ON": "(0.1s)",
+        "102:G7": "(0.1s)",
+        "103:ABA": "(0.1s)",
+        "104:LENS": "(0.1s)",
+        "105:INS": "(0.1s)",
+        "106:ACTED": "(0.2s)",
+        "107:DE": "(0.1s)",
+        "108:TESS": "(0.1s)",
+        "109:£3:": "(0.1s)",
+        "110:SauDADE": "(0.2s)",
+        "111:JC": "(0.1s)",
+        "112:BE": "(0.1s)",
+        "113:ven": "(0.1s)",
+        "114:ner,": "(0.1s)",
+        "115:7:": "(0.1s)",
+        "116:rar": "(0.1s)",
+        "117:mulca": "(0.2s)",
+        "118:ge": "(0.1s)",
+        "119:8$": "(0.1s)",
+        "120:49,52": "(0.2s)",
+        "121:aocs": "(0.1s)",
+        "122:3": "(0.0s)",
+        "123:yarcimerto,": "(0.4s)",
+        "124:coonar": "(0.2s)",
+        "125:mova": "(0.1s)",
+        "126:dt": "(0.1s)",
+        "127:Tepe": "(0.1s)",
+        "128:MAS": "(0.1s)",
+        "129:JECUCLES": "(0.3s)",
+        "130:RB": "(0.1s)",
+        "131:E": "(0.0s)",
+        "132:-": "(0.0s)",
+        "133:ae": "(0.1s)",
+        "134:cascuticcc": "(0.3s)",
+        "135:Nac": "(0.1s)",
+        "136:sagts": "(0.2s)",
+        "137:cata": "(0.1s)",
+        "138:te": "(0.1s)",
+        "139:inciusac": "(0.3s)",
+        "140:em": "(0.1s)",
+        "141:o7gat": "(0.2s)",
+        "142:ToL": "(0.1s)",
+        "143:NG": "(0.1s)",
+        "144:Ray": "(0.1s)",
+        "145:UL": "(0.1s)",
+        "146:>a,": "(0.1s)",
+        "147:3298": "(0.1s)",
+        "148:vENC": "(0.1s)",
+        "149:i": "(0.0s)",
+        "150:TE": "(0.1s)",
+        "151:DR": "(0.1s)",
+        "152:-": "(0.0s)",
+        "153:2.4287": "(0.2s)",
+        "154:WCU": "(0.1s)",
+        "155:JIARTA": "(0.2s)",
+        "156:Tree": "(0.1s)",
+        "157:ROS": "(0.1s)",
+        "158:ACRES:": "(0.2s)",
+        "159:ond": "(0.1s)",
+        "160:CeNSS": "(0.2s)",
+        "161:as": "(0.1s)",
+        "162:C7": "(0.1s)",
+        "163:we": "(0.1s)",
+        "164:ie": "(0.1s)",
+        "165:35": "(0.1s)",
+        "166:SAL": "(0.1s)",
+        "167:ee": "(0.1s)",
+        "168:wo": "(0.1s)",
+        "169:SADC": "(0.1s)",
+        "170:Sa": "(0.1s)",
+        "171:aed": "(0.1s)",
+        "172:st": "(0.1s)",
+        "173:Sc:": "(0.1s)",
+        "174:add": "(0.1s)",
+        "175:#:": "(0.1s)",
+        "176:onut": "(0.1s)",
+        "177:Pa": "(0.1s)",
+        "178:pat": "(0.1s)",
+        "179:a": "(0.0s)",
+        "180:“eS": "(0.1s)",
+        "181:Sine": "(0.1s)",
+        "182:EDIF": "(0.1s)",
+        "183:trtee.": "(0.2s)",
+        "184:TEIo": "(0.1s)",
+        "185:RE!": "(0.1s)",
+        "186:Fz": "(0.1s)",
+        "187:COLSNTAL": "(0.3s)",
+        "188:~": "(0.0s)",
+        "189:CPE": "(0.1s)",
+        "190:‘CNP": "(0.1s)",
+        "191:I:": "(0.1s)",
+        "192:923523799097": "(0.4s)",
+        "193:Sao": "(0.1s)",
+        "194:REL": "(0.1s)",
+        "195:TOS": "(0.1s)",
+        "196:a7": "(0.1s)",
+        "197:a": "(0.0s)",
+        "198:FACS": "(0.1s)",
+        "199:2": "(0.0s)",
+        "200:To": "(0.1s)",
+        "201:ECIES": "(0.2s)",
+        "202:=": "(0.0s)",
+        "203:SE": "(0.1s)",
+        "204:a": "(0.0s)",
+        "205:BD": "(0.1s)",
+        "206:Loe": "(0.1s)",
+        "207:a=": "(0.1s)",
+        "208:ays": "(0.1s)",
+        "209:4)": "(0.1s)",
+        "210:BICHA": "(0.2s)",
+        "211:QE": "(0.1s)",
+        "212:COMPENSACAC": "(0.4s)",
+        "213:AUTENTICAR": "(0.3s)",
+        "214:NC": "(0.1s)",
+        "215:VERSO": "(0.2s)",
+        "216:WMA": "(0.1s)",
+        "217:|": "(0.0s)",
+        "218:SSNS,": "(0.2s)",
+        "219:se.": "(0.1s)",
+        "220:gE": "(0.1s)",
+        "221:ee": "(0.1s)",
+        "222:CMAN": "(0.1s)",
+        "223:>": "(0.0s)",
+        "224:T": "(0.0s)",
+        "225:eal": "(0.1s)",
+        "226:ae": "(0.1s)"
+      },
+      "total_conversion_time": "(28.2s)"
+    }
+  },
+  "api_current_flow": null,
+  "note": "The API route_and_process still uses mock extraction for scanned_image. This script validates the full classify + preprocess + real tesseract flow directly."
+}

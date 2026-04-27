@@ -237,7 +237,7 @@ function App() {
 
             if (metricKey === 'with_handwritten_text') {
                 const val = transcription?.ocr_meta?.with_handwritten_text
-                return ['Existe Manuscrito?', val === true ? 'Sim' : val === false ? 'Não' : '-']
+                return ['Existe Manuscrito?', val === true ? 'Sim' : val === false ? 'Não' : 'Não']
             }
 
             return [metricKey, transcription?.[metricKey]]

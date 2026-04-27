@@ -199,8 +199,9 @@ def _call_openrouter(image_bgr: Any, page_label: str = "page_1", timeout_s: int 
     instruction = (
         "Você é um OCR. Extraia fielmente todo o texto visível da imagem, preservando ordem de leitura. "
         "Retorne APENAS JSON válido com este schema: "
-        '{"page":"string","extracted_text":"string","language":"string","confidence_0_1":"number",'
-        '"key_values":[{"key":"string","value":"string"}]}. '
+        '{"page":"string", "with_handwritten_text":"bool" ,"extracted_text":"string","language":"string","confidence_0_1":"number",'
+        '"key_values":[{"key":"string","value":"string"} ]}. '
+        '"A variável "with_handwritten_text" deve ser true se houver texto manuscrito, mesmo que o OCR não consiga extrair o conteúdo. '
         "Se não houver texto, retorne extracted_text vazio e confidence_0_1 igual a 0."
     )
 
@@ -349,6 +350,7 @@ class OpenRouterOCREngine:
                     "page": label,
                     "text": page_text,
                     "confidence": result.get("confidence_0_1"),
+                    "with_handwritten_text": result.get("with_handwritten_text"),
                     **({"truncated": True} if result.get("_truncated") else {}),
                     **({"parse_error": result.get("raw_output", "")[:200]} if result.get("parse_error") else {}),
                 })
@@ -361,6 +363,7 @@ class OpenRouterOCREngine:
         merged = "\n\n".join(t for t in texts if t).strip()
         confs = [r["confidence"] for r in page_results if isinstance(r.get("confidence"), (int, float))]
         avg_conf = round(sum(confs) / len(confs) * 100, 2) if confs else None
+        has_handwritten = any(r.get("with_handwritten_text") for r in page_results if not r.get("error"))
 
         if not merged and page_errors:
             fallback_msg = "OpenRouter errors: " + "; ".join(page_errors)
@@ -379,6 +382,7 @@ class OpenRouterOCREngine:
                 "model": api_model,
                 "pipeline": "openrouter-ocr",
                 "avg_confidence": avg_conf,
+                "with_handwritten_text": has_handwritten,
                 "pdf_classification": pdf_class,
                 "pages": page_results,
             },
@@ -410,6 +414,7 @@ class OpenRouterOCREngine:
                 "model": api_model,
                 "pipeline": "openrouter-ocr",
                 "avg_confidence": avg_conf,
+                "with_handwritten_text": result.get("with_handwritten_text"),
                 "result": result,
             },
         }

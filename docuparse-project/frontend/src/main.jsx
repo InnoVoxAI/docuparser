@@ -163,6 +163,7 @@ function App() {
     }
 
     const metricsOrder = [
+        'with_handwritten_text',
         'field_score',
         'ocr_confidence',
         'final_score',
@@ -232,6 +233,11 @@ function App() {
         return metricsOrder.map((metricKey) => {
             if (metricKey === 'processing_time') {
                 return [metricKey, result?.processing_time ?? '-']
+            }
+
+            if (metricKey === 'with_handwritten_text') {
+                const val = transcription?.ocr_meta?.with_handwritten_text
+                return ['Existe Manuscrito?', val === true ? 'Sim' : val === false ? 'Não' : 'Não']
             }
 
             return [metricKey, transcription?.[metricKey]]

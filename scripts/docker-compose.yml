@@ -1,0 +1,33 @@
+version: '3.8'
+
+# docker-compose para subir o serviço olmOCR em modo CPU (usa ./scripts/.env)
+# Ajuste a variável PLATFORM se precisar forçar emulação (arm64 / amd64)
+
+services:
+  olmocr:
+    image: ${OLMOCR_DOCKER_IMAGE:-alleninstituteforai/olmocr:latest-with-model}
+    container_name: ${OLMOCR_DOCKER_CONTAINER:-olmocr_api}
+    env_file:
+      - .env
+    environment:
+      - OLMOCR_REQUIRE_GPU=${OLMOCR_REQUIRE_GPU:-false}
+    ports:
+      - "${OLMOCR_DOCKER_PORT:-8010}:8010"
+    restart: unless-stopped
+    # Se precisar forçar arquitetura (Apple Silicon): descomente a linha abaixo
+    # platform: ${PLATFORM:-linux/arm64}
+
+    # Se quiser executar um comando específico (opcional), descomente e ajuste:
+    # command: ["vllm", "serve", "${OLMOCR_MODEL}", "--host", "0.0.0.0", "--port", "8010"]
+
+    # Healthcheck comentado por padrão (nem todas as imagens têm curl/wget).
+    # Para ativar, descomente e ajuste o endpoint conforme a API do container.
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -f http://localhost:8010/v1 || exit 1"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 6
+
+# Uso:
+# cd scripts
+# docker compose up --build

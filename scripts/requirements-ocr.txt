@@ -1,0 +1,9 @@
+pymupdf>=1.24.0
+numpy>=1.26.0,<2
+pillow>=10.0.0
+opencv-python>=4.9.0
+pytesseract>=0.3.10
+easyocr>=1.7.1
+docling>=2.0.0
+requests>=2.32.0
+python-dotenv>=1.0.0

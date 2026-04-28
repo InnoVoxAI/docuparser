@@ -1,5 +1,5 @@
 @startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
 title Containers
 
@@ -9,8 +9,9 @@ Person(supervisor, "Supervisor")
 System_Boundary(system, "Document System") {
 
     Container(frontend, "Frontend", "React")
-    Container(core, "Backend Core", "Django")
-    Container(ocr, "Backend OCR", "Python")
+    Container(core, "Backend Core", "Django", "Orquestrador")
+    Container(ocr, "Backend OCR", "Python", "OCR + Classificação")
+    Container(langextract, "LangExtract Service", "Python + LLM", "Extração semântica")
     Container(queue, "Queue", "Redis/RabbitMQ")
     ContainerDb(db, "Database", "PostgreSQL")
 }
@@ -21,15 +22,16 @@ System_Ext(scanner, "Scanner System")
 System_Ext(superlogica, "Superlógica")
 
 Rel(operator, frontend, "usa")
-Rel(supervisor, frontend, "configura extração")
+Rel(supervisor, frontend, "configura schemas")
 
 Rel(email, core, "ingestão")
 Rel(whatsapp, core, "ingestão")
-Rel(scanner, core, "upload documentos físicos")
+Rel(scanner, core, "upload scan")
 
 Rel(core, queue, "jobs")
 Rel(queue, ocr, "processamento")
-Rel(ocr, core, "resultado")
+Rel(ocr, langextract, "raw_text")
+Rel(langextract, core, "json estruturado")
 
 Rel(core, db, "persistência")
 Rel(core, superlogica, "integração")

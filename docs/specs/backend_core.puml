@@ -3,31 +3,24 @@
 
 title Backend Core
 
-Person(operator, "Operador")
-Person(supervisor, "Supervisor")
-
-System_Boundary(coreSystem, "Backend Core") {
-
-    Component(api, "API REST", "Django", "Endpoints do sistema")
-    Component(ingestion, "Ingestion Service", "Python", "Recepção e normalização")
-    Component(orchestrator, "Orchestrator", "Celery", "Coordenação de pipeline")
-    Component(validation, "Validation Service", "Python", "Fluxo humano de validação")
-    Component(langconfig, "LangExtract Config Service", "Python", "Configuração dinâmica")
-    Component(integration, "Superlógica Integration", "Python", "Integração com API externa")
-    Component(db, "PostgreSQL", "Database", "Armazena documentos e estados")
-    Component(queue, "Message Queue", "Redis/RabbitMQ", "Fila assíncrona")
+Container_Boundary(core, "Backend Core") {
+    Component(api, "API REST", "Django")
+    Component(ingestion, "Ingestion Service")
+    Component(orchestrator, "Orchestrator", "Celery")
+    Component(validation, "Validation Service")
+    Component(integration, "Superlógica Integration")
 }
 
-Rel(api, ingestion, "recebe documentos")
-Rel(api, validation, "consulta/atualiza")
-Rel(api, langconfig, "configuração supervisor")
+ContainerDb(db, "PostgreSQL")
+Container(queue, "Queue")
 
-Rel(ingestion, orchestrator, "dispara pipeline")
-Rel(orchestrator, queue, "enqueue jobs")
-
-Rel(validation, integration, "após aprovação")
-Rel(integration, db, "atualiza dados")
-Rel(api, db, "CRUD")
+api --> ingestion
+api --> validation
+ingestion --> orchestrator
+orchestrator --> queue
+validation --> integration
+integration --> db
+api --> db
 
 @enduml
 

@@ -3,17 +3,17 @@
 
 title Backend OCR
 
-System_Boundary(ocr, "Backend OCR") {
+Container_Boundary(ocr, "Backend OCR") {
 
     Component(classifier, "Classifier")
     Component(ocr_engine, "OCR Engine")
-    Component(langextract, "LangExtract")
-    Component(queue, "Queue")
 }
 
-Rel_D(queue, classifier, "distribui para classificador")
-Rel_D(classifier, ocr_engine, "envia para OCR")
-Rel_D(ocr_engine, langextract, "extrai linguagem")
-Rel_D(langextract, queue, "retorna para fila")
+Container(queue, "Queue")
+Container(langextract, "LangExtract Service")
+
+queue --> classifier
+classifier --> ocr_engine
+ocr_engine --> langextract
 
 @enduml

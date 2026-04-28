@@ -1,10 +1,10 @@
 @startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
 
-title Sistema de Ingestão de Documentos - Contexto
+title Sistema de Ingestão de Documentos
 
 Person(operator, "Operador")
-Person(supervisor, "Supervisor", "Configura extração LangExtract")
+Person(supervisor, "Supervisor")
 
 System(system, "Sistema de Ingestão de Documentos")
 
@@ -15,11 +15,10 @@ System_Ext(superlogica, "Superlógica API")
 
 Rel(email, system, "envia documentos")
 Rel(whatsapp, system, "envia documentos")
-Rel(scanner, system, "envia PDFs digitalizados")
+Rel(scanner, system, "envia documentos digitalizados")
 
 Rel(operator, system, "valida documentos")
 Rel(supervisor, system, "configura LangExtract")
-
 Rel(system, superlogica, "envia dados aprovados")
 
 @enduml

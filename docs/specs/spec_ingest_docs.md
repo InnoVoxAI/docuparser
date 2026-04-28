@@ -1,8 +1,10 @@
-# 📄 Sistema de Ingestão de Documentos – Especificação v2
+# 📄 Sistema de Ingestão de Documentos – Especificação v3 (Arquitetura com LangExtract Microservice)
 
 ## 1. 🎯 Objetivo
 
-Construir um sistema distribuído para ingestão, processamento, extração e validação de documentos financeiros (faturas, boletos e documentos em papel digitalizados), com integração ao sistema de gestão de condomínios via API do **Superlógica**.
+Construir um sistema distribuído para ingestão, processamento, extração e validação de documentos financeiros (faturas, boletos e documentos escaneados), com integração ao sistema de gestão de condomínios via API do **Superlógica**.
+
+A arquitetura é baseada em **processamento assíncrono orientado a eventos**, com separação clara entre OCR, orquestração e extração semântica via LLM.
 
 ---
 
@@ -11,7 +13,7 @@ Construir um sistema distribuído para ingestão, processamento, extração e va
 ### 2.1 Email
 
 * Integração com API de e-mail existente
-* Suporte a múltiplos anexos
+* Suporte a múltiplos anexos por mensagem
 * Cada e-mail pode gerar múltiplos documentos
 
 ---
@@ -20,66 +22,103 @@ Construir um sistema distribuído para ingestão, processamento, extração e va
 
 * Integração via webhook
 * Suporte a imagens e PDFs
-* Compressão e baixa qualidade devem ser tratados no OCR
+* Tratamento de baixa qualidade de imagem (compressão e ruído)
 
 ---
 
-### 2.3 📄 Documentos em Papel (NOVO)
+### 2.3 📄 Documentos em Papel (Digitalização)
 
-Documentos físicos recebidos pela empresa serão:
+Documentos físicos recebidos pela empresa são incorporados ao sistema via digitalização:
 
-1. Escaneados via scanner corporativo
-2. Convertidos para PDF ou imagem
-3. Inseridos manualmente ou automaticamente no sistema
+1. Escaneamento via scanner corporativo
+2. Conversão para PDF ou imagem
+3. Upload manual ou automático no sistema
 
 #### Fluxo:
 
 ```
-Documento físico → Scanner → Upload na aplicação → Pipeline OCR
+Documento físico → Scanner → Upload → Pipeline OCR
 ```
 
-#### Requisitos:
+#### Metadados obrigatórios:
 
-* Upload via interface web ou pasta monitorada
-* Associação opcional a lote (batch)
-* Metadados: operador, data de digitalização, origem = "paper"
+* origem = "paper"
+* operador responsável
+* timestamp de digitalização
 
 ---
 
 ## 3. 🧠 Classificação de Documento
 
-O sistema deve classificar automaticamente:
+Responsabilidade do backend-ocr:
 
 * PDF com texto
 * PDF escaneado
-* Imagem (JPG/PNG)
-* Documento escaneado de papel
+* Imagem
+* Documento escaneado (paper)
 
-Saída:
+### Saída:
 
 ```json
 {
-  "type": "boleto | fatura",
+  "document_type": "boleto | fatura",
   "content_type": "pdf_text | scanned_pdf | image | paper_scan"
 }
 ```
 
 ---
 
-## 4. 🔍 OCR + LangExtract
+## 4. 🔍 OCR (Backend OCR)
 
-### 4.1 OCR
+Responsável por:
 
 * Extração de texto bruto
-* Normalização de ruído (scan/whatsapp)
+* Limpeza e normalização
+* Classificação inicial
+
+### Saída padrão:
+
+```json
+{
+  "raw_text": "...",
+  "confidence": 0.91,
+  "document_type": "boleto"
+}
+```
 
 ---
 
-### 4.2 LangExtract (Extração Estruturada)
+## 5. 🧠 LangExtract (MICROSERVICE LLM)
 
-Transforma texto em dados estruturados:
+### 📌 Definição
 
-Exemplo:
+O LangExtract é um **microserviço independente baseado em LLM**, responsável pela transformação semântica do texto em dados estruturados.
+
+Ele NÃO faz parte do backend-ocr.
+
+---
+
+### 🧩 Responsabilidades
+
+* Extração estruturada via LLM
+* Aplicação de schema dinâmico
+* Validação semântica de campos
+* Versionamento de regras de extração
+
+---
+
+### 📥 Entrada
+
+```json
+{
+  "raw_text": "...",
+  "schema_version": "boleto_v3"
+}
+```
+
+---
+
+### 📤 Saída
 
 ```json
 {
@@ -93,14 +132,51 @@ Exemplo:
 
 ---
 
-## 5. 👨‍💼 Validação Humana (Human-in-the-loop)
+### 🤖 Dependência de LLM
 
-Interface React para operadores:
+Sim.
 
-* Visualização do documento original
-* Dados extraídos pelo sistema
-* Correção manual
-* Aprovação/Rejeição
+O LangExtract utiliza LLM para:
+
+* interpretação de linguagem natural
+* resolução de ambiguidades
+* extração baseada em schema
+
+Pode ser implementado via:
+
+* API (OpenAI / Claude / etc.)
+* ou modelo local (open-source)
+
+---
+
+## 6. 🏗️ Backend Core (Orquestrador)
+
+Responsável por:
+
+* orquestração do pipeline
+* controle de estado do documento
+* integração entre serviços
+* persistência
+* validação humana
+
+---
+
+### 🔄 Pipeline orquestrado
+
+```
+Ingestão → OCR → LangExtract → Validação → Integração
+```
+
+---
+
+## 7. 👨‍💼 Validação Humana (Human-in-the-loop)
+
+Interface React:
+
+* visualização do documento
+* comparação OCR vs dados extraídos
+* correção manual
+* aprovação/rejeição
 
 ### Estados:
 
@@ -114,77 +190,68 @@ Interface React para operadores:
 
 ---
 
-## 6. 🧑‍💼 Perfis de Usuário
+## 8. 🧑‍💼 Perfis de Usuário
 
 ### Operador
 
-* Visualiza documentos
-* Corrige dados
-* Aprova/rejeita
+* valida documentos
+* corrige dados extraídos
+
+### Supervisor
+
+* define schemas do LangExtract
+* versiona regras de extração
+* ajusta campos sem necessidade de deploy
 
 ---
 
-### Supervisor (NOVO)
-
-Responsável por **configuração avançada de extração**:
-
-#### Permissões:
-
-* Editar templates do LangExtract
-* Ajustar regras de parsing
-* Definir novos campos extraídos
-* Versionar configurações
-
-#### Exemplo de configuração:
-
-```json
-{
-  "document_type": "boleto",
-  "fields": [
-    {"name": "valor", "type": "currency"},
-    {"name": "vencimento", "type": "date"},
-    {"name": "fornecedor", "type": "string"}
-  ]
-}
-```
-
-#### Impacto:
-
-* Ajusta comportamento do pipeline sem deploy
-* Versionamento de schemas
-
----
-
-## 7. 🔗 Integração Superlógica
+## 9. 🔗 Integração Superlógica
 
 Após aprovação:
 
-* Envio via API
-* Mapeamento de contas a pagar
-* Controle de idempotência
+* envio via API
+* integração com contas a pagar
+* controle de idempotência (evitar duplicação)
 
 ---
 
-## 8. 🏗️ Arquitetura
+## 10. 🏗️ Arquitetura Geral
 
 ### Componentes:
 
-* backend-core (Django)
-* backend-ocr (Python)
-* fila assíncrona (Redis/RabbitMQ)
+* backend-core (Django) → orquestrador
+* backend-ocr → OCR + classificação
+* langextract-service → LLM extraction microservice
+* queue (Redis/RabbitMQ)
 * PostgreSQL
 * frontend React
 
 ---
 
-## 9. 🔄 Pipeline Assíncrono
+## 11. 🔄 Arquitetura de Execução
 
 ```
-Ingestão → Classificação → OCR → LangExtract → Validação → Integração
+Email / WhatsApp / Scanner
+          ↓
+     Backend Core (Orquestrador)
+          ↓
+      Queue (Celery)
+          ↓
+     Backend OCR
+          ↓
+     raw_text
+          ↓
+ LangExtract Service (LLM)
+          ↓
+ structured JSON
+          ↓
+ Backend Core
+          ↓
+ Validação Humana
+          ↓
+ Superlógica API
 ```
 
-* Celery (chain / group / chord)
-* Processamento distribuído
-* Escalabilidade horizontal OCR
+
 
 

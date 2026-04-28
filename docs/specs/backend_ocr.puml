@@ -1,0 +1,19 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Backend OCR
+
+System_Boundary(ocr, "Backend OCR") {
+
+    Component(classifier, "Classifier")
+    Component(ocr_engine, "OCR Engine")
+    Component(langextract, "LangExtract")
+    Component(queue, "Queue")
+}
+
+Rel_D(queue, classifier, "distribui para classificador")
+Rel_D(classifier, ocr_engine, "envia para OCR")
+Rel_D(ocr_engine, langextract, "extrai linguagem")
+Rel_D(langextract, queue, "retorna para fila")
+
+@enduml

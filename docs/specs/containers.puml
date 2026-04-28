@@ -1,0 +1,37 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Containers
+
+Person(operator, "Operador")
+Person(supervisor, "Supervisor")
+
+System_Boundary(system, "Document System") {
+
+    Container(frontend, "Frontend", "React")
+    Container(core, "Backend Core", "Django")
+    Container(ocr, "Backend OCR", "Python")
+    Container(queue, "Queue", "Redis/RabbitMQ")
+    ContainerDb(db, "Database", "PostgreSQL")
+}
+
+System_Ext(email, "Email API")
+System_Ext(whatsapp, "WhatsApp API")
+System_Ext(scanner, "Scanner System")
+System_Ext(superlogica, "Superlógica")
+
+Rel(operator, frontend, "usa")
+Rel(supervisor, frontend, "configura extração")
+
+Rel(email, core, "ingestão")
+Rel(whatsapp, core, "ingestão")
+Rel(scanner, core, "upload documentos físicos")
+
+Rel(core, queue, "jobs")
+Rel(queue, ocr, "processamento")
+Rel(ocr, core, "resultado")
+
+Rel(core, db, "persistência")
+Rel(core, superlogica, "integração")
+
+@enduml

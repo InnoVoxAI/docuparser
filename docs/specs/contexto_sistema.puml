@@ -1,0 +1,25 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title Sistema de Ingestão de Documentos - Contexto
+
+Person(operator, "Operador")
+Person(supervisor, "Supervisor", "Configura extração LangExtract")
+
+System(system, "Sistema de Ingestão de Documentos")
+
+System_Ext(email, "Email API")
+System_Ext(whatsapp, "WhatsApp API")
+System_Ext(scanner, "Scanner Corporativo")
+System_Ext(superlogica, "Superlógica API")
+
+Rel(email, system, "envia documentos")
+Rel(whatsapp, system, "envia documentos")
+Rel(scanner, system, "envia PDFs digitalizados")
+
+Rel(operator, system, "valida documentos")
+Rel(supervisor, system, "configura LangExtract")
+
+Rel(system, superlogica, "envia dados aprovados")
+
+@enduml

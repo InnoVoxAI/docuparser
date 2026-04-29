@@ -1,3 +1,4 @@
+
 @startuml
 !includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
 
@@ -6,7 +7,7 @@ title Sistema de Ingestão de Documentos
 Person(operator, "Operador")
 Person(supervisor, "Supervisor")
 
-System(system, "Sistema de Ingestão de Documentos")
+System(system, "Sistema de Ingestão de Documentos", "Processa documentos com OCR, classificação de layout e extração semântica")
 
 System_Ext(email, "Email API")
 System_Ext(whatsapp, "WhatsApp API")
@@ -18,7 +19,7 @@ Rel(whatsapp, system, "envia documentos")
 Rel(scanner, system, "envia documentos digitalizados")
 
 Rel(operator, system, "valida documentos")
-Rel(supervisor, system, "configura LangExtract")
+Rel(supervisor, system, "configura extração e layouts")
 Rel(system, superlogica, "envia dados aprovados")
 
 @enduml

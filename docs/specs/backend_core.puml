@@ -4,23 +4,26 @@
 title Backend Core
 
 Container_Boundary(core, "Backend Core") {
+
     Component(api, "API REST", "Django")
     Component(ingestion, "Ingestion Service")
     Component(orchestrator, "Orchestrator", "Celery")
     Component(validation, "Validation Service")
+    Component(layout_router, "Layout Routing Logic", "Seleciona schema/layout")
     Component(integration, "Superlógica Integration")
 }
 
 ContainerDb(db, "PostgreSQL")
 Container(queue, "Queue")
 
-api --> ingestion
-api --> validation
-ingestion --> orchestrator
-orchestrator --> queue
-validation --> integration
-integration --> db
-api --> db
+Rel(api, ingestion, "")
+Rel(api, validation, "")
+Rel(ingestion, orchestrator, "")
+Rel(orchestrator, queue, "")
+Rel(orchestrator, layout_router, "decide fluxo baseado em layout")
+Rel(validation, integration, "")
+Rel(integration, db, "")
+Rel(api, db, "")
 
 @enduml
 

@@ -10,8 +10,9 @@ System_Boundary(system, "Document System") {
 
     Container(frontend, "Frontend", "React")
     Container(core, "Backend Core", "Django", "Orquestrador")
-    Container(ocr, "Backend OCR", "Python", "OCR + Classificação")
-    Container(langextract, "LangExtract Service", "Python + LLM", "Extração semântica")
+    Container(ocr, "Backend OCR", "Python", "OCR + classificação básica")
+    Container(layout, "Layout Classification Service", "Python/ML/LLM", "Identificação de layout do documento")
+    Container(langextract, "LangExtract Service", "Python + LLM", "Extração semântica baseada em schema")
     Container(queue, "Queue", "Redis/RabbitMQ")
     ContainerDb(db, "Database", "PostgreSQL")
 }
@@ -22,15 +23,17 @@ System_Ext(scanner, "Scanner System")
 System_Ext(superlogica, "Superlógica")
 
 Rel(operator, frontend, "usa")
-Rel(supervisor, frontend, "configura schemas")
+Rel(supervisor, frontend, "configura schemas e layouts")
 
 Rel(email, core, "ingestão")
 Rel(whatsapp, core, "ingestão")
 Rel(scanner, core, "upload scan")
 
 Rel(core, queue, "jobs")
-Rel(queue, ocr, "processamento")
-Rel(ocr, langextract, "raw_text")
+
+Rel(queue, ocr, "processamento OCR")
+Rel(ocr, layout, "raw_text + tipo documento")
+Rel(layout, langextract, "raw_text + layout")
 Rel(langextract, core, "json estruturado")
 
 Rel(core, db, "persistência")

@@ -5,15 +5,15 @@ title Backend OCR
 
 Container_Boundary(ocr, "Backend OCR") {
 
-    Component(classifier, "Classifier")
-    Component(ocr_engine, "OCR Engine")
+    Component(classifier, "Document Classifier", "Tipo de documento")
+    Component(ocr_engine, "OCR Engine", "Extração de texto")
 }
 
 Container(queue, "Queue")
-Container(langextract, "LangExtract Service")
+Container(layout, "Layout Classification Service")
 
-queue --> classifier
-classifier --> ocr_engine
-ocr_engine --> langextract
+Rel(queue, classifier, "job")
+Rel(classifier, ocr_engine, "processar")
+Rel(ocr_engine, layout, "raw_text")
 
 @enduml

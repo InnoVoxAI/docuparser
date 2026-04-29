@@ -96,6 +96,9 @@ backend-ocr/
 ### 3.1 Nova Estrutura de Diretórios
 
 ```
+
+### Início do Passo 1 de Refactor ###
+
 backend-ocr/
 │
 ├── api/                            ← Camada HTTP: só recebe e devolve requests
@@ -236,6 +239,8 @@ agent/router.py                  ──►  FRAGMENTADO em:
   _resolve_engine()              ──►    domain/engine_resolver.py  (NOVO)
   route_and_process()            ──►    application/process_document.py  (NOVO)
   _normalize_output()            ──►    application/process_document.py
+
+  #### Fim do Passo 1 de Refactor ###
 
 agent/classifier.py              ──►  domain/classifier.py
   (sem mudança de lógica,              (novo local, remove do pacote agent)

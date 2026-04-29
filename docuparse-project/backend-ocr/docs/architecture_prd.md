@@ -97,7 +97,6 @@ backend-ocr/
 
 ```
 
-### Início do Passo 1 de Refactor ###
 
 backend-ocr/
 │
@@ -240,7 +239,6 @@ agent/router.py                  ──►  FRAGMENTADO em:
   route_and_process()            ──►    application/process_document.py  (NOVO)
   _normalize_output()            ──►    application/process_document.py
 
-  #### Fim do Passo 1 de Refactor ###
 
 agent/classifier.py              ──►  domain/classifier.py
   (sem mudança de lógica,              (novo local, remove do pacote agent)

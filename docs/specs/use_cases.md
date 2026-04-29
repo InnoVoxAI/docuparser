@@ -199,6 +199,14 @@ O sistema deve permitir a definição de padrões distintos para documentos com 
 
 ---
 
+## Contexto: 
+  
+  O Supervisor só visualiza a árvore de "Tipos de Documento" e "Layouts" da sua própria empresa.
+
+## Regra de Negócio
+
+ Se o Supervisor da Empresa A criar um layout chamado fatura_personalizada, este não aparecerá para a Empresa B.
+
 ## 🧠 Conceitos Fundamentais
 
 O modelo de configuração segue a hierarquia:
@@ -394,6 +402,10 @@ Gerenciar documentos ao longo do pipeline
 
 ---
 
+## Integração
+
+O envio para o Superlógica utiliza as credenciais (AppToken/AccessKey) configuradas no perfil da empresa logada.
+
 ## 📂 Estados
 
 * RECEIVED
@@ -428,6 +440,8 @@ Gerenciar documentos ao longo do pipeline
 ## 🖥️ Interface Gráfica
 
 ### 📊 Dashboard principal
+
+As métricas (Recebidos, Aprovados) são filtradas em tempo real pelo contexto da empresa logada.
 
 Cards:
 

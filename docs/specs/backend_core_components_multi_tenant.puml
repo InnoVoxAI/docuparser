@@ -1,0 +1,21 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Backend Core - Componentes Multi-tenant
+
+Container_Boundary(core, "Backend Core") {
+    Component(api, "API Gateway/Auth", "Django/JWT", "Identifica o Tenant via Token")
+    Component(tenant_mgr, "Tenant Manager", "Logic", "Gerencia assinaturas e usuários")
+    Component(orchestrator, "Orchestrator", "Celery", "Processa filas por prioridade de tenant")
+    Component(layout_router, "Tenant Layout Router", "Logic", "Busca schema específico da empresa")
+    Component(integration, "Superlógica Connector", "API", "Usa chaves API específicas por empresa")
+}
+
+ContainerDb(db, "PostgreSQL")
+
+Rel(api, tenant_mgr, "valida acesso")
+Rel(tenant_mgr, db, "filtra dados por tenant_id")
+Rel(orchestrator, layout_router, "decide fluxo")
+Rel(layout_router, db, "carrega configuração do supervisor")
+@enduml
+

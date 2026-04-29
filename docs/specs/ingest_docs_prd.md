@@ -2,7 +2,7 @@
 
 ## 1. 🎯 Objetivo
 
-Construir um sistema distribuído para ingestão, processamento, extração e validação de documentos financeiros (faturas, boletos e documentos em papel digitalizados), com integração ao sistema de gestão de condomínios via API do **Superlógica**.
+Construir um sistema Saas  distribuído para ingestão, processamento, extração e validação de documentos financeiros (faturas, boletos e documentos em papel digitalizados), com integração ao sistema de gestão de condomínios via API do **Superlógica**. O sistema atenderá múltiplas empresas.
 
 A arquitetura inclui agora uma etapa explícita de **classificação de layout de documento**, essencial para suportar múltiplos formatos reais.
 
@@ -240,6 +240,16 @@ Após aprovação:
 ---
 
 ## 9. 🏗️ Arquitetura
+
+9.1 Separação de Dados (Multi-tenancy)
+Identificação: Cada empresa terá um tenant_id único. Todos os registros no banco de dados (documentos, usuários, logs) devem obrigatoriamente possuir esta chave.  
+
+Customização: O Supervisor de cada empresa pode criar seus próprios layouts e schemas sem afetar outras empresas.
+
+9.2 Autenticação e Perfis
+Login: O sistema deve identificar a empresa via subdomínio (empresa1.sistema.com) ou via seleção no login.
+
+Isolamento de Usuários: Operadores e Supervisores são vinculados a um tenant_id.
 
 Componentes:
 

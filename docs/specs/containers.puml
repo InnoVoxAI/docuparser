@@ -1,42 +1,34 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
-title Containers
+title Contêineres - Sistema Multi-Empresa (SaaS)
 
-Person(operator, "Operador")
-Person(supervisor, "Supervisor")
+Person(operator, "Operador (Empresa A)", "Valida documentos da sua empresa")
+Person(supervisor, "Supervisor (Empresa A)", "Configura layouts da sua empresa")
 
-System_Boundary(system, "Document System") {
-
-    Container(frontend, "Frontend", "React")
-    Container(core, "Backend Core", "Django", "Orquestrador")
-    Container(ocr, "Backend OCR", "Python", "OCR + classificação básica")
-    Container(layout, "Layout Classification Service", "Python/ML/LLM", "Identificação de layout do documento")
-    Container(langextract, "LangExtract Service", "Python + LLM", "Extração semântica baseada em schema")
-    Container(queue, "Queue", "Redis/RabbitMQ")
-    ContainerDb(db, "Database", "PostgreSQL")
+System_Boundary(system, "Document System (SaaS)") {
+    Container(frontend, "Frontend Multi-tenant", "React", "Interface com isolamento por subdomínio/login")
+    Container(core, "Backend Core", "Django", "Orquestrador com isolamento de dados (Tenant ID)")
+    Container(ocr, "Backend OCR", "Python", "Processamento agnóstico")
+    Container(layout, "Layout Service", "Python/ML", "Modelos por empresa ou genéricos")
+    Container(langextract, "LangExtract", "Python + LLM", "Extração baseada no schema da empresa")
+    Container(queue, "Queue", "Redis/RabbitMQ", "Fila com metadados de tenant")
+    ContainerDb(db, "Database", "PostgreSQL", "Esquema compartilhado com Row Level Security (RLS) ou tabelas isoladas")
 }
 
-System_Ext(email, "Email API")
-System_Ext(whatsapp, "WhatsApp API")
-System_Ext(scanner, "Scanner System")
-System_Ext(superlogica, "Superlógica")
+System_Ext(superlogica, "Superlógica", "API da instância da Empresa A")
 
-Rel(operator, frontend, "usa")
-Rel(supervisor, frontend, "configura schemas e layouts")
+Rel(operator, frontend, "acessa empresa-a.sistema.com")
+Rel(supervisor, frontend, "configura regras da Empresa A")
+Rel(frontend, core, "requisições com JWT + TenantID")
 
-Rel(email, core, "ingestão")
-Rel(whatsapp, core, "ingestão")
-Rel(scanner, core, "upload scan")
-
-Rel(core, queue, "jobs")
-
-Rel(queue, ocr, "processamento OCR")
-Rel(ocr, layout, "raw_text + tipo documento")
-Rel(layout, langextract, "raw_text + layout")
+Rel(core, queue, "jobs com context_id")
+Rel(queue, ocr, "processamento")
+Rel(ocr, layout, "raw_text")
+Rel(layout, langextract, "usa schema do tenant")
 Rel(langextract, core, "json estruturado")
 
-Rel(core, db, "persistência")
-Rel(core, superlogica, "integração")
-
+Rel(core, db, "persistência isolada")
+Rel(core, superlogica, "integração via credenciais do tenant")
 @enduml
+

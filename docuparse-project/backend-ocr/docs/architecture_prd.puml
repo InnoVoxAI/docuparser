@@ -1,0 +1,220 @@
+@startmindmap
+
+<style>
+mindmapDiagram {
+  node {
+    BackgroundColor #FAFAFA
+    LineColor #AAAAAA
+    FontName Arial
+    FontSize 13
+  }
+  rootNode {
+    BackgroundColor #263238
+    FontColor white
+    FontStyle bold
+    FontSize 15
+  }
+  .current {
+    BackgroundColor #FFF3E0
+    FontColor #E65100
+  }
+  .problem {
+    BackgroundColor #FFCDD2
+    FontColor #B71C1C
+    FontStyle bold
+  }
+  .layer {
+    BackgroundColor #E3F2FD
+    FontColor #0D47A1
+    FontStyle bold
+  }
+  .sublayer {
+    BackgroundColor #EEF7FF
+    FontColor #1565C0
+  }
+  .migration {
+    BackgroundColor #FFF8E1
+    FontColor #E65100
+  }
+  .phase {
+    BackgroundColor #F3E5F5
+    FontColor #4A148C
+  }
+  .result {
+    BackgroundColor #E8F5E9
+    FontColor #1B5E20
+    FontStyle bold
+  }
+}
+</style>
+
+* Reestruturação\nDocuParser Backend OCR
+
+left side
+
+** Estado Atual (As-Is)
+*** main.py <<current>>
+**** FastAPI setup + middlewares <<current>>
+**** Modelos: OCRResponse, Transcription <<current>>
+**** Endpoint POST /process <<current>>
+*** agent/router.py — MONOLITO <<current>>
+**** route_and_process() faz tudo <<current>>
+***** 1. Classifica documento
+***** 2. Decide qual engine usar (bloco de ifs)
+***** 3. Prepara conteúdo (preprocessing)
+***** 4. Chama engine de OCR
+***** 5. Extrai campos críticos
+***** 6. Valida campos extraídos
+***** 7. Calcula score de qualidade
+***** 8. Extrai campos dinâmicos
+***** 9. Calcula posições dos campos
+***** 10. Normaliza e monta o response
+*** agent/classifier.py <<current>>
+**** classify_document() <<current>>
+**** Retorna: digital_pdf | scanned_image | handwritten_complex <<current>>
+*** engines/ — 8 engines <<current>>
+**** openrouter_engine.py <<current>>
+***** OCR via LLM multimodal
+***** Classificação própria interna (texto vs imagem)
+**** tesseract / paddle / easyocr <<current>>
+**** trocr / docling / llamaparse / deepseek <<current>>
+*** utils/ <<current>>
+**** preprocessing.py — pipelines por engine <<current>>
+**** validate_fields.py — 2000+ linhas <<current>>
+**** ocr_fallback.py — lógica de fallback <<current>>
+
+** Problemas Identificados
+*** P1 — router.py monolítico <<problem>>
+**** 10 responsabilidades numa única função <<problem>>
+**** Impossível testar partes isoladas <<problem>>
+*** P2 — Classificação duplicada <<problem>>
+**** openrouter reclassifica por conta própria <<problem>>
+**** Inconsistência com agent/classifier.py <<problem>>
+*** P3 — validate_fields.py inchado <<problem>>
+**** Extração + validação + scoring misturados <<problem>>
+**** 2000+ linhas sem separação de responsabilidade <<problem>>
+*** P4 — main.py redundante <<problem>>
+**** Só delega para o router, sem responsabilidade própria <<problem>>
+*** P5 — Engines sem contrato comum <<problem>>
+**** Interfaces diferentes entre os 8 engines <<problem>>
+**** Difícil adicionar novos engines <<problem>>
+*** P6 — Fallback sem isolamento <<problem>>
+**** Lógica misturada na orquestração do router <<problem>>
+
+right side
+
+** Nova Arquitetura (To-Be)
+*** api/ <<layer>>
+**** app.py — FastAPI setup + CORS <<sublayer>>
+**** routes/document.py <<sublayer>>
+***** POST /process — recebe arquivo, delega
+***** GET /engines — lista engines disponíveis
+**** schemas/ocr_schema.py <<sublayer>>
+***** OCRResponse
+***** Transcription
+***** Modelos Pydantic
+*** application/ <<layer>>
+**** process_document.py — coração do sistema <<sublayer>>
+***** 1. doc_type = classifier.classify(file)
+***** 2. engine = resolver.get_engine(doc_type)
+***** 3. raw_text = engine.process(file)
+***** 4. fields = extractor.extract(raw_text)
+***** 5. return build_response(fields, raw_text)
+*** domain/ <<layer>>
+**** classifier.py — classifica UMA vez <<sublayer>>
+***** digital_pdf
+***** scanned_image
+***** handwritten_complex
+**** engine_resolver.py — Strategy Pattern <<sublayer>>
+***** Recebe doc_type
+***** Retorna engine correto
+***** Sem if gigante
+**** field_extractor.py — campos NFS-e <<sublayer>>
+***** Extrai: fornecedor, tomador, CNPJ
+***** Extrai: valor, número NF, retenção
+***** Calcula score de confiança por campo
+*** infrastructure/ <<layer>>
+**** engines/ <<sublayer>>
+***** base_engine.py — ABC (contrato comum)
+****** process(bytes, metadata) → dict
+****** name: str (identificador)
+***** openrouter — só OCR, sem classificação
+***** tesseract / paddle / easyocr
+***** trocr / docling / llamaparse / deepseek
+**** fallback/ <<sublayer>>
+***** fallback_handler.py — isolado
+****** should_trigger_fallback()
+****** merge_fallback_result()
+*** shared/ <<layer>>
+**** preprocessing.py — pipelines de imagem <<sublayer>>
+***** deskew / CLAHE / denoise / upscale
+***** Pipelines por engine centralizados
+**** validators.py — validações genéricas <<sublayer>>
+***** CNPJ checksum (Módulo 11)
+***** Parsing de valor monetário
+***** Validação de datas
+
+** Mapa de Migração
+*** main.py → api/app.py <<migration>>
+**** Endpoint /process → api/routes/document.py <<migration>>
+**** Schemas → api/schemas/ocr_schema.py <<migration>>
+*** agent/router.py → FRAGMENTADO <<migration>>
+**** route_and_process() → application/process_document.py <<migration>>
+**** _resolve_engine() → domain/engine_resolver.py (NOVO) <<migration>>
+**** _compute_field_positions() → application/process_document.py <<migration>>
+**** _normalize_output() → application/process_document.py <<migration>>
+*** agent/classifier.py → domain/classifier.py <<migration>>
+**** Mesma lógica, novo local <<migration>>
+*** engines/*.py → infrastructure/engines/ <<migration>>
+**** + herdam BaseOCREngine <<migration>>
+**** openrouter: remove classificação interna <<migration>>
+*** utils/validate_fields.py → FRAGMENTADO <<migration>>
+**** extração de campos → domain/field_extractor.py <<migration>>
+**** validação genérica → shared/validators.py <<migration>>
+*** utils/preprocessing.py → shared/preprocessing.py <<migration>>
+*** utils/ocr_fallback.py → infrastructure/fallback/fallback_handler.py <<migration>>
+
+** Checklist — 7 Fases
+*** Fase 1 — Estrutura de Diretórios <<phase>>
+**** Criar api/ application/ domain/ <<phase>>
+**** Criar infrastructure/ shared/ <<phase>>
+**** __init__.py em cada pacote <<phase>>
+*** Fase 2 — Shared (sem dependências) <<phase>>
+**** Mover preprocessing.py para shared/ <<phase>>
+**** Extrair validators.py de validate_fields.py <<phase>>
+*** Fase 3 — Domain <<phase>>
+**** Mover classifier.py → domain/ <<phase>>
+**** Criar engine_resolver.py (Strategy) <<phase>>
+**** Criar field_extractor.py <<phase>>
+*** Fase 4 — Infrastructure <<phase>>
+**** Criar base_engine.py (ABC) <<phase>>
+**** Mover engines + herdar base <<phase>>
+**** Remover classificação do openrouter <<phase>>
+**** Mover fallback_handler.py <<phase>>
+*** Fase 5 — Application <<phase>>
+**** Criar process_document.py <<phase>>
+**** Incorporar posições e normalização <<phase>>
+*** Fase 6 — API <<phase>>
+**** Criar schemas + routes + app.py <<phase>>
+**** Remover main.py e agent/router.py <<phase>>
+*** Fase 7 — Limpeza Final <<phase>>
+**** Remover pastas agent/ e utils/ <<phase>>
+**** Atualizar todos os imports <<phase>>
+**** Rodar testes e validar comportamento <<phase>>
+**** Atualizar Dockerfile (novo entrypoint) <<phase>>
+
+** Resultado Esperado
+*** Fluxo Final Limpo <<result>>
+**** api/ — só HTTP <<result>>
+**** application/ — só orquestração <<result>>
+**** domain/ — só regras de negócio <<result>>
+**** infrastructure/ — só integrações externas <<result>>
+**** shared/ — só utilitários genéricos <<result>>
+*** Comparativo Antes × Depois <<result>>
+**** router.py 600+ linhas\n→ process_document.py ~50 linhas <<result>>
+**** validate_fields.py 2000+ linhas\n→ field_extractor.py + validators.py <<result>>
+**** Engines sem contrato\n→ Todos herdam BaseOCREngine <<result>>
+**** Classificação duplicada\n→ UMA vez em domain/classifier.py <<result>>
+**** main.py redundante\n→ api/app.py com responsabilidade clara <<result>>
+
+@endmindmap

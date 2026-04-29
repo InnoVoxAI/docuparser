@@ -1,10 +1,10 @@
-# 📄 Sistema de Ingestão de Documentos – Especificação v3 (Arquitetura com LangExtract Microservice)
+# 📄 Sistema de Ingestão de Documentos – Especificação v3
 
 ## 1. 🎯 Objetivo
 
-Construir um sistema distribuído para ingestão, processamento, extração e validação de documentos financeiros (faturas, boletos e documentos escaneados), com integração ao sistema de gestão de condomínios via API do **Superlógica**.
+Construir um sistema distribuído para ingestão, processamento, extração e validação de documentos financeiros (faturas, boletos e documentos em papel digitalizados), com integração ao sistema de gestão de condomínios via API do **Superlógica**.
 
-A arquitetura é baseada em **processamento assíncrono orientado a eventos**, com separação clara entre OCR, orquestração e extração semântica via LLM.
+A arquitetura inclui agora uma etapa explícita de **classificação de layout de documento**, essencial para suportar múltiplos formatos reais.
 
 ---
 
@@ -13,7 +13,7 @@ A arquitetura é baseada em **processamento assíncrono orientado a eventos**, c
 ### 2.1 Email
 
 * Integração com API de e-mail existente
-* Suporte a múltiplos anexos por mensagem
+* Suporte a múltiplos anexos
 * Cada e-mail pode gerar múltiplos documentos
 
 ---
@@ -22,17 +22,17 @@ A arquitetura é baseada em **processamento assíncrono orientado a eventos**, c
 
 * Integração via webhook
 * Suporte a imagens e PDFs
-* Tratamento de baixa qualidade de imagem (compressão e ruído)
+* Compressão e baixa qualidade devem ser tratados no OCR
 
 ---
 
-### 2.3 📄 Documentos em Papel (Digitalização)
+### 2.3 📄 Documentos em Papel
 
-Documentos físicos recebidos pela empresa são incorporados ao sistema via digitalização:
+Documentos físicos recebidos pela empresa serão:
 
-1. Escaneamento via scanner corporativo
-2. Conversão para PDF ou imagem
-3. Upload manual ou automático no sistema
+1. Escaneados via scanner corporativo
+2. Convertidos para PDF ou imagem
+3. Inseridos manualmente ou automaticamente no sistema
 
 #### Fluxo:
 
@@ -40,143 +40,146 @@ Documentos físicos recebidos pela empresa são incorporados ao sistema via digi
 Documento físico → Scanner → Upload → Pipeline OCR
 ```
 
-#### Metadados obrigatórios:
+#### Requisitos:
 
-* origem = "paper"
-* operador responsável
-* timestamp de digitalização
+* Upload via interface web ou pasta monitorada
+* Associação opcional a lote (batch)
+* Metadados: operador, data de digitalização, origem = "paper"
 
 ---
 
 ## 3. 🧠 Classificação de Documento
 
-Responsabilidade do backend-ocr:
+O sistema deve classificar automaticamente:
 
-* PDF com texto
-* PDF escaneado
-* Imagem
-* Documento escaneado (paper)
+* Tipo de documento: boleto | fatura
+* Tipo de conteúdo:
+
+  * pdf_text
+  * scanned_pdf
+  * image
+  * paper_scan
 
 ### Saída:
 
 ```json
 {
-  "document_type": "boleto | fatura",
-  "content_type": "pdf_text | scanned_pdf | image | paper_scan"
+  "document_type": "boleto",
+  "content_type": "scanned_pdf"
 }
 ```
 
 ---
 
-## 4. 🔍 OCR (Backend OCR)
+## 4. 🧩 Classificação de Layout (NOVO)
 
-Responsável por:
+Após o OCR, o sistema deve identificar o **layout específico do documento**.
 
-* Extração de texto bruto
-* Limpeza e normalização
-* Classificação inicial
+### 🎯 Objetivo
 
-### Saída padrão:
+Permitir a correta aplicação do schema de extração no LangExtract.
+
+---
+
+### Exemplos de layout
+
+* boleto_caixa
+* boleto_bb
+* boleto_bradesco
+* fatura_energia
+* fatura_condominio
+
+---
+
+### Entrada
 
 ```json
 {
   "raw_text": "...",
-  "confidence": 0.91,
   "document_type": "boleto"
 }
 ```
 
 ---
 
-## 5. 🧠 LangExtract (MICROSERVICE LLM)
+### Saída
 
-### 📌 Definição
-
-O LangExtract é um **microserviço independente baseado em LLM**, responsável pela transformação semântica do texto em dados estruturados.
-
-Ele NÃO faz parte do backend-ocr.
-
----
-
-### 🧩 Responsabilidades
-
-* Extração estruturada via LLM
-* Aplicação de schema dinâmico
-* Validação semântica de campos
-* Versionamento de regras de extração
+```json
+{
+  "layout": "boleto_caixa",
+  "confidence": 0.93
+}
+```
 
 ---
 
-### 📥 Entrada
+### Estratégias de implementação
+
+* heurísticas (regex / palavras-chave)
+* modelo de classificação (ML leve)
+* LLM (classificação semântica)
+
+---
+
+### Fluxos alternativos
+
+* Layout não identificado → usar schema genérico
+* Baixa confiança → enviar para validação humana
+
+---
+
+## 5. 🔍 OCR + LangExtract
+
+### 5.1 OCR (backend-ocr)
+
+* Extração de texto bruto
+* Normalização de ruído
+
+---
+
+### 5.2 LangExtract (microserviço)
+
+Transforma texto em dados estruturados com base em:
+
+* document_type
+* layout
+* versão do schema
+
+---
+
+### Entrada
 
 ```json
 {
   "raw_text": "...",
-  "schema_version": "boleto_v3"
+  "document_type": "boleto",
+  "layout": "boleto_caixa",
+  "schema_version": "v2"
 }
 ```
 
 ---
 
-### 📤 Saída
+### Saída
 
 ```json
 {
-  "tipo": "boleto",
   "valor": 123.45,
   "vencimento": "2026-05-01",
-  "linha_digitavel": "...",
-  "fornecedor": "Empresa X"
+  "linha_digitavel": "..."
 }
 ```
 
 ---
 
-### 🤖 Dependência de LLM
+## 6. 👨‍💼 Validação Humana
 
-Sim.
+Interface React para operadores:
 
-O LangExtract utiliza LLM para:
-
-* interpretação de linguagem natural
-* resolução de ambiguidades
-* extração baseada em schema
-
-Pode ser implementado via:
-
-* API (OpenAI / Claude / etc.)
-* ou modelo local (open-source)
-
----
-
-## 6. 🏗️ Backend Core (Orquestrador)
-
-Responsável por:
-
-* orquestração do pipeline
-* controle de estado do documento
-* integração entre serviços
-* persistência
-* validação humana
-
----
-
-### 🔄 Pipeline orquestrado
-
-```
-Ingestão → OCR → LangExtract → Validação → Integração
-```
-
----
-
-## 7. 👨‍💼 Validação Humana (Human-in-the-loop)
-
-Interface React:
-
-* visualização do documento
-* comparação OCR vs dados extraídos
-* correção manual
-* aprovação/rejeição
+* Visualização do documento
+* Dados extraídos
+* Correção manual
+* Aprovação/Rejeição
 
 ### Estados:
 
@@ -190,68 +193,98 @@ Interface React:
 
 ---
 
-## 8. 🧑‍💼 Perfis de Usuário
+## 7. 🧑‍💼 Perfis de Usuário
 
 ### Operador
 
-* valida documentos
-* corrige dados extraídos
+* Valida documentos
+* Corrige dados
+* Aprova/rejeita
+
+---
 
 ### Supervisor
 
-* define schemas do LangExtract
-* versiona regras de extração
-* ajusta campos sem necessidade de deploy
+Responsável por configuração de extração baseada em:
+
+* tipo de documento
+* layout
+* versão de schema
 
 ---
 
-## 9. 🔗 Integração Superlógica
+### Modelo de configuração
+
+```json
+{
+  "document_type": "boleto",
+  "layout": "boleto_caixa",
+  "version": "v2",
+  "fields": [
+    {"name": "valor", "type": "currency"},
+    {"name": "vencimento", "type": "date"}
+  ]
+}
+```
+
+---
+
+## 8. 🔗 Integração Superlógica
 
 Após aprovação:
 
-* envio via API
-* integração com contas a pagar
-* controle de idempotência (evitar duplicação)
+* Envio via API
+* Mapeamento financeiro
+* Controle de idempotência
 
 ---
 
-## 10. 🏗️ Arquitetura Geral
+## 9. 🏗️ Arquitetura
 
-### Componentes:
+Componentes:
 
-* backend-core (Django) → orquestrador
-* backend-ocr → OCR + classificação
-* langextract-service → LLM extraction microservice
-* queue (Redis/RabbitMQ)
+* backend-core (orquestrador)
+* backend-ocr (OCR + classificação básica)
+* serviço de classificação de layout
+* langextract-service (LLM)
+* fila assíncrona
 * PostgreSQL
 * frontend React
 
 ---
 
-## 11. 🔄 Arquitetura de Execução
+## 10. 🔄 Pipeline Assíncrono (ATUALIZADO)
 
 ```
-Email / WhatsApp / Scanner
-          ↓
-     Backend Core (Orquestrador)
-          ↓
-      Queue (Celery)
-          ↓
-     Backend OCR
-          ↓
-     raw_text
-          ↓
- LangExtract Service (LLM)
-          ↓
- structured JSON
-          ↓
- Backend Core
-          ↓
- Validação Humana
-          ↓
- Superlógica API
+Ingestão
+   ↓
+Classificação de Documento
+   ↓
+OCR
+   ↓
+Classificação de Layout
+   ↓
+LangExtract
+   ↓
+Validação
+   ↓
+Integração
 ```
 
+---
 
+## 11. 📌 Benefícios da Classificação de Layout
 
+* Suporte a múltiplos formatos reais de documentos
+* Maior acurácia na extração
+* Redução de intervenção manual
+* Evolução independente por layout
 
+---
+
+## 12. ⚠️ Considerações
+
+* Layouts devem ser versionados
+* Deve existir fallback para layouts desconhecidos
+* Classificação deve fornecer score de confiança
+* Supervisor deve poder criar novos layouts sem deploy

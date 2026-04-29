@@ -124,7 +124,7 @@ def route_and_process(filename: str, content: bytes, selected_engine: str | None
     try:
         from engines.openrouter_engine import OpenRouterOCREngine
         _openrouter = OpenRouterOCREngine()
-        data = _openrouter.process(content, filename=filename)
+        data = _openrouter.process(content, metadata={"filename": filename, "doc_type": classification})
 
         engine_meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
         tools_used.append(engine_meta.get("engine", "openrouter"))

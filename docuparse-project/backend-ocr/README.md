@@ -2,6 +2,26 @@
 
 FastAPI service responsible for document analysis and data extraction using multiple OCR engines with a layered architecture.
 
+## Dependencies
+
+The project uses a modular dependency strategy to keep the container lightweight:
+
+| Dependency Group | Purpose | Size Impact | Included in |
+|------------------|---------|-------------|-------------|
+| **Base** | Core OCR engines (Tesseract, PaddleOCR, EasyOCR, OpenRouter, DeepSeek) | ~500MB | `requirements.txt` |
+| **TrOCR** | Handwritten document OCR (Microsoft TrOCR) | ~2GB | `requirements-dev.txt` |
+
+### Engine Dependencies
+
+| Engine | Package | Required | Description |
+|--------|---------|----------|-------------|
+| Tesseract | `pytesseract`, `opencv-python-headless` | ✅ | Standard OCR for clean text |
+| PaddleOCR | `paddleocr`, `paddlepaddle` | ✅ | Multi-language, excellent for scanned docs |
+| EasyOCR | `easyocr` | ✅ | General purpose OCR |
+| OpenRouter | `openai`, `requests` | ✅ | LLM-powered OCR via API |
+| DeepSeek | `openai`, `httpx` | ✅ | Local LLM OCR via Ollama |
+| TrOCR | `transformers`, `torch`, `torchvision` | ❌ | Handwritten documents (optional) |
+
 ## Architecture
 
 The backend follows a clean architecture pattern with clear separation of concerns:
@@ -30,15 +50,25 @@ The backend follows a clean architecture pattern with clear separation of concer
 
 ## Supported Engines
 
-| Engine | Use Case | Features |
-|--------|----------|----------|
-| **DeepSeek OCR** | Complex/handwritten documents | LLM-powered extraction, high accuracy |
-| **OpenRouter** | Flexible LLM integration | Multiple model support via OpenRouter API |
-| **Tesseract** | Standard images | Mature OCR engine, good for clean text |
-| **PaddleOCR** | Multi-language | Excellent for Chinese, Japanese, Korean |
-| **EasyOCR** | General purpose | Good balance of speed and accuracy |
-| **Docling** | Digital PDFs | Preserves document structure |
-| **LlamaParse** | Complex layouts | Advanced layout parsing with LLM |
+| Engine | Use Case | Features | Dependencies |
+|--------|----------|----------|--------------|
+| **DeepSeek OCR** | Complex/handwritten documents | LLM-powered extraction, high accuracy | `openai`, `httpx` |
+| **OpenRouter** | Flexible LLM integration | Multiple model support via OpenRouter API | `openai`, `requests` |
+| **Tesseract** | Standard images | Mature OCR engine, good for clean text | `pytesseract`, `opencv-python-headless` |
+| **PaddleOCR** | Multi-language | Excellent for Chinese, Japanese, Korean | `paddleocr`, `paddlepaddle` |
+| **EasyOCR** | General purpose | Good balance of speed and accuracy | `easyocr` |
+| **TrOCR** | Handwritten documents | Transformer-based OCR for handwriting | `transformers`, `torch`, `torchvision` (optional) |
+
+### Optional: TrOCR Engine
+
+The TrOCR engine provides specialized OCR for handwritten documents using Microsoft's TrOCR model. This engine requires additional dependencies (~2GB):
+
+```bash
+# Install TrOCR support (optional)
+pip install -r requirements-dev.txt
+```
+
+Without TrOCR, the engine will gracefully skip handwritten document processing and fall back to other engines.
 
 ## Configuration
 
@@ -64,8 +94,12 @@ Environment variables (set in `.env` or your environment):
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install dependencies
+# Install base dependencies (lightweight, no PyTorch)
 pip install -r requirements.txt
+
+# Optional: Install TrOCR dependencies for handwritten document support
+# Adds ~2GB to environment (uncomment if needed)
+# pip install -r requirements-dev.txt
 ```
 
 ### Running the Server
@@ -81,10 +115,20 @@ PYTHONPATH=/path/to/backend-ocr python -m uvicorn api.app:app --host 0.0.0.0 --p
 ### Docker
 
 ```bash
-# Build and run with Docker Compose
+# Build and run with Docker Compose (base image, no TrOCR)
 cd docuparse-project
 docker-compose up --build backend-ocr
+
+# Build with TrOCR support (uncomment in Dockerfile first)
+# See Dockerfile for instructions
 ```
+
+#### Docker Image Sizes
+
+| Image Type | Size | Description |
+|------------|------|-------------|
+| Base (no TrOCR) | ~1.5GB | Standard OCR engines (Tesseract, PaddleOCR, EasyOCR, etc.) |
+| With TrOCR | ~3.5GB | Includes TrOCR for handwritten documents |
 
 ## API Endpoints
 
@@ -173,6 +217,14 @@ class MyNewEngine(BaseOCREngine):
         # OCR implementation
         return {"raw_text": "...", "confidence": 0.95, ...}
 ```
+
+### Adding a New Engine with PyTorch Dependencies
+
+If your engine requires `torch`, `torchvision`, or `transformers`:
+
+1. Add dependencies to `requirements-dev.txt`
+2. Update `Dockerfile` to install `requirements-dev.txt` (optional)
+3. Document the size impact (~2GB) in this README
 
 ## Testing
 

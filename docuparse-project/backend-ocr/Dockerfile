@@ -16,6 +16,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Optional: Install TrOCR dependencies for handwritten document support
+# Uncomment the lines below to enable TrOCR support (adds ~2GB to image)
+# COPY requirements-dev.txt .
+# RUN pip install --no-cache-dir -r requirements-dev.txt
+
 COPY . .
 
 CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8080"]

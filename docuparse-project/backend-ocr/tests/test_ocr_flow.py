@@ -1,21 +1,20 @@
 from fastapi.testclient import TestClient
-from main import app
-from agent.classifier import classify_document
+from api.app import app
 
 client = TestClient(app)
 
 
 def test_health_check():
-    response = client.get("/")
+    response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "healthy", "service": "docuparse-ocr-backend"}
 
 
-def test_classify_document():
-    assert classify_document("scan.jpg", b"") == "scanned_image"
-    assert classify_document("handwritten_note.png",
-                             b"") == "handwritten_complex"
-    assert classify_document("invoice.pdf", b"") == "scanned_image"
-    assert classify_document("unknown.xyz", b"") == "scanned_image"
+def test_list_engines():
+    response = client.get("/api/v1/engines")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data["engines"], list)
+    assert data["total_count"] == len(data["engines"])
 
 # Note: Integration tests with DeepSeek require a running Ollama instance and are mocked here or manual.

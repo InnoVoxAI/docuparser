@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from main import app
+from api.app import app
 import os
 import json
 
@@ -18,7 +18,7 @@ print(f"Testing with file: {file_path}")
 
 with open(file_path, "rb") as f:
     response = client.post(
-        "/process",
+        "/api/v1/process",
         files={"file": ("AnyScanner_12_09_2025.pdf", f, "application/pdf")}
     )
 

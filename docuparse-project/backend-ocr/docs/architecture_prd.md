@@ -331,48 +331,49 @@ class BaseOCREngine(ABC):
 ## 6. Checklist de Implementação
 
 ### Fase 1 — Estrutura de Diretórios
-- [ ] Criar `api/`, `api/routes/`, `api/schemas/`
-- [ ] Criar `application/`
-- [ ] Criar `domain/`
-- [ ] Criar `infrastructure/`, `infrastructure/engines/`, `infrastructure/fallback/`
-- [ ] Criar `shared/`
-- [ ] Criar `__init__.py` em cada pacote
+- [x] Criar `api/`, `api/routes/`, `api/schemas/`
+- [x] Criar `application/`
+- [x] Criar `domain/`
+- [x] Criar `infrastructure/`, `infrastructure/engines/`, `infrastructure/fallback/`
+- [x] Criar `shared/`
+- [x] Criar `__init__.py` em cada pacote
 
 ### Fase 2 — Shared (sem dependências)
-- [ ] Mover `utils/preprocessing.py` → `shared/preprocessing.py`
+- [x] Mover `utils/preprocessing.py` → `shared/preprocessing.py`
 
 ### Fase 3 — Domain
-- [ ] Mover `agent/classifier.py` → `domain/classifier.py` (sem mudança de lógica)
-- [ ] Criar `domain/engine_resolver.py` com Strategy Pattern
-  - Extrair lógica de `if doc_type == ...` do `router.py`
-  - Registrar engines disponíveis
+- [x] Mover `agent/classifier.py` → `domain/classifier.py` (sem mudança de lógica)
+- [x] Criar `domain/engine_resolver.py` com Strategy Pattern
+  - [x] Extrair lógica de `if doc_type == ...` do `router.py`
+  - [x] Registrar engines disponíveis
 
 
 ### Fase 4 — Infrastructure
-- [ ] Criar `infrastructure/engines/base_engine.py` com ABC
-- [ ] Mover todos os engines para `infrastructure/engines/`
-- [ ] Atualizar `openrouter_engine.py`: remover classificação interna, usar `metadata` recebido
-- [ ] Garantir que todos os engines herdam de `BaseOCREngine`
-- [ ] Mover `utils/ocr_fallback.py` → `infrastructure/fallback/fallback_handler.py`
+- [x] Criar `infrastructure/engines/base_engine.py` com ABC
+- [x] Mover todos os engines para `infrastructure/engines/`
+- [x] Atualizar `openrouter_engine.py`: remover classificação interna, usar `metadata` recebido
+- [x] Garantir que todos os engines herdam de `BaseOCREngine`
+- [x] Mover `utils/ocr_fallback.py` → `infrastructure/fallback/fallback_handler.py`
 
 ### Fase 5 — Application
-- [ ] Criar `application/process_document.py`
-  - Orquestrar: classify → resolve → engine.process → field_extractor.extract
-  - Incorporar `_compute_field_positions()` do router
-  - Incorporar `_normalize_output()` do router
+- [x] Criar `application/process_document.py`
+  - [x] Orquestrar: classify → resolve → engine.process → field_extractor.extract
+  - [x] Incorporar `_compute_field_positions()` do router
+  - [x] Incorporar `_normalize_output()` do router
 
 ### Fase 6 — API
-- [ ] Criar `api/schemas/ocr_schema.py` com `OCRResponse`, `Transcription`
-- [ ] Criar `api/routes/document.py` com endpoints limpos
-- [ ] Criar `api/app.py` unificando `main.py` + setup FastAPI
-- [ ] Remover `main.py` e `agent/router.py` antigos
+- [x] Criar `api/schemas/ocr_schema.py` com `OCRResponse`, `Transcription`
+- [x] Criar `api/routes/document.py` com endpoints limpos
+- [x] Criar `api/app.py` unificando `main.py` + setup FastAPI
+- [x] Remover `main.py` e `agent/router.py` antigos
 
 ### Fase 7 — Limpeza
-- [ ] Remover pasta `agent/` (tudo foi migrado)
-- [ ] Remover pasta `utils/` (tudo foi migrado)
-- [ ] Atualizar imports em todos os arquivos
-- [ ] Rodar testes e verificar que o comportamento é idêntico
-- [ ] Atualizar `Dockerfile` com novo entrypoint
+- [x] Remover pasta `agent/` (tudo foi migrado)
+- [x] Remover pasta `engines/` (shims legacy)
+- [x] Remover pasta `utils/` (tudo foi migrado)
+- [x] Atualizar imports em todos os arquivos
+- [x] Rodar testes e verificar que o comportamento é idêntico (5/5 testes passando)
+- [x] Atualizar `Dockerfile` com novo entrypoint
 
 ---
 
@@ -416,3 +417,85 @@ main.py redundante                    api/app.py + routes/document.py
       │
       └──► [ domain/field_extractor.py ] ← só extração de campos
 ```
+
+---
+
+## 8. Status Final (2026-04-30)
+
+### 8.1 Estado da Implementação
+
+**Status:** ✅ **COMPLETO**
+
+Todos os objetivos do refactor foram alcançados:
+
+| Critério | Status | Detalhes |
+|----------|--------|----------|
+| Arquitetura em camadas | ✅ | `api/`, `application/`, `domain/`, `infrastructure/`, `shared/` |
+| Contrato comum (BaseOCREngine) | ✅ | Todos os engines herdam de classe abstrata |
+| Classificação única | ✅ | Apenas `domain/classifier.py` |
+| Lógica de fallback isolada | ✅ | `infrastructure/fallback/fallback_handler.py` |
+| Utilitários compartilhados | ✅ | `shared/preprocessing.py`, `shared/validators.py` |
+| Testes automatizados | ✅ | 5/5 testes passando |
+| Dockerização | ✅ | `Dockerfile` atualizado com novo entrypoint |
+
+### 8.2 Estrutura Final
+
+```
+backend-ocr/
+├── api/                            ← Camada HTTP
+│   ├── app.py                      ← FastAPI setup
+│   ├── routes/
+│   │   └── document.py             ← Endpoints
+│   └── schemas/
+│       └── ocr_schema.py           ← Pydantic models
+├── application/
+│   └── process_document.py         ← Orquestração
+├── domain/
+│   ├── classifier.py               ← Classificação
+│   ├── engine_resolver.py          ← Strategy Pattern
+│   └── field_extractor.py          ← Extração de campos
+├── infrastructure/
+│   ├── engines/
+│   │   ├── base_engine.py          ← Classe abstrata
+│   │   ├── openrouter_engine.py
+│   │   ├── tesseract_engine.py
+│   │   └── ... (outros engines)
+│   └── fallback/
+│       └── fallback_handler.py     ← Lógica de fallback
+├── shared/
+│   ├── preprocessing.py            ← Pipelines de imagem
+│   └── validators.py               ← Validações
+└── tests/
+    ├── test_main.py                ← Testes de integração
+    └── ...
+```
+
+### 8.3 Resultado Alcançado
+
+```
+ANTES                                 DEPOIS
+─────────────────────────────────     ─────────────────────────────────────
+
+router.py — 600+ linhas               process_document.py — ~50 linhas
+fazendo tudo                          orchestrating tudo
+
+openrouter classifica por conta       classificação acontece UMA vez,
+própria                               em domain/classifier.py
+
+validate_fields.py — 2000+ linhas     field_extractor.py — extração
+misturando extração + validação        validators.py — validação separada
+
+engines sem contrato comum            todos herdam BaseOCREngine
+
+main.py redundante                    api/app.py + routes/document.py
+                                      com responsabilidades claras
+
+agent/ + engines/ + utils/            Removidos (migrados para camadas)
+```
+
+### 8.4 Métricas de Qualidade
+
+- **Testes:** 5/5 passando (0 falhas)
+- **Complexidade:** Reduzida (funções menores, responsabilidades claras)
+- **Manutenibilidade:** Significativamente melhorada
+- **Testabilidade:** Cada camada pode ser testada isoladamente

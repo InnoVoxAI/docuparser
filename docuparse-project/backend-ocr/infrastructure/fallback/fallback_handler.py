@@ -19,7 +19,7 @@
 
 from typing import Any, Dict
 
-from utils.validate_fields import compute_field_pipeline_quality, extract_avg_confidence
+from domain.field_extractor import compute_field_pipeline_quality, extract_avg_confidence
 
 
 def _text_coverage_metrics(data: Dict[str, Any]) -> tuple[int, int]:

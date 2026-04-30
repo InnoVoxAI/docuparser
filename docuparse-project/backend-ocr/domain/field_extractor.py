@@ -22,8 +22,17 @@ from typing import Any
 # Importa funções existentes como implementação concreta desta camada.
 # Esta é a interface de domínio — o chamador (application/) sempre usa FieldExtractor,
 # nunca importa diretamente de utils/.
-from utils.validate_fields import (
+from shared.validators import (
     REQUIRED_FIELDS,
+    FIELD_CONFIDENCE_THRESHOLDS,
+    LOW_CONFIDENCE_THRESHOLD,
+    _get_raw_text,
+    _is_header_like_value,
+)
+
+# A implementação agora mora em domain/field_extractor_impl.py.
+# O shim utils/validate_fields.py ainda existe para compatibilidade externa.
+from domain.field_extractor_impl import (
     compute_field_pipeline_quality,
     extract_fields_candidates,
     extract_dynamic_document_fields,
@@ -32,6 +41,9 @@ from utils.validate_fields import (
     merge_fields_by_validation,
     resolve_field_fallback_engine,
     should_run_llm,
+    extract_critical_fields_with_confidence,
+    validate_fields,
+    get_low_confidence_critical_fields,
 )
 
 

@@ -26,7 +26,7 @@ services:
 
   backend-ocr:
     build: ./backend-ocr
-    command: uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+    command: uvicorn api.app:app --host 0.0.0.0 --port 8080 --reload
     volumes:
       - ./backend-ocr:/app
     ports:

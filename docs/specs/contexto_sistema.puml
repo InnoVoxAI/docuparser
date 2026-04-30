@@ -2,7 +2,7 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
 
-title Sistema de Ingestão de Documentos
+title Sistema de Ingestão de Documentos (Arquitetura Atualizada - v2.0)
 
 Person(operator, "Operador")
 Person(supervisor, "Supervisor")
@@ -21,5 +21,18 @@ Rel(scanner, system, "envia documentos digitalizados")
 Rel(operator, system, "valida documentos")
 Rel(supervisor, system, "configura extração e layouts")
 Rel(system, superlogica, "envia dados aprovados")
+
+' Novos componentes (microserviços)
+System_Ext(com, "Backend COM", "Capture API")
+System_Ext(conect, "Backend CONECT", "ERP Integration")
+System_Ext(ocr, "Backend OCR", "OCR Service")
+System_Ext(layout, "Layout Service", "Layout Classification")
+System_Ext(langextract, "LangExtract Service", "LLM Extraction")
+
+Rel(com, system, "capture API")
+Rel(conect, system, "ERP integration")
+Rel(ocr, system, "OCR service")
+Rel(layout, system, "layout classification")
+Rel(langextract, system, "LLM extraction")
 
 @enduml

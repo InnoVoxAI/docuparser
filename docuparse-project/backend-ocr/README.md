@@ -2,6 +2,32 @@
 
 FastAPI service responsible for document analysis and data extraction using multiple OCR engines with a layered architecture.
 
+## Architecture Overview
+
+The backend follows a clean architecture pattern with clear separation of concerns:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Layered Architecture                        │
+├─────────────────────────────────────────────────────────────────────┤
+│  api/           ← HTTP layer (FastAPI endpoints, schemas)          │
+│  application/   ← Orchestration (use cases, workflow coordination) │
+│  domain/        ← Business logic (classifier, engine resolver)     │
+│  infrastructure/ ← External integrations (OCR engines, fallback)   │
+│  shared/        ← Reusable utilities (preprocessing, validators)   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Layer Responsibilities
+
+| Layer | Purpose | Key Files |
+|-------|---------|-----------|
+| **api/** | HTTP layer: endpoints, request/response models | `routes/document.py`, `schemas/ocr_schema.py` |
+| **application/** | Orchestration: coordinates the processing flow | `process_document.py` |
+| **domain/** | Business rules: classification, engine selection | `classifier.py`, `engine_resolver.py`, `field_extractor.py` |
+| **infrastructure/** | External integrations: OCR engines, fallback logic | `engines/`, `fallback/` |
+| **shared/** | Reusable utilities: preprocessing, validation | `preprocessing.py`, `validators.py` |
+
 ## Dependencies
 
 The project uses a modular dependency strategy to keep the container lightweight:

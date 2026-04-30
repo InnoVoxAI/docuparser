@@ -1,7 +1,7 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
-title Containers
+title Containers (Arquitetura Atualizada - v2.0)
 
 Person(operator, "Operador")
 Person(supervisor, "Supervisor")
@@ -9,34 +9,48 @@ Person(supervisor, "Supervisor")
 System_Boundary(system, "Document System") {
 
     Container(frontend, "Frontend", "React")
-    Container(core, "Backend Core", "Django", "Orquestrador")
+    Container(core, "Backend Core", "Django", "Orquestrador, gerenciamento de jobs")
+    Container(com, "Backend COM", "Django/FastAPI", "Capture API: Email, WhatsApp, Upload manual")
     Container(ocr, "Backend OCR", "Python", "OCR + classificação básica")
+    Container(conect, "Backend CONECT", "Django/FastAPI", "ERP Integration: Superlógica, outros")
     Container(layout, "Layout Classification Service", "Python/ML/LLM", "Identificação de layout do documento")
     Container(langextract, "LangExtract Service", "Python + LLM", "Extração semântica baseada em schema")
-    Container(queue, "Queue", "Redis/RabbitMQ")
-    ContainerDb(db, "Database", "PostgreSQL")
+    Container(queue, "Queue", "Redis/RabbitMQ", "Event-driven communication")
+    ContainerDb(db, "Database", "PostgreSQL", "Persistência multi-tenant")
 }
 
 System_Ext(email, "Email API")
 System_Ext(whatsapp, "WhatsApp API")
 System_Ext(scanner, "Scanner System")
-System_Ext(superlogica, "Superlógica")
+System_Ext(superlogica, "Superlógica ERP")
 
 Rel(operator, frontend, "usa")
 Rel(supervisor, frontend, "configura schemas e layouts")
 
-Rel(email, core, "ingestão")
-Rel(whatsapp, core, "ingestão")
-Rel(scanner, core, "upload scan")
+Rel(email, com, "ingestão")
+Rel(whatsapp, com, "ingestão")
+Rel(scanner, com, "upload scan")
 
-Rel(core, queue, "jobs")
+Rel(com, queue, "document.received event")
 
 Rel(queue, ocr, "processamento OCR")
-Rel(ocr, layout, "raw_text + tipo documento")
-Rel(layout, langextract, "raw_text + layout")
-Rel(langextract, core, "json estruturado")
+Rel(ocr, queue, "ocr.completed event")
+
+Rel(queue, layout, "classificação layout")
+Rel(layout, queue, "layout.classified event")
+
+Rel(queue, langextract, "extração semântica")
+Rel(langextract, queue, "extraction.completed event")
+
+Rel(queue, core, "persistência e validação")
+Rel(core, queue, "pending.validation event")
+
+Rel(queue, conect, "envio para ERP")
+Rel(conect, superlogica, "integração")
+Rel(conect, queue, "sent.to.erp event")
 
 Rel(core, db, "persistência")
-Rel(core, superlogica, "integração")
+Rel(com, db, "configurações")
+Rel(conect, db, "idempotência")
 
 @enduml

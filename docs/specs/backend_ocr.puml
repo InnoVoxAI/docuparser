@@ -1,19 +1,22 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
-title Backend OCR
+title Backend OCR (Arquitetura Atualizada)
 
 Container_Boundary(ocr, "Backend OCR") {
 
-    Component(classifier, "Document Classifier", "Tipo de documento")
+    Component(classifier, "Document Classifier", "Tipo de documento (boleto, fatura)")
+    Component(content_classifier, "Content Classifier", "Tipo de conteúdo (digital, scanned, handwritten)")
     Component(ocr_engine, "OCR Engine", "Extração de texto")
+    Component(engine_resolver, "Engine Resolver", "Seleção de engine OCR")
 }
 
 Container(queue, "Queue")
 Container(layout, "Layout Classification Service")
 
-Rel(queue, classifier, "job")
-Rel(classifier, ocr_engine, "processar")
-Rel(ocr_engine, layout, "raw_text")
+Rel(queue, classifier, "document.received event")
+Rel(classifier, engine_resolver, "document_type + content_type")
+Rel(engine_resolver, ocr_engine, "engine selection")
+Rel(ocr_engine, layout, "raw_text + document_type")
 
 @enduml

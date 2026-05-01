@@ -1,22 +1,39 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
-title Backend OCR (Arquitetura Atualizada)
+title Backend OCR (OCR Autonomo e Event-driven - v3.0)
 
 Container_Boundary(ocr, "Backend OCR") {
 
-    Component(classifier, "Document Classifier", "Tipo de documento (boleto, fatura)")
-    Component(content_classifier, "Content Classifier", "Tipo de conteúdo (digital, scanned, handwritten)")
-    Component(ocr_engine, "OCR Engine", "Extração de texto")
-    Component(engine_resolver, "Engine Resolver", "Seleção de engine OCR")
+    Component(api, "API REST", "FastAPI", "Execucao isolada, health check e testes")
+    Component(event_consumer, "Event Consumer", "Worker", "Consome document.received")
+    Component(file_loader, "File Loader", "Service", "Carrega PDF/imagem do storage")
+    Component(content_classifier, "Content Classifier", "Service", "pdf_text, scanned_pdf, image, paper_scan")
+    Component(classifier, "Document Classifier", "Service", "boleto, fatura ou unknown")
+    Component(preprocessor, "Preprocessor", "OpenCV/Python", "Normalizacao, compressao e ruido")
+    Component(engine_resolver, "Engine Resolver", "Service", "Selecao de engine OCR")
+    Component(ocr_engine, "OCR Engine", "Tesseract/Paddle/EasyOCR/etc.", "Extracao de texto bruto")
+    Component(fallback, "Fallback Strategy", "Service", "Fallback por baixa confianca ou falha")
+    Component(event_publisher, "Event Publisher", "Worker", "Publica ocr.completed ou ocr.failed")
 }
 
-Container(queue, "Queue")
-Container(layout, "Layout Classification Service")
+Container(queue, "Queue / Event Bus")
+ContainerDb(storage, "Object Storage")
+Container(layout, "Layout Service")
 
-Rel(queue, classifier, "document.received event")
-Rel(classifier, engine_resolver, "document_type + content_type")
-Rel(engine_resolver, ocr_engine, "engine selection")
-Rel(ocr_engine, layout, "raw_text + document_type")
+Rel(api, file_loader, "processa arquivo em chamada isolada")
+Rel(queue, event_consumer, "document.received")
+Rel(event_consumer, file_loader, "file_uri")
+Rel(file_loader, storage, "le documento original")
+Rel(file_loader, content_classifier, "arquivo")
+Rel(content_classifier, classifier, "content_type")
+Rel(classifier, preprocessor, "document_type + arquivo")
+Rel(preprocessor, engine_resolver, "conteudo preparado")
+Rel(engine_resolver, ocr_engine, "engine selecionada")
+Rel(ocr_engine, fallback, "raw_text + confidence")
+Rel(fallback, event_publisher, "resultado final OCR")
+Rel(event_publisher, storage, "grava raw_text e artefatos")
+Rel(event_publisher, queue, "ocr.completed ou ocr.failed")
+Rel(queue, layout, "layout-service consome ocr.completed")
 
 @enduml

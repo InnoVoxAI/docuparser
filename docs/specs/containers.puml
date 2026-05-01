@@ -1,56 +1,65 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
-title Containers (Arquitetura Atualizada - v2.0)
+title Containers (Arquitetura Distribuida por Eventos - v3.0)
 
 Person(operator, "Operador")
 Person(supervisor, "Supervisor")
 
-System_Boundary(system, "Document System") {
+System_Boundary(system, "Sistema de Ingestao de Documentos") {
 
     Container(frontend, "Frontend", "React")
-    Container(core, "Backend Core", "Django", "Orquestrador, gerenciamento de jobs")
-    Container(com, "Backend COM", "Django/FastAPI", "Capture API: Email, WhatsApp, Upload manual")
-    Container(ocr, "Backend OCR", "Python", "OCR + classificação básica")
-    Container(conect, "Backend CONECT", "Django/FastAPI", "ERP Integration: Superlógica, outros")
-    Container(layout, "Layout Classification Service", "Python/ML/LLM", "Identificação de layout do documento")
-    Container(langextract, "LangExtract Service", "Python + LLM", "Extração semântica baseada em schema")
-    Container(queue, "Queue", "Redis/RabbitMQ", "Event-driven communication")
-    ContainerDb(db, "Database", "PostgreSQL", "Persistência multi-tenant")
+    Container(core, "Backend Core", "Django", "Orquestrador, persistencia de estados e validacao humana")
+    Container(com, "Backend COM", "FastAPI/Django", "Captura por Email, WhatsApp e upload manual")
+    Container(ocr, "Backend OCR", "FastAPI/Python", "OCR, normalizacao e classificacao basica")
+    Container(layout, "Layout Service", "Python/ML/LLM", "Classificacao de layout do documento")
+    Container(langextract, "LangExtract Service", "Python + LLM", "Extracao semantica baseada em schema")
+    Container(conect, "Backend CONECT", "Django/FastAPI", "Normalizacao e integracao com ERPs")
+    Container(queue, "Queue / Event Bus", "Redis/RabbitMQ/Celery/Kafka", "Comunicacao assíncrona por eventos")
+    ContainerDb(db, "Database", "PostgreSQL", "Persistencia multi-tenant, jobs e estados")
+    ContainerDb(storage, "Object Storage", "S3/MinIO/File Storage", "Documentos, anexos e textos extraidos")
 }
 
-System_Ext(email, "Email API")
-System_Ext(whatsapp, "WhatsApp API")
-System_Ext(scanner, "Scanner System")
-System_Ext(superlogica, "Superlógica ERP")
+System_Ext(email, "Email Provider")
+System_Ext(whatsapp, "WhatsApp Provider")
+System_Ext(scanner, "Scanner Corporativo")
+System_Ext(superlogica, "Superlogica ERP")
+System_Ext(other_erp, "Outros ERPs")
 
 Rel(operator, frontend, "usa")
-Rel(supervisor, frontend, "configura schemas e layouts")
+Rel(supervisor, frontend, "configura schemas, layouts e conectores")
 
-Rel(email, com, "ingestão")
-Rel(whatsapp, com, "ingestão")
-Rel(scanner, com, "upload scan")
+Rel(email, com, "webhook de email")
+Rel(whatsapp, com, "webhook de WhatsApp")
+Rel(scanner, frontend, "documento escaneado")
+Rel(frontend, com, "upload manual com metadados")
+Rel(frontend, core, "validacao, aprovacao e consulta de estados")
 
-Rel(com, queue, "document.received event")
+Rel(com, storage, "armazena documento original")
+Rel(com, queue, "publica document.received")
 
-Rel(queue, ocr, "processamento OCR")
-Rel(ocr, queue, "ocr.completed event")
+Rel(queue, ocr, "consome document.received")
+Rel(ocr, storage, "armazena raw_text e artefatos OCR")
+Rel(ocr, queue, "publica ocr.completed")
 
-Rel(queue, layout, "classificação layout")
-Rel(layout, queue, "layout.classified event")
+Rel(queue, layout, "consome ocr.completed")
+Rel(layout, queue, "publica layout.classified")
 
-Rel(queue, langextract, "extração semântica")
-Rel(langextract, queue, "extraction.completed event")
+Rel(queue, langextract, "consome layout.classified")
+Rel(langextract, queue, "publica extraction.completed")
 
-Rel(queue, core, "persistência e validação")
-Rel(core, queue, "pending.validation event")
+Rel(queue, core, "consome extraction.completed, erp.sent e erp.failed")
+Rel(core, db, "persiste documentos, estados e validacoes")
+Rel(core, queue, "publica pending.validation e erp.integration.requested")
 
-Rel(queue, conect, "envio para ERP")
-Rel(conect, superlogica, "integração")
-Rel(conect, queue, "sent.to.erp event")
+Rel(queue, conect, "consome erp.integration.requested")
+Rel(conect, db, "idempotencia, tentativas e mapeamentos ERP")
+Rel(conect, superlogica, "envia payload normalizado")
+Rel(conect, other_erp, "envia payload normalizado")
+Rel(conect, queue, "publica erp.sent, erp.failed ou erp.retry.scheduled")
 
-Rel(core, db, "persistência")
-Rel(com, db, "configurações")
-Rel(conect, db, "idempotência")
+Rel(com, db, "configuracoes de canais e tenants")
+Rel(layout, db, "layouts e versoes")
+Rel(langextract, db, "schemas de extracao")
 
 @enduml

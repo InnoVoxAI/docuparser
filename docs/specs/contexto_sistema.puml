@@ -2,37 +2,35 @@
 @startuml
 !includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
 
-title Sistema de Ingestão de Documentos (Arquitetura Atualizada - v2.0)
+title Sistema de Ingestao de Documentos (Contexto - v3.0)
 
 Person(operator, "Operador")
 Person(supervisor, "Supervisor")
 
-System(system, "Sistema de Ingestão de Documentos", "Processa documentos com OCR, classificação de layout e extração semântica")
+System(system, "Sistema de Ingestao de Documentos", "Captura documentos, executa OCR, classifica layout, extrai dados, valida com usuario e integra com ERPs por eventos")
 
-System_Ext(email, "Email API")
-System_Ext(whatsapp, "WhatsApp API")
+System_Ext(email, "Email Provider")
+System_Ext(whatsapp, "WhatsApp Provider")
 System_Ext(scanner, "Scanner Corporativo")
-System_Ext(superlogica, "Superlógica API")
+System_Ext(superlogica, "Superlogica ERP")
+System_Ext(other_erp, "Outros ERPs")
 
-Rel(email, system, "envia documentos")
-Rel(whatsapp, system, "envia documentos")
-Rel(scanner, system, "envia documentos digitalizados")
+Rel(email, system, "envia documentos por webhook de email")
+Rel(whatsapp, system, "envia documentos por webhook de WhatsApp")
+Rel(scanner, system, "fornece documentos digitalizados para upload")
 
-Rel(operator, system, "valida documentos")
-Rel(supervisor, system, "configura extração e layouts")
-Rel(system, superlogica, "envia dados aprovados")
+Rel(operator, system, "faz upload manual, valida e aprova documentos")
+Rel(supervisor, system, "configura canais, schemas, layouts e conectores ERP")
+Rel(system, superlogica, "envia dados aprovados via Backend CONECT")
+Rel(system, other_erp, "envia dados aprovados por conectores plugaveis")
 
-' Novos componentes (microserviços)
-System_Ext(com, "Backend COM", "Capture API")
-System_Ext(conect, "Backend CONECT", "ERP Integration")
-System_Ext(ocr, "Backend OCR", "OCR Service")
-System_Ext(layout, "Layout Service", "Layout Classification")
-System_Ext(langextract, "LangExtract Service", "LLM Extraction")
+note right of system
+Pipeline obrigatório:
+captura -> OCR -> Layout -> LangExtract
+-> validação pelo usuário -> ERP
 
-Rel(com, system, "capture API")
-Rel(conect, system, "ERP integration")
-Rel(ocr, system, "OCR service")
-Rel(layout, system, "layout classification")
-Rel(langextract, system, "LLM extraction")
+Comunicação interna normal:
+fila/event bus com eventos versionados.
+end note
 
 @enduml

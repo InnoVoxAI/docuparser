@@ -200,6 +200,31 @@ def _parse_llm_json(text: str) -> Dict[str, Any]:
     return {"parse_error": True, "raw_output": text}
 
 
+def _text_from_key_values(result: Dict[str, Any]) -> str:
+    key_values = result.get("key_values")
+    if not isinstance(key_values, list):
+        return ""
+
+    lines: List[str] = []
+    for item in key_values:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        value = str(item.get("value") or "").strip()
+        if key and value:
+            lines.append(f"{key}: {value}")
+        elif value:
+            lines.append(value)
+        elif key:
+            lines.append(key)
+
+    return "\n".join(lines).strip()
+
+
+def _extract_ocr_text(result: Dict[str, Any]) -> str:
+    return str(result.get("extracted_text") or "").strip() or _text_from_key_values(result)
+
+
 def _call_openrouter(image_bgr: Any, page_label: str = "page_1", timeout_s: int = 120) -> Dict[str, Any]:
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     model = os.getenv("OPENROUTER_MODEL", "").strip()
@@ -337,7 +362,7 @@ class OpenRouterOCREngine(BaseOCREngine):
         # doc_type None/unknown → classificar internamente (caminho de compatibilidade).
         if doc_type == "digital_pdf":
             pdf_class = {"mode": "text", "nr_pages": None, "txtblocks": -1, "imgblocks": -1, "docfonts": []}
-        elif doc_type == "scanned_image":
+        elif doc_type in {"scanned_image", "handwritten_complex"}:
             pdf_class = {"mode": "image", "nr_pages": None, "txtblocks": 0, "imgblocks": -1, "docfonts": []}
         else:
             pdf_class = _classify_pdf_bytes(content)
@@ -390,7 +415,7 @@ class OpenRouterOCREngine(BaseOCREngine):
                     page_errors.append(f"{label}: {err_msg}")
                     page_text = ""
                 else:
-                    page_text = result.get("extracted_text") or ""
+                    page_text = _extract_ocr_text(result)
                     if result.get("_truncated"):
                         logger.warning("OpenRouter %s: response was truncated — extracted %d chars (partial)", label, len(page_text))
                 texts.append(page_text)
@@ -446,7 +471,7 @@ class OpenRouterOCREngine(BaseOCREngine):
 
         api_model = os.getenv("OPENROUTER_MODEL", "")
         result = _call_openrouter(image_bgr, page_label="image_1", timeout_s=timeout_s)
-        text = result.get("extracted_text") or ""
+        text = _extract_ocr_text(result)
         confidence = result.get("confidence_0_1")
         avg_conf = round(confidence * 100, 2) if isinstance(confidence, (int, float)) else None
 

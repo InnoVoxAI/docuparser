@@ -1,0 +1,340 @@
+from __future__ import annotations
+
+import tempfile
+import json
+from unittest.mock import patch
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.urls import reverse
+from rest_framework.test import APIClient
+
+from docuparse_storage import LocalStorage, document_original_key
+from docuparse_events import LocalJsonlEventBus
+
+from documents.models import Document, ERPIntegrationAttempt, ExtractionResult, LayoutConfig, SchemaConfig, Tenant, ValidationDecision
+
+
+class DocumentsAPITests(TestCase):
+    def setUp(self) -> None:
+        self.client = APIClient()
+        self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
+        self.user = get_user_model().objects.create_user(username="operator", password="test")
+        self.document = Document.objects.create(
+            tenant=self.tenant,
+            status=Document.Status.VALIDATION_PENDING,
+            channel="manual",
+            file_uri="local://documents/tenant-demo/doc/original",
+            original_filename="fixture.pdf",
+            content_type="application/pdf",
+            size_bytes=1024,
+        )
+
+    def test_inbox_and_detail_endpoints(self) -> None:
+        inbox = self.client.get(reverse("documents-inbox"), {"status": Document.Status.VALIDATION_PENDING})
+        detail = self.client.get(reverse("document-detail", args=[self.document.id]))
+
+        assert inbox.status_code == 200
+        assert inbox.json()[0]["id"] == str(self.document.id)
+        assert detail.status_code == 200
+        assert detail.json()["file_uri"] == self.document.file_uri
+
+    def test_document_received_event_endpoint_registers_document(self) -> None:
+        from datetime import datetime, timezone
+        from uuid import uuid4
+
+        document_id = uuid4()
+        with self.settings(DOCUPARSE_AUTO_PROCESS_OCR=False):
+            response = self.client.post(
+                reverse("document-received-event"),
+                {
+                    "event_id": str(uuid4()),
+                    "event_type": "document.received",
+                    "event_version": "v1",
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                    "tenant_id": self.tenant.slug,
+                    "document_id": str(document_id),
+                    "correlation_id": str(uuid4()),
+                    "source": "backend-com",
+                    "data": {
+                        "channel": "manual",
+                        "received_at": datetime.now(timezone.utc).isoformat(),
+                        "sender": "operator@example.test",
+                        "file": {
+                            "uri": "local://documents/tenant-demo/new/original",
+                            "content_type": "application/pdf",
+                            "filename": "new.pdf",
+                            "size_bytes": 123,
+                        },
+                        "metadata": {},
+                    },
+                },
+                format="json",
+            )
+
+        assert response.status_code == 201
+        assert Document.objects.get(id=document_id).original_filename == "new.pdf"
+
+    def test_document_received_event_starts_automatic_ocr_when_enabled(self) -> None:
+        from datetime import datetime, timezone
+        from uuid import uuid4
+
+        document_id = uuid4()
+        with patch("documents.views.start_document_ocr_thread") as start_thread:
+            response = self.client.post(
+                reverse("document-received-event"),
+                {
+                    "event_id": str(uuid4()),
+                    "event_type": "document.received",
+                    "event_version": "v1",
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                    "tenant_id": self.tenant.slug,
+                    "document_id": str(document_id),
+                    "correlation_id": str(uuid4()),
+                    "source": "backend-com",
+                    "data": {
+                        "channel": "manual",
+                        "received_at": datetime.now(timezone.utc).isoformat(),
+                        "sender": "operator@example.test",
+                        "file": {
+                            "uri": "local://documents/tenant-demo/new-auto/original",
+                            "content_type": "application/pdf",
+                            "filename": "new-auto.pdf",
+                            "size_bytes": 123,
+                        },
+                        "metadata": {},
+                    },
+                },
+                format="json",
+            )
+
+        assert response.status_code == 201
+        start_thread.assert_called_once_with(document_id)
+
+    def test_document_file_endpoint_serves_original_file(self) -> None:
+        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+            stored = LocalStorage(storage_dir).put_bytes(
+                document_original_key(self.tenant.slug, str(self.document.id)),
+                b"%PDF original",
+            )
+            self.document.file_uri = stored.uri
+            self.document.save(update_fields=["file_uri"])
+
+            response = self.client.get(reverse("document-file", args=[self.document.id]))
+
+        assert response.status_code == 200
+        assert b"".join(response.streaming_content) == b"%PDF original"
+
+    def test_process_ocr_endpoint_updates_extraction_result(self) -> None:
+        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+            stored = LocalStorage(storage_dir).put_bytes(
+                document_original_key(self.tenant.slug, str(self.document.id)),
+                b"%PDF original",
+            )
+            self.document.file_uri = stored.uri
+            self.document.save(update_fields=["file_uri"])
+            with patch("documents.services.ocr_processor.OCRClient") as client_class:
+                client_class.return_value.process_document.return_value = {
+                    "fields": {"valor": "R$ 123,45"},
+                    "final_score": 0.82,
+                    "raw_text": "valor R$ 123,45",
+                    "document_type": "scanned_image",
+                    "engine_used": "mock",
+                }
+
+                response = self.client.post(reverse("document-process-ocr", args=[self.document.id]))
+
+        self.document.refresh_from_db()
+        extraction = self.document.extraction_result
+        assert response.status_code == 200
+        assert self.document.status == Document.Status.VALIDATION_PENDING
+        assert extraction.fields == {"valor": "R$ 123,45"}
+        assert extraction.confidence == 0.82
+        assert response.json()["full_transcription"] == "valor R$ 123,45"
+        assert response.json()["ocr_metadata"] == {
+            "engine_used": "mock",
+            "classification": "scanned_image",
+            "preprocessing_hint": "",
+            "classification_engine_preprocessing_hints": {},
+        }
+
+    def test_reprocess_ocr_endpoint_replaces_existing_extraction_result(self) -> None:
+        ExtractionResult.objects.create(
+            document=self.document,
+            schema_id="legacy_ocr",
+            schema_version="v1",
+            fields={"valor": "antigo"},
+            confidence=0.1,
+            requires_human_validation=True,
+        )
+        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+            stored = LocalStorage(storage_dir).put_bytes(
+                document_original_key(self.tenant.slug, str(self.document.id)),
+                b"%PDF original",
+            )
+            self.document.file_uri = stored.uri
+            self.document.save(update_fields=["file_uri"])
+            with patch("documents.services.ocr_processor.OCRClient") as client_class:
+                client_class.return_value.process_document.return_value = {
+                    "fields": {"valor": "novo"},
+                    "final_score": 0.77,
+                    "raw_text": "valor novo",
+                    "document_type": "digital_pdf",
+                    "engine_used": "docling",
+                }
+
+                response = self.client.post(reverse("document-reprocess-ocr", args=[self.document.id]))
+
+        self.document.refresh_from_db()
+        assert response.status_code == 200
+        assert self.document.extraction_result.fields == {"valor": "novo"}
+        assert self.document.extraction_result.confidence == 0.77
+        assert response.json()["full_transcription"] == "valor novo"
+
+    def test_delete_document_endpoint_removes_database_row_and_preserves_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+            storage = LocalStorage(storage_dir)
+            stored = storage.put_bytes(
+                document_original_key(self.tenant.slug, str(self.document.id)),
+                b"%PDF original",
+            )
+            self.document.file_uri = stored.uri
+            self.document.save(update_fields=["file_uri"])
+
+            response = self.client.delete(reverse("document-delete", args=[self.document.id]))
+
+            assert response.status_code == 204
+            assert not Document.objects.filter(id=self.document.id).exists()
+            assert storage.get_bytes(stored.uri) == b"%PDF original"
+
+    def test_operational_api_requires_internal_token_when_configured(self) -> None:
+        with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN="secret"):
+            rejected = self.client.get(reverse("documents-inbox"))
+            accepted = self.client.get(reverse("documents-inbox"), HTTP_AUTHORIZATION="Bearer secret")
+
+        assert rejected.status_code == 401
+        assert accepted.status_code == 200
+
+    def test_operator_can_approve_document_via_api(self) -> None:
+        response = self.client.post(
+            reverse("document-validate", args=[self.document.id]),
+            {
+                "decision": ValidationDecision.Decision.APPROVED,
+                "decided_by_id": self.user.id,
+            },
+            format="json",
+        )
+
+        assert response.status_code == 201
+        self.document.refresh_from_db()
+        assert self.document.status == Document.Status.ERP_INTEGRATION_REQUESTED
+        assert self.document.validation_decisions.count() == 1
+
+    def test_approve_document_publishes_erp_integration_requested_and_exports_json(self) -> None:
+        with tempfile.TemporaryDirectory() as event_dir, tempfile.TemporaryDirectory() as export_dir, self.settings(
+            DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
+            DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+        ):
+            ExtractionResult.objects.create(
+                document=self.document,
+                schema_id="boleto",
+                schema_version="v1",
+                fields={"valor": "R$ 123,45"},
+                confidence=0.9,
+                requires_human_validation=False,
+            )
+            response = self.client.post(
+                reverse("document-validate", args=[self.document.id]),
+                {
+                    "decision": ValidationDecision.Decision.APPROVED,
+                    "decided_by_id": self.user.id,
+                },
+                format="json",
+            )
+
+            events = LocalJsonlEventBus(event_dir).consume("erp.integration.requested")
+            export_path = events[0]["data"]["metadata"]["approved_export_path"]
+            exported = json.loads(open(export_path, encoding="utf-8").read())
+
+        assert response.status_code == 201
+        assert ERPIntegrationAttempt.objects.count() == 1
+        assert len(events) == 1
+        assert events[0]["event_type"] == "erp.integration.requested"
+        assert events[0]["data"]["payload"]["fields"] == {"valor": "R$ 123,45"}
+        assert exported["document_id"] == str(self.document.id)
+        assert exported["payload"]["fields"] == {"valor": "R$ 123,45"}
+
+    def test_approve_document_uses_corrected_fields_for_export(self) -> None:
+        with tempfile.TemporaryDirectory() as event_dir, tempfile.TemporaryDirectory() as export_dir, self.settings(
+            DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
+            DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+        ):
+            extraction = ExtractionResult.objects.create(
+                document=self.document,
+                schema_id="boleto",
+                schema_version="v1",
+                fields={"valor": "R$ 123,45"},
+                confidence=0.9,
+                requires_human_validation=True,
+            )
+            response = self.client.post(
+                reverse("document-validate", args=[self.document.id]),
+                {
+                    "decision": ValidationDecision.Decision.APPROVED,
+                    "decided_by_id": self.user.id,
+                    "corrected_fields": {"valor": "R$ 999,99"},
+                },
+                format="json",
+            )
+
+            events = LocalJsonlEventBus(event_dir).consume("erp.integration.requested")
+
+        extraction.refresh_from_db()
+        assert response.status_code == 201
+        assert extraction.fields == {"valor": "R$ 999,99"}
+        assert events[0]["data"]["payload"]["fields"] == {"valor": "R$ 999,99"}
+
+    def test_schema_and_layout_config_endpoints(self) -> None:
+        schema_response = self.client.post(
+            reverse("schema-configs"),
+            {
+                "tenant_slug": self.tenant.slug,
+                "schema_id": "boleto",
+                "version": "v1",
+                "definition": {"fields": ["valor"]},
+                "is_active": True,
+            },
+            format="json",
+        )
+        assert schema_response.status_code == 201
+        schema = SchemaConfig.objects.get()
+
+        layout_response = self.client.post(
+            reverse("layout-configs"),
+            {
+                "tenant_slug": self.tenant.slug,
+                "layout": "boleto_bb",
+                "document_type": "scanned_image",
+                "schema_config_id": str(schema.id),
+                "confidence_threshold": 0.8,
+            },
+            format="json",
+        )
+
+        assert layout_response.status_code == 201
+        assert LayoutConfig.objects.get().schema_config == schema
+        assert self.client.get(reverse("schema-configs")).status_code == 200
+        assert self.client.get(reverse("layout-configs")).status_code == 200
+
+        draft_response = self.client.patch(
+            reverse("schema-config-detail", args=[schema.id]),
+            {
+                "definition": {"fields": ["valor", "vencimento"], "status": "draft"},
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        schema.refresh_from_db()
+        assert draft_response.status_code == 200
+        assert schema.definition == {"fields": ["valor", "vencimento"], "status": "draft"}

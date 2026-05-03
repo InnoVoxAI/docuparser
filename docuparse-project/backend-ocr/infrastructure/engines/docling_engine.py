@@ -37,6 +37,16 @@ class DoclingEngine(BaseOCREngine):
         }
 
     def _read_pdf_text_by_page(self, pdf_bytes: bytes) -> List[str]:
+        try:
+            page_texts = self._read_pdf_text_by_page_pdfium(pdf_bytes)
+            self._text_reader = "pypdfium2"
+            return page_texts
+        except Exception:
+            page_texts = self._read_pdf_text_by_page_pymupdf(pdf_bytes)
+            self._text_reader = "pymupdf"
+            return page_texts
+
+    def _read_pdf_text_by_page_pdfium(self, pdf_bytes: bytes) -> List[str]:
         import pypdfium2 as pdfium
 
         pdf = pdfium.PdfDocument(pdf_bytes)
@@ -48,6 +58,12 @@ class DoclingEngine(BaseOCREngine):
             page_texts.append((text_page.get_text_bounded() or "").strip())
 
         return page_texts
+
+    def _read_pdf_text_by_page_pymupdf(self, pdf_bytes: bytes) -> List[str]:
+        import fitz
+
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
+            return [(page.get_text("text") or "").strip() for page in document]
 
     def _extract_structured_blocks(self, page_texts: List[str]) -> Dict[str, Any]:
         blocks = []
@@ -122,6 +138,7 @@ class DoclingEngine(BaseOCREngine):
         process_start = time.perf_counter()
         pdf_bytes = self._normalize_input(content)
         classification = (metadata or {}).get("doc_type")
+        self._text_reader = "unknown"
 
         # PASSO CRÍTICO: trabalhar por página no PDF original.
         page_texts = self._read_pdf_text_by_page(pdf_bytes)
@@ -146,6 +163,7 @@ class DoclingEngine(BaseOCREngine):
             "ocr_time_seconds": round(elapsed, 4),
             "missing_fields": missing_fields,
             "fallback_recommended": fallback_recommended,
+            "text_reader": self._text_reader,
         }
         if classification:
             meta["classification"] = classification

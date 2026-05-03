@@ -1,8 +1,49 @@
+from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
+from django.http import Http404
+from django.http import FileResponse
+from io import BytesIO
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
 
+from docuparse_storage import LocalStorage
+
+from .models import Document, LayoutConfig, SchemaConfig, Tenant, ValidationDecision
+from .serializers import (
+    DocumentDetailSerializer,
+    DocumentListSerializer,
+    LayoutConfigSerializer,
+    SchemaConfigSerializer,
+    ValidationDecisionSerializer,
+)
 from .services.ocr_client import OCRClient
+from .services.erp_publisher import publish_erp_integration_requested
+from .services.event_consumers import consume_document_received
+from .services.ocr_processor import process_document_ocr, start_document_ocr_thread
+
+
+@require_GET
+def health_view(request):
+    return JsonResponse({"status": "healthy", "service": "docuparse-backend-core"})
+
+
+@require_GET
+def ready_view(request):
+    return JsonResponse({"status": "ready", "service": "docuparse-backend-core"})
+
+
+def _internal_token_error(request):
+    token = settings.DOCUPARSE_INTERNAL_SERVICE_TOKEN
+    if not token:
+        return None
+    if request.headers.get("Authorization") == f"Bearer {token}":
+        return None
+    return Response({"detail": "invalid internal service token"}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 @require_GET
@@ -36,3 +77,209 @@ def process_document_view(request):
         return JsonResponse(result)
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=502)
+
+
+@api_view(["GET"])
+def documents_inbox_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    queryset = Document.objects.select_related("tenant").order_by("-received_at")
+    status_filter = request.query_params.get("status")
+    tenant_filter = request.query_params.get("tenant")
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+    if tenant_filter:
+        queryset = queryset.filter(tenant__slug=tenant_filter)
+    return Response(DocumentListSerializer(queryset[:200], many=True).data)
+
+
+@api_view(["POST"])
+def document_received_event_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    document = consume_document_received(request.data)
+    if settings.DOCUPARSE_AUTO_PROCESS_OCR and not document.raw_text_uri:
+        start_document_ocr_thread(document.id)
+    return Response(DocumentDetailSerializer(document).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+def document_detail_view(request, document_id):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    document = get_object_or_404(
+        Document.objects.select_related("tenant").prefetch_related("events"),
+        id=document_id,
+    )
+    return Response(DocumentDetailSerializer(document).data)
+
+
+@api_view(["DELETE"])
+def document_delete_view(request, document_id):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    document = get_object_or_404(Document, id=document_id)
+    document.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["GET"])
+def document_file_view(request, document_id):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    document = get_object_or_404(Document, id=document_id)
+    try:
+        content = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(document.file_uri)
+    except (FileNotFoundError, ValueError) as exc:
+        raise Http404("Document file not found") from exc
+    return FileResponse(
+        BytesIO(content),
+        content_type=document.content_type or "application/octet-stream",
+        filename=document.original_filename or f"{document.id}",
+    )
+
+
+@api_view(["POST"])
+def document_process_ocr_view(request, document_id):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    try:
+        document = process_document_ocr(document_id)
+    except (FileNotFoundError, ValueError) as exc:
+        return Response({"detail": f"Arquivo original nao encontrado: {exc}"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as exc:
+        return Response({"detail": f"Falha no OCR: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+    return Response(DocumentDetailSerializer(document).data)
+
+
+@api_view(["POST"])
+def document_reprocess_ocr_view(request, document_id):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    try:
+        document = process_document_ocr(document_id)
+    except (FileNotFoundError, ValueError) as exc:
+        return Response({"detail": f"Arquivo original nao encontrado: {exc}"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as exc:
+        return Response({"detail": f"Falha no reprocessamento OCR: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+    return Response(DocumentDetailSerializer(document).data)
+
+
+@api_view(["POST"])
+def document_validation_view(request, document_id):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    document = get_object_or_404(Document, id=document_id)
+    decision = request.data.get("decision")
+    if decision not in {
+        ValidationDecision.Decision.APPROVED,
+        ValidationDecision.Decision.REJECTED,
+        ValidationDecision.Decision.CORRECTED,
+    }:
+        return Response({"detail": "Invalid decision"}, status=status.HTTP_400_BAD_REQUEST)
+
+    user_id = request.data.get("decided_by_id")
+    user = get_object_or_404(get_user_model(), id=user_id) if user_id else get_user_model().objects.first()
+    if user is None:
+        return Response({"detail": "A user is required to validate documents"}, status=status.HTTP_400_BAD_REQUEST)
+
+    validation = ValidationDecision.objects.create(
+        document=document,
+        decided_by=user,
+        decision=decision,
+        corrected_fields=request.data.get("corrected_fields") or {},
+        notes=request.data.get("notes") or "",
+    )
+
+    corrected_fields = request.data.get("corrected_fields") or {}
+    if corrected_fields and hasattr(document, "extraction_result"):
+        document.extraction_result.fields = corrected_fields
+        document.extraction_result.requires_human_validation = False
+        document.extraction_result.save(update_fields=["fields", "requires_human_validation", "updated_at"])
+
+    if decision == ValidationDecision.Decision.APPROVED:
+        document.transition_to(Document.Status.APPROVED)
+        publish_erp_integration_requested(document)
+    elif decision == ValidationDecision.Decision.REJECTED:
+        document.transition_to(Document.Status.REJECTED)
+    else:
+        document.transition_to(Document.Status.VALIDATION_PENDING)
+
+    return Response(ValidationDecisionSerializer(validation).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET", "POST"])
+def schema_configs_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    if request.method == "GET":
+        queryset = SchemaConfig.objects.select_related("tenant").order_by("schema_id", "version")
+        return Response(SchemaConfigSerializer(queryset, many=True).data)
+
+    tenant = _tenant_from_request(request)
+    serializer = SchemaConfigSerializer(data={**request.data, "tenant_id": str(tenant.id)})
+    serializer.is_valid(raise_exception=True)
+    config = SchemaConfig.objects.create(
+        tenant=tenant,
+        schema_id=serializer.validated_data["schema_id"],
+        version=serializer.validated_data["version"],
+        definition=serializer.validated_data.get("definition") or {},
+        is_active=serializer.validated_data.get("is_active", True),
+    )
+    return Response(SchemaConfigSerializer(config).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET", "PATCH"])
+def schema_config_detail_view(request, schema_id):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    config = get_object_or_404(SchemaConfig.objects.select_related("tenant"), id=schema_id)
+    if request.method == "GET":
+        return Response(SchemaConfigSerializer(config).data)
+
+    serializer = SchemaConfigSerializer(config, data={**request.data, "tenant_id": str(config.tenant_id)}, partial=True)
+    serializer.is_valid(raise_exception=True)
+    for field in ("schema_id", "version", "definition", "is_active"):
+        if field in serializer.validated_data:
+            setattr(config, field, serializer.validated_data[field])
+    config.save(update_fields=["schema_id", "version", "definition", "is_active", "updated_at"])
+    return Response(SchemaConfigSerializer(config).data)
+
+
+@api_view(["GET", "POST"])
+def layout_configs_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    if request.method == "GET":
+        queryset = LayoutConfig.objects.select_related("tenant", "schema_config").order_by("layout")
+        return Response(LayoutConfigSerializer(queryset, many=True).data)
+
+    tenant = _tenant_from_request(request)
+    serializer = LayoutConfigSerializer(data={**request.data, "tenant_id": str(tenant.id)})
+    serializer.is_valid(raise_exception=True)
+    config = LayoutConfig.objects.create(
+        tenant=tenant,
+        layout=serializer.validated_data["layout"],
+        document_type=serializer.validated_data["document_type"],
+        schema_config=serializer.validated_data["schema_config"],
+        confidence_threshold=serializer.validated_data.get("confidence_threshold", 0.75),
+        is_active=serializer.validated_data.get("is_active", True),
+    )
+    return Response(LayoutConfigSerializer(config).data, status=status.HTTP_201_CREATED)
+
+
+def _tenant_from_request(request) -> Tenant:
+    tenant_slug = request.data.get("tenant") or request.data.get("tenant_slug") or "tenant-demo"
+    tenant, _ = Tenant.objects.get_or_create(slug=tenant_slug, defaults={"name": tenant_slug})
+    return tenant

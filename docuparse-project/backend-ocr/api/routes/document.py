@@ -17,9 +17,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 
 from api.schemas.ocr_schema import (
@@ -28,7 +29,7 @@ from api.schemas.ocr_schema import (
     EnginesListResponse,
     ProcessRequest,
 )
-from application.process_document import process_document
+from application.process_document import ENGINE_REGISTRY, process_document
 from domain.engine_resolver import resolver as engine_resolver
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ async def process_document_endpoint(
     file: UploadFile = File(...),
     selected_engine: str | None = Form(None),
     timeout_seconds: int = Form(120),
+    legacy_extraction: bool = Form(False),
 ) -> OCRResponse:
     """
     Processa um documento através do pipeline OCR completo.
@@ -77,11 +79,14 @@ async def process_document_endpoint(
             filename=file.filename,
             selected_engine=selected_engine,
             timeout_s=timeout_seconds,
+            legacy_extraction=legacy_extraction,
         )
 
         # Retornar resposta estruturada
         return OCRResponse(**result)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro no processamento: {e}")
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
@@ -101,20 +106,17 @@ async def list_engines_endpoint() -> EnginesListResponse:
     try:
         engines_info = []
 
+        operational_engines = set(engine_resolver.list_all_engines())
+
         # Mapeamento de engines para suas capacidades (simplificado)
         engine_descriptions = {
             "tesseract": "Engine tradicional, bom para texto claro",
-            "paddle": "Engine moderno, bom para layouts complexos",
-            "easyocr": "Multi-idioma, bom para texto curvo",
-            "trocr": "Especializado em texto manuscrito",
             "docling": "Otimizado para PDFs digitais",
-            "llamaparse": "Parse inteligente de documentos complexos",
             "openrouter": "Acesso a múltiplos modelos via API",
-            "deepseek": "Modelos avançados para OCR complexo",
         }
 
-        # Construir lista de engines
-        all_engines = engine_resolver.list_all_engines()
+        # Construir lista somente com engines do perfil operacional atual.
+        all_engines = sorted(engine for engine in ENGINE_REGISTRY if engine in operational_engines)
         for engine_name in all_engines:
             # Encontrar tipos de documento onde este engine é padrão
             default_for = []
@@ -124,14 +126,26 @@ async def list_engines_endpoint() -> EnginesListResponse:
 
             # Capacidades do engine (baseado no tipo)
             capabilities = []
-            if engine_name in ["paddle", "easyocr", "trocr"]:
-                capabilities.append("layout_analysis")
-            if engine_name in ["easyocr", "trocr"]:
-                capabilities.append("handwriting")
-            if engine_name in ["docling", "llamaparse"]:
+            if engine_name == "docling":
                 capabilities.append("digital_pdf")
-            if engine_name in ["openrouter", "deepseek"]:
+            if engine_name == "openrouter":
                 capabilities.append("ai_powered")
+                capabilities.append("scanned_image")
+                capabilities.append("handwriting")
+            if engine_name == "tesseract":
+                capabilities.append("fallback")
+
+            is_configured = True
+            status = "available"
+            if engine_name == "openrouter":
+                missing = [
+                    name
+                    for name in ("OPENROUTER_API_KEY", "OPENROUTER_MODEL")
+                    if not os.getenv(name, "").strip()
+                ]
+                if missing:
+                    is_configured = False
+                    status = f"missing_config:{','.join(missing)}"
 
             engines_info.append(EngineInfo(
                 name=engine_name,
@@ -139,6 +153,9 @@ async def list_engines_endpoint() -> EnginesListResponse:
                 supported_document_types=["digital_pdf", "scanned_image", "handwritten_complex"],
                 is_default_for=default_for,
                 capabilities=capabilities,
+                available=True,
+                is_configured=is_configured,
+                status=status,
             ))
 
         return EnginesListResponse(

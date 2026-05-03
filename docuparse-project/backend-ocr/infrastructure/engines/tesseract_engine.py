@@ -19,6 +19,7 @@ import time
 from typing import Any, Dict, List, Tuple
 
 import cv2
+import fitz
 import numpy as np
 import pytesseract
 from pytesseract import Output
@@ -168,11 +169,55 @@ class TesseractEngine(BaseOCREngine):
         }
         return result
 
-    def process(self, content: Any, metadata: dict[str, Any] | None = None) -> Dict[str, Any]:
-        """
-        Process image with Tesseract OCR.
-        metadata: aceito para satisfazer o contrato BaseOCREngine; não utilizado internamente.
-        """
+    def _render_pdf_pages(self, pdf_bytes: bytes, dpi: int = 160) -> list[np.ndarray]:
+        document = fitz.open(stream=pdf_bytes, filetype="pdf")
+        zoom = dpi / 72.0
+        matrix = fitz.Matrix(zoom, zoom)
+        pages: list[np.ndarray] = []
+        for page in document:
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+            rgb = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(pixmap.height, pixmap.width, 3)
+            pages.append(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+        document.close()
+        return pages
+
+    def _process_pdf_page(self, page_image: np.ndarray) -> Dict[str, Any]:
+        process_start = time.perf_counter()
+        gray = self._decode_to_gray(page_image)
+        resized = cv2.resize(gray, None, fx=1.25, fy=1.25, interpolation=cv2.INTER_CUBIC)
+        blur = cv2.GaussianBlur(resized, (3, 3), 0)
+        otsu = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+
+        best_text = ""
+        best_confidence = -1.0
+        best_lang = ""
+        for lang in ["por+eng", "eng"]:
+            try:
+                extracted_text, avg_conf = self._extract_with_data(otsu, lang=lang, psm=6)
+            except pytesseract.TesseractError:
+                continue
+            if len(extracted_text) > len(best_text):
+                best_text = extracted_text
+                best_confidence = avg_conf
+                best_lang = lang
+
+        if not best_text:
+            best_text = pytesseract.image_to_string(otsu, lang="eng", config="--oem 3 --psm 6").strip()
+            best_confidence = 0.0
+            best_lang = "eng"
+
+        return {
+            "raw_text": best_text,
+            "_meta": {
+                "variant_used": "pdf_otsu_fast",
+                "lang_used": best_lang,
+                "psm_used": 6,
+                "avg_confidence": round(best_confidence, 2),
+                "ocr_time_seconds": round(time.perf_counter() - process_start, 4),
+            },
+        }
+
+    def _process_image_source(self, content: Any) -> Dict[str, Any]:
         process_start = time.perf_counter()
         preprocessed_for_metrics = None
         source_for_ocr = content
@@ -255,3 +300,41 @@ class TesseractEngine(BaseOCREngine):
                 **term_metrics,
             },
         }
+
+    def process(self, content: Any, metadata: dict[str, Any] | None = None) -> Dict[str, Any]:
+        """
+        Process image or PDF with Tesseract OCR.
+        metadata: aceito para satisfazer o contrato BaseOCREngine; não utilizado internamente.
+        """
+        if isinstance(content, bytes) and content.startswith(b"%PDF"):
+            page_results = [
+                self._process_pdf_page(page_image)
+                for page_image in self._render_pdf_pages(content)
+            ]
+            raw_text = "\n\n".join(result.get("raw_text", "") for result in page_results).strip()
+            page_meta = [result.get("_meta", {}) for result in page_results]
+            avg_confidences = [
+                meta.get("avg_confidence")
+                for meta in page_meta
+                if isinstance(meta.get("avg_confidence"), (int, float))
+            ]
+            avg_confidence = float(np.mean(avg_confidences)) if avg_confidences else 0.0
+            return {
+                "raw_text": raw_text,
+                "raw_text_fallback": raw_text,
+                "document_info": {
+                    "page_count": len(page_results),
+                },
+                "entities": {},
+                "tables": [],
+                "totals": {},
+                "_meta": {
+                    "engine": "tesseract",
+                    "input_type": "pdf",
+                    "page_count": len(page_results),
+                    "avg_confidence": round(avg_confidence, 2),
+                    "pages": page_meta,
+                },
+            }
+
+        return self._process_image_source(content)

@@ -191,6 +191,11 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
+# DocuParse local development adapters
+.docuparse-events/
+.docuparse-storage/
+docuparse-project/backend-core/exports/
+
 # PyPI configuration file
 .pypirc
 

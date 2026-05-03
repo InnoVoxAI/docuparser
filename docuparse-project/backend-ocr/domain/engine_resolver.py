@@ -24,8 +24,8 @@ from typing import Optional
 # Mapeamento padrão: doc_type classificado → engine OCR
 ENGINE_DEFAULTS: dict[str, str] = {
     "digital_pdf": "docling",
-    "scanned_image": "paddle",
-    "handwritten_complex": "handwritten_region",
+    "scanned_image": "openrouter",
+    "handwritten_complex": "openrouter",
 }
 
 # Aliases: nomes alternativos aceitos no parâmetro selected_engine da API
@@ -40,9 +40,9 @@ ENGINE_ALIASES: dict[str, str] = {
 
 # Engines disponíveis por tipo — usado por GET /engines e para validação
 CAPABILITIES: dict[str, list[str]] = {
-    "digital_pdf": ["docling", "llamaparse"],
-    "scanned_image": ["trocr", "paddleocr", "easyocr"],
-    "handwritten_complex": ["trocr", "paddleocr", "signature_tag", "easyocr"],
+    "digital_pdf": ["docling"],
+    "scanned_image": ["openrouter", "tesseract"],
+    "handwritten_complex": ["openrouter", "tesseract"],
 }
 
 # Engine de último recurso — quando classification não mapeia para nenhum padrão

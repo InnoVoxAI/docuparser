@@ -7,14 +7,14 @@
 # O router.py original permanece intacto para backward compat.
 #
 # Responsabilidade ÚNICA: orquestrar o fluxo completo de processamento OCR.
-# Recebe arquivo, classifica, resolve engine, processa, extrai campos, constrói response.
+# Recebe arquivo, classifica, resolve engine, processa OCR bruto e constrói response.
 #
 # Fluxo:
 #   1. Classificar documento (domain/classifier.py)
 #   2. Resolver engine correto (domain/engine_resolver.py)
 #   3. Executar OCR (infrastructure/engines/)
-#   4. Extrair campos estruturados (domain/field_extractor.py)
-#   5. Calcular posições dos campos (se necessário)
+#   4. Opcionalmente extrair campos no modo legado
+#   5. Calcular posições dos campos no modo legado (se necessário)
 #   6. Construir response final
 #
 # Pattern: Use Case / Application Service
@@ -27,7 +27,7 @@ import logging
 import time
 from typing import Any, Dict
 
-from domain.classifier import classify_document
+from domain.classifier import classify_document, get_engine_preprocessing_hints_for_class
 from domain.engine_resolver import resolver as engine_resolver
 from domain.field_extractor import FieldExtractor
 from infrastructure.engines.base_engine import BaseOCREngine
@@ -72,6 +72,7 @@ def process_document(
     filename: str,
     selected_engine: str | None = None,
     timeout_s: int = 120,
+    legacy_extraction: bool = False,
 ) -> Dict[str, Any]:
     """
     Serviço principal: processa um documento através do pipeline OCR completo.
@@ -81,9 +82,10 @@ def process_document(
         filename:        Nome original do arquivo
         selected_engine: Override opcional do engine (None = automático)
         timeout_s:       Timeout para operações HTTP (engines externos)
+        legacy_extraction: Mantém extração estruturada antiga quando explicitamente solicitada
 
     Returns:
-        Dict estruturado com todos os dados extraídos e metadados
+        Dict estruturado com texto bruto de OCR e metadados
     """
     start_time = time.time()
     logger.info(f"Processando documento: {filename} ({len(file_bytes)} bytes)")
@@ -92,7 +94,7 @@ def process_document(
     # 1. CLASSIFICAR DOCUMENTO (Domain)
     # ──────────────────────────────────────────────────────────────────────────
     try:
-        doc_type = classify_document(file_bytes)
+        doc_type = classify_document(filename, file_bytes)
         logger.info(f"Documento classificado como: {doc_type}")
     except Exception as e:
         logger.error(f"Erro na classificação: {e}")
@@ -112,6 +114,9 @@ def process_document(
         engine = ENGINE_REGISTRY["tesseract"]  # fallback mais seguro
         engine_name = "tesseract"
 
+    classification_engine_preprocessing_hints = get_engine_preprocessing_hints_for_class(doc_type)
+    preprocessing_hint = classification_engine_preprocessing_hints.get(engine_name, "")
+
     # ──────────────────────────────────────────────────────────────────────────
     # 3. EXECUTAR OCR (Infrastructure)
     # ──────────────────────────────────────────────────────────────────────────
@@ -125,14 +130,27 @@ def process_document(
         logger.info(f"OCR executado com sucesso pelo engine: {engine_name}")
     except Exception as e:
         logger.error(f"Erro no OCR com engine {engine_name}: {e}")
-        # Tentar fallback se disponível
+        # Tentar fallback se disponível. O resultado primário pode não existir
+        # quando o engine falha antes de retornar qualquer payload.
         fallback_engine_name = "tesseract" if engine_name != "tesseract" else "easyocr"
         if fallback_engine_name in ENGINE_REGISTRY:
             try:
                 logger.info(f"Tentando fallback com engine: {fallback_engine_name}")
                 fallback_engine = ENGINE_REGISTRY[fallback_engine_name]
                 fallback_result = fallback_engine.process(file_bytes, metadata)
-                ocr_result = merge_fallback_result(ocr_result, fallback_result)
+                primary_result = {
+                    "raw_text": "",
+                    "_meta": {
+                        "error": str(e),
+                        "failed_engine": engine_name,
+                    },
+                }
+                ocr_result = merge_fallback_result(
+                    primary_result,
+                    fallback_result,
+                    engine_name,
+                    fallback_engine_name,
+                )
                 engine_name = f"{engine_name}_with_{fallback_engine_name}_fallback"
             except Exception as fallback_e:
                 logger.error(f"Fallback também falhou: {fallback_e}")
@@ -141,18 +159,29 @@ def process_document(
             raise e
 
     # ──────────────────────────────────────────────────────────────────────────
-    # 4. EXTRAIR CAMPOS ESTRUTURADOS (Domain)
+    # 4. EXTRAIR CAMPOS ESTRUTURADOS (modo legado opcional)
     # ──────────────────────────────────────────────────────────────────────────
-    try:
-        extractor = FieldExtractor()
-        field_quality = extractor.extract(ocr_result)
-        fields = field_quality["fields"]
-        final_score = field_quality["final_score"]
-        logger.info(f"Campos extraídos com score final: {final_score:.2f}")
-    except Exception as e:
-        logger.error(f"Erro na extração de campos: {e}")
-        fields = {}
-        final_score = 0.0
+    field_quality: Dict[str, Any] = {
+        "fields": {},
+        "final_score": 0.0,
+        "field_confidence": {},
+        "low_confidence_fields": [],
+        "_meta": {
+            "semantic_extraction": "disabled",
+            "reason": "handled_by_langextract_service",
+        },
+    }
+    fields: Dict[str, Any] = {}
+    final_score = 0.0
+    if legacy_extraction:
+        try:
+            extractor = FieldExtractor()
+            field_quality = extractor.extract(ocr_result)
+            fields = field_quality["fields"]
+            final_score = field_quality["final_score"]
+            logger.info(f"Campos extraídos com score final: {final_score:.2f}")
+        except Exception as e:
+            logger.error(f"Erro na extração de campos: {e}")
 
     # ──────────────────────────────────────────────────────────────────────────
     # 5. CALCULAR POSIÇÕES DOS CAMPOS (se necessário)
@@ -186,8 +215,11 @@ def process_document(
         # Metadados do processamento
         "document_type": doc_type,
         "engine_used": engine_name,
+        "preprocessing_hint": preprocessing_hint,
+        "classification_engine_preprocessing_hints": classification_engine_preprocessing_hints,
         "processing_time_seconds": round(processing_time, 2),
         "filename": filename,
+        "semantic_extraction_enabled": legacy_extraction,
 
         # Dados estruturados adicionais
         "document_info": ocr_result.get("document_info", {}),
@@ -196,7 +228,11 @@ def process_document(
         "totals": ocr_result.get("totals", {}),
 
         # Debug info
-        "_debug": {
+        "debug": {
+            "classification": doc_type,
+            "engine_used": engine_name,
+            "preprocessing_hint": preprocessing_hint,
+            "classification_engine_preprocessing_hints": classification_engine_preprocessing_hints,
             "engine_meta": ocr_result.get("_meta", {}),
             "field_extraction_meta": field_quality.get("_meta", {}),
         }

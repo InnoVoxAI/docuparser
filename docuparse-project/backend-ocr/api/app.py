@@ -17,13 +17,33 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+def _load_project_env() -> None:
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_project_env()
+
 from api.routes.document import router as document_router
+from domain.engine_resolver import ENGINE_DEFAULTS
 
 # Configurar logging
 logging.basicConfig(
@@ -31,6 +51,11 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def _csv_env(name: str, default: str) -> list[str]:
+    values = [value.strip() for value in os.getenv(name, default).split(",")]
+    return [value for value in values if value]
 
 
 @asynccontextmanager
@@ -52,7 +77,7 @@ app = FastAPI(
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, especificar origens permitidas
+    allow_origins=_csv_env("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,6 +97,30 @@ async def health_check():
     return {"status": "healthy", "service": "docuparse-ocr-backend"}
 
 
+@app.get("/ready")
+async def readiness_check():
+    """Readiness check for configured OCR profile dependencies."""
+    missing: list[str] = []
+    if "openrouter" in set(ENGINE_DEFAULTS.values()):
+        missing.extend(
+            name
+            for name in ("OPENROUTER_API_KEY", "OPENROUTER_MODEL")
+            if not os.getenv(name, "").strip()
+        )
+
+    if missing:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "service": "docuparse-ocr-backend",
+                "missing": missing,
+            },
+        )
+
+    return {"status": "ready", "service": "docuparse-ocr-backend"}
+
+
 # Root endpoint
 @app.get("/")
 async def root():
@@ -83,7 +132,8 @@ async def root():
         "endpoints": {
             "POST /api/v1/process": "Processar documento OCR",
             "GET /api/v1/engines": "Listar engines disponíveis",
-            "GET /health": "Health check"
+            "GET /health": "Health check",
+            "GET /ready": "Readiness check"
         }
     }
 

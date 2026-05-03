@@ -4,3 +4,4 @@ djangorestframework-simplejwt==5.3.1
 requests
 psycopg2-binary
 python-decouple
+pydantic

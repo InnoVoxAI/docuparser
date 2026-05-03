@@ -1,8 +1,37 @@
 from django.urls import path
 
-from .views import list_engines_view, process_document_view
+from .views import (
+    document_detail_view,
+    document_delete_view,
+    document_file_view,
+    document_process_ocr_view,
+    document_received_event_view,
+    document_reprocess_ocr_view,
+    document_validation_view,
+    documents_inbox_view,
+    health_view,
+    layout_configs_view,
+    list_engines_view,
+    process_document_view,
+    ready_view,
+    schema_config_detail_view,
+    schema_configs_view,
+)
 
 urlpatterns = [
+    path("health", health_view, name="backend-core-health"),
+    path("ready", ready_view, name="backend-core-ready"),
     path("engines", list_engines_view, name="ocr-engines"),
     path("process", process_document_view, name="ocr-process"),
+    path("documents", documents_inbox_view, name="documents-inbox"),
+    path("events/document-received", document_received_event_view, name="document-received-event"),
+    path("documents/<uuid:document_id>", document_detail_view, name="document-detail"),
+    path("documents/<uuid:document_id>/delete", document_delete_view, name="document-delete"),
+    path("documents/<uuid:document_id>/file", document_file_view, name="document-file"),
+    path("documents/<uuid:document_id>/process-ocr", document_process_ocr_view, name="document-process-ocr"),
+    path("documents/<uuid:document_id>/reprocess-ocr", document_reprocess_ocr_view, name="document-reprocess-ocr"),
+    path("documents/<uuid:document_id>/validate", document_validation_view, name="document-validate"),
+    path("schema-configs", schema_configs_view, name="schema-configs"),
+    path("schema-configs/<uuid:schema_id>", schema_config_detail_view, name="schema-config-detail"),
+    path("layout-configs", layout_configs_view, name="layout-configs"),
 ]

@@ -13,13 +13,12 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-container.txt .
+RUN pip install --no-cache-dir -r requirements-container.txt
 
-# Optional: Install TrOCR dependencies for handwritten document support
-# Uncomment the lines below to enable TrOCR support (adds ~2GB to image)
-# COPY requirements-dev.txt .
-# RUN pip install --no-cache-dir -r requirements-dev.txt
+# The default container keeps only the engines used by the current routing:
+# docling/PyMuPDF for digital PDFs, OpenRouter for scanned files, and
+# Tesseract fallback. Paddle/EasyOCR/TrOCR remain optional for local profiles.
 
 COPY . .
 

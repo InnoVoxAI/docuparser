@@ -1,41 +1,224 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-docuparse}
+      POSTGRES_USER: ${POSTGRES_USER:-docuparse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docuparse}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - docuparse-network
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - docuparse-network
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docuparse}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - docuparse-network
+
   frontend:
     build: ./frontend
     command: npm run dev -- --host 0.0.0.0 --port 5173
     ports:
       - "5173:5173"
-    
+    environment:
+      VITE_BACKEND_CORE_URL: http://backend-core:8000
+      VITE_BACKEND_COM_URL: http://backend-com:8070
     networks:
       - docuparse-network
     depends_on:
-      - backend-core
+      backend-core:
+        condition: service_healthy
+      backend-com:
+        condition: service_healthy
 
   backend-core:
     build: ./backend-core
-    command: python manage.py runserver 0.0.0.0:8000
+    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./backend-core:/app
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
+      - docuparse-storage:/data/storage
+      - docuparse-events:/data/events
     ports:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      BACKEND_OCR_URL: http://backend-ocr:8080
+      PYTHONPATH: /app:/contracts:/shared
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-docuparse}
+      POSTGRES_USER: ${POSTGRES_USER:-docuparse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docuparse}
+      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
+      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      DOCUPARSE_APPROVED_EXPORT_DIR: /data/exports/approved
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ocr/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - docuparse-network
     depends_on:
-      - backend-ocr
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      backend-ocr:
+        condition: service_started
+      backend-com:
+        condition: service_started
+
+  backend-com:
+    build: ./backend-com
+    command: uvicorn backend_com.api.app:app --host 0.0.0.0 --port 8070 --reload
+    volumes:
+      - ./backend-com/src:/app/src
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
+      - docuparse-storage:/data/storage
+      - docuparse-events:/data/events
+    ports:
+      - "8070:8070"
+    environment:
+      PYTHONPATH: /app/src:/contracts:/shared
+      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
+      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      BACKEND_CORE_DOCUMENT_RECEIVED_URL: http://backend-core:8000/api/ocr/events/document-received
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8070/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - docuparse-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
   backend-ocr:
     build: ./backend-ocr
     command: uvicorn api.app:app --host 0.0.0.0 --port 8080 --reload
     volumes:
       - ./backend-ocr:/app
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
     ports:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      PYTHONPATH: /app:/contracts:/shared
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - docuparse-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  layout-service:
+    build: ./layout-service
+    command: uvicorn api.app:app --host 0.0.0.0 --port 8090 --reload
+    volumes:
+      - ./layout-service:/app
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
+    ports:
+      - "8090:8090"
+    environment:
+      PYTHONPATH: /app:/contracts:/shared
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - docuparse-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  langextract-service:
+    build: ./langextract-service
+    command: uvicorn api.app:app --host 0.0.0.0 --port 8091 --reload
+    volumes:
+      - ./langextract-service:/app
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
+    ports:
+      - "8091:8091"
+    environment:
+      PYTHONPATH: /app:/contracts:/shared
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - docuparse-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
 networks:
   docuparse-network:
     driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  docuparse-storage:
+  docuparse-events:

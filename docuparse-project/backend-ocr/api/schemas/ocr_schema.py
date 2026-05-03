@@ -58,8 +58,14 @@ class OCRResponse(BaseModel):
     # Metadados do processamento
     document_type: str = Field(..., description="Tipo de documento classificado")
     engine_used: str = Field(..., description="Engine OCR utilizado")
+    preprocessing_hint: str = Field("", description="Hint de pre-processamento escolhido para o engine OCR")
+    classification_engine_preprocessing_hints: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapa CLASSIFICATION_ENGINE_PREPROCESSING_HINTS para a classificacao do documento",
+    )
     processing_time_seconds: float = Field(..., description="Tempo total de processamento", gt=0)
     filename: str = Field(..., description="Nome do arquivo original")
+    semantic_extraction_enabled: bool = Field(False, description="Indica se a extração estruturada legada foi executada")
 
     # Dados estruturados adicionais
     document_info: Dict[str, Any] = Field(default_factory=dict, description="Informações do documento")
@@ -68,7 +74,7 @@ class OCRResponse(BaseModel):
     totals: Dict[str, Any] = Field(default_factory=dict, description="Totais monetários detectados")
 
     # Debug info (opcional, só em modo debug)
-debug: Optional[Dict[str, Any]] = Field(None, description="Informações de debug")
+    debug: Optional[Dict[str, Any]] = Field(None, description="Informações de debug")
 
 
 class EngineInfo(BaseModel):
@@ -81,6 +87,9 @@ class EngineInfo(BaseModel):
     supported_document_types: List[str] = Field(..., description="Tipos de documento suportados")
     is_default_for: List[str] = Field(default_factory=list, description="Tipos onde é engine padrão")
     capabilities: List[str] = Field(default_factory=list, description="Capacidades especiais")
+    available: bool = Field(True, description="Engine registrado no runtime atual")
+    is_configured: bool = Field(True, description="Dependências e credenciais mínimas configuradas")
+    status: str = Field("available", description="Status operacional resumido")
 
 
 class ProcessRequest(BaseModel):
@@ -91,6 +100,7 @@ class ProcessRequest(BaseModel):
     selected_engine: Optional[str] = Field(None, description="Engine OCR a utilizar")
     timeout_seconds: Optional[int] = Field(120, description="Timeout em segundos", gt=0)
     extract_positions: Optional[bool] = Field(True, description="Extrair posições dos campos")
+    legacy_extraction: Optional[bool] = Field(False, description="Executar extração estruturada legada no backend OCR")
 
 
 class EnginesListResponse(BaseModel):

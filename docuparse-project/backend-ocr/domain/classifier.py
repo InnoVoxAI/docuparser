@@ -41,10 +41,12 @@ CLASSIFICATION_ENGINE_PREPROCESSING_HINTS = {
         "llamaparse": "prefer_original_pdf",
     },
     CLASS_SCANNED_IMAGE: {
+        "openrouter": "render_pdf_or_image_for_vision_ocr",
         "paddle": "natural_rgb_with_clahe_and_light_deskew",
         "easyocr": "denoise_contrast_deskew_upscale",
     },
     CLASS_HANDWRITTEN_COMPLEX: {
+        "openrouter": "render_pdf_or_image_for_vision_ocr_handwritten",
         "easyocr": "denoise_contrast_deskew_upscale_handwritten",
         "paddle": "natural_rgb_with_clahe_and_light_deskew",
         "trocr": "natural_image_denoise_clahe_blueink_resize",
@@ -97,10 +99,28 @@ def get_engine_preprocessing_hints_for_class(classification: str) -> Dict[str, s
 def _classify_pdf(content: bytes, name_signals: Dict[str, bool]) -> str:
     """
     Classifica PDFs usando combinação de:
+    - contagem estrutural de blocos de texto/imagem via PyMuPDF;
     - presença de camada textual real;
     - características visuais de página renderizada (estrutura de tabela, densidade de arestas);
     - sinais de manuscrito/complexidade.
     """
+    block_features = _extract_pdf_block_features(content)
+    if block_features is not None:
+        logger.info(
+            "PDF block features: pages=%s txtblocks=%s imgblocks=%s fonts=%s",
+            block_features["nr_pages"],
+            block_features["txtblocks"],
+            block_features["imgblocks"],
+            block_features["docfonts"],
+        )
+        if _is_text_pdf_by_blocks(block_features, name_signals):
+            logger.info(
+                "PDF classified as DIGITAL_PDF by block features: txtblocks=%s imgblocks=%s",
+                block_features["txtblocks"],
+                block_features["imgblocks"],
+            )
+            return CLASS_DIGITAL_PDF
+
     try:
         import pypdfium2 as pdfium
 
@@ -214,6 +234,53 @@ def _classify_pdf(content: bytes, name_signals: Dict[str, bool]) -> str:
             logger.info("Linha 4 PDF classified as HANDWRITTEN_COMPLEX by name signal fallback")
             return CLASS_HANDWRITTEN_COMPLEX
         return CLASS_SCANNED_IMAGE
+
+
+def _extract_pdf_block_features(content: bytes) -> Dict[str, int | list[str]] | None:
+    """Extrai contagem de blocos de texto/imagem do PDF, preservando a heuristica do pipeline antigo."""
+    try:
+        import fitz
+
+        doc = fitz.open(stream=content, filetype="pdf")
+        txtblocks = 0
+        imgblocks = 0
+        docfonts: list[str] = []
+
+        for page in doc:
+            for block in page.get_text("dict").get("blocks", []):
+                block_type = block.get("type")
+                if block_type == 0:
+                    txtblocks += 1
+                elif block_type == 1:
+                    imgblocks += 1
+
+            for font in page.get_fonts():
+                font_name = font[3]
+                if font_name not in docfonts:
+                    docfonts.append(font_name)
+
+        nr_pages = len(doc)
+        doc.close()
+        return {
+            "nr_pages": nr_pages,
+            "txtblocks": txtblocks,
+            "imgblocks": imgblocks,
+            "docfonts": docfonts,
+        }
+    except Exception as exc:
+        logger.info("PyMuPDF block classification unavailable: %s", exc)
+        return None
+
+
+def _is_text_pdf_by_blocks(block_features: Dict[str, int | list[str]], name_signals: Dict[str, bool]) -> bool:
+    """Regra forte: se o PDF tem mais blocos de texto que imagem, trate como PDF textual."""
+    txtblocks = int(block_features["txtblocks"])
+    imgblocks = int(block_features["imgblocks"])
+    if txtblocks <= 0:
+        return False
+    if name_signals["handwritten"] and not name_signals["scanned"]:
+        return False
+    return txtblocks >= imgblocks
 
 
 def _classify_image(content: bytes, name_signals: Dict[str, bool]) -> str:

@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from application import ocr_event_worker
+from docuparse_events import LocalJsonlEventBus
+from docuparse_storage import LocalStorage, document_original_key
+from events import validate_event
+
+
+def _document_received_payload(storage: LocalStorage, tenant_id: str, document_id) -> dict:
+    stored = storage.put_bytes(document_original_key(tenant_id, str(document_id)), b"document-bytes")
+    return {
+        "event_id": str(uuid4()),
+        "event_type": "document.received",
+        "event_version": "v1",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "tenant_id": tenant_id,
+        "document_id": str(document_id),
+        "correlation_id": str(uuid4()),
+        "source": "backend-com",
+        "data": {
+            "channel": "manual",
+            "received_at": datetime.now(timezone.utc).isoformat(),
+            "sender": "operator@example.test",
+            "file": {
+                "uri": stored.uri,
+                "content_type": "application/pdf",
+                "filename": "fixture.pdf",
+                "size_bytes": stored.size_bytes,
+                "sha256": stored.sha256,
+            },
+            "metadata": {},
+        },
+    }
+
+
+def test_document_received_becomes_ocr_completed(monkeypatch, tmp_path) -> None:
+    storage = LocalStorage(tmp_path / "objects")
+    publisher = LocalJsonlEventBus(tmp_path / "events")
+    tenant_id = "tenant-demo"
+    document_id = uuid4()
+    payload = _document_received_payload(storage, tenant_id, document_id)
+
+    def fake_process_document(file_bytes, filename, timeout_s=120, legacy_extraction=False, selected_engine=None):
+        assert file_bytes == b"document-bytes"
+        assert legacy_extraction is False
+        return {
+            "raw_text": "texto bruto",
+            "raw_text_fallback": "",
+            "document_type": "scanned_image",
+            "engine_used": "mock",
+            "processing_time_seconds": 0.01,
+            "filename": filename,
+            "debug": {},
+        }
+
+    monkeypatch.setattr(ocr_event_worker, "process_document", fake_process_document)
+
+    output = ocr_event_worker.handle_document_received_event(payload, storage, publisher)
+
+    validated = validate_event(output)
+    assert validated.event_type == "ocr.completed"
+    assert output["data"]["raw_text_uri"] == f"local://documents/{tenant_id}/{document_id}/ocr/raw_text.json"
+    assert b"texto bruto" in storage.get_bytes(output["data"]["raw_text_uri"])
+    assert publisher.consume("ocr.completed") == [output]
+
+
+def test_document_received_failure_publishes_ocr_failed(monkeypatch, tmp_path) -> None:
+    storage = LocalStorage(tmp_path / "objects")
+    publisher = LocalJsonlEventBus(tmp_path / "events")
+    payload = _document_received_payload(storage, "tenant-demo", uuid4())
+
+    def failing_process_document(**kwargs):
+        raise RuntimeError("OCR unavailable")
+
+    monkeypatch.setattr(ocr_event_worker, "process_document", failing_process_document)
+
+    output = ocr_event_worker.handle_document_received_event(payload, storage, publisher)
+
+    validated = validate_event(output)
+    assert validated.event_type == "ocr.failed"
+    assert output["data"]["reason"] == "OCR unavailable"
+    assert publisher.consume("ocr.failed") == [output]

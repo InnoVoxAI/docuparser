@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import threading
 from datetime import datetime, timezone
 from typing import Any, Protocol
 from uuid import uuid4
 
 from domain.extractor import extract_fields
 from events import ExtractionCompletedEvent, LayoutClassifiedEvent
+from docuparse_events import EventBus, event_bus_from_env, sleep_interval
 from docuparse_observability import log_event
+from docuparse_storage import LocalStorage
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +23,7 @@ class Storage(Protocol):
 
 
 class EventPublisher(Protocol):
-    def publish(self, stream: str, event: dict[str, Any]) -> int:
+    def publish(self, stream: str, event: dict[str, Any]) -> int | str:
         ...
 
 
@@ -68,3 +72,81 @@ def handle_layout_classified_event(
         confidence=extracted.confidence,
     )
     return output
+
+
+class ExtractionWorker:
+    def __init__(
+        self,
+        *,
+        storage: Storage,
+        event_bus: EventBus,
+        input_stream: str = "layout.classified",
+        poll_interval_seconds: float = 2.0,
+        start_at_latest: bool = True,
+    ) -> None:
+        self.storage = storage
+        self.event_bus = event_bus
+        self.input_stream = input_stream
+        self.poll_interval_seconds = poll_interval_seconds
+        self._stop = threading.Event()
+        self._offset: int | str = self._initial_offset(start_at_latest)
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def run_forever(self) -> None:
+        logger.info("LangExtract Redis worker started", extra={"stream": self.input_stream, "offset": self._offset})
+        while not self._stop.is_set():
+            processed = self.run_once()
+            if processed == 0:
+                sleep_interval(self.poll_interval_seconds)
+
+    def run_once(self) -> int:
+        entries = self.event_bus.consume_entries(self.input_stream, self._offset, count=10)
+        for entry in entries:
+            try:
+                handle_layout_classified_event(entry.payload, self.storage, self.event_bus)
+            except Exception:
+                log_event(
+                    logger,
+                    "extraction event processing failed",
+                    level=logging.ERROR,
+                    stream=self.input_stream,
+                    event_stream_id=str(entry.id),
+                    event_type=entry.payload.get("event_type"),
+                    event_id=entry.payload.get("event_id"),
+                )
+            finally:
+                self._offset = entry.id
+        return len(entries)
+
+    def _initial_offset(self, start_at_latest: bool) -> int | str:
+        if not start_at_latest:
+            return "0-0"
+        latest_id = getattr(self.event_bus, "latest_id", None)
+        if callable(latest_id):
+            return latest_id(self.input_stream)
+        entries = self.event_bus.consume_entries(self.input_stream)
+        return entries[-1].id if entries else 0
+
+
+def worker_from_env() -> ExtractionWorker:
+    storage_root = os.environ.get("DOCUPARSE_LOCAL_STORAGE_DIR", "/data/storage")
+    return ExtractionWorker(
+        storage=LocalStorage(storage_root),
+        event_bus=event_bus_from_env(os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")),
+        input_stream=os.environ.get("DOCUPARSE_EXTRACTION_INPUT_STREAM", "layout.classified"),
+        poll_interval_seconds=float(os.environ.get("DOCUPARSE_EXTRACTION_WORKER_POLL_SECONDS", "2")),
+        start_at_latest=os.environ.get("DOCUPARSE_EXTRACTION_WORKER_START_AT_LATEST", "true").strip().lower()
+        not in {"0", "false", "no"},
+    )
+
+
+def start_worker_thread_from_env() -> ExtractionWorker | None:
+    enabled = os.environ.get("DOCUPARSE_EXTRACTION_WORKER_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+    if not enabled:
+        return None
+    worker = worker_from_env()
+    thread = threading.Thread(target=worker.run_forever, name="docuparse-extraction-worker", daemon=True)
+    thread.start()
+    return worker

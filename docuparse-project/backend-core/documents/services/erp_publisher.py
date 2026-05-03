@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from django.conf import settings
 
-from docuparse_events import LocalJsonlEventBus
+from docuparse_events import event_bus_from_env
 from docuparse_observability import log_event
 from events import ERPIntegrationRequestedEvent
 
@@ -51,7 +51,7 @@ def publish_erp_integration_requested(document: Document, connector: str = "mock
         },
     ).model_dump(mode="json")
 
-    LocalJsonlEventBus(settings.DOCUPARSE_LOCAL_EVENT_DIR).publish("erp.integration.requested", event)
+    event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR).publish("erp.integration.requested", event)
     document.transition_to(Document.Status.ERP_INTEGRATION_REQUESTED)
     log_event(
         logger,

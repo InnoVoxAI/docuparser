@@ -13,6 +13,7 @@ Environment variables required for the vision path:
 
 Optional:
   OPENROUTER_BASE_URL  (default https://openrouter.ai/api/v1)
+  OPENROUTER_FALLBACK_MODEL (default qwen/qwen2.5-vl-72b-instruct)
   OPENROUTER_SITE_URL
   OPENROUTER_APP_NAME
 
@@ -225,9 +226,17 @@ def _extract_ocr_text(result: Dict[str, Any]) -> str:
     return str(result.get("extracted_text") or "").strip() or _text_from_key_values(result)
 
 
-def _call_openrouter(image_bgr: Any, page_label: str = "page_1", timeout_s: int = 120) -> Dict[str, Any]:
+OPENROUTER_EMPTY_TEXT_FALLBACK_MODEL = "qwen/qwen2.5-vl-72b-instruct"
+
+
+def _call_openrouter(
+    image_bgr: Any,
+    page_label: str = "page_1",
+    timeout_s: int = 120,
+    model_override: str | None = None,
+) -> Dict[str, Any]:
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    model = os.getenv("OPENROUTER_MODEL", "").strip()
+    model = (model_override or os.getenv("OPENROUTER_MODEL", "")).strip()
     base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").strip()
     site_url = os.getenv("OPENROUTER_SITE_URL", "").strip()
     app_name = os.getenv("OPENROUTER_APP_NAME", "docuparse-ocr").strip()
@@ -297,6 +306,47 @@ def _call_openrouter(image_bgr: Any, page_label: str = "page_1", timeout_s: int 
                 )
                 parsed["extracted_text"] = cleaned
     return parsed
+
+
+def _empty_text_fallback_model() -> str:
+    return os.getenv("OPENROUTER_FALLBACK_MODEL", OPENROUTER_EMPTY_TEXT_FALLBACK_MODEL).strip()
+
+
+def _call_openrouter_with_empty_text_retry(
+    image_bgr: Any,
+    page_label: str,
+    timeout_s: int,
+) -> tuple[Dict[str, Any], bool, str]:
+    primary_model = os.getenv("OPENROUTER_MODEL", "").strip()
+    result = _call_openrouter(image_bgr, page_label=page_label, timeout_s=timeout_s)
+    if _extract_ocr_text(result):
+        return result, False, primary_model
+
+    fallback_model = _empty_text_fallback_model()
+    if not fallback_model or fallback_model == primary_model:
+        return result, False, primary_model
+
+    logger.warning(
+        "OpenRouter returned empty OCR text; retrying page=%s with fallback model=%s",
+        page_label,
+        fallback_model,
+    )
+    fallback_result = _call_openrouter(
+        image_bgr,
+        page_label=f"{page_label}_retry",
+        timeout_s=timeout_s,
+        model_override=fallback_model,
+    )
+    if _extract_ocr_text(fallback_result):
+        fallback_result["_fallback_from_model"] = primary_model
+        fallback_result["_fallback_model"] = fallback_model
+        return fallback_result, True, fallback_model
+
+    result["_empty_text_retry"] = {
+        "fallback_model": fallback_model,
+        "fallback_returned_text": False,
+    }
+    return result, True, primary_model
 
 
 # ── Engine class ─────────────────────────────────────────────────────────────
@@ -408,7 +458,11 @@ class OpenRouterOCREngine(BaseOCREngine):
         for i, img in enumerate(images, start=1):
             label = f"page_{i}"
             try:
-                result = _call_openrouter(img, page_label=label, timeout_s=timeout_s)
+                result, retried_empty_text, model_used = _call_openrouter_with_empty_text_retry(
+                    img,
+                    page_label=label,
+                    timeout_s=timeout_s,
+                )
                 if result.get("parse_error"):
                     err_msg = f"JSON parse error — raw: {str(result.get('raw_output', ''))[:300]}"
                     logger.warning("OpenRouter parse_error for %s: %s", label, err_msg)
@@ -424,6 +478,8 @@ class OpenRouterOCREngine(BaseOCREngine):
                     "text": page_text,
                     "confidence": result.get("confidence_0_1"),
                     "with_handwritten_text": result.get("with_handwritten_text"),
+                    "model_used": model_used,
+                    "empty_text_retry": retried_empty_text,
                     **({"truncated": True} if result.get("_truncated") else {}),
                     **({"parse_error": result.get("raw_output", "")[:200]} if result.get("parse_error") else {}),
                 })
@@ -470,7 +526,11 @@ class OpenRouterOCREngine(BaseOCREngine):
             raise RuntimeError("Could not decode image from bytes")
 
         api_model = os.getenv("OPENROUTER_MODEL", "")
-        result = _call_openrouter(image_bgr, page_label="image_1", timeout_s=timeout_s)
+        result, retried_empty_text, model_used = _call_openrouter_with_empty_text_retry(
+            image_bgr,
+            page_label="image_1",
+            timeout_s=timeout_s,
+        )
         text = _extract_ocr_text(result)
         confidence = result.get("confidence_0_1")
         avg_conf = round(confidence * 100, 2) if isinstance(confidence, (int, float)) else None
@@ -484,7 +544,10 @@ class OpenRouterOCREngine(BaseOCREngine):
             "totals": {},
             "_meta": {
                 "engine": "openrouter",
-                "model": api_model,
+                "model": model_used or api_model,
+                "primary_model": api_model,
+                "empty_text_retry": retried_empty_text,
+                **({"fallback_model": result.get("_fallback_model")} if result.get("_fallback_model") else {}),
                 "pipeline": "openrouter-ocr",
                 "avg_confidence": avg_conf,
                 "with_handwritten_text": result.get("with_handwritten_text"),

@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from api.app import app
-from application.extraction_event_worker import handle_layout_classified_event
+from application.extraction_event_worker import ExtractionWorker, handle_layout_classified_event
 from docuparse_events import LocalJsonlEventBus
 from docuparse_storage import LocalStorage
 from domain.extractor import extract_fields
@@ -92,3 +92,41 @@ def test_layout_classified_becomes_extraction_completed(tmp_path) -> None:
     assert validated.event_type == "extraction.completed"
     assert output["data"]["schema_id"] == "boleto"
     assert publisher.consume("extraction.completed") == [output]
+
+
+def test_extraction_worker_consumes_layout_classified_stream(tmp_path) -> None:
+    storage = LocalStorage(tmp_path / "objects")
+    event_bus = LocalJsonlEventBus(tmp_path / "events")
+    tenant_id = "tenant-demo"
+    document_id = uuid4()
+    raw = storage.put_bytes(
+        f"documents/{tenant_id}/{document_id}/ocr/raw_text.json",
+        json.dumps({"raw_text": BOLETO_TEXT}).encode("utf-8"),
+    )
+    event_bus.publish(
+        "layout.classified",
+        {
+            "event_id": str(uuid4()),
+            "event_type": "layout.classified",
+            "event_version": "v1",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "tenant_id": tenant_id,
+            "document_id": str(document_id),
+            "correlation_id": str(uuid4()),
+            "source": "layout-service",
+            "data": {
+                "layout": "boleto_bb",
+                "confidence": 0.9,
+                "document_type": "digital_pdf",
+                "requires_human_validation": False,
+                "metadata": {"raw_text_uri": raw.uri},
+            },
+        },
+    )
+
+    worker = ExtractionWorker(storage=storage, event_bus=event_bus, start_at_latest=False)
+
+    assert worker.run_once() == 1
+    outputs = event_bus.consume("extraction.completed")
+    assert len(outputs) == 1
+    assert outputs[0]["data"]["schema_id"] == "boleto"

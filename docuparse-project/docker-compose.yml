@@ -21,7 +21,7 @@ services:
     image: redis:7-alpine
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -90,6 +90,9 @@ services:
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
       DOCUPARSE_APPROVED_EXPORT_DIR: /data/exports/approved
+      DOCUPARSE_EVENT_BUS: redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DOCUPARSE_AUTO_PROCESS_OCR: ${DOCUPARSE_AUTO_PROCESS_OCR:-true}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ocr/health', timeout=2)"]
       interval: 10s
@@ -109,6 +112,42 @@ services:
       backend-com:
         condition: service_started
 
+  backend-core-events:
+    build: ./backend-core
+    command: sh -c "python manage.py migrate --noinput && python manage.py consume_events"
+    profiles:
+      - async-workers
+    volumes:
+      - ./backend-core:/app
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
+      - docuparse-storage:/data/storage
+      - docuparse-events:/data/events
+      - docuparse-events:/data/events
+    env_file:
+      - .env
+    environment:
+      BACKEND_OCR_URL: http://backend-ocr:8080
+      PYTHONPATH: /app:/contracts:/shared
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-docuparse}
+      POSTGRES_USER: ${POSTGRES_USER:-docuparse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docuparse}
+      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
+      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      DOCUPARSE_APPROVED_EXPORT_DIR: /data/exports/approved
+      DOCUPARSE_EVENT_BUS: redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    networks:
+      - docuparse-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
   backend-com:
     build: ./backend-com
     command: uvicorn backend_com.api.app:app --host 0.0.0.0 --port 8070 --reload
@@ -122,6 +161,8 @@ services:
       - "8070:8070"
     environment:
       PYTHONPATH: /app/src:/contracts:/shared
+      DOCUPARSE_EVENT_BUS: redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
       BACKEND_CORE_DOCUMENT_RECEIVED_URL: http://backend-core:8000/api/ocr/events/document-received
@@ -145,17 +186,53 @@ services:
       - ./backend-ocr:/app
       - ./contracts:/contracts:ro
       - ./shared:/shared:ro
+      - docuparse-storage:/data/storage
     ports:
       - "8080:8080"
     env_file:
       - .env
     environment:
       PYTHONPATH: /app:/contracts:/shared
+      DOCUPARSE_EVENT_BUS: redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
+      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      DOCUPARSE_OCR_WORKER_ENABLED: ${DOCUPARSE_OCR_WORKER_ENABLED:-false}
+      OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-qwen/qwen2.5-vl-72b-instruct}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - docuparse-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  backend-ocr-worker:
+    build: ./backend-ocr
+    command: python -m application.run_worker
+    profiles:
+      - async-workers
+    volumes:
+      - ./backend-ocr:/app
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
+      - docuparse-storage:/data/storage
+      - docuparse-events:/data/events
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app:/contracts:/shared
+      DOCUPARSE_EVENT_BUS: redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
+      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-qwen/qwen2.5-vl-72b-instruct}
+      DOCUPARSE_OCR_WORKER_ALLOW_MOCK: ${DOCUPARSE_OCR_WORKER_ALLOW_MOCK:-false}
     networks:
       - docuparse-network
     depends_on:
@@ -171,15 +248,47 @@ services:
       - ./layout-service:/app
       - ./contracts:/contracts:ro
       - ./shared:/shared:ro
+      - docuparse-storage:/data/storage
+      - docuparse-events:/data/events
     ports:
       - "8090:8090"
     environment:
       PYTHONPATH: /app:/contracts:/shared
+      DOCUPARSE_EVENT_BUS: redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
+      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      DOCUPARSE_LAYOUT_WORKER_ENABLED: ${DOCUPARSE_LAYOUT_WORKER_ENABLED:-false}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2)"]
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - docuparse-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  layout-worker:
+    build: ./layout-service
+    command: python -m application.run_worker
+    profiles:
+      - async-workers
+    volumes:
+      - ./layout-service:/app
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
+      - docuparse-storage:/data/storage
+      - docuparse-events:/data/events
+    environment:
+      PYTHONPATH: /app:/contracts:/shared
+      DOCUPARSE_EVENT_BUS: redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
+      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
     networks:
       - docuparse-network
     depends_on:
@@ -195,15 +304,47 @@ services:
       - ./langextract-service:/app
       - ./contracts:/contracts:ro
       - ./shared:/shared:ro
+      - docuparse-storage:/data/storage
+      - docuparse-events:/data/events
     ports:
       - "8091:8091"
     environment:
       PYTHONPATH: /app:/contracts:/shared
+      DOCUPARSE_EVENT_BUS: redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
+      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      DOCUPARSE_EXTRACTION_WORKER_ENABLED: ${DOCUPARSE_EXTRACTION_WORKER_ENABLED:-false}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health', timeout=2)"]
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - docuparse-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  langextract-worker:
+    build: ./langextract-service
+    command: python -m application.run_worker
+    profiles:
+      - async-workers
+    volumes:
+      - ./langextract-service:/app
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
+      - docuparse-storage:/data/storage
+      - docuparse-events:/data/events
+    environment:
+      PYTHONPATH: /app:/contracts:/shared
+      DOCUPARSE_EVENT_BUS: redis
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
+      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
     networks:
       - docuparse-network
     depends_on:

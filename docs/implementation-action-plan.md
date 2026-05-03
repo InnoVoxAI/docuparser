@@ -114,7 +114,7 @@ Preencher antes das fases que dependem de integracoes reais.
 ### T-0001 - Escolher event bus e storage
 
 - Status: DONE
-- Atualizado em: 2026-05-01
+- Atualizado em: 2026-05-03
 - Modulos: todos
 - Dependencias: nenhuma
 - Entrega:
@@ -130,10 +130,15 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docuparse-project/shared/README.md`
   - `docuparse-project/shared/publish_fake_event.py`
   - `docuparse-project/shared/consume_fake_event.py`
+  - `docuparse-project/shared/docuparse_events/__init__.py`
+  - `docuparse-project/shared/tests/test_storage_and_events.py`
   - `DOCUPARSE_LOCAL_EVENT_DIR=/tmp/docuparse-events-test python shared/publish_fake_event.py`
   - `DOCUPARSE_LOCAL_EVENT_DIR=/tmp/docuparse-events-test python shared/consume_fake_event.py`
+  - `pytest -q shared/tests`
+  - `docker compose exec -T backend-com python -c "from docuparse_events import event_bus_from_env; print(event_bus_from_env().publish('document.received.smoke', {'event_type':'document.received.smoke','source':'backend-com'}))"`
+  - `docker compose exec -T redis redis-cli XLEN document.received.smoke` retornou `1`.
 - Pendencias:
-  - Implementar adapter Redis Streams real nos servicos consumidores/produtores.
+  - Conectar consumidores persistentes dos servicos ao Redis Streams real.
 
 ### T-0002 - Definir contratos canonicos de eventos
 
@@ -197,11 +202,17 @@ Preencher antes das fases que dependem de integracoes reais.
   - `backend-com`, `backend-ocr`, `backend-core`, `layout-service`, `langextract-service`, `backend-conect`, `frontend`.
   - Postgres, event bus, storage, observabilidade basica.
   - Portas sem conflito.
+  - Redis interno permanece em `redis:6379`; porta externa do host alterada para `6380` para evitar conflito com `redis-stack`.
   - `backend-core` usa Postgres no compose via variaveis `POSTGRES_*` e executa migracoes antes do runserver.
   - `backend-com` e `backend-core` compartilham volume `docuparse-storage` para resolver `local://...` no fluxo integrado.
   - Frontend em container usa proxy para `backend-core`/`backend-com` por nome de servico.
   - Healthchecks adicionados para servicos de aplicacao.
   - `backend-ocr` usa imagem padrao enxuta para container, sem Paddle/EasyOCR/Torch no build base.
+  - `backend-com` publica eventos via Redis Streams no compose quando `DOCUPARSE_EVENT_BUS=redis`.
+  - `backend-ocr` possui consumidor Redis Streams configuravel por `DOCUPARSE_OCR_WORKER_ENABLED`.
+  - `layout-service` e `langextract-service` possuem consumidores Redis Streams configuraveis por flags no `.env`.
+  - Profile `async-workers` contem servicos dedicados `backend-core-events`, `backend-ocr-worker`, `layout-worker` e `langextract-worker`.
+  - `REDIS_URL` do compose pode ser sobrescrito por variavel de ambiente para smoke em DB isolado.
 - Testes:
   - `docker compose up` sobe todos os health checks.
 - Criterio de aceite:
@@ -216,6 +227,35 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docker compose up -d`
   - `docker compose ps`
   - `docker compose config --quiet`
+  - `docker compose up -d --build backend-com`
+  - `docker compose exec -T redis redis-cli ping`
+  - `lsof -nP -iTCP:6380 -sTCP:LISTEN`
+  - `docker compose up -d --build backend-ocr`
+  - `docker compose up -d --build layout-service langextract-service`
+  - `docker compose exec -T backend-ocr python -c "from application.ocr_event_worker import worker_from_env; w=worker_from_env(); print(type(w.event_bus).__name__, type(w.storage).__name__, w.input_stream)"`
+  - `docker compose --profile async-workers config --services`
+  - `docker compose exec -T backend-ocr python -c "from application.run_worker import main; print('ocr worker module ok')"`
+  - `docker compose exec -T layout-service python -c "from application.run_worker import main; print('layout worker module ok')"`
+  - `docker compose exec -T langextract-service python -c "from application.run_worker import main; print('langextract worker module ok')"`
+  - Smoke Redis DB 15:
+    - publica `document.received` e `ocr.completed` simulados no Redis.
+    - `docker compose exec -T -e DOCUPARSE_EVENT_BUS=redis -e REDIS_URL=redis://redis:6379/15 backend-core python manage.py consume_events --once --from-beginning`
+    - `docker compose exec -T -e DOCUPARSE_EVENT_BUS=redis -e REDIS_URL=redis://redis:6379/15 -e DOCUPARSE_LAYOUT_WORKER_START_AT_LATEST=false layout-service python -m application.run_worker --once`
+    - `docker compose exec -T -e DOCUPARSE_EVENT_BUS=redis -e REDIS_URL=redis://redis:6379/15 -e DOCUPARSE_EXTRACTION_WORKER_START_AT_LATEST=false langextract-service python -m application.run_worker --once`
+    - documento smoke `e2ace546-3182-4925-87d4-be33eda4fff4` chegou a `EXTRACTION_COMPLETED` com schema `boleto` e campo `valor=R$ 123,45`.
+  - Smoke Redis DB 14 com `backend-ocr-worker`:
+    - publica apenas `document.received` com `data.metadata.ocr_mock_raw_text`.
+    - `backend-core` consome `document.received`.
+    - `backend-ocr` executa `python -m application.run_worker --once` com `DOCUPARSE_OCR_WORKER_ALLOW_MOCK=true`.
+    - `layout-service` executa `python -m application.run_worker --once`.
+    - `langextract-service` executa `python -m application.run_worker --once`.
+    - `backend-core` consome eventos gerados e persiste documento `bd7df74c-efed-4803-af58-bcd523e09ba3` como `EXTRACTION_COMPLETED`, `engine_used=mock`, schema `boleto`, `valor=R$ 123,45`.
+  - Smoke Redis DB 13 com profile `async-workers` long-running:
+    - `env REDIS_URL=redis://redis:6379/13 DOCUPARSE_AUTO_PROCESS_OCR=false DOCUPARSE_OCR_WORKER_ALLOW_MOCK=true docker compose --profile async-workers up -d backend-core-events backend-ocr-worker layout-worker langextract-worker`
+    - publica `document.received` com `ocr_mock_raw_text`.
+    - workers long-running geram e consomem `ocr.completed`, `layout.classified` e `extraction.completed`.
+    - documento smoke `901b7f0e-e38e-45b3-88da-a555f9b194f6` chegou a `EXTRACTION_COMPLETED`, `engine_used=mock`, schema `boleto`, `valor=R$ 123,45`.
+    - workers de smoke foram parados com `docker compose --profile async-workers stop ...`.
   - `curl -s -i http://127.0.0.1:8000/api/ocr/health`
   - `curl -s -i http://127.0.0.1:8070/health`
   - `curl -s -i http://127.0.0.1:8080/health`
@@ -226,7 +266,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - `npm run build` em `docuparse-project/frontend`
 - Pendencias:
   - Criar `backend-conect` dockerizavel antes de marcar DONE.
-  - Conectar workers ao Redis Streams real.
+  - Definir quando a operacao padrao deve migrar do fluxo HTTP automatico para o profile `async-workers`.
 
 ## Fase 1 - Backend COM
 
@@ -247,12 +287,14 @@ Preencher antes das fases que dependem de integracoes reais.
   - `GET /health` e `GET /ready` passam.
 - Evidencia:
   - `docuparse-project/backend-com/src/backend_com/api/app.py`
+  - `docuparse-project/backend-com/src/backend_com/services/document_ingest.py`
   - `docuparse-project/backend-com/Dockerfile`
   - `docuparse-project/backend-com/tests/test_backend_com_app.py`
   - `pytest -q tests` em `docuparse-project/backend-com`
   - `docker compose config --quiet`
+  - `backend-com` reconstruido com dependencia `redis` e `DOCUPARSE_EVENT_BUS=redis` no compose.
 - Pendencias:
-  - Conectar event bus/storage reais quando Redis Streams/MinIO forem integrados aos serviços.
+  - Conectar storage MinIO/S3 real quando o adapter for implementado.
 
 ### T-0102 - Implementar upload manual
 
@@ -380,6 +422,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - `handwritten_complex -> openrouter`.
   - `backend-ocr` carrega `docuparse-project/.env` em startup local sem sobrescrever variaveis ja exportadas.
   - OpenRouter trata PDFs `scanned_image` e `handwritten_complex` como imagem; Docling fica restrito a `digital_pdf`.
+  - OpenRouter faz segunda tentativa com `qwen/qwen2.5-vl-72b-instruct` quando imagem/PDF escaneado retorna `raw_text` vazio.
   - Classificacao de PDF textual preserva heuristica PyMuPDF do pipeline antigo:
     - `txtblocks > 0 and txtblocks >= imgblocks -> digital_pdf`.
   - Registry lazy real.
@@ -400,6 +443,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docuparse-project/backend-ocr/api/routes/document.py`
   - `docuparse-project/backend-ocr/tests/test_classifier.py`
   - `pytest -q tests/test_classifier.py tests/test_process_document_bugs.py` em `docuparse-project/backend-ocr`
+  - `pytest -q tests/test_process_document_bugs.py tests/test_classifier.py` em `docuparse-project/backend-ocr`
   - `GET http://127.0.0.1:8080/api/v1/engines` retorna somente `docling`, `openrouter` e `tesseract`.
   - `GET http://127.0.0.1:8080/ready` retornou `ready`.
 - Pendencias:
@@ -431,11 +475,16 @@ Preencher antes das fases que dependem de integracoes reais.
 ### T-0204 - Consumir `document.received` e publicar `ocr.completed`
 
 - Status: REVIEW
-- Atualizado em: 2026-05-01
+- Atualizado em: 2026-05-03
 - Modulos: backend-ocr
 - Dependencias: T-0002, T-0003, T-0202, T-0203
 - Entrega:
   - Worker/consumer do event bus.
+  - Loop persistente `OCRWorker` para Redis Streams, controlado por `DOCUPARSE_OCR_WORKER_ENABLED`.
+  - Servico dedicado `backend-ocr-worker` no profile `async-workers`.
+  - Offset por stream em memoria do processo.
+  - CLI `python -m application.run_worker --once` para smoke controlado.
+  - Modo mock operacional protegido por `DOCUPARSE_OCR_WORKER_ALLOW_MOCK=true` e `data.metadata.ocr_mock_raw_text`.
   - Download do `file_uri`.
   - Storage de `raw_text.json`.
   - Publicacao `ocr.completed` ou `ocr.failed`.
@@ -447,10 +496,17 @@ Preencher antes das fases que dependem de integracoes reais.
   - Evento `document.received` vira `ocr.completed` com `raw_text_uri`.
 - Evidencia:
   - `docuparse-project/backend-ocr/application/ocr_event_worker.py`
+  - `docuparse-project/backend-ocr/application/run_worker.py`
+  - `docuparse-project/backend-ocr/api/app.py`
+  - `docuparse-project/backend-ocr/requirements-container.txt`
   - `docuparse-project/backend-ocr/tests/test_ocr_event_worker.py`
-  - `pytest -q tests` em `docuparse-project/backend-ocr`
+  - `pytest -q tests/test_ocr_event_worker.py tests/test_classifier.py tests/test_process_document_bugs.py` em `docuparse-project/backend-ocr`
+  - `pytest -q tests/test_ocr_event_worker.py` em `docuparse-project/backend-ocr`
+  - `pytest -q shared/tests`
+  - `docker compose up -d --build backend-ocr`
+  - `curl -s -i http://127.0.0.1:8080/health`
 - Pendencias:
-  - Conectar loop de consumo/publicacao ao Redis Streams real do `docker-compose.yml`.
+  - Usar `backend-ocr-worker` no profile `async-workers` com `DOCUPARSE_AUTO_PROCESS_OCR=false` quando a virada assincrona for feita.
   - Conectar storage MinIO/S3 real; teste atual usa adapter local.
   - Carga simulada com OpenRouter mock ainda pendente.
 
@@ -459,13 +515,16 @@ Preencher antes das fases que dependem de integracoes reais.
 ### T-0301 - Criar microservico `layout-service`
 
 - Status: REVIEW
-- Atualizado em: 2026-05-01
+- Atualizado em: 2026-05-03
 - Modulos: layout-service
 - Dependencias: T-0002, T-0003
 - Entrega:
   - FastAPI health/readiness.
   - API isolada `POST /api/v1/classify-layout`.
   - Worker para consumir `ocr.completed`.
+  - Loop persistente `LayoutWorker` para Redis Streams/local JSONL, controlado por `DOCUPARSE_LAYOUT_WORKER_ENABLED`.
+  - Servico dedicado `layout-worker` no profile `async-workers`.
+  - CLI `python -m application.run_worker --once` para smoke controlado.
 - Testes:
   - Unitarios de heuristicas.
   - Contrato `layout.classified`.
@@ -474,11 +533,15 @@ Preencher antes das fases que dependem de integracoes reais.
 - Evidencia:
   - `docuparse-project/layout-service/api/app.py`
   - `docuparse-project/layout-service/application/layout_event_worker.py`
+  - `docuparse-project/layout-service/application/run_worker.py`
   - `docuparse-project/layout-service/Dockerfile`
+  - `docuparse-project/layout-service/requirements.txt`
   - `docuparse-project/docker-compose.yml`
   - `pytest -q tests` em `docuparse-project/layout-service`
+  - `docker compose up -d --build layout-service langextract-service`
+  - `curl -s -i http://127.0.0.1:8090/health`
 - Pendencias:
-  - Conectar loop de consumo/publicacao ao Redis Streams real.
+  - Usar `layout-worker` no profile `async-workers` somente na virada para fluxo assincrono.
 
 ### T-0302 - Implementar heuristicas iniciais de layout
 
@@ -513,13 +576,16 @@ Preencher antes das fases que dependem de integracoes reais.
 ### T-0401 - Criar microservico `langextract-service`
 
 - Status: REVIEW
-- Atualizado em: 2026-05-01
+- Atualizado em: 2026-05-03
 - Modulos: langextract-service
 - Dependencias: T-0002, T-0003
 - Entrega:
   - FastAPI health/readiness.
   - API isolada `POST /api/v1/extract`.
   - Worker para consumir `layout.classified`.
+  - Loop persistente `ExtractionWorker` para Redis Streams/local JSONL, controlado por `DOCUPARSE_EXTRACTION_WORKER_ENABLED`.
+  - Servico dedicado `langextract-worker` no profile `async-workers`.
+  - CLI `python -m application.run_worker --once` para smoke controlado.
 - Testes:
   - Contrato de request/response.
   - Mock LLM para testes deterministas.
@@ -528,11 +594,15 @@ Preencher antes das fases que dependem de integracoes reais.
 - Evidencia:
   - `docuparse-project/langextract-service/api/app.py`
   - `docuparse-project/langextract-service/application/extraction_event_worker.py`
+  - `docuparse-project/langextract-service/application/run_worker.py`
   - `docuparse-project/langextract-service/Dockerfile`
+  - `docuparse-project/langextract-service/requirements.txt`
   - `docuparse-project/docker-compose.yml`
   - `pytest -q tests` em `docuparse-project/langextract-service`
+  - `docker compose up -d --build layout-service langextract-service`
+  - `curl -s -i http://127.0.0.1:8091/health`
 - Pendencias:
-  - Conectar loop de consumo/publicacao ao Redis Streams real.
+  - Usar `langextract-worker` no profile `async-workers` somente na virada para fluxo assincrono.
   - Substituir/adaptar extrator deterministico para LLM mockado quando o provedor for definido.
 
 ### T-0402 - Implementar schemas versionados de extracao
@@ -588,21 +658,26 @@ Preencher antes das fases que dependem de integracoes reais.
 - Evidencia:
   - `docuparse-project/backend-core/documents/models.py`
   - `docuparse-project/backend-core/documents/migrations/0001_initial.py`
+  - `docuparse-project/backend-core/documents/migrations/0002_rename_documents_d_tenant__718ecf_idx_documents_d_tenant__1461e3_idx_and_more.py`
   - `docuparse-project/backend-core/documents/tests/test_models.py`
   - `.venv/bin/python manage.py test documents` em `docuparse-project/backend-core`
+  - `docker compose exec -T backend-core python manage.py makemigrations --check --dry-run`
+  - `docker compose exec -T backend-core python manage.py migrate --noinput`
 - Pendencias:
   - Migrar banco de desenvolvimento quando o Postgres do compose estiver em uso.
 
 ### T-0502 - Implementar consumidores de eventos do core
 
 - Status: DONE
-- Atualizado em: 2026-05-01
+- Atualizado em: 2026-05-03
 - Modulos: backend-core
 - Dependencias: T-0501
 - Entrega:
-  - Consome `document.received`, `extraction.completed`, `erp.sent`, `erp.failed`.
+  - Consome `document.received`, `ocr.completed`, `ocr.failed`, `extraction.completed`, `erp.sent`, `erp.failed`.
   - Atualiza estados.
   - Cria pendencias de validacao.
+  - Disponibiliza worker persistente `manage.py consume_events` para consumir Redis Streams/local JSONL fora do request HTTP.
+  - Prepara servico opcional `backend-core-events` no profile `async-workers` do Docker Compose.
 - Testes:
   - Contratos de eventos.
   - Idempotencia por `event_id` ou chave equivalente.
@@ -611,10 +686,20 @@ Preencher antes das fases que dependem de integracoes reais.
   - Reprocessar o mesmo evento nao duplica documento/estado.
 - Evidencia:
   - `docuparse-project/backend-core/documents/services/event_consumers.py`
+  - `docuparse-project/backend-core/documents/services/event_stream_worker.py`
+  - `docuparse-project/backend-core/documents/management/commands/consume_events.py`
   - `docuparse-project/backend-core/documents/tests/test_event_consumers.py`
+  - `docuparse-project/backend-core/documents/tests/test_event_stream_worker.py`
+  - `docuparse-project/docker-compose.yml`
   - `.venv/bin/python manage.py test documents` em `docuparse-project/backend-core`
+  - `.venv/bin/python manage.py consume_events --once` em `docuparse-project/backend-core`
+  - `docker compose config --quiet` em `docuparse-project`
+  - `docker compose up -d --build backend-core` em `docuparse-project`
+  - `docker compose exec -T backend-core python manage.py consume_events --once` retornou `Processed 0 event(s).`
+  - `docker compose ps` com `backend-core`, `backend-com`, `backend-ocr`, `redis`, `postgres`, `minio`, `layout-service`, `langextract-service` saudaveis.
+  - Consumidores `consume_ocr_completed` e `consume_ocr_failed` atualizam `raw_text_uri`, `document_type`, metadados OCR e estado do documento com idempotencia por `event_id`.
 - Pendencias:
-  - Conectar loop de consumo ao Redis Streams real.
+  - Habilitar o profile `async-workers` quando a virada para fluxo totalmente assincrono for feita.
   - Criar DLQ/retry operacional para falhas de processamento.
 
 ### T-0503 - Implementar APIs para frontend
@@ -646,11 +731,12 @@ Preencher antes das fases que dependem de integracoes reais.
 ### T-0504 - Publicar `erp.integration.requested`
 
 - Status: DONE
-- Atualizado em: 2026-05-01
+- Atualizado em: 2026-05-03
 - Modulos: backend-core, backend-conect
 - Dependencias: T-0503
 - Entrega:
   - Ao aprovar, core publica evento de ERP.
+  - Publicacao usa `event_bus_from_env`, permitindo Redis Streams no compose e JSONL local nos testes.
   - Ao aprovar, core exporta payload canonico para arquivo JSON local.
   - Estado muda para `ERP_INTEGRATION_REQUESTED`.
 - Testes:
@@ -666,7 +752,6 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docuparse-project/backend-core/documents/tests/test_api.py`
   - `.venv/bin/python manage.py test documents` em `docuparse-project/backend-core`
 - Pendencias:
-  - Publicador usa adapter local JSONL; conectar Redis Streams real antes do E2E integrado.
   - Export JSON e solucao intermediaria ate haver acesso ao Superlogica.
 
 ## Fase 6 - Backend CONECT
@@ -995,7 +1080,7 @@ Preencher antes das fases que dependem de integracoes reais.
 ### T-0901 - Testes E2E por canal
 
 - Status: REVIEW
-- Atualizado em: 2026-05-02
+- Atualizado em: 2026-05-03
 - Modulos: todos
 - Dependencias: M1 a M7
 - Entrega:
@@ -1015,13 +1100,24 @@ Preencher antes das fases que dependem de integracoes reais.
     - aprovacao
     - export JSON aprovado
     - `erp.sent` mockado
+  - Smoke assincrono parcial por Redis DB 15:
+    - `document.received` e `ocr.completed` simulados.
+    - `layout-service` real processa `ocr.completed`.
+    - `langextract-service` real processa `layout.classified`.
+    - `backend-core` real consome `extraction.completed` e persiste `ExtractionResult`.
+  - Smoke assincrono com OCR worker mockado por Redis DB 14:
+    - `backend-ocr-worker` real consome `document.received` e publica `ocr.completed`.
+    - `layout-service`, `langextract-service` e `backend-core` processam a cadeia gerada.
+  - Smoke assincrono long-running com profile `async-workers` por Redis DB 13:
+    - `backend-core-events`, `backend-ocr-worker`, `layout-worker` e `langextract-worker` ficaram rodando como processos independentes.
+    - documento `901b7f0e-e38e-45b3-88da-a555f9b194f6` chegou a `EXTRACTION_COMPLETED`.
 - Testes:
   - `.venv/bin/python manage.py test documents` em `backend-core`.
   - Asserts em estados finais `ERP_SENT`, tentativa ERP `sent`, arquivo JSON exportado e evento `erp.sent`.
 - Criterio de aceite:
   - Todos os canais chegam a `erp.sent` com ERP mock.
 - Pendencias:
-  - Trocar a `extraction.completed` simulada pela cadeia real OCR -> layout -> langextract quando os workers estiverem orquestrados.
+  - Rodar OCR real com fixture controlada quando o custo/latencia do provedor externo estiver aceitavel.
   - Adicionar Playwright cobrindo o frontend e validacao manual pela UI.
 
 ### T-0902 - Testes de carga simulada por modulo

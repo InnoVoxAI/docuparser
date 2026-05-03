@@ -43,6 +43,7 @@ def _load_project_env() -> None:
 _load_project_env()
 
 from api.routes.document import router as document_router
+from application.ocr_event_worker import start_worker_thread_from_env
 from domain.engine_resolver import ENGINE_DEFAULTS
 
 # Configurar logging
@@ -62,7 +63,10 @@ def _csv_env(name: str, default: str) -> list[str]:
 async def lifespan(app: FastAPI):
     """Gerenciamento do ciclo de vida da aplicação."""
     logger.info("Iniciando DocuParse OCR Backend...")
+    app.state.ocr_worker = start_worker_thread_from_env()
     yield
+    if getattr(app.state, "ocr_worker", None) is not None:
+        app.state.ocr_worker.stop()
     logger.info("Finalizando DocuParse OCR Backend...")
 
 

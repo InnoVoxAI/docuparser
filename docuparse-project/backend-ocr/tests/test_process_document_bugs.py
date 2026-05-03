@@ -231,3 +231,42 @@ def test_openrouter_image_uses_key_values_when_extracted_text_is_empty(monkeypat
         "Recebi(emos) de: RECIFE COLONIAL\n"
         "Correspondente a: DIARIA PORTEIRO DIURNO"
     )
+
+
+def test_openrouter_image_retries_with_qwen_when_text_is_empty(monkeypatch) -> None:
+    calls = []
+
+    def fake_call_openrouter(image_bgr, page_label="image_1", timeout_s=120, model_override=None):
+        calls.append((page_label, model_override))
+        if model_override == "qwen/qwen2.5-vl-72b-instruct":
+            return {
+                "page": page_label,
+                "with_handwritten_text": False,
+                "extracted_text": "texto recuperado pelo qwen",
+                "language": "pt",
+                "confidence_0_1": 0.82,
+                "key_values": [],
+            }
+        return {
+            "page": page_label,
+            "with_handwritten_text": False,
+            "extracted_text": "",
+            "language": "pt",
+            "confidence_0_1": 0,
+            "key_values": [],
+        }
+
+    monkeypatch.setenv("OPENROUTER_MODEL", "primary/model")
+    monkeypatch.delenv("OPENROUTER_FALLBACK_MODEL", raising=False)
+    monkeypatch.setattr(openrouter_engine, "_call_openrouter", fake_call_openrouter)
+
+    fixture = Path(__file__).resolve().parents[3] / "docs_teste" / "PHOTO-2026-01-08-18-44-00.jpg"
+    result = openrouter_engine.OpenRouterOCREngine().process(fixture.read_bytes(), {"filename": fixture.name})
+
+    assert calls == [
+        ("image_1", None),
+        ("image_1_retry", "qwen/qwen2.5-vl-72b-instruct"),
+    ]
+    assert result["raw_text"] == "texto recuperado pelo qwen"
+    assert result["_meta"]["empty_text_retry"] is True
+    assert result["_meta"]["fallback_model"] == "qwen/qwen2.5-vl-72b-instruct"

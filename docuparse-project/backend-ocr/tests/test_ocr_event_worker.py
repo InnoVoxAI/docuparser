@@ -83,3 +83,66 @@ def test_document_received_failure_publishes_ocr_failed(monkeypatch, tmp_path) -
     assert validated.event_type == "ocr.failed"
     assert output["data"]["reason"] == "OCR unavailable"
     assert publisher.consume("ocr.failed") == [output]
+
+
+def test_ocr_worker_consumes_document_received_stream(monkeypatch, tmp_path) -> None:
+    storage = LocalStorage(tmp_path / "objects")
+    event_bus = LocalJsonlEventBus(tmp_path / "events")
+    tenant_id = "tenant-demo"
+    document_id = uuid4()
+    payload = _document_received_payload(storage, tenant_id, document_id)
+    event_bus.publish("document.received", payload)
+
+    def fake_process_document(file_bytes, filename, timeout_s=120, legacy_extraction=False, selected_engine=None):
+        return {
+            "raw_text": "texto do worker",
+            "raw_text_fallback": "",
+            "document_type": "digital_pdf",
+            "engine_used": "docling",
+            "processing_time_seconds": 0.01,
+            "filename": filename,
+            "debug": {},
+        }
+
+    monkeypatch.setattr(ocr_event_worker, "process_document", fake_process_document)
+    worker = ocr_event_worker.OCRWorker(
+        storage=storage,
+        event_bus=event_bus,
+        input_stream="document.received",
+        start_at_latest=False,
+    )
+
+    processed = worker.run_once()
+
+    assert processed == 1
+    completed = event_bus.consume("ocr.completed")
+    assert len(completed) == 1
+    assert completed[0]["data"]["engine_used"] == "docling"
+
+
+def test_ocr_worker_can_use_explicit_mock_mode(monkeypatch, tmp_path) -> None:
+    storage = LocalStorage(tmp_path / "objects")
+    event_bus = LocalJsonlEventBus(tmp_path / "events")
+    tenant_id = "tenant-demo"
+    document_id = uuid4()
+    payload = _document_received_payload(storage, tenant_id, document_id)
+    payload["data"]["metadata"] = {
+        "ocr_mock_raw_text": "Banco do Brasil Valor R$ 123,45",
+        "ocr_mock_document_type": "digital_pdf",
+    }
+    event_bus.publish("document.received", payload)
+    monkeypatch.setenv("DOCUPARSE_OCR_WORKER_ALLOW_MOCK", "true")
+
+    worker = ocr_event_worker.OCRWorker(
+        storage=storage,
+        event_bus=event_bus,
+        input_stream="document.received",
+        start_at_latest=False,
+    )
+
+    assert worker.run_once() == 1
+
+    completed = event_bus.consume("ocr.completed")
+    assert completed[0]["data"]["engine_used"] == "mock"
+    assert completed[0]["data"]["document_type"] == "digital_pdf"
+    assert b"Banco do Brasil" in storage.get_bytes(completed[0]["data"]["raw_text_uri"])

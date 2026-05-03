@@ -1,15 +1,30 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from api.schemas import ClassifyLayoutRequest, ClassifyLayoutResponse
+from application.layout_event_worker import start_worker_thread_from_env
 from domain.classifier import classify_layout
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    worker = start_worker_thread_from_env()
+    app.state.layout_worker = worker
+    try:
+        yield
+    finally:
+        if worker:
+            worker.stop()
 
 
 app = FastAPI(
     title="DocuParse Layout Service",
     description="Classifica layouts a partir do texto bruto de OCR",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 

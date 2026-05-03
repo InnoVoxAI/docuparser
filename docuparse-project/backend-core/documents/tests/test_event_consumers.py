@@ -11,6 +11,8 @@ from documents.services.event_consumers import (
     consume_erp_failed,
     consume_erp_sent,
     consume_extraction_completed,
+    consume_ocr_completed,
+    consume_ocr_failed,
 )
 
 
@@ -82,6 +84,66 @@ class CoreEventConsumerTests(TestCase):
         assert document.status == Document.Status.VALIDATION_PENDING
         assert ExtractionResult.objects.count() == 1
         assert DocumentEvent.objects.filter(event_type="extraction.completed").count() == 1
+
+    def test_consume_ocr_completed_updates_document_and_is_idempotent(self) -> None:
+        document = consume_document_received(self._document_received_payload())
+        payload = {
+            "event_id": str(uuid4()),
+            "event_type": "ocr.completed",
+            "event_version": "v1",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "tenant_id": "tenant-demo",
+            "document_id": str(document.id),
+            "correlation_id": str(document.correlation_id),
+            "source": "backend-ocr",
+            "data": {
+                "raw_text_uri": f"local://documents/tenant-demo/{document.id}/ocr/raw_text.json",
+                "raw_text_preview": "texto",
+                "document_type": "digital_pdf",
+                "engine_used": "docling",
+                "confidence": None,
+                "processing_time_seconds": 0.12,
+                "artifacts": {},
+                "metadata": {"raw_text_size_bytes": 50},
+            },
+        }
+
+        consume_ocr_completed(payload)
+        consume_ocr_completed(payload)
+
+        document.refresh_from_db()
+        assert document.status == Document.Status.OCR_COMPLETED
+        assert document.raw_text_uri == payload["data"]["raw_text_uri"]
+        assert document.document_type == "digital_pdf"
+        assert document.metadata["ocr"]["engine_used"] == "docling"
+        assert DocumentEvent.objects.filter(event_type="ocr.completed").count() == 1
+
+    def test_consume_ocr_failed_updates_document_and_is_idempotent(self) -> None:
+        document = consume_document_received(self._document_received_payload())
+        payload = {
+            "event_id": str(uuid4()),
+            "event_type": "ocr.failed",
+            "event_version": "v1",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "tenant_id": "tenant-demo",
+            "document_id": str(document.id),
+            "correlation_id": str(document.correlation_id),
+            "source": "backend-ocr",
+            "data": {
+                "reason": "OCR unavailable",
+                "retryable": True,
+                "engine_used": "openrouter",
+                "metadata": {"input_event_id": str(uuid4())},
+            },
+        }
+
+        consume_ocr_failed(payload)
+        consume_ocr_failed(payload)
+
+        document.refresh_from_db()
+        assert document.status == Document.Status.OCR_FAILED
+        assert document.metadata["ocr_error"]["reason"] == "OCR unavailable"
+        assert DocumentEvent.objects.filter(event_type="ocr.failed").count() == 1
 
     def test_consume_erp_sent_and_failed_update_attempts_and_state(self) -> None:
         document = consume_document_received(self._document_received_payload())

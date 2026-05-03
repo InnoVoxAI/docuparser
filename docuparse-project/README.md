@@ -53,4 +53,28 @@ docker compose down
 - O `backend-core` executa `python manage.py migrate --noinput` antes de iniciar no compose.
 - `backend-com` e `backend-core` compartilham o volume `docuparse-storage`; isso permite que o core leia arquivos recebidos por email, WhatsApp ou upload manual.
 - `backend-com` publica `document.received` e sincroniza o evento com `backend-core` por `BACKEND_CORE_DOCUMENT_RECEIVED_URL`.
+- O Redis interno usa `redis:6379` entre containers e expõe `6380` no host para evitar conflito com um Redis local já rodando em `6379`.
+- O fluxo atual mantém `DOCUPARSE_AUTO_PROCESS_OCR=true`, portanto o OCR automático ainda é disparado pelo `backend-core` ao receber um documento.
+- O profile `async-workers` prepara a virada para o pipeline por Redis Streams com serviços dedicados:
+
+```bash
+docker compose --profile async-workers up -d backend-core-events backend-ocr-worker layout-worker langextract-worker
+```
+
+- Para smoke isolado, aponte os workers para outro banco Redis sem alterar o fluxo principal:
+
+```bash
+env REDIS_URL=redis://redis:6379/13 DOCUPARSE_AUTO_PROCESS_OCR=false DOCUPARSE_OCR_WORKER_ALLOW_MOCK=true \
+  docker compose --profile async-workers up -d backend-core-events backend-ocr-worker layout-worker langextract-worker
+```
+
+- Para smoke tests controlados, os workers tambem aceitam `--once`:
+
+```bash
+docker compose exec -T layout-service python -m application.run_worker --once
+docker compose exec -T langextract-service python -m application.run_worker --once
+```
+
+- O `backend-ocr-worker` possui um modo de mock operacional para smoke sem API externa. Ele só é aceito quando `DOCUPARSE_OCR_WORKER_ALLOW_MOCK=true` e o evento contém `data.metadata.ocr_mock_raw_text`.
+- Antes de usar o profile assíncrono em fluxo real, defina `DOCUPARSE_AUTO_PROCESS_OCR=false` para evitar OCR duplicado pelo caminho HTTP atual.
 - As telas de configuração de OCR, Email, WhatsApp e Integrações ainda são estruturais no frontend; a persistência definitiva dessas áreas depende dos modelos/APIs correspondentes.

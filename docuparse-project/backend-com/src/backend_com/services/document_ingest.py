@@ -7,7 +7,7 @@ import urllib.request
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from docuparse_events import LocalJsonlEventBus
+from docuparse_events import event_bus_from_env
 from docuparse_observability import log_event
 from docuparse_storage import LocalStorage, document_original_key
 from events import DocumentReceivedEvent
@@ -73,7 +73,7 @@ def ingest_document(
         },
     )
     event_payload = event.model_dump(mode="json")
-    LocalJsonlEventBus(settings.local_event_dir).publish("document.received", event_payload)
+    event_bus_from_env(settings.local_event_dir).publish("document.received", event_payload)
     core_sync_status = _sync_document_received_to_core(event_payload)
     log_event(
         logger,

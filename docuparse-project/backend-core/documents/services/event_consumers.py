@@ -11,6 +11,8 @@ from events import (
     ERPFailedEvent,
     ERPSentEvent,
     ExtractionCompletedEvent,
+    OCRCompletedEvent,
+    OCRFailedEvent,
 )
 from docuparse_observability import log_event
 
@@ -96,6 +98,78 @@ def consume_extraction_completed(payload: dict[str, Any]) -> Document:
             correlation_id=str(event.correlation_id),
             event_type=event.event_type,
             status=document.status,
+        )
+        return document
+
+
+def consume_ocr_completed(payload: dict[str, Any]) -> Document:
+    event = OCRCompletedEvent.model_validate(payload)
+    with transaction.atomic():
+        tenant = _tenant_for(event.tenant_id)
+        existing_event, created = _record_event_once(event, tenant)
+        document = Document.objects.select_for_update().get(id=event.document_id, tenant=tenant)
+        if not created and existing_event.document_id:
+            return document
+
+        document.raw_text_uri = event.data.raw_text_uri
+        document.document_type = event.data.document_type if event.data.document_type != "unknown" else document.document_type
+        document.status = Document.Status.OCR_COMPLETED
+        document.metadata = {
+            **(document.metadata or {}),
+            "ocr": {
+                "engine_used": event.data.engine_used,
+                "confidence": event.data.confidence,
+                "processing_time_seconds": event.data.processing_time_seconds,
+                "artifacts": event.data.artifacts,
+                "metadata": event.data.metadata,
+            },
+        }
+        document.save(update_fields=["raw_text_uri", "document_type", "status", "metadata", "updated_at"])
+        existing_event.document = document
+        existing_event.save(update_fields=["document", "updated_at"])
+        log_event(
+            logger,
+            "ocr.completed consumed",
+            tenant_id=event.tenant_id,
+            document_id=str(event.document_id),
+            correlation_id=str(event.correlation_id),
+            event_type=event.event_type,
+            raw_text_uri=event.data.raw_text_uri,
+        )
+        return document
+
+
+def consume_ocr_failed(payload: dict[str, Any]) -> Document:
+    event = OCRFailedEvent.model_validate(payload)
+    with transaction.atomic():
+        tenant = _tenant_for(event.tenant_id)
+        existing_event, created = _record_event_once(event, tenant)
+        document = Document.objects.select_for_update().get(id=event.document_id, tenant=tenant)
+        if not created and existing_event.document_id:
+            return document
+
+        document.status = Document.Status.OCR_FAILED
+        document.metadata = {
+            **(document.metadata or {}),
+            "ocr_error": {
+                "reason": event.data.reason,
+                "retryable": event.data.retryable,
+                "engine_used": event.data.engine_used,
+                "metadata": event.data.metadata,
+            },
+        }
+        document.save(update_fields=["status", "metadata", "updated_at"])
+        existing_event.document = document
+        existing_event.save(update_fields=["document", "updated_at"])
+        log_event(
+            logger,
+            "ocr.failed consumed",
+            level=logging.ERROR,
+            tenant_id=event.tenant_id,
+            document_id=str(event.document_id),
+            correlation_id=str(event.correlation_id),
+            event_type=event.event_type,
+            reason=event.data.reason,
         )
         return document
 

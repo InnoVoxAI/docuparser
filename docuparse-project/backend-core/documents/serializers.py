@@ -6,7 +6,7 @@ import json
 from django.conf import settings
 from docuparse_storage import LocalStorage
 
-from documents.models import Document, ExtractionResult, LayoutConfig, SchemaConfig, ValidationDecision
+from documents.models import Document, EmailSettings, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, ValidationDecision
 
 
 class ExtractionResultSerializer(serializers.ModelSerializer):
@@ -115,6 +115,66 @@ class ValidationDecisionSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+
+
+class IntegrationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = IntegrationSettings
+        fields = [
+            "id",
+            "tenant_id",
+            "approved_export_enabled",
+            "approved_export_dir",
+            "approved_export_format",
+            "superlogica_base_url",
+            "superlogica_mode",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "tenant_id", "created_at", "updated_at"]
+
+
+class OCRSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OCRSettings
+        fields = [
+            "id",
+            "tenant_id",
+            "digital_pdf_engine",
+            "scanned_image_engine",
+            "handwritten_engine",
+            "technical_fallback_engine",
+            "openrouter_model",
+            "openrouter_fallback_model",
+            "timeout_seconds",
+            "retry_empty_text_enabled",
+            "digital_pdf_min_text_blocks",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "tenant_id", "created_at", "updated_at"]
+
+
+class EmailSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailSettings
+        fields = [
+            "id",
+            "tenant_id",
+            "provider",
+            "inbox_folder",
+            "imap_host",
+            "imap_port",
+            "username",
+            "webhook_url",
+            "accepted_content_types",
+            "max_attachment_mb",
+            "blocked_senders",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "tenant_id", "created_at", "updated_at"]
 
 
 class SchemaConfigSerializer(serializers.ModelSerializer):

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import axios from 'axios'
 import {
+    AlertTriangle,
     CheckCircle2,
     ClipboardCheck,
     FileText,
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
     { id: 'inbox', label: 'Inbox', icon: Inbox },
     { id: 'upload', label: 'Upload', icon: Upload },
     { id: 'validation', label: 'Validacao', icon: ClipboardCheck },
+    { id: 'operations', label: 'Operacoes', icon: AlertTriangle },
     { id: 'settings', label: 'Configuracoes', icon: Settings },
 ]
 
@@ -203,6 +205,7 @@ function App() {
                                 onValidated={refreshData}
                             />
                         ) : null}
+                        {activeView === 'operations' ? <OperationsView /> : null}
                         {activeView === 'settings' ? <SettingsView schemas={schemas} layouts={layouts} documents={documents} onChanged={refreshData} /> : null}
                     </section>
                 </main>
@@ -250,6 +253,202 @@ function InboxView({ documents, selectedDocumentId, onSelectDocument }) {
             <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Documentos recebidos</div>
             <DocumentTable documents={documents} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} />
         </section>
+    )
+}
+
+const DEFAULT_DLQ_STREAM = 'ocr.completed.dlq'
+
+function OperationsView() {
+    const [summary, setSummary] = useState({ total: 0, streams: [] })
+    const [selectedStream, setSelectedStream] = useState(DEFAULT_DLQ_STREAM)
+    const [events, setEvents] = useState([])
+    const [selectedEvent, setSelectedEvent] = useState(null)
+    const [loading, setLoading] = useState(false)
+    const [requeueing, setRequeueing] = useState(false)
+    const [message, setMessage] = useState('')
+    const [messageTone, setMessageTone] = useState('neutral')
+
+    const loadOperations = async (stream = selectedStream) => {
+        setLoading(true)
+        setMessage('')
+        setMessageTone('neutral')
+        try {
+            const [summaryResponse, eventsResponse] = await Promise.all([
+                api.get('/operations/dlq/summary'),
+                api.get('/operations/dlq/events', { params: { stream, limit: 50 } }),
+            ])
+            setSummary(summaryResponse.data ?? { total: 0, streams: [] })
+            setEvents(eventsResponse.data?.entries ?? [])
+            setSelectedEvent(null)
+        } catch (requestError) {
+            setMessage(readError(requestError, 'Nao foi possivel carregar as DLQs.'))
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        loadOperations(DEFAULT_DLQ_STREAM)
+    }, [])
+
+    const selectStream = (stream) => {
+        setSelectedStream(stream)
+        loadOperations(stream)
+    }
+
+    const requeueSelectedEvent = async ({ execute }) => {
+        if (!selectedEvent || requeueing) {
+            return
+        }
+        if (execute && !window.confirm('Reenfileirar este payload original para reprocessamento? O registro da DLQ sera mantido para auditoria.')) {
+            return
+        }
+        setRequeueing(true)
+        setMessage('')
+        setMessageTone('neutral')
+        try {
+            const response = await api.post('/operations/dlq/requeue', {
+                stream: selectedStream,
+                id: selectedEvent.id,
+                execute,
+                requested_by: 'frontend-admin',
+            })
+            const target = response.data?.target_stream || selectedEvent.original_stream || selectedStream
+            if (execute) {
+                await loadOperations(selectedStream)
+                setMessage(`Evento reenfileirado em ${target}. O item original permanece na DLQ para auditoria.`)
+                setMessageTone('neutral')
+            } else {
+                setMessage(`Simulacao OK: este evento sera enviado para ${target}.`)
+                setMessageTone('neutral')
+            }
+        } catch (requestError) {
+            setMessageTone('error')
+            setMessage(readError(requestError, 'Nao foi possivel reenfileirar o evento.'))
+        } finally {
+            setRequeueing(false)
+        }
+    }
+
+    return (
+        <div className="space-y-4">
+            {message ? <Alert tone={messageTone}>{message}</Alert> : null}
+            {loading ? <Alert>Carregando operacoes...</Alert> : null}
+            <section className="rounded-md border border-zinc-200 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
+                    <div>
+                        <div className="text-sm font-semibold">Dead-letter queues</div>
+                        <div className="mt-1 text-xs text-zinc-500">Eventos que falharam nos workers e aguardam revisao operacional.</div>
+                    </div>
+                    <button type="button" onClick={() => loadOperations(selectedStream)} className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
+                        <RefreshCw size={16} aria-hidden="true" />
+                        Atualizar
+                    </button>
+                </div>
+                <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <Metric label="Total em DLQ" value={summary.total || 0} />
+                    {(summary.streams || []).map((item) => (
+                        <button
+                            key={item.stream}
+                            type="button"
+                            onClick={() => selectStream(item.stream)}
+                            className={`rounded-md border p-3 text-left ${selectedStream === item.stream ? 'border-zinc-900 bg-zinc-50' : 'border-zinc-200 bg-white hover:bg-zinc-50'}`}
+                        >
+                            <div className="truncate text-xs font-semibold uppercase text-zinc-500">{item.stream}</div>
+                            <div className="mt-2 text-2xl font-semibold">{item.count}</div>
+                            <div className="mt-1 truncate text-xs text-zinc-500">{item.latest?.error_type || 'Sem eventos'}</div>
+                        </button>
+                    ))}
+                </div>
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+                <div className="rounded-md border border-zinc-200 bg-white">
+                    <div className="border-b border-zinc-200 px-4 py-3">
+                        <div className="text-sm font-semibold">{selectedStream}</div>
+                        <div className="mt-1 text-xs text-zinc-500">Selecione um evento para ver erro e payload original.</div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-zinc-200 text-sm">
+                            <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+                                <tr>
+                                    <th className="px-4 py-3">Data</th>
+                                    <th className="px-4 py-3">Origem</th>
+                                    <th className="px-4 py-3">Evento</th>
+                                    <th className="px-4 py-3">Erro</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100">
+                                {events.map((event) => (
+                                    <tr
+                                        key={event.id}
+                                        onClick={() => setSelectedEvent(event)}
+                                        className={`cursor-pointer hover:bg-zinc-50 ${selectedEvent?.id === event.id ? 'bg-zinc-50' : ''}`}
+                                    >
+                                        <td className="whitespace-nowrap px-4 py-3 text-zinc-600">{formatDate(event.occurred_at)}</td>
+                                        <td className="whitespace-nowrap px-4 py-3">{event.source || '-'}</td>
+                                        <td className="px-4 py-3">
+                                            <div className="font-medium">{event.event_type || '-'}</div>
+                                            <div className="max-w-[220px] truncate text-xs text-zinc-500">{event.event_id || '-'}</div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="font-medium text-red-700">{event.error_type || '-'}</div>
+                                            <div className="max-w-[360px] truncate text-xs text-zinc-500">{event.error || '-'}</div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    {events.length === 0 ? <EmptyState icon={AlertTriangle} text="Nenhum evento nesta DLQ." /> : null}
+                </div>
+
+                <div className="rounded-md border border-zinc-200 bg-white">
+                    <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Detalhe</div>
+                    {selectedEvent ? (
+                        <div className="space-y-3 p-4">
+                            <KeyValueGrid
+                                values={{
+                                    stream: selectedEvent.original_stream || selectedStream,
+                                    origem: selectedEvent.source || '-',
+                                    erro: selectedEvent.error_type || '-',
+                                }}
+                            />
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => requeueSelectedEvent({ execute: false })}
+                                    disabled={requeueing}
+                                    className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    <RefreshCw size={16} aria-hidden="true" />
+                                    Simular
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => requeueSelectedEvent({ execute: true })}
+                                    disabled={requeueing}
+                                    className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    <RefreshCw size={16} aria-hidden="true" />
+                                    Reenfileirar
+                                </button>
+                            </div>
+                            <div>
+                                <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Mensagem</div>
+                                <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-800">{selectedEvent.error || '-'}</div>
+                            </div>
+                            <div>
+                                <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Payload original</div>
+                                <pre className="max-h-[420px] overflow-auto rounded-md bg-zinc-950 p-3 text-xs text-zinc-50">{JSON.stringify(selectedEvent.payload || {}, null, 2)}</pre>
+                            </div>
+                        </div>
+                    ) : (
+                        <EmptyState icon={FileText} text="Selecione um evento para inspecionar." />
+                    )}
+                </div>
+            </section>
+        </div>
     )
 }
 
@@ -730,6 +929,39 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
     const [testOutput, setTestOutput] = useState('{}')
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
     const [message, setMessage] = useState('')
+    const [integrationSettings, setIntegrationSettings] = useState({
+        tenant_slug: 'tenant-demo',
+        approved_export_enabled: true,
+        approved_export_dir: 'docuparse-project/exports/approved',
+        approved_export_format: 'json',
+        superlogica_base_url: '',
+        superlogica_mode: 'disabled',
+    })
+    const [ocrSettings, setOcrSettings] = useState({
+        tenant_slug: 'tenant-demo',
+        digital_pdf_engine: 'docling',
+        scanned_image_engine: 'openrouter',
+        handwritten_engine: 'openrouter',
+        technical_fallback_engine: 'tesseract',
+        openrouter_model: '',
+        openrouter_fallback_model: 'qwen/qwen2.5-vl-72b-instruct',
+        timeout_seconds: 120,
+        retry_empty_text_enabled: true,
+        digital_pdf_min_text_blocks: 5,
+    })
+    const [emailSettings, setEmailSettings] = useState({
+        tenant_slug: 'tenant-demo',
+        provider: 'imap',
+        inbox_folder: 'INBOX',
+        imap_host: '',
+        imap_port: 993,
+        username: '',
+        webhook_url: 'http://127.0.0.1:8070/api/v1/email/messages',
+        accepted_content_types: 'application/pdf,image/jpeg,image/png,image/tiff,image/webp',
+        max_attachment_mb: 20,
+        blocked_senders: '',
+        is_active: true,
+    })
 
     const activeLayout = layouts.find((layout) => (
         layout.schema_config_id === selectedSchemaId
@@ -758,6 +990,69 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             ignore = true
         }
     }, [selectedDocumentId])
+
+    useEffect(() => {
+        let ignore = false
+        api.get('/settings/integrations', { params: { tenant: integrationSettings.tenant_slug } })
+            .then((response) => {
+                if (!ignore) {
+                    setIntegrationSettings((current) => ({
+                        ...current,
+                        ...response.data,
+                    }))
+                }
+            })
+            .catch((requestError) => {
+                if (!ignore) {
+                    setMessage(readError(requestError, 'Nao foi possivel carregar configuracoes de integracao.'))
+                }
+            })
+        return () => {
+            ignore = true
+        }
+    }, [])
+
+    useEffect(() => {
+        let ignore = false
+        api.get('/settings/ocr', { params: { tenant: ocrSettings.tenant_slug } })
+            .then((response) => {
+                if (!ignore) {
+                    setOcrSettings((current) => ({
+                        ...current,
+                        ...response.data,
+                    }))
+                }
+            })
+            .catch((requestError) => {
+                if (!ignore) {
+                    setMessage(readError(requestError, 'Nao foi possivel carregar configuracoes de OCR.'))
+                }
+            })
+        return () => {
+            ignore = true
+        }
+    }, [])
+
+    useEffect(() => {
+        let ignore = false
+        api.get('/settings/email', { params: { tenant: emailSettings.tenant_slug } })
+            .then((response) => {
+                if (!ignore) {
+                    setEmailSettings((current) => ({
+                        ...current,
+                        ...response.data,
+                    }))
+                }
+            })
+            .catch((requestError) => {
+                if (!ignore) {
+                    setMessage(readError(requestError, 'Nao foi possivel carregar configuracoes de email.'))
+                }
+            })
+        return () => {
+            ignore = true
+        }
+    }, [])
 
     const schemaDefinition = useMemo(() => buildLangExtractDefinition({
         schemaForm,
@@ -903,6 +1198,52 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             await onChanged()
         } catch (requestError) {
             setMessage(readError(requestError, 'Falha ao criar layout.'))
+        }
+    }
+
+    const saveIntegrationSettings = async () => {
+        setMessage('')
+        try {
+            const response = await api.patch('/settings/integrations', integrationSettings)
+            setIntegrationSettings((current) => ({ ...current, ...response.data }))
+            setMessage('Configuracoes de integracao salvas.')
+            await onChanged()
+        } catch (requestError) {
+            setMessage(readError(requestError, 'Falha ao salvar configuracoes de integracao.'))
+        }
+    }
+
+    const saveOcrSettings = async () => {
+        setMessage('')
+        try {
+            const payload = {
+                ...ocrSettings,
+                timeout_seconds: Number(ocrSettings.timeout_seconds) || 120,
+                digital_pdf_min_text_blocks: Number(ocrSettings.digital_pdf_min_text_blocks) || 5,
+            }
+            const response = await api.patch('/settings/ocr', payload)
+            setOcrSettings((current) => ({ ...current, ...response.data }))
+            setMessage('Configuracoes de OCR salvas.')
+            await onChanged()
+        } catch (requestError) {
+            setMessage(readError(requestError, 'Falha ao salvar configuracoes de OCR.'))
+        }
+    }
+
+    const saveEmailSettings = async () => {
+        setMessage('')
+        try {
+            const payload = {
+                ...emailSettings,
+                imap_port: Number(emailSettings.imap_port) || 993,
+                max_attachment_mb: Number(emailSettings.max_attachment_mb) || 20,
+            }
+            const response = await api.patch('/settings/email', payload)
+            setEmailSettings((current) => ({ ...current, ...response.data }))
+            setMessage('Configuracoes de email salvas.')
+            await onChanged()
+        } catch (requestError) {
+            setMessage(readError(requestError, 'Falha ao salvar configuracoes de email.'))
         }
     }
 
@@ -1143,10 +1484,28 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
                 </div>
                     </>
                 ) : null}
-                {activeSettingsArea === 'ocr-routing' ? <OcrSettingsPanel /> : null}
-                {activeSettingsArea === 'email' ? <EmailSettingsPanel /> : null}
+                {activeSettingsArea === 'ocr-routing' ? (
+                    <OcrSettingsPanel
+                        settings={ocrSettings}
+                        onChange={setOcrSettings}
+                        onSave={saveOcrSettings}
+                    />
+                ) : null}
+                {activeSettingsArea === 'email' ? (
+                    <EmailSettingsPanel
+                        settings={emailSettings}
+                        onChange={setEmailSettings}
+                        onSave={saveEmailSettings}
+                    />
+                ) : null}
                 {activeSettingsArea === 'whatsapp' ? <WhatsAppSettingsPanel /> : null}
-                {activeSettingsArea === 'integrations' ? <IntegrationSettingsPanel /> : null}
+                {activeSettingsArea === 'integrations' ? (
+                    <IntegrationSettingsPanel
+                        settings={integrationSettings}
+                        onChange={setIntegrationSettings}
+                        onSave={saveIntegrationSettings}
+                    />
+                ) : null}
             </section>
         </div>
     )
@@ -1165,30 +1524,34 @@ function TabHelp({ tab }) {
     )
 }
 
-function OcrSettingsPanel() {
+function OcrSettingsPanel({ settings, onChange, onSave }) {
+    const updateField = (field, value) => {
+        onChange((current) => ({ ...current, [field]: value }))
+    }
+
     const activeOcrRoutes = [
         {
             type: 'PDF textual',
             classification: 'digital_pdf',
-            engine: 'Docling',
+            engine: engineLabel(settings.digital_pdf_engine),
             detail: 'Usado quando o classificador encontra blocos de texto suficientes no PDF.',
         },
         {
             type: 'Imagem/PDF escaneado',
             classification: 'scanned_image',
-            engine: 'OpenRouter',
+            engine: engineLabel(settings.scanned_image_engine),
             detail: 'Usado para documentos sem camada textual confiavel, incluindo fotos e PDFs imagem.',
         },
         {
             type: 'Manuscrito complexo',
             classification: 'handwritten_complex',
-            engine: 'OpenRouter',
+            engine: engineLabel(settings.handwritten_engine),
             detail: 'Usado para documentos com escrita manual ou baixa estrutura textual.',
         },
         {
             type: 'Fallback tecnico',
             classification: 'fallback',
-            engine: 'Tesseract',
+            engine: engineLabel(settings.technical_fallback_engine),
             detail: 'Usado apenas quando o engine primario falha antes de retornar transcricao.',
         },
     ]
@@ -1199,6 +1562,12 @@ function OcrSettingsPanel() {
                 title="OCR"
                 text="Perfil operacional atual do OCR. A tela mostra somente os engines usados de fato no fluxo automatico: Docling para PDF textual, OpenRouter para imagem/PDF escaneado e Tesseract como fallback tecnico."
             />
+            <div className="flex justify-end">
+                <button type="button" onClick={onSave} className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700">
+                    <CheckCircle2 size={16} aria-hidden="true" />
+                    Salvar OCR
+                </button>
+            </div>
             <div className="grid gap-4 xl:grid-cols-2">
                 <section className="rounded-md border border-zinc-200 p-4">
                     <div className="mb-3 text-sm font-semibold">Roteamento ativo</div>
@@ -1222,21 +1591,67 @@ function OcrSettingsPanel() {
                 <section className="rounded-md border border-zinc-200 p-4">
                     <div className="mb-3 text-sm font-semibold">Configuracao em uso</div>
                     <div className="grid gap-3 md:grid-cols-2">
-                        <Field label="Modelo">
-                            <input className="input" defaultValue="OPENROUTER_MODEL do .env" readOnly />
+                        <Field label="PDF textual">
+                            <EngineSelect value={settings.digital_pdf_engine} onChange={(value) => updateField('digital_pdf_engine', value)} />
+                        </Field>
+                        <Field label="Imagem/PDF escaneado">
+                            <EngineSelect value={settings.scanned_image_engine} onChange={(value) => updateField('scanned_image_engine', value)} />
+                        </Field>
+                        <Field label="Manuscrito complexo">
+                            <EngineSelect value={settings.handwritten_engine} onChange={(value) => updateField('handwritten_engine', value)} />
+                        </Field>
+                        <Field label="Fallback tecnico">
+                            <EngineSelect value={settings.technical_fallback_engine} onChange={(value) => updateField('technical_fallback_engine', value)} />
+                        </Field>
+                        <Field label="Modelo OpenRouter primario">
+                            <input
+                                className="input"
+                                value={settings.openrouter_model || ''}
+                                onChange={(event) => updateField('openrouter_model', event.target.value)}
+                                placeholder="Vazio usa OPENROUTER_MODEL do .env"
+                            />
+                        </Field>
+                        <Field label="Modelo OpenRouter secundario">
+                            <input
+                                className="input"
+                                value={settings.openrouter_fallback_model || ''}
+                                onChange={(event) => updateField('openrouter_fallback_model', event.target.value)}
+                                placeholder="qwen/qwen2.5-vl-72b-instruct"
+                            />
                         </Field>
                         <Field label="Timeout segundos">
-                            <input className="input" defaultValue="120" readOnly />
+                            <input
+                                className="input"
+                                type="number"
+                                min="10"
+                                max="600"
+                                value={settings.timeout_seconds}
+                                onChange={(event) => updateField('timeout_seconds', event.target.value)}
+                            />
                         </Field>
                         <Field label="Fallback se texto vazio">
-                            <input className="input" defaultValue="Reconstruir por key_values do OpenRouter" readOnly />
+                            <select
+                                className="input"
+                                value={settings.retry_empty_text_enabled ? 'enabled' : 'disabled'}
+                                onChange={(event) => updateField('retry_empty_text_enabled', event.target.value === 'enabled')}
+                            >
+                                <option value="enabled">Tentar segundo modelo</option>
+                                <option value="disabled">Nao tentar</option>
+                            </select>
                         </Field>
-                        <Field label="Fallback PDF textual">
-                            <input className="input" defaultValue="PyMuPDF dentro do Docling engine" readOnly />
+                        <Field label="Minimo de blocos de texto PDF">
+                            <input
+                                className="input"
+                                type="number"
+                                min="1"
+                                max="200"
+                                value={settings.digital_pdf_min_text_blocks}
+                                onChange={(event) => updateField('digital_pdf_min_text_blocks', event.target.value)}
+                            />
                         </Field>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-zinc-500">
-                        PaddleOCR, EasyOCR, TrOCR, LlamaParse e DeepSeek permanecem como codigo legado/opcional, mas nao fazem parte do setup operacional atual.
+                        A chave OpenRouter continua no `.env` e nao e gravada aqui. PaddleOCR, EasyOCR, TrOCR, LlamaParse e DeepSeek permanecem como codigo legado/opcional, mas nao fazem parte do setup operacional atual.
                     </p>
                 </section>
             </div>
@@ -1244,38 +1659,75 @@ function OcrSettingsPanel() {
     )
 }
 
-function EmailSettingsPanel() {
+function EngineSelect({ value, onChange }) {
+    return (
+        <select className="input" value={value || 'docling'} onChange={(event) => onChange(event.target.value)}>
+            <option value="docling">Docling</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="tesseract">Tesseract</option>
+        </select>
+    )
+}
+
+function engineLabel(value) {
+    return {
+        docling: 'Docling',
+        openrouter: 'OpenRouter',
+        tesseract: 'Tesseract',
+    }[value] || value || '-'
+}
+
+function EmailSettingsPanel({ settings, onChange, onSave }) {
+    const updateField = (field, value) => {
+        onChange((current) => ({ ...current, [field]: value }))
+    }
+
     return (
         <div className="space-y-4 p-4">
             <ConfigIntro
                 title="Email"
                 text="Configure como documentos chegam por email. O endpoint simulado ja aceita anexos; IMAP/webhook real precisa de modelos/API antes de substituir variaveis de ambiente."
             />
+            <div className="flex justify-end">
+                <button type="button" onClick={onSave} className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700">
+                    <CheckCircle2 size={16} aria-hidden="true" />
+                    Salvar email
+                </button>
+            </div>
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
                 <section className="rounded-md border border-zinc-200 p-4">
                     <div className="mb-3 text-sm font-semibold">Conta de captura</div>
                     <div className="grid gap-3 md:grid-cols-2">
                         <Field label="Provider">
-                            <select className="input" defaultValue="imap">
+                            <select className="input" value={settings.provider || 'imap'} onChange={(event) => updateField('provider', event.target.value)}>
                                 <option value="imap">IMAP</option>
                                 <option value="webhook">Webhook</option>
                                 <option value="manual_test">Teste manual</option>
                             </select>
                         </Field>
+                        <Field label="Ativo">
+                            <select className="input" value={settings.is_active ? 'enabled' : 'disabled'} onChange={(event) => updateField('is_active', event.target.value === 'enabled')}>
+                                <option value="enabled">Ativo</option>
+                                <option value="disabled">Inativo</option>
+                            </select>
+                        </Field>
                         <Field label="Pasta monitorada">
-                            <input className="input" defaultValue="INBOX" />
+                            <input className="input" value={settings.inbox_folder || ''} onChange={(event) => updateField('inbox_folder', event.target.value)} />
                         </Field>
                         <Field label="Host IMAP">
-                            <input className="input" placeholder="imap.exemplo.com" />
+                            <input className="input" value={settings.imap_host || ''} onChange={(event) => updateField('imap_host', event.target.value)} placeholder="imap.exemplo.com" />
                         </Field>
                         <Field label="Porta">
-                            <input className="input" defaultValue="993" />
+                            <input className="input" type="number" min="1" max="65535" value={settings.imap_port} onChange={(event) => updateField('imap_port', event.target.value)} />
                         </Field>
                         <Field label="Usuario">
-                            <input className="input" placeholder="documentos@empresa.com" />
+                            <input className="input" value={settings.username || ''} onChange={(event) => updateField('username', event.target.value)} placeholder="documentos@empresa.com" />
                         </Field>
                         <Field label="Senha/app password">
-                            <input className="input" type="password" placeholder="armazenar em secret manager" />
+                            <input className="input" type="password" placeholder="Nao persistido por enquanto" disabled />
+                        </Field>
+                        <Field label="Webhook URL">
+                            <input className="input" value={settings.webhook_url || ''} onChange={(event) => updateField('webhook_url', event.target.value)} />
                         </Field>
                     </div>
                 </section>
@@ -1283,13 +1735,13 @@ function EmailSettingsPanel() {
                     <div className="mb-3 text-sm font-semibold">Regras de anexos</div>
                     <div className="space-y-3">
                         <Field label="Tipos aceitos">
-                            <input className="input" defaultValue="application/pdf,image/jpeg,image/png,image/tiff,image/webp" />
+                            <input className="input" value={settings.accepted_content_types || ''} onChange={(event) => updateField('accepted_content_types', event.target.value)} />
                         </Field>
                         <Field label="Tamanho maximo MB">
-                            <input className="input" defaultValue="20" />
+                            <input className="input" type="number" min="1" max="200" value={settings.max_attachment_mb} onChange={(event) => updateField('max_attachment_mb', event.target.value)} />
                         </Field>
                         <Field label="Remetentes bloqueados">
-                            <textarea className="input min-h-[90px]" placeholder="um email por linha" />
+                            <textarea className="input min-h-[90px]" value={settings.blocked_senders || ''} onChange={(event) => updateField('blocked_senders', event.target.value)} placeholder="um email por linha" />
                         </Field>
                     </div>
                 </section>
@@ -1351,28 +1803,50 @@ function WhatsAppSettingsPanel() {
     )
 }
 
-function IntegrationSettingsPanel() {
+function IntegrationSettingsPanel({ settings, onChange, onSave }) {
+    const updateField = (field, value) => {
+        onChange((current) => ({ ...current, [field]: value }))
+    }
+
     return (
         <div className="space-y-4 p-4">
             <ConfigIntro
                 title="Integracoes"
                 text="Configure o destino dos dados aprovados. Por enquanto o caminho intermediario e exportacao JSON; Superlogica fica preparado para quando houver acesso ao ambiente."
             />
+            <div className="flex justify-end">
+                <button type="button" onClick={onSave} className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700">
+                    <CheckCircle2 size={16} aria-hidden="true" />
+                    Salvar integracoes
+                </button>
+            </div>
             <div className="grid gap-4 xl:grid-cols-2">
                 <section className="rounded-md border border-zinc-200 p-4">
                     <div className="mb-3 text-sm font-semibold">Export JSON</div>
                     <div className="grid gap-3">
                         <Field label="Ativar exportacao aprovada">
-                            <select className="input" defaultValue="enabled">
+                            <select
+                                className="input"
+                                value={settings.approved_export_enabled ? 'enabled' : 'disabled'}
+                                onChange={(event) => updateField('approved_export_enabled', event.target.value === 'enabled')}
+                            >
                                 <option value="enabled">Ativado</option>
                                 <option value="disabled">Desativado</option>
                             </select>
                         </Field>
                         <Field label="Diretorio destino">
-                            <input className="input" defaultValue="docuparse-project/exports/approved" />
+                            <input
+                                className="input"
+                                value={settings.approved_export_dir || ''}
+                                onChange={(event) => updateField('approved_export_dir', event.target.value)}
+                            />
                         </Field>
                         <Field label="Formato">
-                            <select className="input" defaultValue="json">
+                            <select
+                                className="input"
+                                value={settings.approved_export_format || 'json'}
+                                onChange={(event) => updateField('approved_export_format', event.target.value)}
+                            >
                                 <option value="json">JSON</option>
                                 <option value="jsonl">JSONL</option>
                             </select>
@@ -1383,13 +1857,22 @@ function IntegrationSettingsPanel() {
                     <div className="mb-3 text-sm font-semibold">Superlogica futuro</div>
                     <div className="grid gap-3">
                         <Field label="Base URL sandbox">
-                            <input className="input" placeholder="https://..." />
+                            <input
+                                className="input"
+                                value={settings.superlogica_base_url || ''}
+                                onChange={(event) => updateField('superlogica_base_url', event.target.value)}
+                                placeholder="https://..."
+                            />
                         </Field>
                         <Field label="Credencial">
-                            <input className="input" type="password" placeholder="pendente" />
+                            <input className="input" type="password" placeholder="Nao persistido por enquanto" disabled />
                         </Field>
                         <Field label="Modo de envio">
-                            <select className="input" defaultValue="disabled">
+                            <select
+                                className="input"
+                                value={settings.superlogica_mode || 'disabled'}
+                                onChange={(event) => updateField('superlogica_mode', event.target.value)}
+                            >
                                 <option value="disabled">Desativado ate liberar acesso</option>
                                 <option value="mock">Mock</option>
                                 <option value="sandbox">Sandbox</option>

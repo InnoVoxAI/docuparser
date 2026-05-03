@@ -89,3 +89,8 @@ class CoreEventStreamWorkerTests(TestCase):
 
         assert worker.run_once() == 0
         assert worker.offsets["ocr.completed"] == 1
+        dlq = event_bus.consume("ocr.completed.dlq")
+        assert len(dlq) == 1
+        assert dlq[0]["source"] == "backend-core"
+        assert dlq[0]["stream"] == "ocr.completed"
+        assert dlq[0]["payload"]["document_id"] == str(document_id)

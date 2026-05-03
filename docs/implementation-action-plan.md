@@ -213,6 +213,9 @@ Preencher antes das fases que dependem de integracoes reais.
   - `layout-service` e `langextract-service` possuem consumidores Redis Streams configuraveis por flags no `.env`.
   - Profile `async-workers` contem servicos dedicados `backend-core-events`, `backend-ocr-worker`, `layout-worker` e `langextract-worker`.
   - `REDIS_URL` do compose pode ser sobrescrito por variavel de ambiente para smoke em DB isolado.
+  - Workers publicam falhas de processamento em DLQ no padrao `<stream>.dlq`.
+  - `backend-core` possui comando operacional `inspect_dlq` para listar DLQs em texto ou JSON.
+  - `frontend` monta `./frontend:/app` em desenvolvimento para refletir alteracoes de UI sem rebuild manual.
 - Testes:
   - `docker compose up` sobe todos os health checks.
 - Criterio de aceite:
@@ -256,6 +259,11 @@ Preencher antes das fases que dependem de integracoes reais.
     - workers long-running geram e consomem `ocr.completed`, `layout.classified` e `extraction.completed`.
     - documento smoke `901b7f0e-e38e-45b3-88da-a555f9b194f6` chegou a `EXTRACTION_COMPLETED`, `engine_used=mock`, schema `boleto`, `valor=R$ 123,45`.
     - workers de smoke foram parados com `docker compose --profile async-workers stop ...`.
+  - Smoke DLQ Redis DB 12:
+    - evento invalido em `ocr.completed`.
+    - `layout-service` executou worker e publicou em `ocr.completed.dlq`.
+    - `docker compose exec -T -e DOCUPARSE_EVENT_BUS=redis -e REDIS_URL=redis://redis:6379/12 backend-core python manage.py inspect_dlq --stream ocr.completed.dlq --summary` retornou `ocr.completed.dlq: 1`.
+    - `docker compose exec -T -e DOCUPARSE_EVENT_BUS=redis -e REDIS_URL=redis://redis:6379/12 backend-core python manage.py inspect_dlq --stream ocr.completed.dlq --json --limit 1` retornou payload com `error_type=ValidationError`.
   - `curl -s -i http://127.0.0.1:8000/api/ocr/health`
   - `curl -s -i http://127.0.0.1:8070/health`
   - `curl -s -i http://127.0.0.1:8080/health`
@@ -485,6 +493,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - Offset por stream em memoria do processo.
   - CLI `python -m application.run_worker --once` para smoke controlado.
   - Modo mock operacional protegido por `DOCUPARSE_OCR_WORKER_ALLOW_MOCK=true` e `data.metadata.ocr_mock_raw_text`.
+  - Falhas inesperadas de consumo sao publicadas em `document.received.dlq`.
   - Download do `file_uri`.
   - Storage de `raw_text.json`.
   - Publicacao `ocr.completed` ou `ocr.failed`.
@@ -501,7 +510,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docuparse-project/backend-ocr/requirements-container.txt`
   - `docuparse-project/backend-ocr/tests/test_ocr_event_worker.py`
   - `pytest -q tests/test_ocr_event_worker.py tests/test_classifier.py tests/test_process_document_bugs.py` em `docuparse-project/backend-ocr`
-  - `pytest -q tests/test_ocr_event_worker.py` em `docuparse-project/backend-ocr`
+  - `pytest -q tests/test_ocr_event_worker.py` em `docuparse-project/backend-ocr` com cobertura de DLQ.
   - `pytest -q shared/tests`
   - `docker compose up -d --build backend-ocr`
   - `curl -s -i http://127.0.0.1:8080/health`
@@ -525,6 +534,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - Loop persistente `LayoutWorker` para Redis Streams/local JSONL, controlado por `DOCUPARSE_LAYOUT_WORKER_ENABLED`.
   - Servico dedicado `layout-worker` no profile `async-workers`.
   - CLI `python -m application.run_worker --once` para smoke controlado.
+  - Falhas inesperadas de consumo sao publicadas em `ocr.completed.dlq`.
 - Testes:
   - Unitarios de heuristicas.
   - Contrato `layout.classified`.
@@ -537,7 +547,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docuparse-project/layout-service/Dockerfile`
   - `docuparse-project/layout-service/requirements.txt`
   - `docuparse-project/docker-compose.yml`
-  - `pytest -q tests` em `docuparse-project/layout-service`
+  - `pytest -q tests` em `docuparse-project/layout-service` com cobertura de DLQ.
   - `docker compose up -d --build layout-service langextract-service`
   - `curl -s -i http://127.0.0.1:8090/health`
 - Pendencias:
@@ -586,6 +596,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - Loop persistente `ExtractionWorker` para Redis Streams/local JSONL, controlado por `DOCUPARSE_EXTRACTION_WORKER_ENABLED`.
   - Servico dedicado `langextract-worker` no profile `async-workers`.
   - CLI `python -m application.run_worker --once` para smoke controlado.
+  - Falhas inesperadas de consumo sao publicadas em `layout.classified.dlq`.
 - Testes:
   - Contrato de request/response.
   - Mock LLM para testes deterministas.
@@ -598,7 +609,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docuparse-project/langextract-service/Dockerfile`
   - `docuparse-project/langextract-service/requirements.txt`
   - `docuparse-project/docker-compose.yml`
-  - `pytest -q tests` em `docuparse-project/langextract-service`
+  - `pytest -q tests` em `docuparse-project/langextract-service` com cobertura de DLQ.
   - `docker compose up -d --build layout-service langextract-service`
   - `curl -s -i http://127.0.0.1:8091/health`
 - Pendencias:
@@ -678,6 +689,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - Cria pendencias de validacao.
   - Disponibiliza worker persistente `manage.py consume_events` para consumir Redis Streams/local JSONL fora do request HTTP.
   - Prepara servico opcional `backend-core-events` no profile `async-workers` do Docker Compose.
+  - Falhas inesperadas de consumo sao publicadas em `<stream>.dlq`.
 - Testes:
   - Contratos de eventos.
   - Idempotencia por `event_id` ou chave equivalente.
@@ -688,19 +700,25 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docuparse-project/backend-core/documents/services/event_consumers.py`
   - `docuparse-project/backend-core/documents/services/event_stream_worker.py`
   - `docuparse-project/backend-core/documents/management/commands/consume_events.py`
+  - `docuparse-project/backend-core/documents/management/commands/inspect_dlq.py`
   - `docuparse-project/backend-core/documents/tests/test_event_consumers.py`
   - `docuparse-project/backend-core/documents/tests/test_event_stream_worker.py`
+  - `docuparse-project/backend-core/documents/tests/test_dlq_command.py`
   - `docuparse-project/docker-compose.yml`
   - `.venv/bin/python manage.py test documents` em `docuparse-project/backend-core`
+  - `pytest -q shared/tests`
   - `.venv/bin/python manage.py consume_events --once` em `docuparse-project/backend-core`
+  - `.venv/bin/python manage.py test documents` em `docuparse-project/backend-core` com 28 testes.
   - `docker compose config --quiet` em `docuparse-project`
   - `docker compose up -d --build backend-core` em `docuparse-project`
   - `docker compose exec -T backend-core python manage.py consume_events --once` retornou `Processed 0 event(s).`
   - `docker compose ps` com `backend-core`, `backend-com`, `backend-ocr`, `redis`, `postgres`, `minio`, `layout-service`, `langextract-service` saudaveis.
   - Consumidores `consume_ocr_completed` e `consume_ocr_failed` atualizam `raw_text_uri`, `document_type`, metadados OCR e estado do documento com idempotencia por `event_id`.
+  - `docuparse-project/backend-core/documents/management/commands/requeue_dlq.py`
+  - `requeue_dlq --stream <stream>.dlq --id <id>` simula o destino antes de publicar.
+  - `requeue_dlq --stream <stream>.dlq --id <id> --execute` publica o payload original de volta ao stream de origem e registra auditoria em `<stream>.dlq.requeued`.
 - Pendencias:
   - Habilitar o profile `async-workers` quando a virada para fluxo totalmente assincrono for feita.
-  - Criar DLQ/retry operacional para falhas de processamento.
 
 ### T-0503 - Implementar APIs para frontend
 
@@ -846,6 +864,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - App abre sem depender de mocks hardcoded.
 - Evidencia:
   - `docuparse-project/frontend/src/main.jsx`
+  - `docuparse-project/docker-compose.yml`
   - `docuparse-project/frontend/src/index.css`
   - `docuparse-project/frontend/vite.config.js`
   - `npm run build` em `docuparse-project/frontend`
@@ -984,6 +1003,21 @@ Preencher antes das fases que dependem de integracoes reais.
     - Extracao
     - Integracoes
   - Telas operacionais iniciais para OCR, Email, WhatsApp e Integracoes com campos estruturados e orientacao de uso.
+  - Aba OCR persistida em `backend-core` para campos nao sensiveis:
+    - engine por classificacao (`digital_pdf`, `scanned_image`, `handwritten_complex`).
+    - engine de fallback tecnico.
+    - modelo OpenRouter primario/secundario.
+    - timeout, retry para texto vazio e minimo de blocos de texto para PDF textual.
+  - Aba Email persistida em `backend-core` para campos nao sensiveis:
+    - provider, pasta monitorada, host/porta IMAP e usuario.
+    - URL de webhook.
+    - tipos aceitos, tamanho maximo e remetentes bloqueados.
+  - Aba Integracoes persistida em `backend-core` para campos nao sensiveis:
+    - exportacao aprovada ativa/inativa.
+    - diretorio do export aprovado.
+    - formato `json` ou `jsonl`.
+    - Base URL e modo futuro da Superlogica.
+  - `ERPIntegrationRequested` respeita a configuracao de export aprovado por tenant.
   - Aba OCR mostra somente engines em uso real: Docling, OpenRouter e Tesseract fallback.
   - ERP connectors.
 - Testes:
@@ -1005,14 +1039,32 @@ Preencher antes das fases que dependem de integracoes reais.
   - `npm run build` em `docuparse-project/frontend` apos botoes de rascunho/proxima etapa.
   - `npm run build` em `docuparse-project/frontend` apos dividir Configuracoes em Extracao/OCR/Email/WhatsApp/Integracoes.
   - `npm run build` em `docuparse-project/frontend` apos remover OCRs opcionais/legados da aba OCR.
+  - `docuparse-project/backend-core/documents/models.py`
+  - `docuparse-project/backend-core/documents/migrations/0005_emailsettings.py`
+  - `docuparse-project/backend-core/documents/migrations/0004_ocrsettings.py`
+  - `docuparse-project/backend-core/documents/migrations/0003_integrationsettings.py`
+  - `docuparse-project/backend-core/documents/services/approved_exporter.py`
+  - `docuparse-project/backend-core/documents/services/erp_publisher.py`
+  - `docuparse-project/backend-core/documents/tests/test_api.py`
+  - `.venv/bin/python manage.py test documents.tests.test_api` em `docuparse-project/backend-core` com 17 testes.
+  - `.venv/bin/python manage.py test documents` em `docuparse-project/backend-core` com 35 testes.
+  - `docker compose exec -T backend-core python manage.py migrate --noinput` aplicou `documents.0003_integrationsettings`.
+  - `docker compose exec -T backend-core python manage.py migrate --noinput` aplicou `documents.0004_ocrsettings`.
+  - `docker compose exec -T backend-core python manage.py migrate --noinput` aplicou `documents.0005_emailsettings`.
+  - Smoke interno `GET /api/ocr/settings/integrations?tenant=tenant-demo` retornou `approved_export_enabled=True`, `approved_export_format=json`, `superlogica_mode=disabled`.
+  - Smoke interno `GET /api/ocr/settings/ocr?tenant=tenant-demo` retornou `digital_pdf_engine=docling`, `scanned_image_engine=openrouter`, `technical_fallback_engine=tesseract`.
+  - Smoke interno `GET /api/ocr/settings/email?tenant=tenant-demo` retornou `provider=imap`, `inbox_folder=INBOX`, `imap_port=993`.
   - `docs/specs/lang_extract_prd.md`
 - Pendencias:
   - CRUD visual implementado para schemas/layouts e setup guiado LangExtract persistindo em `SchemaConfig.definition`.
   - Tabelas dedicadas do PRD (`extraction_template`, `extraction_prompt`, `extraction_example`, `extraction_run`, etc.) ainda precisam de modelo/API antes de substituir a persistencia temporaria em JSON.
   - Revisao do OCR de referencia e observacoes ficam temporariamente em `SchemaConfig.definition.reference_review`.
   - Destaque visual por coordenadas diretamente sobre PDF/imagem depende de OCR salvar bounding boxes/spans; tela atual destaca o OCR textual e mostra o original lado a lado.
-  - Email accounts, WhatsApp numbers e ERP connectors ainda precisam de APIs/modelos definitivos.
-  - Telas OCR, Email, WhatsApp e Integracoes ainda nao persistem em backend; proximas tarefas devem criar modelos/API para substituir `.env`/config local.
+  - Email accounts e WhatsApp numbers ainda precisam de APIs/modelos definitivos.
+  - Credenciais Superlogica nao sao persistidas por enquanto; exigem estrategia segura de secrets.
+  - Tela OCR persiste campos operacionais, mas o worker OCR ainda usa `.env` como fonte efetiva de runtime ate haver distribuicao centralizada de configuracao.
+  - Tela Email persiste campos operacionais, mas o coletor IMAP/webhook ainda usa `.env` como fonte efetiva de runtime ate haver distribuicao centralizada de configuracao.
+  - Tela WhatsApp ainda nao persiste em backend; proxima tarefa deve criar modelo/API para substituir `.env`/config local.
   - Permissao de supervisor ainda pendente ate autenticacao/autorizacao.
 
 ## Fase 8 - Observabilidade, seguranca e operacao
@@ -1040,13 +1092,58 @@ Preencher antes das fases que dependem de integracoes reais.
     - `layout-service` publica `layout.classified`
     - `langextract-service` publica `extraction.completed`
     - `backend-core` consome eventos e publica/exporta ERP
+  - DLQ padronizada em `<stream>.dlq` para falhas dos workers Redis.
+  - Comando `inspect_dlq` para inspecao operacional das DLQs.
   - `pytest -q contracts/tests shared/tests`
   - `pytest -q tests` em `backend-com`, `backend-ocr`, `layout-service`, `langextract-service`
   - `.venv/bin/python manage.py test documents` em `backend-core`
 - Pendencias:
   - OpenTelemetry ainda pendente.
-  - Dashboards basicos ainda pendentes.
+  - Dashboards basicos de metricas ainda pendentes.
   - Trace E2E real depende dos workers Redis Streams integrados.
+
+### T-0803 - Tela de Operacoes para administradores
+
+- Status: REVIEW
+- Atualizado em: 2026-05-03
+- Modulos: frontend, backend-core
+- Dependencias: T-0502, T-0801
+- Entrega:
+  - Nova tela `Operacoes` acessivel pela barra lateral para administradores do sistema.
+  - Dashboard de DLQs com resumo por stream.
+  - Tabela de eventos por DLQ.
+  - Painel de detalhe com erro e payload original.
+  - Acao de simulacao de reprocessamento para confirmar o stream de destino.
+  - Acao de reenfileirar payload original apos revisao, preservando o item na DLQ e registrando auditoria.
+  - APIs operacionais:
+    - `GET /api/ocr/operations/dlq/summary`
+    - `GET /api/ocr/operations/dlq/events?stream=...&limit=...`
+    - `POST /api/ocr/operations/dlq/requeue`
+- Testes:
+  - API de resumo/listagem de DLQ.
+  - API e comando de reprocessamento de DLQ com dry-run e execute.
+  - Build frontend.
+- Criterio de aceite:
+  - Administrador consegue visualizar rapidamente filas DLQ e inspecionar payloads sem acessar Redis/terminal.
+  - Administrador consegue simular o destino e reenfileirar um evento revisado sem apagar a evidencia original da DLQ.
+- Evidencia:
+  - `docuparse-project/frontend/src/main.jsx`
+  - `docuparse-project/backend-core/documents/views.py`
+  - `docuparse-project/backend-core/documents/urls.py`
+  - `docuparse-project/backend-core/documents/services/dlq_inspector.py`
+  - `docuparse-project/backend-core/documents/management/commands/requeue_dlq.py`
+  - `docuparse-project/backend-core/documents/tests/test_api.py`
+  - `docuparse-project/backend-core/documents/tests/test_dlq_command.py`
+  - `.venv/bin/python manage.py test documents.tests.test_dlq_command documents.tests.test_api` em `docuparse-project/backend-core` com 17 testes.
+  - `.venv/bin/python manage.py test documents` em `docuparse-project/backend-core` com 31 testes.
+  - `npm run build` em `docuparse-project/frontend`
+  - `docker compose config --quiet`
+  - Smoke interno no container: `urllib.request.urlopen('http://127.0.0.1:8000/api/ocr/operations/dlq/summary')` retornou JSON com streams DLQ.
+  - `docker compose exec -T frontend sh -c "wget -qO- http://127.0.0.1:5173/src/main.jsx | grep -n 'Operacoes\\|operations' | head"` confirmou a opcao `Operacoes` servida pelo Vite.
+  - `docker compose exec -T frontend sh -c "wget -qO- http://backend-core:8000/api/ocr/operations/dlq/summary | head -c 500"` retornou resumo DLQ via rede interna.
+- Pendencias:
+  - Restringir visualmente por perfil `admin` quando autenticacao real de usuarios estiver implementada.
+  - Adicionar descarte/marcacao manual de DLQ apos revisao quando houver modelo de auditoria operacional persistido em banco.
 
 ### T-0802 - Seguranca e secrets
 

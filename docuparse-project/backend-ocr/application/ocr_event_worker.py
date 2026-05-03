@@ -9,7 +9,7 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from events import DocumentReceivedEvent, OCRCompletedEvent, OCRFailedEvent
-from docuparse_events import EventBus, event_bus_from_env, sleep_interval
+from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
 from docuparse_observability import log_event
 from docuparse_storage import LocalStorage
 
@@ -197,8 +197,27 @@ class OCRWorker:
     def run_once(self) -> int:
         entries = self.event_bus.consume_entries(self.input_stream, self._offset, count=10)
         for entry in entries:
-            self._offset = entry.id
-            handle_document_received_event(entry.payload, self.storage, self.event_bus)
+            try:
+                handle_document_received_event(entry.payload, self.storage, self.event_bus)
+            except Exception as exc:
+                publish_dead_letter(
+                    self.event_bus,
+                    stream=self.input_stream,
+                    entry=entry,
+                    error=exc,
+                    source="backend-ocr",
+                )
+                log_event(
+                    logger,
+                    "ocr event processing failed",
+                    level=logging.ERROR,
+                    stream=self.input_stream,
+                    event_stream_id=str(entry.id),
+                    event_type=entry.payload.get("event_type"),
+                    event_id=entry.payload.get("event_id"),
+                )
+            finally:
+                self._offset = entry.id
         return len(entries)
 
 

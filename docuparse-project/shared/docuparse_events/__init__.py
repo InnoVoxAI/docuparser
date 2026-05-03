@@ -4,6 +4,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -118,6 +119,30 @@ def event_bus_from_env(local_root: str | Path | None = None) -> EventBus:
         return RedisStreamEventBus.from_url(redis_url)
     root = local_root or os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", ".docuparse-events")
     return LocalJsonlEventBus(root)
+
+
+def publish_dead_letter(
+    event_bus: EventBus,
+    *,
+    stream: str,
+    entry: EventMessage,
+    error: BaseException,
+    source: str,
+) -> int | str:
+    return event_bus.publish(
+        f"{stream}.dlq",
+        {
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "source": source,
+            "stream": stream,
+            "event_stream_id": str(entry.id),
+            "event_type": entry.payload.get("event_type"),
+            "event_id": entry.payload.get("event_id"),
+            "error_type": type(error).__name__,
+            "error": str(error),
+            "payload": entry.payload,
+        },
+    )
 
 
 def validate_stream_name(stream: str) -> None:

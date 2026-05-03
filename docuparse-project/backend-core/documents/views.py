@@ -11,19 +11,24 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 
+from docuparse_events import event_bus_from_env
 from docuparse_storage import LocalStorage
 
-from .models import Document, LayoutConfig, SchemaConfig, Tenant, ValidationDecision
+from .models import Document, EmailSettings, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, Tenant, ValidationDecision
 from .serializers import (
     DocumentDetailSerializer,
     DocumentListSerializer,
+    EmailSettingsSerializer,
+    IntegrationSettingsSerializer,
     LayoutConfigSerializer,
+    OCRSettingsSerializer,
     SchemaConfigSerializer,
     ValidationDecisionSerializer,
 )
 from .services.ocr_client import OCRClient
 from .services.erp_publisher import publish_erp_integration_requested
 from .services.event_consumers import consume_document_received
+from .services.dlq_inspector import DEFAULT_DLQ_STREAMS, requeue_dlq_entry, inspect_dlq_streams
 from .services.ocr_processor import process_document_ocr, start_document_ocr_thread
 
 
@@ -279,7 +284,210 @@ def layout_configs_view(request):
     return Response(LayoutConfigSerializer(config).data, status=status.HTTP_201_CREATED)
 
 
+@api_view(["GET", "PATCH"])
+def integration_settings_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    tenant_slug = request.query_params.get("tenant") or request.data.get("tenant_slug") or "tenant-demo"
+    tenant, _ = Tenant.objects.get_or_create(slug=tenant_slug, defaults={"name": tenant_slug})
+    config, _ = IntegrationSettings.objects.get_or_create(
+        tenant=tenant,
+        defaults={
+            "approved_export_dir": settings.DOCUPARSE_APPROVED_EXPORT_DIR,
+        },
+    )
+    if request.method == "GET":
+        return Response(IntegrationSettingsSerializer(config).data)
+
+    serializer = IntegrationSettingsSerializer(config, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    for field in (
+        "approved_export_enabled",
+        "approved_export_dir",
+        "approved_export_format",
+        "superlogica_base_url",
+        "superlogica_mode",
+    ):
+        if field in serializer.validated_data:
+            setattr(config, field, serializer.validated_data[field])
+    config.save(
+        update_fields=[
+            "approved_export_enabled",
+            "approved_export_dir",
+            "approved_export_format",
+            "superlogica_base_url",
+            "superlogica_mode",
+            "updated_at",
+        ]
+    )
+    return Response(IntegrationSettingsSerializer(config).data)
+
+
+@api_view(["GET", "PATCH"])
+def ocr_settings_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    tenant_slug = request.query_params.get("tenant") or request.data.get("tenant_slug") or "tenant-demo"
+    tenant, _ = Tenant.objects.get_or_create(slug=tenant_slug, defaults={"name": tenant_slug})
+    config, _ = OCRSettings.objects.get_or_create(tenant=tenant)
+    if request.method == "GET":
+        return Response(OCRSettingsSerializer(config).data)
+
+    serializer = OCRSettingsSerializer(config, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    for field in (
+        "digital_pdf_engine",
+        "scanned_image_engine",
+        "handwritten_engine",
+        "technical_fallback_engine",
+        "openrouter_model",
+        "openrouter_fallback_model",
+        "timeout_seconds",
+        "retry_empty_text_enabled",
+        "digital_pdf_min_text_blocks",
+    ):
+        if field in serializer.validated_data:
+            setattr(config, field, serializer.validated_data[field])
+    config.save(
+        update_fields=[
+            "digital_pdf_engine",
+            "scanned_image_engine",
+            "handwritten_engine",
+            "technical_fallback_engine",
+            "openrouter_model",
+            "openrouter_fallback_model",
+            "timeout_seconds",
+            "retry_empty_text_enabled",
+            "digital_pdf_min_text_blocks",
+            "updated_at",
+        ]
+    )
+    return Response(OCRSettingsSerializer(config).data)
+
+
+@api_view(["GET", "PATCH"])
+def email_settings_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    tenant_slug = request.query_params.get("tenant") or request.data.get("tenant_slug") or "tenant-demo"
+    tenant, _ = Tenant.objects.get_or_create(slug=tenant_slug, defaults={"name": tenant_slug})
+    config, _ = EmailSettings.objects.get_or_create(tenant=tenant)
+    if request.method == "GET":
+        return Response(EmailSettingsSerializer(config).data)
+
+    serializer = EmailSettingsSerializer(config, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    for field in (
+        "provider",
+        "inbox_folder",
+        "imap_host",
+        "imap_port",
+        "username",
+        "webhook_url",
+        "accepted_content_types",
+        "max_attachment_mb",
+        "blocked_senders",
+        "is_active",
+    ):
+        if field in serializer.validated_data:
+            setattr(config, field, serializer.validated_data[field])
+    config.save(
+        update_fields=[
+            "provider",
+            "inbox_folder",
+            "imap_host",
+            "imap_port",
+            "username",
+            "webhook_url",
+            "accepted_content_types",
+            "max_attachment_mb",
+            "blocked_senders",
+            "is_active",
+            "updated_at",
+        ]
+    )
+    return Response(EmailSettingsSerializer(config).data)
+
+
+@api_view(["GET"])
+def dlq_summary_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    limit = _positive_int(request.query_params.get("limit"), default=50, maximum=500)
+    report = inspect_dlq_streams(
+        event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
+        streams=DEFAULT_DLQ_STREAMS,
+        limit=limit,
+    )
+    return Response(
+        {
+            "total": sum(item["count"] for item in report),
+            "streams": [
+                {
+                    "stream": item["stream"],
+                    "count": item["count"],
+                    "latest": item["entries"][-1] if item["entries"] else None,
+                }
+                for item in report
+            ],
+        }
+    )
+
+
+@api_view(["GET"])
+def dlq_events_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    stream = request.query_params.get("stream") or "ocr.completed.dlq"
+    if stream not in DEFAULT_DLQ_STREAMS:
+        return Response({"detail": "Invalid DLQ stream"}, status=status.HTTP_400_BAD_REQUEST)
+    limit = _positive_int(request.query_params.get("limit"), default=50, maximum=500)
+    report = inspect_dlq_streams(
+        event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
+        streams=[stream],
+        limit=limit,
+    )[0]
+    return Response(report)
+
+
+@api_view(["POST"])
+def dlq_requeue_view(request):
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    stream = request.data.get("stream")
+    entry_id = request.data.get("id") or request.data.get("entry_id")
+    if not stream or not entry_id:
+        return Response({"detail": "Fields 'stream' and 'id' are required"}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        result = requeue_dlq_entry(
+            event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
+            stream=stream,
+            entry_id=str(entry_id),
+            target_stream=request.data.get("target_stream") or None,
+            note=request.data.get("note") or "",
+            requested_by=request.data.get("requested_by") or "api",
+            execute=bool(request.data.get("execute")),
+        )
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(result, status=status.HTTP_202_ACCEPTED if result["execute"] else status.HTTP_200_OK)
+
+
 def _tenant_from_request(request) -> Tenant:
     tenant_slug = request.data.get("tenant") or request.data.get("tenant_slug") or "tenant-demo"
     tenant, _ = Tenant.objects.get_or_create(slug=tenant_slug, defaults={"name": tenant_slug})
     return tenant
+
+
+def _positive_int(value, *, default: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return min(max(parsed, 1), maximum)

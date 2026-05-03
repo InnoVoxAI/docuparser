@@ -130,3 +130,17 @@ def test_extraction_worker_consumes_layout_classified_stream(tmp_path) -> None:
     outputs = event_bus.consume("extraction.completed")
     assert len(outputs) == 1
     assert outputs[0]["data"]["schema_id"] == "boleto"
+
+
+def test_extraction_worker_sends_invalid_event_to_dlq(tmp_path) -> None:
+    storage = LocalStorage(tmp_path / "objects")
+    event_bus = LocalJsonlEventBus(tmp_path / "events")
+    event_bus.publish("layout.classified", {"event_type": "layout.classified", "document_id": str(uuid4())})
+
+    worker = ExtractionWorker(storage=storage, event_bus=event_bus, start_at_latest=False)
+
+    assert worker.run_once() == 1
+    dlq = event_bus.consume("layout.classified.dlq")
+    assert len(dlq) == 1
+    assert dlq[0]["source"] == "langextract-service"
+    assert dlq[0]["stream"] == "layout.classified"

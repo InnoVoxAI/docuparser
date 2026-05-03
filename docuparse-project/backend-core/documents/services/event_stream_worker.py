@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from docuparse_events import EventBus, sleep_interval
+from docuparse_events import EventBus, publish_dead_letter, sleep_interval
 from docuparse_observability import log_event
 
 from documents.services.event_consumers import (
@@ -52,7 +52,8 @@ class CoreEventStreamWorker:
                 try:
                     consumer(entry.payload)
                     processed_count += 1
-                except Exception:
+                except Exception as exc:
+                    publish_dead_letter(self.event_bus, stream=stream, entry=entry, error=exc, source="backend-core")
                     log_event(
                         logger,
                         "core event stream processing failed",

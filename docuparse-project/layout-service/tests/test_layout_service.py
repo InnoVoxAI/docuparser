@@ -138,3 +138,17 @@ def test_layout_worker_consumes_ocr_completed_stream(tmp_path) -> None:
     outputs = event_bus.consume("layout.classified")
     assert len(outputs) == 1
     assert outputs[0]["data"]["layout"] == "boleto_bb"
+
+
+def test_layout_worker_sends_invalid_event_to_dlq(tmp_path) -> None:
+    storage = LocalStorage(tmp_path / "objects")
+    event_bus = LocalJsonlEventBus(tmp_path / "events")
+    event_bus.publish("ocr.completed", {"event_type": "ocr.completed", "document_id": str(uuid4())})
+
+    worker = LayoutWorker(storage=storage, event_bus=event_bus, start_at_latest=False)
+
+    assert worker.run_once() == 1
+    dlq = event_bus.consume("ocr.completed.dlq")
+    assert len(dlq) == 1
+    assert dlq[0]["source"] == "layout-service"
+    assert dlq[0]["stream"] == "ocr.completed"

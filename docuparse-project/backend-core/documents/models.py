@@ -142,6 +142,67 @@ class ERPIntegrationAttempt(TimeStampedModel):
     retry_count = models.PositiveIntegerField(default=0)
 
 
+class IntegrationSettings(TimeStampedModel):
+    class ExportFormat(models.TextChoices):
+        JSON = "json", "JSON"
+        JSONL = "jsonl", "JSONL"
+
+    class SuperlogicaMode(models.TextChoices):
+        DISABLED = "disabled", "Disabled"
+        MOCK = "mock", "Mock"
+        SANDBOX = "sandbox", "Sandbox"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name="integration_settings")
+    approved_export_enabled = models.BooleanField(default=True)
+    approved_export_dir = models.CharField(max_length=1024, blank=True)
+    approved_export_format = models.CharField(max_length=16, choices=ExportFormat.choices, default=ExportFormat.JSON)
+    superlogica_base_url = models.URLField(blank=True)
+    superlogica_mode = models.CharField(max_length=32, choices=SuperlogicaMode.choices, default=SuperlogicaMode.DISABLED)
+
+
+class OCRSettings(TimeStampedModel):
+    class Engine(models.TextChoices):
+        DOCLING = "docling", "Docling"
+        OPENROUTER = "openrouter", "OpenRouter"
+        TESSERACT = "tesseract", "Tesseract"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name="ocr_settings")
+    digital_pdf_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.DOCLING)
+    scanned_image_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.OPENROUTER)
+    handwritten_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.OPENROUTER)
+    technical_fallback_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.TESSERACT)
+    openrouter_model = models.CharField(max_length=255, blank=True)
+    openrouter_fallback_model = models.CharField(max_length=255, default="qwen/qwen2.5-vl-72b-instruct")
+    timeout_seconds = models.PositiveIntegerField(default=120)
+    retry_empty_text_enabled = models.BooleanField(default=True)
+    digital_pdf_min_text_blocks = models.PositiveIntegerField(default=5)
+
+
+class EmailSettings(TimeStampedModel):
+    class Provider(models.TextChoices):
+        IMAP = "imap", "IMAP"
+        WEBHOOK = "webhook", "Webhook"
+        MANUAL_TEST = "manual_test", "Manual test"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name="email_settings")
+    provider = models.CharField(max_length=32, choices=Provider.choices, default=Provider.IMAP)
+    inbox_folder = models.CharField(max_length=255, default="INBOX")
+    imap_host = models.CharField(max_length=255, blank=True)
+    imap_port = models.PositiveIntegerField(default=993)
+    username = models.CharField(max_length=255, blank=True)
+    webhook_url = models.CharField(max_length=1024, default="http://127.0.0.1:8070/api/v1/email/messages")
+    accepted_content_types = models.CharField(
+        max_length=1024,
+        default="application/pdf,image/jpeg,image/png,image/tiff,image/webp",
+    )
+    max_attachment_mb = models.PositiveIntegerField(default=20)
+    blocked_senders = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+
+
 class SchemaConfig(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="schema_configs")

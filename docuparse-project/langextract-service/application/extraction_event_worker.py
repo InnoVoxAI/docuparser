@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from domain.extractor import extract_fields
 from events import ExtractionCompletedEvent, LayoutClassifiedEvent
-from docuparse_events import EventBus, event_bus_from_env, sleep_interval
+from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
 from docuparse_observability import log_event
 from docuparse_storage import LocalStorage
 
@@ -106,7 +106,14 @@ class ExtractionWorker:
         for entry in entries:
             try:
                 handle_layout_classified_event(entry.payload, self.storage, self.event_bus)
-            except Exception:
+            except Exception as exc:
+                publish_dead_letter(
+                    self.event_bus,
+                    stream=self.input_stream,
+                    entry=entry,
+                    error=exc,
+                    source="langextract-service",
+                )
                 log_event(
                     logger,
                     "extraction event processing failed",

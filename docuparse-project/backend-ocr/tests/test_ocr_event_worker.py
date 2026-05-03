@@ -146,3 +146,22 @@ def test_ocr_worker_can_use_explicit_mock_mode(monkeypatch, tmp_path) -> None:
     assert completed[0]["data"]["engine_used"] == "mock"
     assert completed[0]["data"]["document_type"] == "digital_pdf"
     assert b"Banco do Brasil" in storage.get_bytes(completed[0]["data"]["raw_text_uri"])
+
+
+def test_ocr_worker_sends_invalid_event_to_dlq(tmp_path) -> None:
+    storage = LocalStorage(tmp_path / "objects")
+    event_bus = LocalJsonlEventBus(tmp_path / "events")
+    event_bus.publish("document.received", {"event_type": "document.received", "document_id": str(uuid4())})
+
+    worker = ocr_event_worker.OCRWorker(
+        storage=storage,
+        event_bus=event_bus,
+        input_stream="document.received",
+        start_at_latest=False,
+    )
+
+    assert worker.run_once() == 1
+    dlq = event_bus.consume("document.received.dlq")
+    assert len(dlq) == 1
+    assert dlq[0]["source"] == "backend-ocr"
+    assert dlq[0]["stream"] == "document.received"

@@ -1,0 +1,213 @@
+
+---
+
+EXTRAÇÃO ESTRUTURADA COM LANGEXTRACT (digital_pdf + scanned_image)
+
+Este guia descreve como implementar uma funcionalidade para extrair dados estruturados a partir de um campo raw_text gerado por OCR, utilizando schemas e LLM (LangExtract), com estratégias diferentes para documentos do tipo digital_pdf e scanned_image.
+
+ETAPA 1 — DEFINIR O SCHEMA
+
+O primeiro passo é definir um schema que represente os dados que você deseja extrair. Esse schema será utilizado como contrato para a saída estruturada.
+
+Exemplo em Python com Pydantic:
+
+from pydantic import BaseModel
+from typing import Optional
+
+class NotaFiscalSchema(BaseModel):
+fornecedor_nome: Optional[str]
+tomador_nome: Optional[str]
+cnpj_fornecedor: Optional[str]
+numero_nota: Optional[str]
+descricao_servico: Optional[str]
+valor_nota: Optional[float]
+retencao: Optional[bool]
+cnpj_tomador: Optional[str]
+
+Use Optional porque o OCR pode falhar ou omitir campos.
+
+ETAPA 2 — CRIAR PROMPTS ESPECÍFICOS
+
+Você deve criar prompts diferentes para cada tipo de documento.
+
+Prompt para digital_pdf:
+
+PROMPT_DIGITAL = """
+Você é um sistema especialista em extração de dados de notas fiscais brasileiras.
+
+O texto fornecido vem de um PDF digital, portanto está bem estruturado.
+
+Extraia os seguintes campos:
+
+* Nome do fornecedor
+* Nome do tomador do serviço
+* CNPJ do fornecedor
+* Número da nota fiscal
+* Descrição do serviço
+* Valor da nota fiscal (converter para float, ex: 1234.56)
+* Se há retenção (true/false)
+* CNPJ do tomador
+
+Regras:
+
+* Se não encontrar um campo, retorne null
+* "Não há retenção" → retencao = false
+* Normalize valores monetários
+* Priorize precisão (não invente valores)
+  """
+
+Prompt para scanned_image:
+
+PROMPT_SCANNED = """
+Você é um sistema especialista em extração de dados de notas fiscais brasileiras.
+
+O texto fornecido vem de OCR de imagem escaneada e pode conter erros como:
+
+* caracteres trocados (O/0, l/1)
+* palavras quebradas
+* espaçamento inconsistente
+
+Extraia os seguintes campos:
+
+* Nome do fornecedor
+* Nome do tomador do serviço
+* CNPJ do fornecedor
+* Número da nota fiscal
+* Descrição do serviço
+* Valor da nota fiscal (converter para float)
+* Se há retenção (true/false)
+* CNPJ do tomador
+
+Regras:
+
+* Corrija erros óbvios de OCR ao interpretar
+* Se um valor parecer ambíguo, escolha o mais provável
+* "Nao ha retencao", "N H RETENCAO", etc → retencao = false
+* Se não encontrar um campo, retorne null
+* Normalize valores monetários
+  """
+
+ETAPA 3 — RECEBER INPUT DO PIPELINE
+
+Sua aplicação já gera algo assim:
+
+document = {
+"file_name": "nota fiscal tabelada.pdf",
+"document_type": "digital_pdf",
+"engine": "docling",
+"raw_text": "..."
+}
+
+ETAPA 4 — ESCOLHER O PROMPT DINAMICAMENTE
+
+def escolher_prompt(document_type):
+if document_type == "digital_pdf":
+return PROMPT_DIGITAL
+elif document_type == "scanned_image":
+return PROMPT_SCANNED
+else:
+return PROMPT_DIGITAL
+
+ETAPA 5 — EXECUTAR EXTRAÇÃO COM LANGEXTRACT
+
+from openai import OpenAI
+client = OpenAI()
+
+def extrair_dados(document):
+prompt = escolher_prompt(document["document_type"])
+
+```
+response = client.responses.parse(  
+    model="gpt-4.1",  
+    input=[  
+        {"role": "system", "content": prompt},  
+        {"role": "user", "content": f"Texto da nota fiscal:\n{document['raw_text']}"}  
+    ],  
+    response_format=NotaFiscalSchema  
+)  
+
+return response.output_parsed  
+```
+
+ETAPA 6 — PÓS-PROCESSAMENTO
+
+import re
+
+def limpar_cnpj(cnpj):
+if not cnpj:
+return None
+return re.sub(r"\D", "", cnpj)
+
+def normalizar_dados(dados):
+dados.cnpj_fornecedor = limpar_cnpj(dados.cnpj_fornecedor)
+dados.cnpj_tomador = limpar_cnpj(dados.cnpj_tomador)
+return dados
+
+ETAPA 7 — FALLBACK COM REGEX
+
+def extrair_valor_regex(texto):
+match = re.search(r"R$\s?([\d.,]+)", texto)
+if match:
+return float(match.group(1).replace(".", "").replace(",", "."))
+return None
+
+Uso:
+
+if dados.valor_nota is None:
+dados.valor_nota = extrair_valor_regex(document["raw_text"])
+
+ETAPA 8 — PIPELINE COMPLETO
+
+def processar_documento(document):
+dados = extrair_dados(document)
+dados = normalizar_dados(dados)
+
+```
+if dados.valor_nota is None:  
+    dados.valor_nota = extrair_valor_regex(document["raw_text"])  
+
+return dados.dict()  
+```
+
+ETAPA 9 — EXECUÇÃO
+
+resultado = processar_documento(document)
+print(resultado)
+
+EXEMPLO DE SAÍDA
+
+{
+"fornecedor_nome": "Empresa ABC Ltda",
+"tomador_nome": "Empresa XYZ",
+"cnpj_fornecedor": "12345678000199",
+"numero_nota": "12345",
+"descricao_servico": "Consultoria em TI",
+"valor_nota": 1250.0,
+"retencao": false,
+"cnpj_tomador": "98765432000111"
+}
+
+DIFERENÇA ENTRE AS ABORDAGENS
+
+digital_pdf: texto limpo, extração mais direta, maior precisão
+scanned_image: texto com ruído, precisa de inferência, maior chance de erro
+
+BOAS PRÁTICAS
+
+* Separar prompts por tipo de documento
+* Nunca confiar 100% no OCR
+* Usar fallback com regex
+* Validar campos críticos
+* Evoluir com exemplos reais (few-shot)
+
+RESUMO
+
+Você implementou uma pipeline que transforma texto bruto de OCR em dados estruturados usando:
+
+* schema (Pydantic)
+* prompts especializados
+* LLM para extração
+* pós-processamento
+* fallback
+
+

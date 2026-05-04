@@ -18,6 +18,7 @@ O projeto é dividido em microserviços:
 
 1.  Certifique-se de ter o Docker e Docker Compose instalados.
 2.  Configure `OPENROUTER_API_KEY` e `OPENROUTER_MODEL` em `.env`.
+    Mantenha `COMPOSE_PROJECT_NAME=docuparse-project` para o Compose reutilizar sempre os mesmos volumes nomeados.
 3.  A partir desta pasta (`docuparse-project`), valide a configuração:
 
 ```bash
@@ -47,6 +48,17 @@ MinIO Console:  http://127.0.0.1:9001
 ```bash
 docker compose down
 ```
+
+### Persistencia de dados local
+
+Os dados locais ficam em volumes nomeados do Docker:
+
+- `docuparse-project_postgres-data`: banco Postgres do backend-core.
+- `docuparse-project_docuparse-storage`: arquivos recebidos e artefatos locais.
+- `docuparse-project_minio-data`: dados do MinIO.
+- `docuparse-project_redis-data`: dados persistidos do Redis.
+
+Use `docker compose stop` para desligar temporariamente e `docker compose start` ou `docker compose up -d` para retomar. `docker compose down` remove containers e rede, mas preserva volumes. Nao use `docker compose down -v`, `docker volume prune` ou remocao manual desses volumes se quiser manter os dados.
 
 ## Observações de Desenvolvimento
 

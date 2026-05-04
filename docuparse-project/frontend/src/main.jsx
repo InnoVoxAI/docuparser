@@ -58,14 +58,31 @@ function App() {
         setLoading(true)
         setError('')
         try {
-            const [documentsResponse, schemasResponse, layoutsResponse] = await Promise.all([
+            const [documentsResult, schemasResult, layoutsResult] = await Promise.allSettled([
                 api.get('/documents'),
                 api.get('/schema-configs'),
                 api.get('/layout-configs'),
             ])
-            setDocuments(documentsResponse.data ?? [])
-            setSchemas(schemasResponse.data ?? [])
-            setLayouts(layoutsResponse.data ?? [])
+
+            if (documentsResult.status === 'fulfilled') {
+                setDocuments(documentsResult.value.data ?? [])
+            } else {
+                setError(readError(documentsResult.reason, 'Nao foi possivel carregar os documentos.'))
+            }
+
+            if (schemasResult.status === 'fulfilled') {
+                setSchemas(schemasResult.value.data ?? [])
+            }
+
+            if (layoutsResult.status === 'fulfilled') {
+                setLayouts(layoutsResult.value.data ?? [])
+            }
+
+            const configError = [schemasResult, layoutsResult].find((result) => result.status === 'rejected')
+            if (documentsResult.status === 'fulfilled' && configError) {
+                setError(readError(configError.reason, 'Documentos carregados, mas nao foi possivel carregar todas as configuracoes.'))
+            }
+
             if (selectedDocumentId) {
                 const detailResponse = await api.get(`/documents/${selectedDocumentId}`)
                 setSelectedDocument(detailResponse.data)

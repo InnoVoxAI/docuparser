@@ -60,6 +60,26 @@ Os dados locais ficam em volumes nomeados do Docker:
 
 Use `docker compose stop` para desligar temporariamente e `docker compose start` ou `docker compose up -d` para retomar. `docker compose down` remove containers e rede, mas preserva volumes. Nao use `docker compose down -v`, `docker volume prune` ou remocao manual desses volumes se quiser manter os dados.
 
+### Backup em servidor proprio
+
+Para instalacao em servidor proprio, o caminho operacional atual e manter Postgres e arquivos nos volumes Docker persistentes. S3 externo nao e necessario por enquanto; MinIO fica disponivel como servico self-hosted caso a operacao precise de object storage separado.
+
+Gere backup local com:
+
+```bash
+./scripts/backup_local_data.sh
+```
+
+O script cria `backups/<timestamp>/` com:
+
+- `postgres.sql`: dump logico do banco.
+- `docuparse-storage.tar.gz`: documentos originais e artefatos locais.
+- `docuparse-events.tar.gz`: eventos locais/auditoria em arquivo.
+- `redis-data.tar.gz`: dados persistidos do Redis.
+- `minio-data.tar.gz`: dados do MinIO self-hosted, se usado.
+
+Copie esse diretorio para armazenamento externo ao servidor, por exemplo outro disco, NAS ou rotina de backup do provedor.
+
 ## Observações de Desenvolvimento
 
 - O `backend-core` executa `python manage.py migrate --noinput` antes de iniciar no compose.
@@ -113,7 +133,8 @@ docker compose exec -T backend-core python manage.py requeue_dlq --stream ocr.co
 - A aba `Configuracoes > Email` persiste os campos operacionais nao sensiveis no backend-core:
   - provider, pasta monitorada, host/porta IMAP e usuario;
   - URL de webhook, tipos aceitos, tamanho maximo e remetentes bloqueados;
-  - senha/app password continua fora da persistencia por enquanto.
+  - senha/app password continua fora da persistencia e deve ser configurada no servidor com `DOCUPARSE_IMAP_PASSWORD` ou, para compatibilidade local, `imap_reader_password`.
+  - o botao `Testar captura IMAP` chama `backend-com` em `POST /api/v1/email/poll`, busca as configuracoes salvas no backend-core e importa anexos aceitos como documentos.
 - A aba `Configuracoes > Integracoes` persiste os campos nao sensiveis no backend-core:
   - exportacao aprovada ativa/inativa;
   - diretorio e formato do export intermediario (`json` ou `jsonl`);

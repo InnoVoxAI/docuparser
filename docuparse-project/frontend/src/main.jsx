@@ -1259,8 +1259,27 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             setEmailSettings((current) => ({ ...current, ...response.data }))
             setMessage('Configuracoes de email salvas.')
             await onChanged()
+            return true
         } catch (requestError) {
             setMessage(readError(requestError, 'Falha ao salvar configuracoes de email.'))
+            return false
+        }
+    }
+
+    const testEmailPoll = async () => {
+        setMessage('')
+        try {
+            const saved = await saveEmailSettings()
+            if (!saved) {
+                return
+            }
+            const response = await comApi.post('/email/poll', null, {
+                params: { tenant_id: emailSettings.tenant_slug || 'tenant-demo' },
+            })
+            setMessage(`Captura IMAP executada: ${response.data.accepted_count || 0} documento(s) importado(s).`)
+            await onChanged()
+        } catch (requestError) {
+            setMessage(readError(requestError, 'Falha ao executar captura IMAP.'))
         }
     }
 
@@ -1513,6 +1532,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
                         settings={emailSettings}
                         onChange={setEmailSettings}
                         onSave={saveEmailSettings}
+                        onPoll={testEmailPoll}
                     />
                 ) : null}
                 {activeSettingsArea === 'whatsapp' ? <WhatsAppSettingsPanel /> : null}
@@ -1694,7 +1714,7 @@ function engineLabel(value) {
     }[value] || value || '-'
 }
 
-function EmailSettingsPanel({ settings, onChange, onSave }) {
+function EmailSettingsPanel({ settings, onChange, onSave, onPoll }) {
     const updateField = (field, value) => {
         onChange((current) => ({ ...current, [field]: value }))
     }
@@ -1703,9 +1723,13 @@ function EmailSettingsPanel({ settings, onChange, onSave }) {
         <div className="space-y-4 p-4">
             <ConfigIntro
                 title="Email"
-                text="Configure como documentos chegam por email. O endpoint simulado ja aceita anexos; IMAP/webhook real precisa de modelos/API antes de substituir variaveis de ambiente."
+                text="Configure como documentos chegam por email. A senha/app password continua fora do banco e deve estar em DOCUPARSE_IMAP_PASSWORD no servidor."
             />
-            <div className="flex justify-end">
+            <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={onPoll} className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
+                    <RefreshCw size={16} aria-hidden="true" />
+                    Testar captura IMAP
+                </button>
                 <button type="button" onClick={onSave} className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700">
                     <CheckCircle2 size={16} aria-hidden="true" />
                     Salvar email

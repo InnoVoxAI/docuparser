@@ -160,6 +160,8 @@ services:
       - ./shared:/shared:ro
       - docuparse-storage:/data/storage
       - docuparse-events:/data/events
+    env_file:
+      - .env
     ports:
       - "8070:8070"
     environment:
@@ -169,6 +171,7 @@ services:
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
       BACKEND_CORE_DOCUMENT_RECEIVED_URL: http://backend-core:8000/api/ocr/events/document-received
+      BACKEND_CORE_EMAIL_SETTINGS_URL: http://backend-core:8000/api/ocr/settings/email
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8070/health', timeout=2)"]
       interval: 10s

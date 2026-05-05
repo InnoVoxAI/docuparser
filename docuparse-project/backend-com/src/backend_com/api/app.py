@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend_com.config import settings
 from backend_com.services.email_capture import process_email_attachments
+from backend_com.services.imap_polling import ImapPollingError, poll_configured_imap_once
 from backend_com.services.manual_upload import process_manual_upload
 from backend_com.services.whatsapp_capture import process_whatsapp_media
 
@@ -101,6 +102,20 @@ async def email_messages(
         subject=subject,
         provider="imap",
     )
+
+
+@app.post("/api/v1/email/poll")
+async def poll_email_messages(
+    tenant_id: str = "tenant-demo",
+    authorization: str | None = Header(default=None),
+):
+    _validate_internal_service_token(authorization)
+    try:
+        return poll_configured_imap_once(tenant_id=tenant_id)
+    except ImapPollingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def _process_email_files(

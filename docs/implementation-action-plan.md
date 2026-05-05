@@ -47,7 +47,7 @@ Estas decisoes podem ser revisadas, mas devem estar explicitas:
 | Backend core | Refeito em Django + DRF, mantendo papel de orquestrador e validacao humana |
 | Frontend | Refeito em React/Vite ou migrado para Next.js se autenticacao/rotas server-side forem priorizadas |
 | Event bus | Redis Streams no ambiente integrado; adaptador local JSONL apenas para smoke/unit tests |
-| Storage | MinIO em desenvolvimento, S3 compativel em producao; adaptador local para testes |
+| Storage | Servidor proprio com volumes persistentes Docker; MinIO self-hosted opcional; S3 externo fora do escopo por enquanto |
 | OCR inicial | OpenRouter para imagens/PDFs escaneados; Docling para PDFs com texto |
 | LangExtract | Microservico separado, sem misturar com OCR |
 | ERP inicial | Export JSON local dos dados aprovados; `backend-conect` completo fica por ultimo, aguardando acesso Superlogica |
@@ -119,7 +119,7 @@ Preencher antes das fases que dependem de integracoes reais.
 - Dependencias: nenhuma
 - Entrega:
   - Decisao documentada: Redis Streams para eventos integrados.
-  - Decisao documentada: MinIO/S3 para storage integrado e adapter local para testes.
+  - Decisao documentada: volumes persistentes Docker no servidor proprio, MinIO self-hosted opcional e adapter local para testes.
   - `docker-compose.yml` planejado com Redis, MinIO e Postgres.
 - Testes:
   - Subir compose minimo com health checks.
@@ -190,7 +190,8 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docuparse-project/shared/docuparse_storage/__init__.py`
   - `pytest -q contracts/tests shared/tests`
 - Pendencias:
-  - Implementar adapter MinIO/S3 real e conectar backend-com/backend-ocr.
+  - Definir se MinIO self-hosted sera usado como camada operacional ou se `docuparse-storage` local permanece como storage principal no servidor proprio.
+  - Manter rotina de backup dos volumes `postgres-data`, `docuparse-storage`, `docuparse-events`, `redis-data` e `minio-data`.
 
 ### T-0004 - Atualizar docker-compose base
 
@@ -302,7 +303,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - `docker compose config --quiet`
   - `backend-com` reconstruido com dependencia `redis` e `DOCUPARSE_EVENT_BUS=redis` no compose.
 - Pendencias:
-  - Conectar storage MinIO/S3 real quando o adapter for implementado.
+  - Conectar MinIO self-hosted somente se a implantacao em servidor proprio exigir object storage separado do volume local.
 
 ### T-0102 - Implementar upload manual
 
@@ -328,17 +329,19 @@ Preencher antes das fases que dependem de integracoes reais.
   - `pytest -q tests` em `docuparse-project/backend-com`
 - Pendencias:
   - Teste de carga de 120 uploads/hora ainda pendente.
-  - Endpoint usa adapters locais; integrar MinIO/Redis Streams reais.
+  - Endpoint usa storage local persistente; integrar MinIO self-hosted somente se decidido para operacao.
 
 ### T-0103 - Implementar captura de email
 
 - Status: REVIEW
-- Atualizado em: 2026-05-01
+- Atualizado em: 2026-05-04
 - Modulos: backend-com
 - Dependencias: T-0101, T-0002, T-0003
 - Entrega:
   - `POST /api/v1/email/webhook`.
   - `POST /api/v1/email/messages` para IMAP/polling.
+  - `POST /api/v1/email/poll` executa uma coleta IMAP sob demanda para teste operacional.
+  - Coleta IMAP busca configuracoes nao sensiveis em `backend-core` (`settings/email`) e usa senha/app password por variavel de ambiente (`DOCUPARSE_IMAP_PASSWORD` ou `imap_reader_password` local).
   - Contas por tenant.
   - Cada anexo aceito vira um `document.received`.
 - Testes:
@@ -350,12 +353,16 @@ Preencher antes das fases que dependem de integracoes reais.
   - Email com N anexos gera N documentos aceitos e N eventos.
 - Evidencia:
   - `docuparse-project/backend-com/src/backend_com/services/email_capture.py`
+  - `docuparse-project/backend-com/src/backend_com/services/imap_polling.py`
   - `docuparse-project/backend-com/src/backend_com/services/document_ingest.py`
   - `docuparse-project/backend-com/src/backend_com/api/app.py`
   - `docuparse-project/backend-com/tests/test_backend_com_app.py`
   - `pytest -q tests` em `docuparse-project/backend-com`
+  - `npm run build` em `docuparse-project/frontend`
+  - `docker compose up -d --build backend-com`
 - Pendencias:
-  - Endpoint `/api/v1/email/messages` simula IMAP/polling via multipart; integrar IMAP real quando credenciais forem fornecidas.
+  - Automatizar poller em processo recorrente quando a frequencia operacional for definida; por enquanto a coleta e sob demanda para teste.
+  - Persistencia segura de secrets por tenant ainda pendente; senha fica em variavel de ambiente no servidor.
   - Teste de carga de 300 emails/hora ainda pendente.
 
 ### T-0104 - Implementar captura de WhatsApp
@@ -516,7 +523,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - `curl -s -i http://127.0.0.1:8080/health`
 - Pendencias:
   - Usar `backend-ocr-worker` no profile `async-workers` com `DOCUPARSE_AUTO_PROCESS_OCR=false` quando a virada assincrona for feita.
-  - Conectar storage MinIO/S3 real; teste atual usa adapter local.
+  - Storage operacional permanece em volume local persistente no servidor proprio; MinIO self-hosted e opcional.
   - Carga simulada com OpenRouter mock ainda pendente.
 
 ## Fase 3 - Layout Service

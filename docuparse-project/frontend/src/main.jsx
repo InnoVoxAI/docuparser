@@ -884,6 +884,15 @@ const BOLETO_DEFAULT_SCHEMA_ID = 'boleto_default'
 // Default model display name for boleto templates.
 const BOLETO_DEFAULT_MODEL_NAME = 'BOLETO DEFAULT'
 
+// Default model metadata used for nota fiscal templates.
+const NOTA_FISCAL_DEFAULT_SCHEMA_ID = 'nota_fiscal_default'
+// Default model display name for nota fiscal templates.
+const NOTA_FISCAL_DEFAULT_MODEL_NAME = 'NOTA FISCAL DEFAULT'
+
+// Base defaults used when no auto template is detected.
+const DEFAULT_SCHEMA_ID = 'recibo_servico'
+const DEFAULT_MODEL_NAME = 'Recibo de servico'
+
 // Default boleto schema fields for the Settings > Extracao flow.
 const BOLETO_DEFAULT_FIELDS = [
     { name: 'beneficiario_nome', type: 'string', required: true, rule: 'Administradora ou condominio credor.' },
@@ -896,6 +905,18 @@ const BOLETO_DEFAULT_FIELDS = [
     { name: 'data_vencimento', type: 'date', required: true, rule: 'Formato DD/MM/AAAA.' },
     { name: 'valor_boleto', type: 'decimal', required: true, rule: 'Converter para float.' },
     { name: 'linha_digitavel', type: 'string', required: true, rule: 'Sequencia de ~47 digitos, sem espacos.' },
+]
+
+// Default nota fiscal schema fields for the Settings > Extracao flow.
+const NOTA_FISCAL_DEFAULT_FIELDS = [
+    { name: 'fornecedor_nome', type: 'string', required: true, rule: 'Razao social do fornecedor.' },
+    { name: 'tomador_nome', type: 'string', required: true, rule: 'Razao social do tomador.' },
+    { name: 'cnpj_fornecedor', type: 'string', required: true, rule: 'CNPJ do fornecedor; normalizar numerico.' },
+    { name: 'numero_nota', type: 'string', required: true, rule: 'Numero da nota fiscal.' },
+    { name: 'descricao_servico', type: 'string', required: false, rule: 'Descricao do servico.' },
+    { name: 'valor_nota', type: 'decimal', required: true, rule: 'Converter para float.' },
+    { name: 'retencao', type: 'boolean', required: false, rule: 'True/false indicando retencao.' },
+    { name: 'cnpj_tomador', type: 'string', required: false, rule: 'CNPJ do tomador; normalizar numerico.' },
 ]
 
 // Prompt used for digital PDFs.
@@ -960,6 +981,94 @@ const PROMPT_BOLETO_SCANNED = [
     '- Se nao encontrar um campo, value = null e confidence = 0',
 ].join('\n')
 
+// Prompt used for digital nota fiscal PDFs.
+const PROMPT_NOTA_FISCAL_DIGITAL = [
+    'Voce e um sistema especialista em extracao de dados de notas fiscais brasileiras.',
+    '',
+    'O texto fornecido vem de um PDF digital, portanto esta bem estruturado.',
+    '',
+    'Extraia os seguintes campos:',
+    '',
+    '- Nome do fornecedor',
+    '- Nome do tomador do servico',
+    '- CNPJ do fornecedor',
+    '- Numero da nota fiscal',
+    '- Descricao do servico',
+    '- Valor da nota fiscal (converter para float, ex: 1234.56)',
+    '- Se ha retencao (true/false)',
+    '- CNPJ do tomador',
+    '',
+    'Formato de saida:',
+    '',
+    'Para cada campo, retorne um objeto contendo:',
+    '- value: valor extraido (ou null)',
+    '- confidence: numero entre 0 e 1 indicando a confianca na extracao',
+    '',
+    'Exemplo:',
+    '',
+    '{',
+    '  "cnpj_fornecedor": {',
+    '    "value": "12345678000199",',
+    '    "confidence": 0.98',
+    '  }',
+    '}',
+    '',
+    'Regras:',
+    '- Se nao encontrar um campo, value = null e confidence = 0',
+    '- "Nao ha retencao" -> retencao = false',
+    '- Normalize valores monetarios',
+    '- Nao invente valores',
+    '- Use alta confianca apenas quando o valor estiver claramente explicito',
+    '- Use confianca media quando houver pequena ambiguidade',
+    '- Use baixa confianca quando houver inferencia',
+].join('\n')
+
+// Prompt used for scanned nota fiscal images.
+const PROMPT_NOTA_FISCAL_SCANNED = [
+    'Voce e um sistema especialista em extracao de dados de notas fiscais brasileiras.',
+    '',
+    'O texto fornecido vem de OCR de imagem escaneada e pode conter erros como:',
+    '- caracteres trocados (O/0, l/1)',
+    '- palavras quebradas',
+    '- espacamento inconsistente',
+    '',
+    'Extraia os seguintes campos:',
+    '',
+    '- Nome do fornecedor',
+    '- Nome do tomador do servico',
+    '- CNPJ do fornecedor',
+    '- Numero da nota fiscal',
+    '- Descricao do servico',
+    '- Valor da nota fiscal (converter para float)',
+    '- Se ha retencao (true/false)',
+    '- CNPJ do tomador',
+    '',
+    'Formato de saida:',
+    '',
+    'Para cada campo, retorne um objeto contendo:',
+    '- value: valor extraido (ou null)',
+    '- confidence: numero entre 0 e 1 indicando a confianca',
+    '',
+    'Exemplo:',
+    '',
+    '{',
+    '  "valor_nota": {',
+    '    "value": 1250.0,',
+    '    "confidence": 0.85',
+    '  }',
+    '}',
+    '',
+    'Regras:',
+    '- Corrija erros obvios de OCR ao interpretar',
+    '- Se um valor parecer ambiguo, escolha o mais provavel',
+    '- Se nao encontrar um campo, value = null e confidence = 0',
+    '- "Nao ha retencao", "N H RETENCAO", etc -> retencao = false',
+    '- Normalize valores monetarios',
+    '- Use confianca baixa se houver ruido significativo no OCR',
+    '- Use confianca media se houver inferencia',
+    '- Use confianca alta apenas se o valor estiver claramente legivel',
+].join('\n')
+
 const DEFAULT_LANGEXTRACT_FIELDS = [
     { name: 'fornecedor_nome', type: 'string', required: true, rule: 'Extrair exatamente como aparece no documento.' },
     { name: 'fornecedor_cnpj', type: 'cnpj', required: false, rule: 'Normalizar para 00.000.000/0000-00 quando existir.' },
@@ -1000,6 +1109,17 @@ function boletoPromptForDocumentType(documentType) {
     return PROMPT_BOLETO_DIGITAL
 }
 
+// Resolve the nota fiscal prompt based on the document classification.
+function notaFiscalPromptForDocumentType(documentType) {
+    if (documentType === 'digital_pdf') {
+        return PROMPT_NOTA_FISCAL_DIGITAL
+    }
+    if (documentType === 'scanned_image' || documentType === 'handwritten_complex') {
+        return PROMPT_NOTA_FISCAL_SCANNED
+    }
+    return PROMPT_NOTA_FISCAL_DIGITAL
+}
+
 // Compute a boleto confidence score using OCR text signals.
 function scoreBoletoText(rawText) {
     if (!rawText) {
@@ -1032,9 +1152,52 @@ function scoreBoletoText(rawText) {
     return score
 }
 
+// Compute a nota fiscal confidence score using OCR text signals.
+function scoreNotaFiscalText(rawText) {
+    if (!rawText) {
+        return 0
+    }
+    const text = String(rawText).toLowerCase()
+    let score = 0
+    const keywords = [
+        'nota fiscal',
+        'nf-e',
+        'nfe',
+        'chave de acesso',
+        'icms',
+        'ipi',
+        'pis',
+        'cofins',
+        'iss',
+        'tomador',
+        'fornecedor',
+        'descricao',
+        'quantidade',
+        'valor unitario',
+        'valor total',
+        'produtos',
+        'servicos',
+    ]
+    keywords.forEach((keyword) => {
+        if (text.includes(keyword)) {
+            score += 1
+        }
+    })
+    const accessKeyRegex = /\b\d{44}\b/
+    if (accessKeyRegex.test(text)) {
+        score += 3
+    }
+    return score
+}
+
 // Decide if a document should be treated as boleto.
 function isLikelyBoletoText(rawText, threshold = 4) {
     return scoreBoletoText(rawText) >= threshold
+}
+
+// Decide if a document should be treated as nota fiscal.
+function isLikelyNotaFiscalText(rawText, threshold = 4) {
+    return scoreNotaFiscalText(rawText) >= threshold
 }
 
 function SettingsView({ schemas, layouts, documents, onChanged }) {
@@ -1116,6 +1279,11 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         () => schemas.find((schema) => schema.schema_id === BOLETO_DEFAULT_SCHEMA_ID),
         [schemas],
     )
+    // Cache the nota fiscal default schema if it exists in the backend list.
+    const notaFiscalSchema = useMemo(
+        () => schemas.find((schema) => schema.schema_id === NOTA_FISCAL_DEFAULT_SCHEMA_ID),
+        [schemas],
+    )
 
     const activeLayout = layouts.find((layout) => (
         layout.schema_config_id === selectedSchemaId
@@ -1155,14 +1323,57 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
     // Auto-select BOLETO DEFAULT when OCR text indicates a boleto.
     useEffect(() => {
         const rawText = referenceDocument?.full_transcription || ''
-        if (!rawText || !isLikelyBoletoText(rawText)) {
+        if (!rawText) {
             return
         }
         if (schemaSelectionSource === 'manual') {
             return
         }
 
+        const isNotaFiscal = isLikelyNotaFiscalText(rawText)
+        const isBoleto = !isNotaFiscal && isLikelyBoletoText(rawText)
         const detectedDocumentType = referenceDocument?.document_type || schemaForm.document_type
+
+        if (isNotaFiscal) {
+            const notaPrompt = notaFiscalPromptForDocumentType(detectedDocumentType)
+            if (notaFiscalSchema) {
+                loadExistingSchema(notaFiscalSchema.id, { source: 'auto' })
+                setSchemaForm((current) => ({
+                    ...current,
+                    model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
+                    schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID,
+                    document_type: detectedDocumentType,
+                }))
+                setPrompt(notaPrompt)
+                return
+            }
+            setSelectedSchemaId('')
+            setSchemaForm((current) => ({
+                ...current,
+                model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
+                schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID,
+                document_type: detectedDocumentType,
+            }))
+            setFields(NOTA_FISCAL_DEFAULT_FIELDS)
+            setPrompt(notaPrompt)
+            setExamples([])
+            return
+        }
+
+        if (!isBoleto) {
+            if ([BOLETO_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_SCHEMA_ID].includes(schemaForm.schema_id)) {
+                setSelectedSchemaId('')
+                setSchemaForm((current) => ({
+                    ...current,
+                    model_name: DEFAULT_MODEL_NAME,
+                    schema_id: DEFAULT_SCHEMA_ID,
+                }))
+                setFields(DEFAULT_LANGEXTRACT_FIELDS)
+                setPrompt(DEFAULT_LANGEXTRACT_PROMPT)
+                setExamples([])
+            }
+            return
+        }
         const boletoPrompt = boletoPromptForDocumentType(detectedDocumentType)
 
         if (boletoSchema) {
@@ -1187,7 +1398,14 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         setFields(BOLETO_DEFAULT_FIELDS)
         setPrompt(boletoPrompt)
         setExamples([])
-    }, [referenceDocument?.id, referenceDocument?.full_transcription, referenceDocument?.document_type, boletoSchema, schemaSelectionSource])
+    }, [
+        referenceDocument?.id,
+        referenceDocument?.full_transcription,
+        referenceDocument?.document_type,
+        boletoSchema,
+        notaFiscalSchema,
+        schemaSelectionSource,
+    ])
 
     // Keep the boleto prompt aligned with the detected document type.
     useEffect(() => {
@@ -1197,6 +1415,17 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         const boletoPrompt = boletoPromptForDocumentType(schemaForm.document_type)
         if (prompt !== boletoPrompt) {
             setPrompt(boletoPrompt)
+        }
+    }, [schemaForm.schema_id, schemaForm.document_type])
+
+    // Keep the nota fiscal prompt aligned with the detected document type.
+    useEffect(() => {
+        if (schemaForm.schema_id !== NOTA_FISCAL_DEFAULT_SCHEMA_ID) {
+            return
+        }
+        const notaPrompt = notaFiscalPromptForDocumentType(schemaForm.document_type)
+        if (prompt !== notaPrompt) {
+            setPrompt(notaPrompt)
         }
     }, [schemaForm.schema_id, schemaForm.document_type])
 

@@ -996,6 +996,11 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
                 if (!ignore) {
                     setReferenceDocument(response.data)
                     setTestOutput(buildLangExtractPreview(response.data.full_transcription || '', fields))
+                    const docType = response.data.document_type
+                    if (docType) {
+                        setSchemaForm((current) => ({ ...current, document_type: docType }))
+                        setLayoutForm((current) => ({ ...current, document_type: docType }))
+                    }
                 }
             })
             .catch((requestError) => {

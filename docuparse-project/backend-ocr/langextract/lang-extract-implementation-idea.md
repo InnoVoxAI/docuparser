@@ -507,3 +507,626 @@ fallback regex       ←── se valor_nota == None
      ▼
 dados estruturados (dict)
 ```
+
+---
+
+## Documento: Fatura de Condomínio
+
+Aplicável a faturas de serviços públicos (água, energia, gás) e prestadores recorrentes recebidas pelo condomínio.
+
+### Schema
+
+```python
+class FaturaCondominio(BaseModel):
+    emitente_nome: Campo          # empresa emissora (COMPESA, CELPE, etc.)
+    destinatario_nome: Campo      # nome do condomínio destinatário
+    cnpj_emitente: Campo
+    cnpj_destinatario: Campo
+    numero_fatura: Campo          # número/código da fatura ou conta
+    descricao_servico: Campo      # tipo: água, energia elétrica, gás, etc.
+    mes_referencia: Campo         # "MM/AAAA"
+    data_vencimento: Campo        # "DD/MM/AAAA"
+    valor_total: Campo            # float
+    valor_multa_juros: Campo      # float ou null (se não houver)
+```
+
+### Prompt para `digital_pdf`
+
+```python
+PROMPT_FATURA_DIGITAL = """
+Você é um sistema especialista em extração de dados de faturas de serviços públicos e prestadores recebidas por condomínios brasileiros.
+
+O texto fornecido vem de um PDF digital, portanto está bem estruturado.
+
+Extraia os seguintes campos:
+
+- Nome do emitente (empresa que emitiu a fatura, ex: COMPESA, CELPE, Gás Natural)
+- Nome do destinatário (nome do condomínio ou responsável)
+- CNPJ do emitente
+- CNPJ do destinatário
+- Número/código da fatura ou conta
+- Descrição do serviço (água, energia elétrica, gás, manutenção, etc.)
+- Mês de referência da cobrança
+- Data de vencimento
+- Valor total a pagar (converter para float)
+- Valor de multa/juros se houver (converter para float, null se não houver)
+
+Formato de saída:
+
+Para cada campo, retorne um objeto contendo:
+- value: valor extraído (ou null)
+- confidence: número entre 0 e 1
+
+Regras:
+- Se não encontrar um campo, value = null e confidence = 0
+- Normalize valores monetários (R$ 1.250,00 → 1250.0)
+- Normalize datas para o formato DD/MM/AAAA
+- Extraia o mês de referência como "MM/AAAA"
+- Não invente valores
+- Use alta confiança apenas quando o valor estiver claramente explícito
+"""
+```
+
+### Prompt para `scanned_image`
+
+```python
+PROMPT_FATURA_SCANNED = """
+Você é um sistema especialista em extração de dados de faturas de serviços públicos e prestadores recebidas por condomínios brasileiros.
+
+O texto fornecido vem de OCR de imagem escaneada e pode conter erros como:
+- caracteres trocados (O/0, l/1, 5/S)
+- valores monetários com espaçamento inconsistente
+- datas com separadores trocados
+
+Extraia os seguintes campos:
+
+- Nome do emitente (empresa que emitiu a fatura)
+- Nome do destinatário (nome do condomínio)
+- CNPJ do emitente
+- CNPJ do destinatário
+- Número/código da fatura
+- Descrição do serviço
+- Mês de referência
+- Data de vencimento
+- Valor total a pagar (converter para float)
+- Valor de multa/juros se houver (null se ausente)
+
+Regras:
+- Corrija erros óbvios de OCR ao interpretar (ex: "CNPJ O2.315" → "CNPJ 02.315")
+- Normalize valores monetários
+- Normalize datas para DD/MM/AAAA
+- Extraia o mês de referência como "MM/AAAA"
+- Se não encontrar um campo, value = null e confidence = 0
+- Use confiança baixa para campos com ruído significativo
+"""
+```
+
+### Exemplos Few-Shot
+
+#### `digital_pdf` — Conta de Água (COMPESA)
+
+**Texto bruto (input):**
+
+```
+COMPESA — Companhia Pernambucana de Saneamento
+CNPJ: 10.786.460/0001-30
+Conta de Fornecimento de Água e Esgoto
+
+Unidade Consumidora: CONDOMÍNIO DO EDIFÍCIO RECIFE COLONIAL
+CNPJ: 02.315.237/0001-97
+Referência: Março/2025
+Vencimento: 15/04/2025
+
+Consumo registrado: 245 m³
+Valor da conta: R$ 1.872,40
+Multa por atraso: —
+Total a pagar: R$ 1.872,40
+```
+
+**Saída esperada (output):**
+
+```json
+{
+  "emitente_nome":      { "value": "COMPESA — Companhia Pernambucana de Saneamento", "confidence": 0.99 },
+  "destinatario_nome":  { "value": "CONDOMÍNIO DO EDIFÍCIO RECIFE COLONIAL", "confidence": 0.99 },
+  "cnpj_emitente":      { "value": "10786460000130", "confidence": 0.98 },
+  "cnpj_destinatario":  { "value": "02315237000197", "confidence": 0.98 },
+  "numero_fatura":      { "value": null, "confidence": 0 },
+  "descricao_servico":  { "value": "Fornecimento de Água e Esgoto", "confidence": 0.97 },
+  "mes_referencia":     { "value": "03/2025", "confidence": 0.99 },
+  "data_vencimento":    { "value": "15/04/2025", "confidence": 0.99 },
+  "valor_total":        { "value": 1872.40, "confidence": 0.99 },
+  "valor_multa_juros":  { "value": null, "confidence": 0.95 }
+}
+```
+
+```python
+FEW_SHOT_FATURA_DIGITAL = [
+    {
+        "role": "user",
+        "content": (
+            "Texto do documento:\n"
+            "COMPESA — Companhia Pernambucana de Saneamento\n"
+            "CNPJ: 10.786.460/0001-30\n"
+            "Conta de Fornecimento de Água e Esgoto\n"
+            "Unidade Consumidora: CONDOMÍNIO DO EDIFÍCIO RECIFE COLONIAL\n"
+            "CNPJ: 02.315.237/0001-97\n"
+            "Referência: Março/2025\n"
+            "Vencimento: 15/04/2025\n"
+            "Consumo registrado: 245 m³\n"
+            "Valor da conta: R$ 1.872,40\n"
+            "Multa por atraso: —\n"
+            "Total a pagar: R$ 1.872,40"
+        )
+    },
+    {
+        "role": "assistant",
+        "content": """{
+  "emitente_nome":      { "value": "COMPESA — Companhia Pernambucana de Saneamento", "confidence": 0.99 },
+  "destinatario_nome":  { "value": "CONDOMÍNIO DO EDIFÍCIO RECIFE COLONIAL", "confidence": 0.99 },
+  "cnpj_emitente":      { "value": "10786460000130", "confidence": 0.98 },
+  "cnpj_destinatario":  { "value": "02315237000197", "confidence": 0.98 },
+  "numero_fatura":      { "value": null, "confidence": 0 },
+  "descricao_servico":  { "value": "Fornecimento de Água e Esgoto", "confidence": 0.97 },
+  "mes_referencia":     { "value": "03/2025", "confidence": 0.99 },
+  "data_vencimento":    { "value": "15/04/2025", "confidence": 0.99 },
+  "valor_total":        { "value": 1872.40, "confidence": 0.99 },
+  "valor_multa_juros":  { "value": null, "confidence": 0.95 }
+}"""
+    }
+]
+```
+
+### O que esses exemplos ensinam ao modelo (`fatura`)
+
+| Campo | Padrão aprendido |
+|-------|-----------------|
+| `mes_referencia` | `"Março/2025"` → `"03/2025"` |
+| `valor_multa_juros` | Traço ou ausência de campo → `null` |
+| `numero_fatura` | Ausência de número explícito → `null` |
+| `cnpj_emitente` / `cnpj_destinatario` | Remover pontos, barras e traços |
+
+### Diferença entre as abordagens
+
+| Aspecto | `digital_pdf` | `scanned_image` |
+|---------|--------------|-----------------|
+| Layout | Tabelas e campos rotulados | Texto corrido com ruído |
+| Valor monetário | Facilmente identificável | Pode conter artefatos (`R S 1.872,40`) |
+| Datas | Formato consistente | Separadores podem ser trocados |
+| Mês de referência | Campo explícito | Pode estar no cabeçalho ou rodapé |
+
+---
+
+## Documento: Boleto de Condomínio
+
+Aplicável a boletos bancários de cobrança da taxa condominial ou serviços avulsos emitidos pela administradora.
+
+### Schema
+
+```python
+class BoletoCondominio(BaseModel):
+    beneficiario_nome: Campo      # administradora ou condomínio credor
+    pagador_nome: Campo           # condômino ou empresa devedora
+    cnpj_cpf_beneficiario: Campo
+    cnpj_cpf_pagador: Campo
+    numero_documento: Campo       # nosso número ou referência interna
+    descricao: Campo              # "Taxa condominial — Abril/2025 — Apto 301"
+    mes_referencia: Campo         # "MM/AAAA"
+    data_vencimento: Campo        # "DD/MM/AAAA"
+    valor_boleto: Campo           # float
+    linha_digitavel: Campo        # string com ~47 dígitos, sem espaços
+```
+
+### Prompt para `digital_pdf`
+
+```python
+PROMPT_BOLETO_DIGITAL = """
+Você é um sistema especialista em extração de dados de boletos bancários de condomínios brasileiros.
+
+O texto fornecido vem de um PDF digital, portanto os campos estão bem delimitados.
+
+Extraia os seguintes campos:
+
+- Nome do beneficiário (administradora ou condomínio credor)
+- Nome do pagador (condômino ou empresa devedora)
+- CNPJ ou CPF do beneficiário
+- CNPJ ou CPF do pagador
+- Número do documento (nosso número ou referência interna)
+- Descrição da cobrança (ex: "Taxa condominial Abril/2025 — Apto 502")
+- Mês de referência da cobrança
+- Data de vencimento
+- Valor do boleto (converter para float)
+- Linha digitável (sequência numérica de ~47 dígitos, sem espaços)
+
+Formato de saída:
+
+Para cada campo, retorne um objeto contendo:
+- value: valor extraído (ou null)
+- confidence: número entre 0 e 1
+
+Regras:
+- Normalize CNPJ/CPF removendo pontos, traços e barras
+- Normalize datas para DD/MM/AAAA
+- A linha digitável deve ser retornada apenas com dígitos (remover espaços)
+- Não invente valores
+- Se não encontrar um campo, value = null e confidence = 0
+"""
+```
+
+### Prompt para `scanned_image`
+
+```python
+PROMPT_BOLETO_SCANNED = """
+Você é um sistema especialista em extração de dados de boletos bancários de condomínios brasileiros.
+
+O texto fornecido vem de OCR de imagem escaneada. Boletos escaneados frequentemente têm:
+- linha digitável com dígitos trocados (0/O, 1/l)
+- campos "Beneficiário" e "Pagador" misturados com dados do banco
+- valores duplicados (valor cobrado + valor por extenso)
+
+Extraia os seguintes campos:
+
+- Nome do beneficiário
+- Nome do pagador
+- CNPJ ou CPF do beneficiário
+- CNPJ ou CPF do pagador
+- Número do documento
+- Descrição da cobrança
+- Mês de referência
+- Data de vencimento
+- Valor do boleto (converter para float)
+- Linha digitável (preferir a sequência mais longa de números agrupados)
+
+Regras:
+- Para a linha digitável, use a sequência que parece ter ~47 dígitos, mesmo com erros de OCR
+- Use confiança baixa para a linha digitável se houver ruído significativo
+- Corrija erros óbvios de OCR nos campos numéricos
+- Se não encontrar um campo, value = null e confidence = 0
+"""
+```
+
+### Exemplos Few-Shot
+
+#### `digital_pdf` — Boleto de Taxa Condominial
+
+**Texto bruto (input):**
+
+```
+ADMINISTRADORA PREDIAL ATLAS LTDA
+CNPJ: 34.521.088/0001-55
+Beneficiário: Condomínio do Edifício Recife Colonial
+
+Pagador: CARLOS EDUARDO MENDES SANTOS
+CPF: 123.456.789-00 — Unidade: 502
+
+Descrição: Taxa condominial ordinária — Maio/2025 — Apto 502
+Nosso Número: 00291837465
+Vencimento: 10/05/2025
+Valor: R$ 850,00
+
+Linha Digitável:
+34191.09008 05291.837460 05000.850010 1 10050000085000
+```
+
+**Saída esperada (output):**
+
+```json
+{
+  "beneficiario_nome":      { "value": "ADMINISTRADORA PREDIAL ATLAS LTDA", "confidence": 0.99 },
+  "pagador_nome":           { "value": "CARLOS EDUARDO MENDES SANTOS", "confidence": 0.99 },
+  "cnpj_cpf_beneficiario":  { "value": "34521088000155", "confidence": 0.98 },
+  "cnpj_cpf_pagador":       { "value": "12345678900", "confidence": 0.98 },
+  "numero_documento":       { "value": "00291837465", "confidence": 0.97 },
+  "descricao":              { "value": "Taxa condominial ordinária — Maio/2025 — Apto 502", "confidence": 0.99 },
+  "mes_referencia":         { "value": "05/2025", "confidence": 0.99 },
+  "data_vencimento":        { "value": "10/05/2025", "confidence": 0.99 },
+  "valor_boleto":           { "value": 850.0, "confidence": 0.99 },
+  "linha_digitavel":        { "value": "34191090080529183746005000850010110050000085000", "confidence": 0.95 }
+}
+```
+
+```python
+FEW_SHOT_BOLETO_DIGITAL = [
+    {
+        "role": "user",
+        "content": (
+            "Texto do documento:\n"
+            "ADMINISTRADORA PREDIAL ATLAS LTDA\n"
+            "CNPJ: 34.521.088/0001-55\n"
+            "Beneficiário: Condomínio do Edifício Recife Colonial\n"
+            "Pagador: CARLOS EDUARDO MENDES SANTOS\n"
+            "CPF: 123.456.789-00 — Unidade: 502\n"
+            "Descrição: Taxa condominial ordinária — Maio/2025 — Apto 502\n"
+            "Nosso Número: 00291837465\n"
+            "Vencimento: 10/05/2025\n"
+            "Valor: R$ 850,00\n"
+            "Linha Digitável:\n"
+            "34191.09008 05291.837460 05000.850010 1 10050000085000"
+        )
+    },
+    {
+        "role": "assistant",
+        "content": """{
+  "beneficiario_nome":      { "value": "ADMINISTRADORA PREDIAL ATLAS LTDA", "confidence": 0.99 },
+  "pagador_nome":           { "value": "CARLOS EDUARDO MENDES SANTOS", "confidence": 0.99 },
+  "cnpj_cpf_beneficiario":  { "value": "34521088000155", "confidence": 0.98 },
+  "cnpj_cpf_pagador":       { "value": "12345678900", "confidence": 0.98 },
+  "numero_documento":       { "value": "00291837465", "confidence": 0.97 },
+  "descricao":              { "value": "Taxa condominial ordinária — Maio/2025 — Apto 502", "confidence": 0.99 },
+  "mes_referencia":         { "value": "05/2025", "confidence": 0.99 },
+  "data_vencimento":        { "value": "10/05/2025", "confidence": 0.99 },
+  "valor_boleto":           { "value": 850.0, "confidence": 0.99 },
+  "linha_digitavel":        { "value": "34191090080529183746005000850010110050000085000", "confidence": 0.95 }
+}"""
+    }
+]
+```
+
+### O que esses exemplos ensinam ao modelo (`boleto`)
+
+| Campo | Padrão aprendido |
+|-------|-----------------|
+| `cnpj_cpf_pagador` | CPF de pessoa física como pagador |
+| `linha_digitavel` | Remover espaços e pontos da linha digitável impressa |
+| `mes_referencia` | Extrair do campo `descricao` quando não há campo dedicado |
+| `beneficiario_nome` | Distinguir a administradora do condomínio no campo beneficiário |
+
+### Diferença entre as abordagens
+
+| Aspecto | `digital_pdf` | `scanned_image` |
+|---------|--------------|-----------------|
+| Linha digitável | Bem delimitada e confiável | Alta taxa de erros de OCR — confiança reduzida |
+| Pagador/beneficiário | Campos rotulados | Texto corrido — inferência necessária |
+| Valor | Único e claro | Pode aparecer por extenso e numeral |
+
+---
+
+## Documento: Recibo de Pagamento
+
+Aplicável a recibos de pagamentos emitidos ou recebidos pelo condomínio (prestadores, condôminos, funcionários).
+
+### Schema
+
+```python
+class ReciboCondominio(BaseModel):
+    recebedor_nome: Campo         # quem recebeu o pagamento
+    pagador_nome: Campo           # quem efetuou o pagamento (geralmente o condomínio)
+    cpf_cnpj_recebedor: Campo
+    cpf_cnpj_pagador: Campo
+    numero_recibo: Campo          # número sequencial, se houver
+    descricao_pagamento: Campo    # motivo/descrição do pagamento
+    data_pagamento: Campo         # "DD/MM/AAAA"
+    valor_recebido: Campo         # float
+    forma_pagamento: Campo        # "PIX", "TED", "dinheiro", "cheque", etc.
+```
+
+### Prompt para `digital_pdf`
+
+```python
+PROMPT_RECIBO_DIGITAL = """
+Você é um sistema especialista em extração de dados de recibos de pagamento de condomínios brasileiros.
+
+O texto fornecido vem de um PDF digital.
+
+Extraia os seguintes campos:
+
+- Nome de quem recebeu o pagamento (recebedor)
+- Nome de quem efetuou o pagamento (pagador — geralmente o condomínio)
+- CPF ou CNPJ do recebedor
+- CPF ou CNPJ do pagador
+- Número do recibo (se houver)
+- Descrição do pagamento (serviço prestado, motivo do repasse, etc.)
+- Data do pagamento
+- Valor recebido (converter para float)
+- Forma de pagamento (PIX, TED, dinheiro, cheque, etc.)
+
+Formato de saída:
+
+Para cada campo, retorne um objeto contendo:
+- value: valor extraído (ou null)
+- confidence: número entre 0 e 1
+
+Regras:
+- Normalize CPF/CNPJ removendo pontos, traços e barras
+- Normalize datas para DD/MM/AAAA
+- Se não encontrar a forma de pagamento, value = null
+- Se não encontrar um campo, value = null e confidence = 0
+- Não invente valores
+"""
+```
+
+### Prompt para `scanned_image`
+
+```python
+PROMPT_RECIBO_SCANNED = """
+Você é um sistema especialista em extração de dados de recibos de pagamento de condomínios brasileiros.
+
+O texto fornecido vem de OCR de imagem escaneada. Recibos escaneados frequentemente:
+- são manuscritos ou semi-manuscritos
+- contêm valor por extenso além do valor numérico
+- não têm número de recibo formal
+
+Extraia os seguintes campos:
+
+- Nome de quem recebeu o pagamento
+- Nome de quem efetuou o pagamento (geralmente o condomínio)
+- CPF ou CNPJ do recebedor
+- CPF ou CNPJ do pagador
+- Número do recibo (se houver)
+- Descrição do pagamento
+- Data do pagamento
+- Valor recebido (preferir valor numérico; se ausente, converter o valor por extenso para float)
+- Forma de pagamento
+
+Regras:
+- Se houver valor por extenso e numérico, prefira o numérico
+- "Pix", "pix", "PIX" → forma_pagamento = "PIX"
+- Se não encontrar um campo, value = null e confidence = 0
+- Use confiança baixa para campos inferidos a partir de texto manuscrito ruidoso
+"""
+```
+
+### Exemplos Few-Shot
+
+#### `digital_pdf` — Recibo de Prestador de Serviço
+
+**Texto bruto (input):**
+
+```
+RECIBO DE PAGAMENTO
+
+Recibo Nº: 00147
+
+Recebi do CONDOMÍNIO DO EDIFÍCIO RECIFE COLONIAL
+CNPJ: 02.315.237/0001-97
+
+a importância de R$ 2.400,00 (dois mil e quatrocentos reais),
+referente à prestação de serviços de manutenção elétrica nas
+áreas comuns do edifício, realizada em 28/04/2025.
+
+Recebedor: JOÃO FERREIRA ELÉTRICA ME
+CNPJ: 47.821.033/0001-72
+
+Data: 02/05/2025
+Forma de pagamento: PIX
+```
+
+**Saída esperada (output):**
+
+```json
+{
+  "recebedor_nome":       { "value": "JOÃO FERREIRA ELÉTRICA ME", "confidence": 0.99 },
+  "pagador_nome":         { "value": "CONDOMÍNIO DO EDIFÍCIO RECIFE COLONIAL", "confidence": 0.99 },
+  "cpf_cnpj_recebedor":   { "value": "47821033000172", "confidence": 0.98 },
+  "cpf_cnpj_pagador":     { "value": "02315237000197", "confidence": 0.98 },
+  "numero_recibo":        { "value": "00147", "confidence": 0.99 },
+  "descricao_pagamento":  { "value": "Prestação de serviços de manutenção elétrica nas áreas comuns do edifício", "confidence": 0.97 },
+  "data_pagamento":       { "value": "02/05/2025", "confidence": 0.99 },
+  "valor_recebido":       { "value": 2400.0, "confidence": 0.99 },
+  "forma_pagamento":      { "value": "PIX", "confidence": 0.99 }
+}
+```
+
+```python
+FEW_SHOT_RECIBO_DIGITAL = [
+    {
+        "role": "user",
+        "content": (
+            "Texto do documento:\n"
+            "RECIBO DE PAGAMENTO\n"
+            "Recibo Nº: 00147\n"
+            "Recebi do CONDOMÍNIO DO EDIFÍCIO RECIFE COLONIAL\n"
+            "CNPJ: 02.315.237/0001-97\n"
+            "a importância de R$ 2.400,00 (dois mil e quatrocentos reais),\n"
+            "referente à prestação de serviços de manutenção elétrica nas\n"
+            "áreas comuns do edifício, realizada em 28/04/2025.\n"
+            "Recebedor: JOÃO FERREIRA ELÉTRICA ME\n"
+            "CNPJ: 47.821.033/0001-72\n"
+            "Data: 02/05/2025\n"
+            "Forma de pagamento: PIX"
+        )
+    },
+    {
+        "role": "assistant",
+        "content": """{
+  "recebedor_nome":       { "value": "JOÃO FERREIRA ELÉTRICA ME", "confidence": 0.99 },
+  "pagador_nome":         { "value": "CONDOMÍNIO DO EDIFÍCIO RECIFE COLONIAL", "confidence": 0.99 },
+  "cpf_cnpj_recebedor":   { "value": "47821033000172", "confidence": 0.98 },
+  "cpf_cnpj_pagador":     { "value": "02315237000197", "confidence": 0.98 },
+  "numero_recibo":        { "value": "00147", "confidence": 0.99 },
+  "descricao_pagamento":  { "value": "Prestação de serviços de manutenção elétrica nas áreas comuns do edifício", "confidence": 0.97 },
+  "data_pagamento":       { "value": "02/05/2025", "confidence": 0.99 },
+  "valor_recebido":       { "value": 2400.0, "confidence": 0.99 },
+  "forma_pagamento":      { "value": "PIX", "confidence": 0.99 }
+}"""
+    }
+]
+```
+
+### O que esses exemplos ensinam ao modelo (`recibo`)
+
+| Campo | Padrão aprendido |
+|-------|-----------------|
+| `recebedor_nome` / `pagador_nome` | Inferir os papéis a partir do verbo ("Recebi do...") |
+| `descricao_pagamento` | Sintetizar o motivo sem copiar o valor por extenso |
+| `numero_recibo` | Extrair de "Recibo Nº:" mesmo quando não é campo rotulado |
+| `forma_pagamento` | Normalizar variações de grafia para maiúsculas |
+
+### Diferença entre as abordagens
+
+| Aspecto | `digital_pdf` | `scanned_image` |
+|---------|--------------|-----------------|
+| Identificação de papéis | Campos rotulados | Inferência a partir do corpo narrativo |
+| Valor | Claro e formatado | Pode ser manuscrito; valor por extenso pode ser mais legível |
+| Forma de pagamento | Campo explícito | Pode estar no rodapé ou ausente |
+| Número do recibo | Geralmente presente | Recibos informais podem não ter numeração |
+
+---
+
+## Integração: Roteamento por Tipo de Documento
+
+Estende a **Etapa 4** (escolha dinâmica de prompt) para suportar todos os tipos de documentos.
+
+### Schemas por tipo de documento
+
+```python
+SCHEMAS = {
+    "nota_fiscal": NotaFiscalSchema,
+    "fatura":      FaturaCondominio,
+    "boleto":      BoletoCondominio,
+    "recibo":      ReciboCondominio,
+}
+```
+
+### Prompts e few-shots por tipo e qualidade de OCR
+
+```python
+PROMPTS = {
+    "nota_fiscal": {"digital_pdf": PROMPT_DIGITAL,         "scanned_image": PROMPT_SCANNED},
+    "fatura":      {"digital_pdf": PROMPT_FATURA_DIGITAL,  "scanned_image": PROMPT_FATURA_SCANNED},
+    "boleto":      {"digital_pdf": PROMPT_BOLETO_DIGITAL,  "scanned_image": PROMPT_BOLETO_SCANNED},
+    "recibo":      {"digital_pdf": PROMPT_RECIBO_DIGITAL,  "scanned_image": PROMPT_RECIBO_SCANNED},
+}
+
+FEW_SHOTS = {
+    "nota_fiscal": {"digital_pdf": FEW_SHOT_DIGITAL,        "scanned_image": FEW_SHOT_SCANNED},
+    "fatura":      {"digital_pdf": FEW_SHOT_FATURA_DIGITAL, "scanned_image": []},
+    "boleto":      {"digital_pdf": FEW_SHOT_BOLETO_DIGITAL, "scanned_image": []},
+    "recibo":      {"digital_pdf": FEW_SHOT_RECIBO_DIGITAL, "scanned_image": []},
+}
+```
+
+### Função de extração genérica
+
+```python
+def extrair_dados_generico(document: dict) -> BaseModel:
+    doc_category = document["document_category"]   # "nota_fiscal", "fatura", "boleto", "recibo"
+    doc_type     = document["document_type"]        # "digital_pdf" ou "scanned_image"
+
+    schema    = SCHEMAS[doc_category]
+    prompt    = PROMPTS[doc_category].get(doc_type, PROMPTS[doc_category]["digital_pdf"])
+    few_shots = FEW_SHOTS[doc_category].get(doc_type, [])
+
+    messages = [
+        {"role": "system", "content": prompt},
+        *few_shots,
+        {"role": "user", "content": f"Texto do documento:\n{document['raw_text']}"}
+    ]
+
+    response = client.responses.parse(
+        model="gpt-4.1",
+        input=messages,
+        response_format=schema,
+    )
+
+    return response.output_parsed
+```
+
+### Resumo dos tipos suportados
+
+| Tipo de documento | Schema | Campos-chave | Fallback regex |
+|-------------------|--------|--------------|----------------|
+| `nota_fiscal` | `NotaFiscalSchema` | CNPJ, valor_nota, retencao | `extrair_valor_regex` |
+| `fatura` | `FaturaCondominio` | CNPJ emitente, valor_total, data_vencimento | `extrair_valor_regex` |
+| `boleto` | `BoletoCondominio` | linha_digitavel, valor_boleto, data_vencimento | `extrair_valor_regex` |
+| `recibo` | `ReciboCondominio` | valor_recebido, data_pagamento, forma_pagamento | `extrair_valor_regex` |

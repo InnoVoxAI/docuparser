@@ -879,6 +879,87 @@ const SETTINGS_TAB_HELP = {
     },
 }
 
+// Default model metadata used for boleto templates.
+const BOLETO_DEFAULT_SCHEMA_ID = 'boleto_default'
+// Default model display name for boleto templates.
+const BOLETO_DEFAULT_MODEL_NAME = 'BOLETO DEFAULT'
+
+// Default boleto schema fields for the Settings > Extracao flow.
+const BOLETO_DEFAULT_FIELDS = [
+    { name: 'beneficiario_nome', type: 'string', required: true, rule: 'Administradora ou condominio credor.' },
+    { name: 'pagador_nome', type: 'string', required: true, rule: 'Condomino ou empresa devedora.' },
+    { name: 'cnpj_cpf_beneficiario', type: 'string', required: false, rule: 'Aceita CPF ou CNPJ; normalizar numerico.' },
+    { name: 'cnpj_cpf_pagador', type: 'string', required: false, rule: 'Aceita CPF ou CNPJ; normalizar numerico.' },
+    { name: 'numero_documento', type: 'string', required: false, rule: 'Nosso numero ou referencia interna.' },
+    { name: 'descricao', type: 'string', required: false, rule: 'Descricao da cobranca.' },
+    { name: 'mes_referencia', type: 'string', required: false, rule: 'Formato MM/AAAA quando existir.' },
+    { name: 'data_vencimento', type: 'date', required: true, rule: 'Formato DD/MM/AAAA.' },
+    { name: 'valor_boleto', type: 'decimal', required: true, rule: 'Converter para float.' },
+    { name: 'linha_digitavel', type: 'string', required: true, rule: 'Sequencia de ~47 digitos, sem espacos.' },
+]
+
+// Prompt used for digital PDFs.
+const PROMPT_BOLETO_DIGITAL = [
+    'Voce e um sistema especialista em extracao de dados de boletos bancarios de condominios brasileiros.',
+    '',
+    'O texto fornecido vem de um PDF digital, portanto os campos estao bem delimitados.',
+    '',
+    'Extraia os seguintes campos:',
+    '',
+    '- Nome do beneficiario (administradora ou condominio credor)',
+    '- Nome do pagador (condomino ou empresa devedora)',
+    '- CNPJ ou CPF do beneficiario',
+    '- CNPJ ou CPF do pagador',
+    '- Numero do documento (nosso numero ou referencia interna)',
+    '- Descricao da cobranca (ex: "Taxa condominial Abril/2025 - Apto 502")',
+    '- Mes de referencia da cobranca',
+    '- Data de vencimento',
+    '- Valor do boleto (converter para float)',
+    '- Linha digitavel (sequencia numerica de ~47 digitos, sem espacos)',
+    '',
+    'Formato de saida:',
+    '',
+    'Para cada campo, retorne um objeto contendo:',
+    '- value: valor extraido (ou null)',
+    '- confidence: numero entre 0 e 1',
+    '',
+    'Regras:',
+    '- Normalize CNPJ/CPF removendo pontos, tracos e barras',
+    '- Normalize datas para DD/MM/AAAA',
+    '- A linha digitavel deve ser retornada apenas com digitos (remover espacos)',
+    '- Nao invente valores',
+    '- Se nao encontrar um campo, value = null e confidence = 0',
+].join('\n')
+
+// Prompt used for scanned images.
+const PROMPT_BOLETO_SCANNED = [
+    'Voce e um sistema especialista em extracao de dados de boletos bancarios de condominios brasileiros.',
+    '',
+    'O texto fornecido vem de OCR de imagem escaneada. Boletos escaneados frequentemente tem:',
+    '- linha digitavel com digitos trocados (0/O, 1/l)',
+    '- campos "Beneficiario" e "Pagador" misturados com dados do banco',
+    '- valores duplicados (valor cobrado + valor por extenso)',
+    '',
+    'Extraia os seguintes campos:',
+    '',
+    '- Nome do beneficiario',
+    '- Nome do pagador',
+    '- CNPJ ou CPF do beneficiario',
+    '- CNPJ ou CPF do pagador',
+    '- Numero do documento',
+    '- Descricao da cobranca',
+    '- Mes de referencia',
+    '- Data de vencimento',
+    '- Valor do boleto (converter para float)',
+    '- Linha digitavel (preferir a sequencia mais longa de numeros agrupados)',
+    '',
+    'Regras:',
+    '- Para a linha digitavel, use a sequencia que parece ter ~47 digitos, mesmo com erros de OCR',
+    '- Use confianca baixa para a linha digitavel se houver ruido significativo',
+    '- Corrija erros obvios de OCR nos campos numericos',
+    '- Se nao encontrar um campo, value = null e confidence = 0',
+].join('\n')
+
 const DEFAULT_LANGEXTRACT_FIELDS = [
     { name: 'fornecedor_nome', type: 'string', required: true, rule: 'Extrair exatamente como aparece no documento.' },
     { name: 'fornecedor_cnpj', type: 'cnpj', required: false, rule: 'Normalizar para 00.000.000/0000-00 quando existir.' },
@@ -907,6 +988,54 @@ const PROMPT_HINTS = [
     'Priorizar tabelas',
     'Priorizar campos proximos ao rotulo',
 ]
+
+// Resolve the boleto prompt based on the document classification.
+function boletoPromptForDocumentType(documentType) {
+    if (documentType === 'digital_pdf') {
+        return PROMPT_BOLETO_DIGITAL
+    }
+    if (documentType === 'scanned_image' || documentType === 'handwritten_complex') {
+        return PROMPT_BOLETO_SCANNED
+    }
+    return PROMPT_BOLETO_DIGITAL
+}
+
+// Compute a boleto confidence score using OCR text signals.
+function scoreBoletoText(rawText) {
+    if (!rawText) {
+        return 0
+    }
+    const text = String(rawText).toLowerCase()
+    let score = 0
+    const keywords = [
+        'boleto',
+        'linha digitavel',
+        'beneficiario',
+        'pagador',
+        'vencimento',
+        'nosso numero',
+        'valor',
+    ]
+    keywords.forEach((keyword) => {
+        if (text.includes(keyword)) {
+            score += 1
+        }
+    })
+    const linhaDigitavelRegex = /\b\d{5}\.?\d{5}\s+\d{5}\.?\d{6}\s+\d{5}\.?\d{6}\s+\d\s+\d{14}\b/
+    const barcodeRegex = /\b\d{44}\b/
+    if (linhaDigitavelRegex.test(text)) {
+        score += 3
+    }
+    if (barcodeRegex.test(text)) {
+        score += 2
+    }
+    return score
+}
+
+// Decide if a document should be treated as boleto.
+function isLikelyBoletoText(rawText, threshold = 4) {
+    return scoreBoletoText(rawText) >= threshold
+}
 
 function SettingsView({ schemas, layouts, documents, onChanged }) {
     const [activeSettingsArea, setActiveSettingsArea] = useState('extraction')
@@ -945,6 +1074,8 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
     const [referenceDocument, setReferenceDocument] = useState(null)
     const [testOutput, setTestOutput] = useState('{}')
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
+    // Track whether schema selection came from the user or auto-detection.
+    const [schemaSelectionSource, setSchemaSelectionSource] = useState('auto')
     const [message, setMessage] = useState('')
     const [integrationSettings, setIntegrationSettings] = useState({
         tenant_slug: 'tenant-demo',
@@ -980,6 +1111,12 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         is_active: true,
     })
 
+    // Cache the boleto default schema if it exists in the backend list.
+    const boletoSchema = useMemo(
+        () => schemas.find((schema) => schema.schema_id === BOLETO_DEFAULT_SCHEMA_ID),
+        [schemas],
+    )
+
     const activeLayout = layouts.find((layout) => (
         layout.schema_config_id === selectedSchemaId
         || (layout.layout === layoutForm.layout && layout.document_type === layoutForm.document_type)
@@ -990,6 +1127,8 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             setReferenceDocument(null)
             return
         }
+        // Reset to auto so new documents can trigger default selection.
+        setSchemaSelectionSource('auto')
         let ignore = false
         api.get(`/documents/${selectedDocumentId}`)
             .then((response) => {
@@ -1012,6 +1151,54 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             ignore = true
         }
     }, [selectedDocumentId])
+
+    // Auto-select BOLETO DEFAULT when OCR text indicates a boleto.
+    useEffect(() => {
+        const rawText = referenceDocument?.full_transcription || ''
+        if (!rawText || !isLikelyBoletoText(rawText)) {
+            return
+        }
+        if (schemaSelectionSource === 'manual') {
+            return
+        }
+
+        const detectedDocumentType = referenceDocument?.document_type || schemaForm.document_type
+        const boletoPrompt = boletoPromptForDocumentType(detectedDocumentType)
+
+        if (boletoSchema) {
+            loadExistingSchema(boletoSchema.id, { source: 'auto' })
+            setSchemaForm((current) => ({
+                ...current,
+                model_name: BOLETO_DEFAULT_MODEL_NAME,
+                schema_id: BOLETO_DEFAULT_SCHEMA_ID,
+                document_type: detectedDocumentType,
+            }))
+            setPrompt(boletoPrompt)
+            return
+        }
+
+        setSelectedSchemaId('')
+        setSchemaForm((current) => ({
+            ...current,
+            model_name: BOLETO_DEFAULT_MODEL_NAME,
+            schema_id: BOLETO_DEFAULT_SCHEMA_ID,
+            document_type: detectedDocumentType,
+        }))
+        setFields(BOLETO_DEFAULT_FIELDS)
+        setPrompt(boletoPrompt)
+        setExamples([])
+    }, [referenceDocument?.id, referenceDocument?.full_transcription, referenceDocument?.document_type, boletoSchema, schemaSelectionSource])
+
+    // Keep the boleto prompt aligned with the detected document type.
+    useEffect(() => {
+        if (schemaForm.schema_id !== BOLETO_DEFAULT_SCHEMA_ID) {
+            return
+        }
+        const boletoPrompt = boletoPromptForDocumentType(schemaForm.document_type)
+        if (prompt !== boletoPrompt) {
+            setPrompt(boletoPrompt)
+        }
+    }, [schemaForm.schema_id, schemaForm.document_type])
 
     useEffect(() => {
         let ignore = false
@@ -1086,7 +1273,9 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         referenceDocument,
     }), [schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument])
 
-    const loadExistingSchema = (schemaId) => {
+    const loadExistingSchema = (schemaId, { source = 'manual' } = {}) => {
+        // Preserve the selection source so auto-detection does not override manual choices.
+        setSchemaSelectionSource(source)
         setSelectedSchemaId(schemaId)
         const schema = schemas.find((item) => item.id === schemaId)
         if (!schema) {
@@ -1328,7 +1517,11 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
                             <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
                                 <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_220px]">
                                     <Field label="Selecionar modelo existente">
-                                        <select value={selectedSchemaId} onChange={(event) => loadExistingSchema(event.target.value)} className="input">
+                                        <select
+                                            value={selectedSchemaId}
+                                            onChange={(event) => loadExistingSchema(event.target.value, { source: 'manual' })}
+                                            className="input"
+                                        >
                                             <option value="">Criar novo modelo</option>
                                             {schemas.map((schema) => (
                                                 <option key={schema.id} value={schema.id}>

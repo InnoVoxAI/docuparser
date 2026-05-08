@@ -233,14 +233,17 @@ def schema_configs_view(request):
     tenant = _tenant_from_request(request)
     serializer = SchemaConfigSerializer(data={**request.data, "tenant_id": str(tenant.id)})
     serializer.is_valid(raise_exception=True)
-    config = SchemaConfig.objects.create(
+    config, created = SchemaConfig.objects.update_or_create(
         tenant=tenant,
         schema_id=serializer.validated_data["schema_id"],
         version=serializer.validated_data["version"],
-        definition=serializer.validated_data.get("definition") or {},
-        is_active=serializer.validated_data.get("is_active", True),
+        defaults={
+            "definition": serializer.validated_data.get("definition") or {},
+            "is_active": serializer.validated_data.get("is_active", True),
+        },
     )
-    return Response(SchemaConfigSerializer(config).data, status=status.HTTP_201_CREATED)
+    response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return Response(SchemaConfigSerializer(config).data, status=response_status)
 
 
 @api_view(["GET", "PATCH"])

@@ -15,6 +15,12 @@ import {
     XCircle,
 } from 'lucide-react'
 import './index.css'
+import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIELDS, isLikelyBoletoText } from './models/boleto/schemas'
+import { boletoPromptForDocumentType } from './models/boleto/prompts'
+import { NOTA_FISCAL_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_MODEL_NAME, NOTA_FISCAL_DEFAULT_FIELDS, isLikelyNotaFiscalText } from './models/nota_fiscal/schemas'
+import { notaFiscalPromptForDocumentType } from './models/nota_fiscal/prompts'
+import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } from './models/recibo/schemas'
+import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
 const internalServiceToken = import.meta.env.VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN
 const authHeaders = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
@@ -879,24 +885,6 @@ const SETTINGS_TAB_HELP = {
     },
 }
 
-const DEFAULT_LANGEXTRACT_FIELDS = [
-    { name: 'fornecedor_nome', type: 'string', required: true, rule: 'Extrair exatamente como aparece no documento.' },
-    { name: 'fornecedor_cnpj', type: 'cnpj', required: false, rule: 'Normalizar para 00.000.000/0000-00 quando existir.' },
-    { name: 'valor_total', type: 'decimal', required: true, rule: 'Usar o valor total final e converter virgula decimal.' },
-    { name: 'vencimento', type: 'date', required: false, rule: 'Normalizar para YYYY-MM-DD.' },
-]
-
-const DEFAULT_LANGEXTRACT_PROMPT = [
-    'Extraia os campos financeiros do documento.',
-    '',
-    'Regras:',
-    '- Use somente informacoes presentes no texto.',
-    '- Nao invente valores ausentes.',
-    '- Preserve o trecho fonte usado para cada campo.',
-    '- Quando houver multiplos valores, escolha o valor total final.',
-    '- Se o campo nao existir, retorne null.',
-].join('\n')
-
 const PROMPT_HINTS = [
     'Nao inventar dados',
     'Usar texto exato',
@@ -945,6 +933,8 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
     const [referenceDocument, setReferenceDocument] = useState(null)
     const [testOutput, setTestOutput] = useState('{}')
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
+    // Track whether schema selection came from the user or auto-detection.
+    const [schemaSelectionSource, setSchemaSelectionSource] = useState('auto')
     const [message, setMessage] = useState('')
     const [integrationSettings, setIntegrationSettings] = useState({
         tenant_slug: 'tenant-demo',
@@ -980,6 +970,17 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         is_active: true,
     })
 
+    // Cache the boleto default schema if it exists in the backend list.
+    const boletoSchema = useMemo(
+        () => schemas.find((schema) => schema.schema_id === BOLETO_DEFAULT_SCHEMA_ID),
+        [schemas],
+    )
+    // Cache the nota fiscal default schema if it exists in the backend list.
+    const notaFiscalSchema = useMemo(
+        () => schemas.find((schema) => schema.schema_id === NOTA_FISCAL_DEFAULT_SCHEMA_ID),
+        [schemas],
+    )
+
     const activeLayout = layouts.find((layout) => (
         layout.schema_config_id === selectedSchemaId
         || (layout.layout === layoutForm.layout && layout.document_type === layoutForm.document_type)
@@ -990,12 +991,19 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             setReferenceDocument(null)
             return
         }
+        // Reset to auto so new documents can trigger default selection.
+        setSchemaSelectionSource('auto')
         let ignore = false
         api.get(`/documents/${selectedDocumentId}`)
             .then((response) => {
                 if (!ignore) {
                     setReferenceDocument(response.data)
                     setTestOutput(buildLangExtractPreview(response.data.full_transcription || '', fields))
+                    const docType = response.data.document_type
+                    if (docType) {
+                        setSchemaForm((current) => ({ ...current, document_type: docType }))
+                        setLayoutForm((current) => ({ ...current, document_type: docType }))
+                    }
                 }
             })
             .catch((requestError) => {
@@ -1007,6 +1015,117 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             ignore = true
         }
     }, [selectedDocumentId])
+
+    // Auto-select BOLETO DEFAULT when OCR text indicates a boleto.
+    useEffect(() => {
+        const rawText = referenceDocument?.full_transcription || ''
+        if (!rawText) {
+            return
+        }
+        if (schemaSelectionSource === 'manual') {
+            return
+        }
+
+        const isNotaFiscal = isLikelyNotaFiscalText(rawText)
+        const isBoleto = !isNotaFiscal && isLikelyBoletoText(rawText)
+        const detectedDocumentType = referenceDocument?.document_type || schemaForm.document_type
+
+        if (isNotaFiscal) {
+            const notaPrompt = notaFiscalPromptForDocumentType(detectedDocumentType)
+            if (notaFiscalSchema) {
+                loadExistingSchema(notaFiscalSchema.id, { source: 'auto' })
+                setFields(NOTA_FISCAL_DEFAULT_FIELDS)
+                setSchemaForm((current) => ({
+                    ...current,
+                    model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
+                    schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID,
+                    document_type: detectedDocumentType,
+                }))
+                setPrompt(notaPrompt)
+                return
+            }
+            setSelectedSchemaId('')
+            setSchemaForm((current) => ({
+                ...current,
+                model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
+                schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID,
+                document_type: detectedDocumentType,
+            }))
+            setFields(NOTA_FISCAL_DEFAULT_FIELDS)
+            setPrompt(notaPrompt)
+            setExamples([])
+            return
+        }
+
+        if (!isBoleto) {
+            if ([BOLETO_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_SCHEMA_ID].includes(schemaForm.schema_id)) {
+                setSelectedSchemaId('')
+                setSchemaForm((current) => ({
+                    ...current,
+                    model_name: DEFAULT_MODEL_NAME,
+                    schema_id: DEFAULT_SCHEMA_ID,
+                }))
+                setFields(DEFAULT_LANGEXTRACT_FIELDS)
+                setPrompt(DEFAULT_LANGEXTRACT_PROMPT)
+                setExamples([])
+            }
+            return
+        }
+        const boletoPrompt = boletoPromptForDocumentType(detectedDocumentType)
+
+        if (boletoSchema) {
+            loadExistingSchema(boletoSchema.id, { source: 'auto' })
+            setFields(BOLETO_DEFAULT_FIELDS)
+            setSchemaForm((current) => ({
+                ...current,
+                model_name: BOLETO_DEFAULT_MODEL_NAME,
+                schema_id: BOLETO_DEFAULT_SCHEMA_ID,
+                document_type: detectedDocumentType,
+            }))
+            setPrompt(boletoPrompt)
+            return
+        }
+
+        setSelectedSchemaId('')
+        setSchemaForm((current) => ({
+            ...current,
+            model_name: BOLETO_DEFAULT_MODEL_NAME,
+            schema_id: BOLETO_DEFAULT_SCHEMA_ID,
+            document_type: detectedDocumentType,
+        }))
+        setFields(BOLETO_DEFAULT_FIELDS)
+        setPrompt(boletoPrompt)
+        setExamples([])
+    }, [
+        referenceDocument?.id,
+        referenceDocument?.full_transcription,
+        referenceDocument?.document_type,
+        boletoSchema,
+        notaFiscalSchema,
+        schemaSelectionSource,
+    ])
+
+    // Keep the boleto prompt aligned with the detected document type.
+    useEffect(() => {
+        if (schemaForm.schema_id !== BOLETO_DEFAULT_SCHEMA_ID) {
+            return
+        }
+        const boletoPrompt = boletoPromptForDocumentType(schemaForm.document_type)
+        if (prompt !== boletoPrompt) {
+            setPrompt(boletoPrompt)
+        }
+    }, [schemaForm.schema_id, schemaForm.document_type])
+
+    // Keep the nota fiscal prompt aligned with the detected document type.
+    useEffect(() => {
+        if (schemaForm.schema_id !== NOTA_FISCAL_DEFAULT_SCHEMA_ID) {
+            return
+        }
+        const notaPrompt = notaFiscalPromptForDocumentType(schemaForm.document_type)
+        if (prompt !== notaPrompt) {
+            setPrompt(notaPrompt)
+        }
+    }, [schemaForm.schema_id, schemaForm.document_type])
 
     useEffect(() => {
         let ignore = false
@@ -1081,7 +1200,9 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         referenceDocument,
     }), [schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument])
 
-    const loadExistingSchema = (schemaId) => {
+    const loadExistingSchema = (schemaId, { source = 'manual' } = {}) => {
+        // Preserve the selection source so auto-detection does not override manual choices.
+        setSchemaSelectionSource(source)
         setSelectedSchemaId(schemaId)
         const schema = schemas.find((item) => item.id === schemaId)
         if (!schema) {
@@ -1323,7 +1444,11 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
                             <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
                                 <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_220px]">
                                     <Field label="Selecionar modelo existente">
-                                        <select value={selectedSchemaId} onChange={(event) => loadExistingSchema(event.target.value)} className="input">
+                                        <select
+                                            value={selectedSchemaId}
+                                            onChange={(event) => loadExistingSchema(event.target.value, { source: 'manual' })}
+                                            className="input"
+                                        >
                                             <option value="">Criar novo modelo</option>
                                             {schemas.map((schema) => (
                                                 <option key={schema.id} value={schema.id}>

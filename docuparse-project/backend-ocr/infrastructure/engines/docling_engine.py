@@ -170,11 +170,7 @@ class DoclingEngine(BaseOCREngine):
 
         return {
             "raw_text": full_text,
-            "raw_text_fallback": (
-                "Docling detectou campos obrigatórios ausentes; fallback recomendado."
-                if fallback_recommended
-                else full_text
-            ),
+            "raw_text_fallback": full_text,
             "document_info": {
                 "page_count": len(page_texts),
                 "non_empty_pages": sum(1 for text in page_texts if text.strip()),

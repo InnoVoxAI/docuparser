@@ -1034,6 +1034,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             const notaPrompt = notaFiscalPromptForDocumentType(detectedDocumentType)
             if (notaFiscalSchema) {
                 loadExistingSchema(notaFiscalSchema.id, { source: 'auto' })
+                setFields(NOTA_FISCAL_DEFAULT_FIELDS)
                 setSchemaForm((current) => ({
                     ...current,
                     model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
@@ -1074,6 +1075,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
 
         if (boletoSchema) {
             loadExistingSchema(boletoSchema.id, { source: 'auto' })
+            setFields(BOLETO_DEFAULT_FIELDS)
             setSchemaForm((current) => ({
                 ...current,
                 model_name: BOLETO_DEFAULT_MODEL_NAME,

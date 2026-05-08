@@ -19,6 +19,8 @@ import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIE
 import { boletoPromptForDocumentType } from './models/boleto/prompts'
 import { NOTA_FISCAL_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_MODEL_NAME, NOTA_FISCAL_DEFAULT_FIELDS, isLikelyNotaFiscalText } from './models/nota_fiscal/schemas'
 import { notaFiscalPromptForDocumentType } from './models/nota_fiscal/prompts'
+import { NOTA_FISCAL_DEFAULT_EXAMPLES } from './models/nota_fiscal/examples'
+import { NOTA_FISCAL_DEFAULT_RULES } from './models/nota_fiscal/rules'
 import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } from './models/recibo/schemas'
 import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
@@ -1035,6 +1037,8 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             if (notaFiscalSchema) {
                 loadExistingSchema(notaFiscalSchema.id, { source: 'auto' })
                 setFields(NOTA_FISCAL_DEFAULT_FIELDS)
+                setExamples(NOTA_FISCAL_DEFAULT_EXAMPLES)
+                setNormalizationRules(JSON.stringify(NOTA_FISCAL_DEFAULT_RULES, null, 2))
                 setSchemaForm((current) => ({
                     ...current,
                     model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
@@ -1053,7 +1057,8 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             }))
             setFields(NOTA_FISCAL_DEFAULT_FIELDS)
             setPrompt(notaPrompt)
-            setExamples([])
+            setExamples(NOTA_FISCAL_DEFAULT_EXAMPLES)
+            setNormalizationRules(JSON.stringify(NOTA_FISCAL_DEFAULT_RULES, null, 2))
             return
         }
 

@@ -477,37 +477,6 @@ export const BOLETO_DEFAULT_FIELDS = [
         rule: 'Pagina do PDF de origem.'
     },
 
-    // =========================================================
-    // CAMPOS TECNICOS PARA LLM / OCR
-    // =========================================================
-
-    {
-        name: 'confidence_score',
-        type: 'decimal',
-        required: false,
-        rule: 'Confianca geral da extracao.'
-    },
-
-    {
-        name: 'raw_text',
-        type: 'string',
-        required: false,
-        rule: 'Texto bruto associado ao documento.'
-    },
-
-    {
-        name: 'raw_value_map',
-        type: 'json',
-        required: false,
-        rule: 'Valores brutos encontrados antes da normalizacao.'
-    },
-
-    {
-        name: 'normalized',
-        type: 'boolean',
-        required: false,
-        rule: 'Indica se os campos foram normalizados.'
-    }
 
 ]
 

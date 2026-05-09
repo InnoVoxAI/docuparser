@@ -159,6 +159,42 @@ def process_document(
             raise e
 
     # ──────────────────────────────────────────────────────────────────────────
+    # 3.5 FALLBACK POR TEXTO VAZIO (DoclingEngine em PDF sem camada textual)
+    # ──────────────────────────────────────────────────────────────────────────
+    # DoclingEngine sinaliza fallback_recommended quando não encontra texto no PDF.
+    # Isso acontece quando o PDF é uma imagem escaneada sem camada de texto digital.
+    # O classificador pode ter rotulado o arquivo como digital_pdf por conta de
+    # características visuais (linhas de tabela), mas se não há texto extraível,
+    # precisamos tentar um engine de OCR por imagem.
+    engine_meta = ocr_result.get("_meta", {})
+    if (
+        engine_name == "docling"
+        and engine_meta.get("fallback_recommended")
+        and not ocr_result.get("raw_text", "").strip()
+    ):
+        image_fallback_name = "openrouter" if "openrouter" in ENGINE_REGISTRY else "tesseract"
+        if image_fallback_name in ENGINE_REGISTRY:
+            try:
+                logger.info(
+                    "DoclingEngine retornou texto vazio com fallback_recommended=True; "
+                    f"ativando fallback com engine de imagem: {image_fallback_name}"
+                )
+                image_fallback_engine = ENGINE_REGISTRY[image_fallback_name]
+                fallback_metadata = {**metadata, "doc_type": "scanned_image"}
+                fallback_result = image_fallback_engine.process(file_bytes, fallback_metadata)
+                ocr_result = merge_fallback_result(
+                    ocr_result,
+                    fallback_result,
+                    engine_name,
+                    image_fallback_name,
+                )
+                engine_name = f"docling_with_{image_fallback_name}_fallback"
+                doc_type = "scanned_image"
+                logger.info(f"Fallback por texto vazio bem-sucedido: engine={engine_name}")
+            except Exception as fallback_e:
+                logger.warning(f"Fallback por texto vazio falhou: {fallback_e}")
+
+    # ──────────────────────────────────────────────────────────────────────────
     # 4. EXTRAIR CAMPOS ESTRUTURADOS (modo legado opcional)
     # ──────────────────────────────────────────────────────────────────────────
     field_quality: Dict[str, Any] = {

@@ -23,6 +23,10 @@ import { NOTA_FISCAL_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_MODEL_NAME, NOTA_FIS
 import { notaFiscalPromptForDocumentType } from './models/nota_fiscal/prompts'
 import { NOTA_FISCAL_DEFAULT_EXAMPLES } from './models/nota_fiscal/examples'
 import { NOTA_FISCAL_DEFAULT_RULES } from './models/nota_fiscal/rules'
+import { CONTA_AGUA_DEFAULT_SCHEMA_ID, CONTA_AGUA_DEFAULT_MODEL_NAME, CONTA_AGUA_DEFAULT_FIELDS, isLikelyContaAguaText } from './models/contadeagua/schemas'
+import { contaAguaPromptForDocumentType } from './models/contadeagua/prompts'
+import { CONTA_AGUA_DEFAULT_EXAMPLES } from './models/contadeagua/examples'
+import { CONTA_AGUA_DEFAULT_RULES } from './models/contadeagua/rules'
 import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } from './models/recibo/schemas'
 import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
@@ -984,6 +988,10 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         () => schemas.find((schema) => schema.schema_id === NOTA_FISCAL_DEFAULT_SCHEMA_ID),
         [schemas],
     )
+    const contaAguaSchema = useMemo(
+        () => schemas.find((schema) => schema.schema_id === CONTA_AGUA_DEFAULT_SCHEMA_ID),
+        [schemas],
+    )
 
     const activeLayout = layouts.find((layout) => (
         layout.schema_config_id === selectedSchemaId
@@ -1031,7 +1039,8 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         }
 
         const isNotaFiscal = isLikelyNotaFiscalText(rawText)
-        const isBoleto = !isNotaFiscal && isLikelyBoletoText(rawText)
+        const isContaAgua = !isNotaFiscal && isLikelyContaAguaText(rawText)
+        const isBoleto = !isNotaFiscal && !isContaAgua && isLikelyBoletoText(rawText)
         const detectedDocumentType = referenceDocument?.document_type || schemaForm.document_type
 
         if (isNotaFiscal) {
@@ -1064,8 +1073,38 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             return
         }
 
+        if (isContaAgua) {
+            const aguaPrompt = contaAguaPromptForDocumentType(detectedDocumentType)
+            if (contaAguaSchema) {
+                loadExistingSchema(contaAguaSchema.id, { source: 'auto' })
+                setFields(CONTA_AGUA_DEFAULT_FIELDS)
+                setExamples(CONTA_AGUA_DEFAULT_EXAMPLES)
+                setNormalizationRules(JSON.stringify(CONTA_AGUA_DEFAULT_RULES, null, 2))
+                setSchemaForm((current) => ({
+                    ...current,
+                    model_name: CONTA_AGUA_DEFAULT_MODEL_NAME,
+                    schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID,
+                    document_type: detectedDocumentType,
+                }))
+                setPrompt(aguaPrompt)
+                return
+            }
+            setSelectedSchemaId('')
+            setSchemaForm((current) => ({
+                ...current,
+                model_name: CONTA_AGUA_DEFAULT_MODEL_NAME,
+                schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID,
+                document_type: detectedDocumentType,
+            }))
+            setFields(CONTA_AGUA_DEFAULT_FIELDS)
+            setPrompt(aguaPrompt)
+            setExamples(CONTA_AGUA_DEFAULT_EXAMPLES)
+            setNormalizationRules(JSON.stringify(CONTA_AGUA_DEFAULT_RULES, null, 2))
+            return
+        }
+
         if (!isBoleto) {
-            if ([BOLETO_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_SCHEMA_ID].includes(schemaForm.schema_id)) {
+            if ([BOLETO_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_SCHEMA_ID, CONTA_AGUA_DEFAULT_SCHEMA_ID].includes(schemaForm.schema_id)) {
                 setSelectedSchemaId('')
                 setSchemaForm((current) => ({
                     ...current,
@@ -1112,6 +1151,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         referenceDocument?.document_type,
         boletoSchema,
         notaFiscalSchema,
+        contaAguaSchema,
         schemaSelectionSource,
     ])
 
@@ -1134,6 +1174,17 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         const notaPrompt = notaFiscalPromptForDocumentType(schemaForm.document_type)
         if (prompt !== notaPrompt) {
             setPrompt(notaPrompt)
+        }
+    }, [schemaForm.schema_id, schemaForm.document_type])
+
+    // Keep the conta de agua prompt aligned with the detected document type.
+    useEffect(() => {
+        if (schemaForm.schema_id !== CONTA_AGUA_DEFAULT_SCHEMA_ID) {
+            return
+        }
+        const aguaPrompt = contaAguaPromptForDocumentType(schemaForm.document_type)
+        if (prompt !== aguaPrompt) {
+            setPrompt(aguaPrompt)
         }
     }, [schemaForm.schema_id, schemaForm.document_type])
 

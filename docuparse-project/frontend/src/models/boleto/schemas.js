@@ -15,6 +15,13 @@ export const BOLETO_DEFAULT_FIELDS = [
     },
 
     {
+        name: 'categoria_documento',
+        type: 'string',
+        required: false,
+        rule: 'Categoria do documento: condominio, aluguel, escolar, bancario etc.'
+    },
+
+    {
         name: 'codigo_barras',
         type: 'string',
         required: false,
@@ -86,6 +93,13 @@ export const BOLETO_DEFAULT_FIELDS = [
         type: 'string',
         required: false,
         rule: 'Nome do banco emissor.'
+    },
+
+    {
+        name: 'instituicao_cobranca',
+        type: 'string',
+        required: false,
+        rule: 'Instituicao financeira ou fintech responsavel pela cobranca.'
     },
 
     {
@@ -223,6 +237,20 @@ export const BOLETO_DEFAULT_FIELDS = [
     },
 
     {
+        name: 'unidade',
+        type: 'string',
+        required: false,
+        rule: 'Numero da unidade/apartamento/sala.'
+    },
+
+    {
+        name: 'bloco',
+        type: 'string',
+        required: false,
+        rule: 'Bloco ou torre da unidade.'
+    },
+
+    {
         name: 'sacador_avalista',
         type: 'string',
         required: false,
@@ -239,6 +267,13 @@ export const BOLETO_DEFAULT_FIELDS = [
     // =========================================================
     // COBRANCA
     // =========================================================
+
+    {
+        name: 'tipo_cobranca',
+        type: 'string',
+        required: false,
+        rule: 'Tipo da cobranca: condominial, aluguel, acordo, taxa extra etc.'
+    },
 
     {
         name: 'descricao',
@@ -269,10 +304,45 @@ export const BOLETO_DEFAULT_FIELDS = [
     },
 
     {
+        name: 'competencia_financeira',
+        type: 'string',
+        required: false,
+        rule: 'Competencia financeira principal da cobranca.'
+    },
+
+    {
         name: 'referencia',
         type: 'string',
         required: false,
         rule: 'Referencia textual da cobranca.'
+    },
+
+    {
+        name: 'itens_cobranca',
+        type: 'array',
+        required: false,
+        rule: 'Lista de itens detalhados da cobranca.'
+    },
+
+    {
+        name: 'descontos_progressivos',
+        type: 'array',
+        required: false,
+        rule: 'Lista de descontos condicionados por data.'
+    },
+
+    {
+        name: 'parcela_atual',
+        type: 'integer',
+        required: false,
+        rule: 'Numero da parcela atual.'
+    },
+
+    {
+        name: 'total_parcelas',
+        type: 'integer',
+        required: false,
+        rule: 'Quantidade total de parcelas.'
     },
 
     // =========================================================
@@ -347,10 +417,24 @@ export const BOLETO_DEFAULT_FIELDS = [
     },
 
     {
+        name: 'multa_percentual',
+        type: 'decimal',
+        required: false,
+        rule: 'Percentual da multa aplicada apos vencimento.'
+    },
+
+    {
         name: 'juros',
         type: 'decimal',
         required: false,
         rule: 'Valor de juros.'
+    },
+
+    {
+        name: 'juros_percentual_dia',
+        type: 'decimal',
+        required: false,
+        rule: 'Percentual diario de juros.'
     },
 
     {
@@ -372,6 +456,34 @@ export const BOLETO_DEFAULT_FIELDS = [
         type: 'decimal',
         required: false,
         rule: 'Valor efetivamente pago.'
+    },
+
+    {
+        name: 'saldo_anterior',
+        type: 'decimal',
+        required: false,
+        rule: 'Saldo financeiro anterior.'
+    },
+
+    {
+        name: 'saldo_atual',
+        type: 'decimal',
+        required: false,
+        rule: 'Saldo financeiro final.'
+    },
+
+    {
+        name: 'total_receitas',
+        type: 'decimal',
+        required: false,
+        rule: 'Total de receitas do demonstrativo.'
+    },
+
+    {
+        name: 'total_despesas',
+        type: 'decimal',
+        required: false,
+        rule: 'Total de despesas do demonstrativo.'
     },
 
     // =========================================================
@@ -425,15 +537,33 @@ export const BOLETO_DEFAULT_FIELDS = [
     },
 
     // =========================================================
-    // METADADOS / OCR
+    // DOCUMENTO / SEGMENTACAO
     // =========================================================
 
     {
         name: 'documento_hibrido',
         type: 'boolean',
         required: false,
-        rule: 'Indica boleto hibrido com Pix.'
+        rule: 'Indica boleto hibrido com Pix ou multiplos blocos financeiros.'
     },
+
+    {
+        name: 'blocos_semanticos',
+        type: 'array',
+        required: false,
+        rule: 'Lista de blocos semanticos identificados no documento.'
+    },
+
+    {
+        name: 'demonstrativo_financeiro_presente',
+        type: 'boolean',
+        required: false,
+        rule: 'Indica existencia de demonstrativo financeiro.'
+    },
+
+    // =========================================================
+    // METADADOS / OCR
+    // =========================================================
 
     {
         name: 'codigo_moeda',
@@ -464,6 +594,27 @@ export const BOLETO_DEFAULT_FIELDS = [
     },
 
     {
+        name: 'confidence_score',
+        type: 'decimal',
+        required: false,
+        rule: 'Confianca geral da extracao.'
+    },
+
+    {
+        name: 'source_block',
+        type: 'string',
+        required: false,
+        rule: 'Bloco semantico onde o campo foi encontrado.'
+    },
+
+    {
+        name: 'source_snippet',
+        type: 'string',
+        required: false,
+        rule: 'Trecho bruto utilizado para extracao.'
+    },
+
+    {
         name: 'arquivo_origem',
         type: 'string',
         required: false,
@@ -476,7 +627,6 @@ export const BOLETO_DEFAULT_FIELDS = [
         required: false,
         rule: 'Pagina do PDF de origem.'
     },
-
 
 ]
 

@@ -27,7 +27,7 @@ export const PROMPT_BOLETO_SCANNED = [
     '- Use confianca baixa para a linha digitavel se houver ruido significativo',
     '- Corrija erros obvios de OCR nos campos numericos',
     '- Se nao encontrar um campo, value = null e confidence = 0',
-].join('\n')
+].join('\n')    
 
 export function boletoPromptForDocumentType(documentType) {
     if (documentType === 'digital_pdf') {

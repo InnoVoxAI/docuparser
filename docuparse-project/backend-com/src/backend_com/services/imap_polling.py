@@ -105,6 +105,7 @@ def poll_imap_once(
     documents: list[dict] = []
     processed_messages = 0
     skipped_attachments = 0
+    duplicate_count = 0
 
     try:
         _expect_ok(_imap_call(client.login, email_settings.username, password, action="login"), "login")
@@ -127,16 +128,16 @@ def poll_imap_once(
             attachments, skipped = _attachments_from_message(message, email_settings)
             skipped_attachments += skipped
             if attachments:
-                documents.extend(
-                    process_email_attachments(
-                        tenant_id=email_settings.tenant_id,
-                        attachments=attachments,
-                        sender=sender,
-                        message_id=str(message.get("Message-ID") or message_id.decode("ascii", errors="ignore")),
-                        subject=str(message.get("Subject") or ""),
-                        provider="imap",
-                    )
+                result = process_email_attachments(
+                    tenant_id=email_settings.tenant_id,
+                    attachments=attachments,
+                    sender=sender,
+                    message_id=str(message.get("Message-ID") or message_id.decode("ascii", errors="ignore")),
+                    subject=str(message.get("Subject") or ""),
+                    provider="imap",
                 )
+                documents.extend(result["documents"])
+                duplicate_count += result["duplicate_count"]
             if mark_as_read:
                 _imap_call(client.store, message_id, "+FLAGS", "\\Seen", action="mark message as read")
             processed_messages += 1
@@ -151,6 +152,7 @@ def poll_imap_once(
         "processed_messages": processed_messages,
         "accepted_count": len(documents),
         "skipped_attachments": skipped_attachments,
+        "duplicate_count": duplicate_count,
         "documents": documents,
     }
 

@@ -17,6 +17,10 @@ from backend_com.config import settings
 logger = logging.getLogger(__name__)
 
 
+class DuplicateDocumentError(Exception):
+    pass
+
+
 ALLOWED_CONTENT_TYPES = {
     "application/pdf",
     "image/jpeg",
@@ -116,6 +120,16 @@ def _sync_document_received_to_core(event_payload: dict) -> str:
     try:
         with urllib.request.urlopen(request, timeout=2) as response:
             return f"synced:{response.status}"
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+    except urllib.error.HTTPError as exc:
+        if exc.code == 409:
+            try:
+                body = json.loads(exc.read().decode("utf-8"))
+                detail = body.get("detail", str(exc))
+            except Exception:
+                detail = str(exc)
+            raise DuplicateDocumentError(detail) from exc
+        logger.warning("document_received_core_sync_failed", extra={"error": str(exc)})
+        return "failed"
+    except (OSError, urllib.error.URLError) as exc:
         logger.warning("document_received_core_sync_failed", extra={"error": str(exc)})
         return "failed"

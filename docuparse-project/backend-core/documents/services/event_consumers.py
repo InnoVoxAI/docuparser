@@ -27,6 +27,12 @@ from documents.models import (
 logger = logging.getLogger(__name__)
 
 
+class DuplicateDocumentError(Exception):
+    def __init__(self, filename: str) -> None:
+        self.filename = filename
+        super().__init__(f"O Documento '{filename}' já existe!")
+
+
 def consume_document_received(payload: dict[str, Any]) -> Document:
     event = DocumentReceivedEvent.model_validate(payload)
     with transaction.atomic():
@@ -34,6 +40,11 @@ def consume_document_received(payload: dict[str, Any]) -> Document:
         existing_event, created = _record_event_once(event, tenant)
         if not created and existing_event.document_id:
             return existing_event.document
+
+        sha256 = event.data.file.sha256 or ""
+        filename = event.data.file.filename
+        if filename and Document.objects.filter(tenant=tenant, original_filename=filename).exists():
+            raise DuplicateDocumentError(filename)
 
         document, _ = Document.objects.get_or_create(
             id=event.document_id,
@@ -45,6 +56,7 @@ def consume_document_received(payload: dict[str, Any]) -> Document:
                 "original_filename": event.data.file.filename,
                 "content_type": event.data.file.content_type,
                 "size_bytes": event.data.file.size_bytes,
+                "sha256": sha256,
                 "correlation_id": event.correlation_id,
                 "received_at": event.data.received_at,
                 "metadata": event.data.metadata,

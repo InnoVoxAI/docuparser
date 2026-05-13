@@ -65,6 +65,7 @@ class Document(TimeStampedModel):
     original_filename = models.CharField(max_length=255, blank=True)
     content_type = models.CharField(max_length=128, blank=True)
     size_bytes = models.PositiveBigIntegerField(default=0)
+    sha256 = models.CharField(max_length=64, blank=True, db_index=True)
     document_type = models.CharField(max_length=64, blank=True)
     layout = models.CharField(max_length=128, blank=True)
     correlation_id = models.UUIDField(default=uuid.uuid4, db_index=True)

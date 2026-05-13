@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import hmac
+import logging
+import os
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
@@ -10,14 +13,44 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend_com.config import settings
 from backend_com.services.email_capture import process_email_attachments
 from backend_com.services.imap_polling import ImapPollingError, poll_configured_imap_once
+from backend_com.services.document_ingest import DuplicateDocumentError
 from backend_com.services.manual_upload import process_manual_upload
 from backend_com.services.whatsapp_capture import process_whatsapp_media
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _log_startup_config()
+    yield
+
+
+def _log_startup_config() -> None:
+    """Print resolved config values on startup to diagnose env var issues."""
+    raw_primary = os.environ.get("DOCUPARSE_IMAP_PASSWORD")
+    raw_fallback = os.environ.get("imap_reader_password")
+    password_status = f"[SET, {len(settings.imap_password)} chars]" if settings.imap_password else "[EMPTY — adicione DOCUPARSE_IMAP_PASSWORD no .env raiz do projeto]"
+
+    print("", flush=True)
+    print("=== backend-com startup config ===", flush=True)
+    print(f"  imap_password          : {password_status}", flush=True)
+    print(f"  DOCUPARSE_IMAP_PASSWORD: {'[presente, raw=' + repr(raw_primary[:4]) + '...]' if raw_primary else '[AUSENTE no os.environ]'}", flush=True)
+    print(f"  imap_reader_password   : {'[presente, raw=' + repr(raw_fallback[:4]) + '...]' if raw_fallback else '[AUSENTE no os.environ]'}", flush=True)
+    print(f"  imap_poll_limit        : {settings.imap_poll_limit}", flush=True)
+    print(f"  imap_mark_as_read      : {settings.imap_mark_as_read}", flush=True)
+    print(f"  imap_timeout_seconds   : {settings.imap_timeout_seconds}", flush=True)
+    print(f"  cors_allowed_origins   : {settings.cors_allowed_origins}", flush=True)
+    print(f"  backend_core_email_url : {settings.backend_core_email_settings_url}", flush=True)
+    print("==================================", flush=True)
+    print("", flush=True)
 
 
 app = FastAPI(
     title="DocuParse Backend COM",
     description="Captura documentos e publica eventos document.received",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -61,6 +94,8 @@ async def manual_document_upload(
             sender=sender,
             metadata=metadata,
         )
+    except DuplicateDocumentError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -136,7 +171,7 @@ async def _process_email_files(
             }
             for attachment in attachments
         ]
-        documents = process_email_attachments(
+        result = process_email_attachments(
             tenant_id=tenant_id,
             attachments=attachment_payloads,
             sender=sender,
@@ -145,8 +180,9 @@ async def _process_email_files(
             provider=provider,
         )
         return {
-            "accepted_count": len(documents),
-            "documents": documents,
+            "accepted_count": len(result["documents"]),
+            "duplicate_count": result["duplicate_count"],
+            "documents": result["documents"],
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

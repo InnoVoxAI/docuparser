@@ -1450,6 +1450,16 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
 
     const testEmailPoll = async () => {
         setMessage('')
+        if (emailSettings.provider === 'imap') {
+            if (!emailSettings.imap_host?.trim()) {
+                setMessage('Preencha o campo "Host IMAP" antes de testar (ex: imap.gmail.com).')
+                return
+            }
+            if (!emailSettings.username?.trim()) {
+                setMessage('Preencha o campo "Usuario" com o endereco de email monitorado.')
+                return
+            }
+        }
         try {
             const saved = await saveEmailSettings()
             if (!saved) {
@@ -1458,7 +1468,13 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             const response = await comApi.post('/email/poll', null, {
                 params: { tenant_id: emailSettings.tenant_slug || 'tenant-demo' },
             })
-            setMessage(`Captura IMAP executada: ${response.data.accepted_count || 0} documento(s) importado(s).`)
+            const imported = response.data.accepted_count || 0
+            const duplicates = response.data.duplicate_count || 0
+            let pollMsg = `Captura IMAP executada: ${imported} documento(s) importado(s).`
+            if (duplicates > 0) {
+                pollMsg += ` ${duplicates} já existia(m) no sistema e foi(ram) ignorado(s).`
+            }
+            setMessage(pollMsg)
             await onChanged()
         } catch (requestError) {
             setMessage(readError(requestError, 'Falha ao executar captura IMAP.'))

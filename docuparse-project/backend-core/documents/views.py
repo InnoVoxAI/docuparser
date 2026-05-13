@@ -27,7 +27,7 @@ from .serializers import (
 )
 from .services.ocr_client import OCRClient
 from .services.erp_publisher import publish_erp_integration_requested
-from .services.event_consumers import consume_document_received
+from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.dlq_inspector import DEFAULT_DLQ_STREAMS, requeue_dlq_entry, inspect_dlq_streams
 from .services.ocr_processor import process_document_ocr, start_document_ocr_thread
 
@@ -104,7 +104,10 @@ def document_received_event_view(request):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
-    document = consume_document_received(request.data)
+    try:
+        document = consume_document_received(request.data)
+    except DuplicateDocumentError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
     if settings.DOCUPARSE_AUTO_PROCESS_OCR and not document.raw_text_uri:
         start_document_ocr_thread(document.id)
     return Response(DocumentDetailSerializer(document).data, status=status.HTTP_201_CREATED)

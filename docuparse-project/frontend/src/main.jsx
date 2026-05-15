@@ -2377,6 +2377,48 @@ function ExamplesEditor({ examples, onChange, referenceText }) {
 }
 
 function DocumentTable({ documents, selectedDocumentId = '', onSelectDocument, compact = false }) {
+    const [sortKey, setSortKey] = useState(null)
+    const [sortDir, setSortDir] = useState('asc')
+
+    function handleSort(key) {
+        if (sortKey === key) {
+            setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+        } else {
+            setSortKey(key)
+            setSortDir('asc')
+        }
+    }
+
+    const sortedDocuments = sortKey ? [...documents].sort((a, b) => {
+        let aVal, bVal
+        if (sortKey === 'arquivo') {
+            aVal = (a.original_filename || a.id || '').toLowerCase()
+            bVal = (b.original_filename || b.id || '').toLowerCase()
+        } else if (sortKey === 'status') {
+            aVal = (a.status || '').toLowerCase()
+            bVal = (b.status || '').toLowerCase()
+        } else if (sortKey === 'canal') {
+            aVal = (a.channel || '').toLowerCase()
+            bVal = (b.channel || '').toLowerCase()
+        } else if (sortKey === 'tipo') {
+            aVal = (a.document_type || '').toLowerCase()
+            bVal = (b.document_type || '').toLowerCase()
+        } else if (sortKey === 'atualizado') {
+            aVal = a.updated_at || a.received_at || ''
+            bVal = b.updated_at || b.received_at || ''
+        }
+        if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
+        if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
+        return 0
+    }) : documents
+
+    const indicator = (col) =>
+        sortKey !== col
+            ? <span className="ml-1 opacity-30">↕</span>
+            : <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+
+    const thClass = 'cursor-pointer select-none px-3 py-2 hover:text-zinc-700'
+
     if (documents.length === 0) {
         return <EmptyState icon={FileText} text="Nenhum documento encontrado." />
     }
@@ -2386,15 +2428,15 @@ function DocumentTable({ documents, selectedDocumentId = '', onSelectDocument, c
             <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead>
                     <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-semibold uppercase text-zinc-500">
-                        <th className="px-3 py-2">Arquivo</th>
-                        <th className="px-3 py-2">Status</th>
-                        {compact ? null : <th className="px-3 py-2">Canal</th>}
-                        {compact ? null : <th className="px-3 py-2">Tipo</th>}
-                        <th className="px-3 py-2">Atualizado</th>
+                        <th className={thClass} onClick={() => handleSort('arquivo')}>Arquivo{indicator('arquivo')}</th>
+                        <th className={thClass} onClick={() => handleSort('status')}>Status{indicator('status')}</th>
+                        {compact ? null : <th className={thClass} onClick={() => handleSort('canal')}>Canal{indicator('canal')}</th>}
+                        {compact ? null : <th className={thClass} onClick={() => handleSort('tipo')}>Tipo{indicator('tipo')}</th>}
+                        <th className={thClass} onClick={() => handleSort('atualizado')}>Atualizado{indicator('atualizado')}</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {documents.map((document) => (
+                    {sortedDocuments.map((document) => (
                         <tr
                             key={document.id}
                             onClick={() => onSelectDocument(document.id)}

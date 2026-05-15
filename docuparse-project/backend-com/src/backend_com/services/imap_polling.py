@@ -137,6 +137,7 @@ def poll_imap_once(
                     "message_id": str(message.get("Message-ID") or ""),
                     "date": str(message.get("Date") or ""),
                     "body_text": _body_text_from_message(message),
+                    "attachments": [a["filename"] for a in attachments],
                 }
                 result = process_email_attachments(
                     tenant_id=email_settings.tenant_id,

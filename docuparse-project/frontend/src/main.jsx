@@ -2555,6 +2555,19 @@ function EmailMetadataModal({ data, onClose }) {
                         ))}
                     </div>
                 )}
+                {meta.attachments?.length > 0 ? (
+                    <div className="border-t border-zinc-200 px-5 py-3">
+                        <div className="mb-1.5 text-xs font-semibold uppercase text-zinc-500">Anexos</div>
+                        <ul className="space-y-1">
+                            {meta.attachments.map((name, i) => (
+                                <li key={i} className="flex items-center gap-1.5 text-sm text-zinc-700">
+                                    <span className="text-zinc-400">·</span>
+                                    {name}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ) : null}
                 {meta.body_text ? (
                     <div className="border-t border-zinc-200 px-5 py-3">
                         <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Corpo do email</div>

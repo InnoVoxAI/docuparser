@@ -176,6 +176,7 @@ async def _process_email_files(
             "sender": sender or "",
             "message_id": message_id or "",
             "subject": subject or "",
+            "attachments": [p["filename"] for p in attachment_payloads],
         }
         result = process_email_attachments(
             tenant_id=tenant_id,

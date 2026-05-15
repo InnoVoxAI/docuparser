@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import axios from 'axios'
 import {
@@ -619,6 +619,8 @@ function ValidationView({ documents, selectedDocument, selectedDocumentId, onSel
     const [actionMessage, setActionMessage] = useState('')
     const [reprocessing, setReprocessing] = useState(false)
     const [deleting, setDeleting] = useState(false)
+    const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set())
+    const [bulkProgress, setBulkProgress] = useState(null)
 
     useEffect(() => {
         const fields = selectedDocument?.extraction_result?.fields
@@ -694,14 +696,101 @@ function ValidationView({ documents, selectedDocument, selectedDocumentId, onSel
         }
     }
 
+    const filteredValidationDocs = filterDocuments(documents, validationSearch)
+
+    const bulkDelete = async () => {
+        if (bulkSelectedIds.size === 0 || bulkProgress) return
+        const ids = [...bulkSelectedIds]
+        const confirmed = window.confirm(`Excluir ${ids.length} documento(s) selecionado(s)? Os arquivos locais serao preservados.`)
+        if (!confirmed) return
+        setBulkProgress({ action: 'delete', done: 0, total: ids.length })
+        let failed = 0
+        for (let i = 0; i < ids.length; i++) {
+            try {
+                await api.delete(`/documents/${ids[i]}/delete`)
+            } catch {
+                failed++
+            }
+            setBulkProgress({ action: 'delete', done: i + 1, total: ids.length })
+        }
+        setBulkProgress(null)
+        setBulkSelectedIds(new Set())
+        await onValidated()
+        if (failed > 0) setActionMessage(`${failed} documento(s) nao puderam ser excluidos.`)
+    }
+
+    const bulkReprocess = async () => {
+        if (bulkSelectedIds.size === 0 || bulkProgress) return
+        const ids = [...bulkSelectedIds]
+        setBulkProgress({ action: 'reprocess', done: 0, total: ids.length })
+        let failed = 0
+        for (let i = 0; i < ids.length; i++) {
+            try {
+                await api.post(`/documents/${ids[i]}/reprocess-ocr`)
+            } catch {
+                failed++
+            }
+            setBulkProgress({ action: 'reprocess', done: i + 1, total: ids.length })
+        }
+        setBulkProgress(null)
+        setBulkSelectedIds(new Set())
+        await onValidated()
+        if (failed > 0) setActionMessage(`${failed} documento(s) nao puderam ser reprocessados.`)
+    }
+
     return (
         <div className="grid gap-4 xl:grid-cols-[340px_minmax(360px,0.9fr)_minmax(460px,1.1fr)]">
             <section className="rounded-md border border-zinc-200 bg-white">
                 <div className="flex flex-col gap-2 border-b border-zinc-200 px-4 py-3">
                     <div className="text-sm font-semibold">Fila de validacao</div>
-                    <SearchInput value={validationSearch} onChange={setValidationSearch} placeholder="Buscar..." />
+                    <SearchInput value={validationSearch} onChange={(v) => { setValidationSearch(v); setBulkSelectedIds(new Set()) }} placeholder="Buscar..." />
                 </div>
-                <DocumentTable documents={filterDocuments(documents, validationSearch)} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} compact />
+                {bulkSelectedIds.size > 0 ? (
+                    <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2">
+                        <span className="text-xs font-medium text-zinc-600">
+                            {bulkProgress
+                                ? bulkProgress.action === 'delete'
+                                    ? `Excluindo ${bulkProgress.done}/${bulkProgress.total}...`
+                                    : `Reprocessando ${bulkProgress.done}/${bulkProgress.total}...`
+                                : `${bulkSelectedIds.size} selecionado(s)`}
+                        </span>
+                        <button
+                            type="button"
+                            disabled={!!bulkProgress}
+                            onClick={bulkReprocess}
+                            className="flex items-center gap-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50"
+                        >
+                            <RefreshCw size={12} aria-hidden="true" />
+                            Reprocessar
+                        </button>
+                        <button
+                            type="button"
+                            disabled={!!bulkProgress}
+                            onClick={bulkDelete}
+                            className="flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+                        >
+                            <Trash2 size={12} aria-hidden="true" />
+                            Excluir
+                        </button>
+                        <button
+                            type="button"
+                            disabled={!!bulkProgress}
+                            onClick={() => setBulkSelectedIds(new Set())}
+                            className="ml-auto text-xs text-zinc-400 hover:text-zinc-600 disabled:opacity-50"
+                        >
+                            Limpar selecao
+                        </button>
+                    </div>
+                ) : null}
+                <DocumentTable
+                    documents={filteredValidationDocs}
+                    selectedDocumentId={selectedDocumentId}
+                    onSelectDocument={onSelectDocument}
+                    compact
+                    selectable
+                    bulkSelectedIds={bulkSelectedIds}
+                    onBulkSelectionChange={setBulkSelectedIds}
+                />
             </section>
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
@@ -2482,10 +2571,19 @@ function EmailMetadataModal({ data, onClose }) {
     )
 }
 
-function DocumentTable({ documents, selectedDocumentId = '', onSelectDocument, compact = false }) {
+function DocumentTable({
+    documents,
+    selectedDocumentId = '',
+    onSelectDocument,
+    compact = false,
+    selectable = false,
+    bulkSelectedIds = null,
+    onBulkSelectionChange = null,
+}) {
     const [sortKey, setSortKey] = useState(null)
     const [sortDir, setSortDir] = useState('asc')
     const [emailModalDoc, setEmailModalDoc] = useState(null)
+    const selectAllRef = useRef(null)
 
     function handleSort(key) {
         if (sortKey === key) {
@@ -2519,6 +2617,36 @@ function DocumentTable({ documents, selectedDocumentId = '', onSelectDocument, c
         return 0
     }) : documents
 
+    const allSelected = selectable && sortedDocuments.length > 0 && sortedDocuments.every(d => bulkSelectedIds?.has(d.id))
+    const someSelected = selectable && !allSelected && sortedDocuments.some(d => bulkSelectedIds?.has(d.id))
+
+    useEffect(() => {
+        if (selectAllRef.current) {
+            selectAllRef.current.indeterminate = someSelected
+        }
+    }, [someSelected])
+
+    function toggleAll(e) {
+        e.stopPropagation()
+        if (!onBulkSelectionChange) return
+        const next = new Set(bulkSelectedIds)
+        if (allSelected) {
+            sortedDocuments.forEach(d => next.delete(d.id))
+        } else {
+            sortedDocuments.forEach(d => next.add(d.id))
+        }
+        onBulkSelectionChange(next)
+    }
+
+    function toggleOne(e, id) {
+        e.stopPropagation()
+        if (!onBulkSelectionChange) return
+        const next = new Set(bulkSelectedIds)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        onBulkSelectionChange(next)
+    }
+
     const indicator = (col) =>
         sortKey !== col
             ? <span className="ml-1 opacity-30">↕</span>
@@ -2536,6 +2664,18 @@ function DocumentTable({ documents, selectedDocumentId = '', onSelectDocument, c
                 <table className="w-full min-w-[720px] border-collapse text-sm">
                     <thead>
                         <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-semibold uppercase text-zinc-500">
+                            {selectable ? (
+                                <th className="w-8 px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                        ref={selectAllRef}
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        onChange={toggleAll}
+                                        className="h-4 w-4 cursor-pointer rounded border-zinc-300 accent-zinc-700"
+                                        title="Selecionar todos"
+                                    />
+                                </th>
+                            ) : null}
                             <th className={thClass} onClick={() => handleSort('arquivo')}>Arquivo{indicator('arquivo')}</th>
                             <th className={thClass} onClick={() => handleSort('status')}>Status{indicator('status')}</th>
                             {compact ? null : <th className={thClass} onClick={() => handleSort('canal')}>Canal{indicator('canal')}</th>}
@@ -2545,31 +2685,44 @@ function DocumentTable({ documents, selectedDocumentId = '', onSelectDocument, c
                         </tr>
                     </thead>
                     <tbody>
-                        {sortedDocuments.map((document) => (
-                            <tr
-                                key={document.id}
-                                onClick={() => onSelectDocument(document.id)}
-                                className={`cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 ${
-                                    selectedDocumentId === document.id ? 'bg-zinc-100' : ''
-                                }`}
-                            >
-                                <td className="px-3 py-2 font-medium">{document.original_filename || document.id}</td>
-                                <td className="px-3 py-2"><StatusBadge status={document.status} /></td>
-                                {compact ? null : <td className="px-3 py-2">{document.channel || '-'}</td>}
-                                {compact ? null : <td className="px-3 py-2">{document.document_type || '-'}</td>}
-                                <td className="px-3 py-2 text-zinc-500">{formatDate(document.updated_at || document.received_at)}</td>
-                                <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
-                                    <button
-                                        type="button"
-                                        title="Ver informações do documento"
-                                        onClick={() => setEmailModalDoc({ id: document.id, filename: document.original_filename || document.id, channel: document.channel, metadata_channel: document.metadata_channel })}
-                                        className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-                                    >
-                                        <Eye size={14} aria-hidden="true" />
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
+                        {sortedDocuments.map((document) => {
+                            const isChecked = bulkSelectedIds?.has(document.id) ?? false
+                            return (
+                                <tr
+                                    key={document.id}
+                                    onClick={() => onSelectDocument(document.id)}
+                                    className={`cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 ${
+                                        isChecked ? 'bg-zinc-50' : selectedDocumentId === document.id ? 'bg-zinc-100' : ''
+                                    }`}
+                                >
+                                    {selectable ? (
+                                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={(e) => toggleOne(e, document.id)}
+                                                className="h-4 w-4 cursor-pointer rounded border-zinc-300 accent-zinc-700"
+                                            />
+                                        </td>
+                                    ) : null}
+                                    <td className="px-3 py-2 font-medium">{document.original_filename || document.id}</td>
+                                    <td className="px-3 py-2"><StatusBadge status={document.status} /></td>
+                                    {compact ? null : <td className="px-3 py-2">{document.channel || '-'}</td>}
+                                    {compact ? null : <td className="px-3 py-2">{document.document_type || '-'}</td>}
+                                    <td className="px-3 py-2 text-zinc-500">{formatDate(document.updated_at || document.received_at)}</td>
+                                    <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                            type="button"
+                                            title="Ver informações do documento"
+                                            onClick={() => setEmailModalDoc({ id: document.id, filename: document.original_filename || document.id, channel: document.channel, metadata_channel: document.metadata_channel })}
+                                            className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                                        >
+                                            <Eye size={14} aria-hidden="true" />
+                                        </button>
+                                    </td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </table>
             </div>

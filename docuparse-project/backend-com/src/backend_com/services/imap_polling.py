@@ -128,6 +128,16 @@ def poll_imap_once(
             attachments, skipped = _attachments_from_message(message, email_settings)
             skipped_attachments += skipped
             if attachments:
+                email_metadata_channel = {
+                    "provider": "imap",
+                    "sender": sender,
+                    "to": str(message.get("To") or message.get("Delivered-To") or ""),
+                    "cc": str(message.get("Cc") or ""),
+                    "subject": str(message.get("Subject") or ""),
+                    "message_id": str(message.get("Message-ID") or ""),
+                    "date": str(message.get("Date") or ""),
+                    "body_text": _body_text_from_message(message),
+                }
                 result = process_email_attachments(
                     tenant_id=email_settings.tenant_id,
                     attachments=attachments,
@@ -135,6 +145,7 @@ def poll_imap_once(
                     message_id=str(message.get("Message-ID") or message_id.decode("ascii", errors="ignore")),
                     subject=str(message.get("Subject") or ""),
                     provider="imap",
+                    metadata_channel=email_metadata_channel,
                 )
                 documents.extend(result["documents"])
                 duplicate_count += result["duplicate_count"]
@@ -229,3 +240,13 @@ def _message_sender(message: Message) -> str:
     if addresses:
         return addresses[0][1] or str(message.get("From") or "")
     return str(message.get("From") or "")
+
+
+def _body_text_from_message(message: Message, max_chars: int = 2000) -> str:
+    for part in message.walk():
+        if part.get_content_type() == "text/plain" and not part.get_filename():
+            payload = part.get_payload(decode=True)
+            if payload:
+                charset = part.get_content_charset() or "utf-8"
+                return payload.decode(charset, errors="replace")[:max_chars]
+    return ""

@@ -5,6 +5,7 @@ import {
     AlertTriangle,
     CheckCircle2,
     ClipboardCheck,
+    Eye,
     FileText,
     Inbox,
     LayoutDashboard,
@@ -12,6 +13,7 @@ import {
     Settings,
     Trash2,
     Upload,
+    X,
     XCircle,
 } from 'lucide-react'
 import './index.css'
@@ -56,6 +58,29 @@ const STATUS_LABELS = {
     ERP_INTEGRATION_REQUESTED: 'ERP solicitado',
     ERP_SENT: 'ERP enviado',
     ERP_FAILED: 'ERP falhou',
+}
+
+const TYPE_ALIASES = {
+    pdf: ['digital_pdf'],
+    scan: ['scanned_image'],
+    escaneado: ['scanned_image'],
+    imagem: ['scanned_image'],
+    manuscrito: ['handwritten', 'manuscrito'],
+}
+
+function filterDocuments(docs, query) {
+    if (!query.trim()) return docs
+    const q = query.trim().toLowerCase()
+    return docs.filter((doc) => {
+        const filename = (doc.original_filename || doc.id || '').toLowerCase()
+        const status = (doc.status || '').toLowerCase()
+        const statusLabel = (STATUS_LABELS[doc.status] || '').toLowerCase()
+        const docType = (doc.document_type || '').toLowerCase()
+        const channel = (doc.channel || '').toLowerCase()
+        if (filename.includes(q) || status.includes(q) || statusLabel.includes(q) || docType.includes(q) || channel.includes(q)) return true
+        const aliasTypes = TYPE_ALIASES[q]
+        return aliasTypes ? aliasTypes.some((t) => docType.includes(t)) : false
+    })
 }
 
 function App() {
@@ -262,6 +287,8 @@ function NavButton({ item, active, onClick, compact = false }) {
 }
 
 function Dashboard({ metrics, documents }) {
+    const [search, setSearch] = useState('')
+    const displayed = search.trim() ? filterDocuments(documents, search) : documents.slice(0, 8)
     return (
         <div className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -271,18 +298,26 @@ function Dashboard({ metrics, documents }) {
                 <Metric label="Falhas" value={metrics.failed} />
             </div>
             <section className="rounded-md border border-zinc-200 bg-white">
-                <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Ultimos documentos</div>
-                <DocumentTable documents={documents.slice(0, 8)} onSelectDocument={() => {}} />
+                <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+                    <div className="text-sm font-semibold">Ultimos documentos</div>
+                    <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, status, tipo..." />
+                </div>
+                <DocumentTable documents={displayed} onSelectDocument={() => {}} />
             </section>
         </div>
     )
 }
 
 function InboxView({ documents, selectedDocumentId, onSelectDocument }) {
+    const [search, setSearch] = useState('')
+    const displayed = filterDocuments(documents, search)
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
-            <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Documentos recebidos</div>
-            <DocumentTable documents={documents} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} />
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+                <div className="text-sm font-semibold">Documentos recebidos</div>
+                <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, status, tipo..." />
+            </div>
+            <DocumentTable documents={displayed} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} />
         </section>
     )
 }
@@ -578,6 +613,7 @@ function UploadView({ onUploaded }) {
 
 function ValidationView({ documents, selectedDocument, selectedDocumentId, onSelectDocument, onDocumentUpdated, onDocumentDeleted, onValidated }) {
     const [notes, setNotes] = useState('')
+    const [validationSearch, setValidationSearch] = useState('')
     const [fieldRows, setFieldRows] = useState([])
     const [submitting, setSubmitting] = useState(false)
     const [actionMessage, setActionMessage] = useState('')
@@ -661,8 +697,11 @@ function ValidationView({ documents, selectedDocument, selectedDocumentId, onSel
     return (
         <div className="grid gap-4 xl:grid-cols-[340px_minmax(360px,0.9fr)_minmax(460px,1.1fr)]">
             <section className="rounded-md border border-zinc-200 bg-white">
-                <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Fila de validacao</div>
-                <DocumentTable documents={documents} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} compact />
+                <div className="flex flex-col gap-2 border-b border-zinc-200 px-4 py-3">
+                    <div className="text-sm font-semibold">Fila de validacao</div>
+                    <SearchInput value={validationSearch} onChange={setValidationSearch} placeholder="Buscar..." />
+                </div>
+                <DocumentTable documents={filterDocuments(documents, validationSearch)} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} compact />
             </section>
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
@@ -2376,9 +2415,77 @@ function ExamplesEditor({ examples, onChange, referenceText }) {
     )
 }
 
+function EmailMetadataModal({ data, onClose }) {
+    const isEmail = data.channel === 'email'
+    const meta = data.metadata_channel || {}
+    const emailRows = isEmail
+        ? [
+              { label: 'Remetente', value: meta.sender },
+              { label: 'Para', value: meta.to },
+              { label: 'CC', value: meta.cc },
+              { label: 'Assunto', value: meta.subject },
+              { label: 'Data de envio', value: meta.date },
+              { label: 'Message-ID', value: meta.message_id },
+              { label: 'Provedor', value: meta.provider },
+          ].filter((row) => row.value)
+        : []
+    const rows = [{ label: 'Código de Processo', value: data.id }, ...emailRows].filter((row) => row.value)
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+            <div
+                className="relative mx-4 w-full max-w-lg rounded-lg border border-zinc-200 bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+                    <div className="min-w-0 flex-1 pr-4">
+                        <div className="text-sm font-semibold">{isEmail ? 'Metadados do email' : 'Informações do documento'}</div>
+                        {data.filename ? <div className="mt-0.5 text-xs text-zinc-500 truncate">{data.filename}</div> : null}
+                    </div>
+                    <button type="button" onClick={onClose} className="shrink-0 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
+                        <X size={16} aria-hidden="true" />
+                    </button>
+                </div>
+                {isEmail && emailRows.length === 0 ? (
+                    <div className="divide-y divide-zinc-100 px-5 py-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
+                            <dt className="font-medium text-zinc-500">Código de Processo</dt>
+                            <dd className="min-w-0 break-all text-zinc-800">{data.id}</dd>
+                        </div>
+                        <div className="py-4 text-sm text-zinc-500">
+                            Metadados do email nao disponiveis para este documento. Reimporte-o para capturar as informacoes.
+                        </div>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-zinc-100 px-5 py-2">
+                        {rows.map(({ label, value }) => (
+                            <div key={label} className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
+                                <dt className="font-medium text-zinc-500">{label}</dt>
+                                <dd className="min-w-0 break-all text-zinc-800">{value}</dd>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {meta.body_text ? (
+                    <div className="border-t border-zinc-200 px-5 py-3">
+                        <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Corpo do email</div>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">{meta.body_text}</pre>
+                    </div>
+                ) : null}
+                <div className="border-t border-zinc-200 px-5 py-3 text-right">
+                    <button type="button" onClick={onClose} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100">
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
 function DocumentTable({ documents, selectedDocumentId = '', onSelectDocument, compact = false }) {
     const [sortKey, setSortKey] = useState(null)
     const [sortDir, setSortDir] = useState('asc')
+    const [emailModalDoc, setEmailModalDoc] = useState(null)
 
     function handleSort(key) {
         if (sortKey === key) {
@@ -2424,36 +2531,50 @@ function DocumentTable({ documents, selectedDocumentId = '', onSelectDocument, c
     }
 
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead>
-                    <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-semibold uppercase text-zinc-500">
-                        <th className={thClass} onClick={() => handleSort('arquivo')}>Arquivo{indicator('arquivo')}</th>
-                        <th className={thClass} onClick={() => handleSort('status')}>Status{indicator('status')}</th>
-                        {compact ? null : <th className={thClass} onClick={() => handleSort('canal')}>Canal{indicator('canal')}</th>}
-                        {compact ? null : <th className={thClass} onClick={() => handleSort('tipo')}>Tipo{indicator('tipo')}</th>}
-                        <th className={thClass} onClick={() => handleSort('atualizado')}>Atualizado{indicator('atualizado')}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {sortedDocuments.map((document) => (
-                        <tr
-                            key={document.id}
-                            onClick={() => onSelectDocument(document.id)}
-                            className={`cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 ${
-                                selectedDocumentId === document.id ? 'bg-zinc-100' : ''
-                            }`}
-                        >
-                            <td className="px-3 py-2 font-medium">{document.original_filename || document.id}</td>
-                            <td className="px-3 py-2"><StatusBadge status={document.status} /></td>
-                            {compact ? null : <td className="px-3 py-2">{document.channel || '-'}</td>}
-                            {compact ? null : <td className="px-3 py-2">{document.document_type || '-'}</td>}
-                            <td className="px-3 py-2 text-zinc-500">{formatDate(document.updated_at || document.received_at)}</td>
+        <>
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] border-collapse text-sm">
+                    <thead>
+                        <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-semibold uppercase text-zinc-500">
+                            <th className={thClass} onClick={() => handleSort('arquivo')}>Arquivo{indicator('arquivo')}</th>
+                            <th className={thClass} onClick={() => handleSort('status')}>Status{indicator('status')}</th>
+                            {compact ? null : <th className={thClass} onClick={() => handleSort('canal')}>Canal{indicator('canal')}</th>}
+                            {compact ? null : <th className={thClass} onClick={() => handleSort('tipo')}>Tipo{indicator('tipo')}</th>}
+                            <th className={thClass} onClick={() => handleSort('atualizado')}>Atualizado{indicator('atualizado')}</th>
+                            <th className="w-8 px-2 py-2"></th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+                    </thead>
+                    <tbody>
+                        {sortedDocuments.map((document) => (
+                            <tr
+                                key={document.id}
+                                onClick={() => onSelectDocument(document.id)}
+                                className={`cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 ${
+                                    selectedDocumentId === document.id ? 'bg-zinc-100' : ''
+                                }`}
+                            >
+                                <td className="px-3 py-2 font-medium">{document.original_filename || document.id}</td>
+                                <td className="px-3 py-2"><StatusBadge status={document.status} /></td>
+                                {compact ? null : <td className="px-3 py-2">{document.channel || '-'}</td>}
+                                {compact ? null : <td className="px-3 py-2">{document.document_type || '-'}</td>}
+                                <td className="px-3 py-2 text-zinc-500">{formatDate(document.updated_at || document.received_at)}</td>
+                                <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                        type="button"
+                                        title="Ver informações do documento"
+                                        onClick={() => setEmailModalDoc({ id: document.id, filename: document.original_filename || document.id, channel: document.channel, metadata_channel: document.metadata_channel })}
+                                        className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                                    >
+                                        <Eye size={14} aria-hidden="true" />
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            {emailModalDoc ? <EmailMetadataModal data={emailModalDoc} onClose={() => setEmailModalDoc(null)} /> : null}
+        </>
     )
 }
 
@@ -2508,6 +2629,18 @@ function EmptyState({ icon: Icon, text }) {
             <Icon size={24} aria-hidden="true" />
             <span>{text}</span>
         </div>
+    )
+}
+
+function SearchInput({ value, onChange, placeholder = 'Buscar...' }) {
+    return (
+        <input
+            type="search"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="h-8 w-56 rounded-md border border-zinc-300 bg-white px-3 text-sm placeholder-zinc-400 outline-none focus:border-zinc-500"
+        />
     )
 }
 

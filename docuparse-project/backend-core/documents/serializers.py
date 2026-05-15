@@ -31,6 +31,8 @@ class ExtractionResultSerializer(serializers.ModelSerializer):
 
 
 class DocumentListSerializer(serializers.ModelSerializer):
+    metadata_channel = serializers.SerializerMethodField()
+
     class Meta:
         model = Document
         fields = [
@@ -43,7 +45,11 @@ class DocumentListSerializer(serializers.ModelSerializer):
             "layout",
             "received_at",
             "updated_at",
+            "metadata_channel",
         ]
+
+    def get_metadata_channel(self, obj: Document) -> dict | None:
+        return (obj.metadata or {}).get("metadata_channel") or None
 
 
 class DocumentDetailSerializer(serializers.ModelSerializer):

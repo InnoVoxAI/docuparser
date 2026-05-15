@@ -11,16 +11,19 @@ def process_email_attachments(
     message_id: str | None = None,
     subject: str | None = None,
     provider: str = "manual",
+    metadata_channel: dict | None = None,
 ) -> dict:
     documents: list[dict] = []
     duplicate_count = 0
     for index, attachment in enumerate(attachments, start=1):
-        metadata = {
+        metadata: dict = {
             "provider": provider,
             "message_id": message_id,
             "subject": subject,
             "attachment_index": index,
         }
+        if metadata_channel:
+            metadata["metadata_channel"] = metadata_channel
         try:
             documents.append(
                 ingest_document(

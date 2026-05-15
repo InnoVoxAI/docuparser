@@ -1,3 +1,5 @@
+import json
+
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.http import JsonResponse
@@ -26,6 +28,7 @@ from .serializers import (
     ValidationDecisionSerializer,
 )
 from .services.ocr_client import OCRClient
+from .services.langextract_client import LangExtractClient
 from .services.erp_publisher import publish_erp_integration_requested
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.dlq_inspector import DEFAULT_DLQ_STREAMS, requeue_dlq_entry, inspect_dlq_streams
@@ -222,6 +225,60 @@ def document_validation_view(request, document_id):
         document.transition_to(Document.Status.VALIDATION_PENDING)
 
     return Response(ValidationDecisionSerializer(validation).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+def document_langextract_view(request, document_id):
+    """Run on-demand LLM field extraction for a document using a chosen SchemaConfig."""
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+
+    schema_config_id = request.data.get("schema_config_id")
+    if not schema_config_id:
+        return Response({"detail": "schema_config_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    document = get_object_or_404(Document, id=document_id)
+    schema_config = get_object_or_404(SchemaConfig, id=schema_config_id)
+
+    if not document.raw_text_uri:
+        return Response({"detail": "Documento sem texto bruto disponivel. Execute o OCR primeiro."}, status=status.HTTP_400_BAD_REQUEST)
+
+    storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+    try:
+        payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
+    except Exception as exc:
+        return Response({"detail": f"Erro ao ler texto bruto: {exc}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    raw_text = str(payload.get("raw_text") or "")
+    if not raw_text.strip():
+        return Response({"detail": "Texto bruto do documento esta vazio."}, status=status.HTTP_400_BAD_REQUEST)
+
+    definition = schema_config.definition
+    if not definition or not isinstance(definition, dict):
+        return Response({"detail": "SchemaConfig nao possui definicao valida."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Inject schema_id/version from the model so llm_extractor can identify the schema.
+    # The definition JSON (built by buildLangExtractDefinition in the frontend) does not
+    # include these — they live as top-level model fields, not inside definition.
+    definition = {
+        **definition,
+        "schema_id": schema_config.schema_id,
+        "version": schema_config.version,
+    }
+
+    try:
+        client = LangExtractClient()
+        result = client.extract_with_schema(
+            raw_text=raw_text,
+            schema_definition=definition,
+            layout=document.layout or "generic",
+            document_type=str(document.content_type or "unknown"),
+        )
+    except Exception as exc:
+        return Response({"detail": f"Falha na extracao LangExtract: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+    return Response(result)
 
 
 @api_view(["GET", "POST"])

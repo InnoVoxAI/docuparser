@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 from uuid import uuid4
 
+from domain.backend_core_client import fetch_schema_for_layout
 from domain.extractor import extract_fields
+from domain.llm_extractor import extract_with_llm
 from events import ExtractionCompletedEvent, LayoutClassifiedEvent
 from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
 from docuparse_observability import log_event
@@ -39,7 +41,42 @@ def handle_layout_classified_event(
     raw_payload = json.loads(storage.get_bytes(raw_text_uri).decode("utf-8"))
     raw_text = str(raw_payload.get("raw_text", ""))
 
-    extracted = extract_fields(raw_text, event.data.layout, event.data.document_type)
+    # --- Extraction strategy selection ---
+    # 1. Try to load the SchemaConfig definition linked to this layout in backend-core.
+    # 2. If found: use the LLM extractor with the full prompt + field list from the schema.
+    # 3. If not found (no config, service unreachable, etc.): fall back to the legacy
+    #    regex-based extractor so existing layouts keep working unchanged.
+    schema_definition, confidence_threshold = fetch_schema_for_layout(
+        tenant_id=event.tenant_id,
+        layout=event.data.layout,
+        document_type=event.data.document_type,
+    )
+
+    if schema_definition:
+        log_event(
+            logger,
+            "langextract.using_llm_extraction",
+            tenant_id=event.tenant_id,
+            document_id=str(event.document_id),
+            layout=event.data.layout,
+            schema_id=schema_definition.get("schema_id"),
+        )
+        extracted = extract_with_llm(
+            raw_text,
+            schema_definition,
+            tenant_id=event.tenant_id,
+            confidence_threshold=confidence_threshold,
+        )
+    else:
+        log_event(
+            logger,
+            "langextract.using_regex_extraction",
+            tenant_id=event.tenant_id,
+            document_id=str(event.document_id),
+            layout=event.data.layout,
+        )
+        extracted = extract_fields(raw_text, event.data.layout, event.data.document_type)
+
     output = ExtractionCompletedEvent(
         event_id=uuid4(),
         occurred_at=datetime.now(timezone.utc),

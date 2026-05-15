@@ -85,6 +85,7 @@ services:
       - .env
     environment:
       BACKEND_OCR_URL: http://backend-ocr:8080
+      LANGEXTRACT_SERVICE_URL: http://langextract-service:8091
       PYTHONPATH: /app:/contracts:/shared
       POSTGRES_HOST: postgres
       POSTGRES_DB: ${POSTGRES_DB:-docuparse}
@@ -321,6 +322,16 @@ services:
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
       DOCUPARSE_EXTRACTION_WORKER_ENABLED: ${DOCUPARSE_EXTRACTION_WORKER_ENABLED:-false}
+      # LLM extraction — same key used by backend-ocr
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      # LANGEXTRACT_MODEL takes precedence over OPENROUTER_MODEL for text extraction.
+      # Use a text-capable model here; backend-ocr uses its own vision model separately.
+      LANGEXTRACT_MODEL: ${LANGEXTRACT_MODEL:-deepseek/deepseek-chat-v3-0324:free}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      # Used to fetch LayoutConfig + SchemaConfig for schema-guided extraction
+      BACKEND_CORE_URL: http://backend-core:8000
+      DOCUPARSE_INTERNAL_SERVICE_TOKEN: ${DOCUPARSE_INTERNAL_SERVICE_TOKEN:-}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health', timeout=2)"]
       interval: 10s
@@ -351,6 +362,14 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # LLM extraction — same key used by backend-ocr
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      LANGEXTRACT_MODEL: ${LANGEXTRACT_MODEL:-deepseek/deepseek-chat-v3-0324:free}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      # Used to fetch LayoutConfig + SchemaConfig for schema-guided extraction
+      BACKEND_CORE_URL: http://backend-core:8000
+      DOCUPARSE_INTERNAL_SERVICE_TOKEN: ${DOCUPARSE_INTERNAL_SERVICE_TOKEN:-}
     networks:
       - docuparse-network
     depends_on:

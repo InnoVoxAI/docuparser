@@ -10,6 +10,8 @@ class ExtractRequest(BaseModel):
     layout: str = "generic"
     document_type: str = "unknown"
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # When provided, the LLM extractor is used instead of the regex fallback.
+    schema_definition: dict[str, Any] | None = None
 
 
 class ExtractResponse(BaseModel):

@@ -627,9 +627,12 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
     const [extractMessage, setExtractMessage] = useState('')
 
     // Populate fieldRows from persisted extraction_result when document changes.
-    // Falls back to empty list when no extraction has been run yet.
+    // Skips legacy_ocr records (produced by the old heuristic extractor, now discontinued).
+    // Falls back to empty list when no LangExtract run has happened yet.
     useEffect(() => {
-        const persistedFields = selectedDocument?.extraction_result?.fields
+        const result = selectedDocument?.extraction_result
+        const isLangExtracted = result && result.schema_id !== 'legacy_ocr'
+        const persistedFields = isLangExtracted ? result.fields : null
         if (persistedFields && Object.keys(persistedFields).length > 0) {
             setFieldRows(
                 Object.entries(persistedFields)

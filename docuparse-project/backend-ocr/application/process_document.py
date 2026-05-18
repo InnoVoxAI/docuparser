@@ -29,7 +29,6 @@ from typing import Any, Dict
 
 from domain.classifier import classify_document, get_engine_preprocessing_hints_for_class
 from domain.engine_resolver import resolver as engine_resolver
-from domain.field_extractor import FieldExtractor
 from infrastructure.engines.base_engine import BaseOCREngine
 from infrastructure.engines.deepseek_engine import DeepSeekEngine
 from infrastructure.engines.docling_engine import DoclingEngine
@@ -194,40 +193,7 @@ def process_document(
             except Exception as fallback_e:
                 logger.warning(f"Fallback por texto vazio falhou: {fallback_e}")
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # 4. EXTRAIR CAMPOS ESTRUTURADOS (modo legado opcional)
-    # ──────────────────────────────────────────────────────────────────────────
-    field_quality: Dict[str, Any] = {
-        "fields": {},
-        "final_score": 0.0,
-        "field_confidence": {},
-        "low_confidence_fields": [],
-        "_meta": {
-            "semantic_extraction": "disabled",
-            "reason": "handled_by_langextract_service",
-        },
-    }
-    fields: Dict[str, Any] = {}
-    final_score = 0.0
-    if legacy_extraction:
-        try:
-            extractor = FieldExtractor()
-            field_quality = extractor.extract(ocr_result)
-            fields = field_quality["fields"]
-            final_score = field_quality["final_score"]
-            logger.info(f"Campos extraídos com score final: {final_score:.2f}")
-        except Exception as e:
-            logger.error(f"Erro na extração de campos: {e}")
-
-    # ──────────────────────────────────────────────────────────────────────────
-    # 5. CALCULAR POSIÇÕES DOS CAMPOS (se necessário)
-    # ──────────────────────────────────────────────────────────────────────────
     field_positions = {}
-    if fields and ocr_result.get("raw_text"):
-        try:
-            field_positions = _compute_field_positions(fields, ocr_result["raw_text"])
-        except Exception as e:
-            logger.warning(f"Erro ao calcular posições dos campos: {e}")
 
     # ──────────────────────────────────────────────────────────────────────────
     # 6. CONSTRUIR RESPONSE FINAL
@@ -235,74 +201,36 @@ def process_document(
     processing_time = time.time() - start_time
 
     response = {
-        # Dados extraídos
-        "fields": fields,
+        "fields": {},
         "field_positions": field_positions,
+        "final_score": 0.0,
+        "field_confidence": {},
+        "low_confidence_fields": [],
 
-        # Metadados de qualidade
-        "final_score": final_score,
-        "field_confidence": field_quality.get("field_confidence", {}),
-        "low_confidence_fields": field_quality.get("low_confidence_fields", []),
-
-        # Dados brutos do OCR
         "raw_text": ocr_result.get("raw_text", ""),
         "raw_text_fallback": ocr_result.get("raw_text_fallback", ""),
 
-        # Metadados do processamento
         "document_type": doc_type,
         "engine_used": engine_name,
         "preprocessing_hint": preprocessing_hint,
         "classification_engine_preprocessing_hints": classification_engine_preprocessing_hints,
         "processing_time_seconds": round(processing_time, 2),
         "filename": filename,
-        "semantic_extraction_enabled": legacy_extraction,
+        "semantic_extraction_enabled": False,
 
-        # Dados estruturados adicionais
         "document_info": ocr_result.get("document_info", {}),
         "entities": ocr_result.get("entities", {}),
         "tables": ocr_result.get("tables", []),
         "totals": ocr_result.get("totals", {}),
 
-        # Debug info
         "debug": {
             "classification": doc_type,
             "engine_used": engine_name,
             "preprocessing_hint": preprocessing_hint,
             "classification_engine_preprocessing_hints": classification_engine_preprocessing_hints,
             "engine_meta": ocr_result.get("_meta", {}),
-            "field_extraction_meta": field_quality.get("_meta", {}),
         }
     }
 
     logger.info(f"Processamento concluído em {processing_time:.2f}s")
     return response
-
-
-def _compute_field_positions(fields: Dict[str, Any], raw_text: str) -> Dict[str, Dict[str, Any]]:
-    """
-    Calcula as posições aproximadas dos campos no texto extraído.
-
-    Esta é uma implementação simplificada. Em produção, poderia usar:
-    - Análise de layout do PDF
-    - Posicionamento relativo das bounding boxes
-    - Análise sintática do texto
-    """
-    positions = {}
-    text_lower = raw_text.lower()
-
-    for field_name, field_value in fields.items():
-        if not isinstance(field_value, str):
-            continue
-
-        # Busca simples pela primeira ocorrência do valor do campo
-        field_lower = str(field_value).lower()
-        start_pos = text_lower.find(field_lower)
-
-        if start_pos != -1:
-            positions[field_name] = {
-                "start_position": start_pos,
-                "end_position": start_pos + len(field_value),
-                "confidence": 0.8,  # confiança estimada
-            }
-
-    return positions

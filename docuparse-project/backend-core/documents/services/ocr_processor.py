@@ -9,7 +9,7 @@ from django.utils import timezone
 
 from docuparse_storage import LocalStorage, document_ocr_raw_text_key
 
-from documents.models import Document, ExtractionResult
+from documents.models import Document
 from documents.services.ocr_client import OCRClient
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ def process_document_ocr(document_id) -> Document:
     result = OCRClient().process_document(
         BytesIO(content),
         document.original_filename or f"{document.id}.pdf",
-        legacy_extraction=True,
+        legacy_extraction=False,
     )
 
     raw_text = result.get("raw_text") or result.get("raw_text_fallback") or ""
@@ -42,20 +42,9 @@ def process_document_ocr(document_id) -> Document:
         json.dumps(raw_text_payload, ensure_ascii=False).encode("utf-8"),
     )
 
-    fields = _clean_extracted_fields(result.get("fields") or {})
-    ExtractionResult.objects.update_or_create(
-        document=document,
-        defaults={
-            "schema_id": "legacy_ocr",
-            "schema_version": "v1",
-            "fields": fields,
-            "confidence": result.get("final_score") or 0.0,
-            "requires_human_validation": True,
-        },
-    )
     document.raw_text_uri = stored.uri
     document.document_type = result.get("document_type", "") or document.document_type
-    document.status = Document.Status.VALIDATION_PENDING
+    document.status = Document.Status.OCR_COMPLETED
     document.save(update_fields=["raw_text_uri", "document_type", "status", "updated_at"])
     return document
 
@@ -74,13 +63,3 @@ def _run_ocr_safely(document_id) -> None:
         logger.warning("automatic_ocr_failed", extra={"document_id": str(document_id), "error": str(exc)})
 
 
-def _clean_extracted_fields(fields: dict) -> dict:
-    cleaned = {}
-    for key, value in fields.items():
-        if value in ("", None, [], {}):
-            continue
-        text_value = str(value)
-        if key == "retencao" and len(text_value) > 300:
-            continue
-        cleaned[key] = value
-    return cleaned

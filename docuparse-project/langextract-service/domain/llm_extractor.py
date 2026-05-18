@@ -200,17 +200,21 @@ Retorne APENAS um objeto JSON válido com o seguinte formato, sem qualquer texto
 def _call_openrouter(user_prompt: str) -> str:
     """Call the OpenRouter chat-completions API and return the assistant message."""
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    # LANGEXTRACT_MODEL takes precedence; falls back to the shared OPENROUTER_MODEL.
-    # This allows a dedicated text-capable model for extraction while backend-ocr
-    # continues using its vision model (e.g. baidu/qianfan-ocr-fast:free).
-    model = (os.getenv("LANGEXTRACT_MODEL") or os.getenv("OPENROUTER_MODEL", "")).strip()
+    # LANGEXTRACT_MODEL is the dedicated env var for text extraction.
+    # We deliberately do NOT fall back to OPENROUTER_MODEL because that variable is
+    # shared with backend-ocr and may point to a vision-only model (e.g.
+    # baidu/qianfan-ocr-fast:free) that rejects text chat-completion requests.
+    # The hardcoded default ensures a capable text model is always available even
+    # when the container hasn't picked up the env var yet.
+    
+    model = os.getenv("LANGEXTRACT_MODEL")
     base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").strip()
     timeout = int(os.getenv("OPENROUTER_TIMEOUT", "60"))
 
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set — LLM extraction is disabled")
     if not model:
-        raise RuntimeError("OPENROUTER_MODEL is not set — LLM extraction is disabled")
+        raise RuntimeError("LANGEXTRACT_MODEL is not set — LLM extraction is disabled")
 
     payload = {
         "model": model,

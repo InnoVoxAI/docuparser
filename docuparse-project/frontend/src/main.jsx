@@ -626,9 +626,9 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
     const [extracting, setExtracting] = useState(false)
     const [extractMessage, setExtractMessage] = useState('')
 
-    // Populate fieldRows from persisted extraction_result when document changes.
+    // Populate fieldRows and auto-select schema when document changes.
     // Skips legacy_ocr records (produced by the old heuristic extractor, now discontinued).
-    // Falls back to empty list when no LangExtract run has happened yet.
+    // Falls back to empty list and text-based schema detection when no LangExtract run yet.
     useEffect(() => {
         const result = selectedDocument?.extraction_result
         const isLangExtracted = result && result.schema_id !== 'legacy_ocr'
@@ -643,6 +643,28 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
             setFieldRows([])
         }
         setExtractMessage('')
+
+        // Auto-select the schema model: prefer the one used in the last extraction,
+        // then fall back to text-based detection using the same helpers as OCR Referência.
+        if (isLangExtracted && result.schema_id) {
+            const match = schemas.find((s) => s.schema_id === result.schema_id)
+            if (match) { setSelectedSchemaId(match.id); return }
+        }
+        const rawText = selectedDocument?.full_transcription || ''
+        if (rawText) {
+            if (isLikelyNotaFiscalText(rawText)) {
+                const s = schemas.find((sc) => sc.schema_id === NOTA_FISCAL_DEFAULT_SCHEMA_ID)
+                if (s) { setSelectedSchemaId(s.id); return }
+            }
+            if (isLikelyContaAguaText(rawText)) {
+                const s = schemas.find((sc) => sc.schema_id === CONTA_AGUA_DEFAULT_SCHEMA_ID)
+                if (s) { setSelectedSchemaId(s.id); return }
+            }
+            if (isLikelyBoletoText(rawText)) {
+                const s = schemas.find((sc) => sc.schema_id === BOLETO_DEFAULT_SCHEMA_ID)
+                if (s) { setSelectedSchemaId(s.id); return }
+            }
+        }
     }, [selectedDocument?.id])
 
     const runLangExtract = async () => {
@@ -2451,13 +2473,19 @@ function HintPanel({ title, items, onUse }) {
 }
 
 function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocument, referenceDocument, fields, review, onReviewChange }) {
+    const [search, setSearch] = useState('')
+    const filteredDocs = filterDocuments(documents, search)
+
     return (
         <div className="space-y-4">
             <div className="grid gap-4 xl:grid-cols-[360px_minmax(360px,1fr)_minmax(360px,1fr)]">
                 <section className="rounded-md border border-zinc-200">
-                    <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">Documento de referencia</div>
+                    <div className="flex flex-col gap-2 border-b border-zinc-200 px-3 py-2">
+                        <div className="text-sm font-semibold">Documento de referencia</div>
+                        <SearchInput value={search} onChange={setSearch} placeholder="Buscar..." />
+                    </div>
                     <div className="max-h-[520px] overflow-auto">
-                        {documents.map((document) => (
+                        {filteredDocs.map((document) => (
                             <button
                                 key={document.id}
                                 type="button"

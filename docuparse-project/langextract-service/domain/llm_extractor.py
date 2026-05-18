@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import urllib.error
 import urllib.request
 from typing import Any
@@ -188,8 +189,10 @@ Para cada campo:
 - Retorne o valor encontrado no texto, exatamente como aparece (sem inventar).
 - Se não encontrar o campo no texto, retorne null.
 - Não repita o texto completo, somente o valor do campo.
+- NÃO inclua scores de confiança, objetos aninhados ou metadados extras.
+- Cada campo deve ter apenas um valor simples (string, número ou null).
 
-Retorne APENAS um objeto JSON válido com o seguinte formato, sem qualquer texto adicional:
+Retorne APENAS um objeto JSON plano e válido (sem objetos aninhados) com o seguinte formato, sem qualquer texto adicional:
 {json_template}"""
 
 
@@ -286,8 +289,11 @@ def _call_openrouter(user_prompt: str) -> str:
 def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, Any]:
     """Extract a dict of {field: value} from the LLM text response.
 
-    Handles markdown code-fences and extracts the first JSON object found.
-    Returns {field: None} for all fields if parsing fails.
+    Strategy:
+    1. Full JSON parse with nested-structure normalization (handles models that
+       return {"field": {"value": "...", "confidence": 0.9}} instead of flat values).
+    2. If JSON is truncated or malformed, regex-based partial recovery so fields
+       that were already emitted before the truncation point are not lost.
     """
     content = raw_response.strip()
 
@@ -300,16 +306,15 @@ def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, 
     # Find the outermost JSON object
     start = content.find("{")
     end = content.rfind("}") + 1
-    if start >= 0 and end > start:
-        content = content[start:end]
+    json_content = content[start:end] if start >= 0 and end > start else content
 
+    # Attempt 1: full JSON parse
     try:
-        parsed = json.loads(content)
+        parsed = json.loads(json_content)
         if not isinstance(parsed, dict):
             raise ValueError("LLM response is not a JSON object")
 
-        # Keep only the expected fields; unknown keys are ignored
-        result = {name: parsed.get(name) for name in field_names}
+        result = {name: _normalize_field_value(parsed.get(name)) for name in field_names}
         logger.info(
             "langextract.llm_extractor.parsed_fields | fields=%s", list(result.keys())
         )
@@ -319,7 +324,66 @@ def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, 
             "langextract.llm_extractor.json_parse_failed | error=%s raw=%.300s",
             exc, raw_response,
         )
-        return {name: None for name in field_names}
+
+    # Attempt 2: regex-based partial recovery for truncated responses
+    result = _recover_partial_fields(raw_response, field_names)
+    found = sum(1 for v in result.values() if v is not None)
+    if found > 0:
+        logger.info(
+            "langextract.llm_extractor.partial_recovery_success | fields_recovered=%d/%d",
+            found, len(field_names),
+        )
+        return result
+
+    logger.warning("langextract.llm_extractor.recovery_failed | returning all fields as None")
+    return {name: None for name in field_names}
+
+
+def _normalize_field_value(value: Any) -> Any:
+    """Flatten {value, confidence} dicts that some models return instead of bare values."""
+    if isinstance(value, dict) and "value" in value:
+        return value.get("value")
+    return value
+
+
+def _recover_partial_fields(text: str, field_names: list[str]) -> dict[str, Any]:
+    """Regex recovery for truncated/malformed JSON — handles both flat and nested formats.
+
+    Patterns matched:
+      "field": {"value": "string", ...}   — nested with confidence score
+      "field": {"value": null, ...}        — nested null
+      "field": "direct value"              — flat string
+      "field": null                        — flat null
+    """
+    result: dict[str, Any] = {name: None for name in field_names}
+    if not field_names:
+        return result
+
+    names_pat = "|".join(re.escape(n) for n in field_names)
+
+    # Nested: "field": {"value": "...", ...} or "field": {"value": null, ...}
+    nested_re = re.compile(
+        r'"(' + names_pat + r')"\s*:\s*\{\s*"value"\s*:\s*(?:"([^"]*)"|(null))\b'
+    )
+    for m in nested_re.finditer(text):
+        name = m.group(1)
+        result[name] = None if m.group(3) else m.group(2)
+
+    # Flat string: "field": "value"  (only fills fields not yet recovered)
+    flat_str_re = re.compile(r'"(' + names_pat + r')"\s*:\s*"([^"]*)"')
+    for m in flat_str_re.finditer(text):
+        name = m.group(1)
+        if result[name] is None:
+            result[name] = m.group(2)
+
+    # Flat null: "field": null  (only fills fields not yet recovered)
+    flat_null_re = re.compile(r'"(' + names_pat + r')"\s*:\s*null\b')
+    for m in flat_null_re.finditer(text):
+        name = m.group(1)
+        if result[name] is None:
+            result[name] = None  # explicit null keeps as None → becomes placeholder later
+
+    return result
 
 
 # ---------------------------------------------------------------------------

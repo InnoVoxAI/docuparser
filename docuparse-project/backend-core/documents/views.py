@@ -16,7 +16,7 @@ from rest_framework import status
 from docuparse_events import event_bus_from_env
 from docuparse_storage import LocalStorage
 
-from .models import Document, EmailSettings, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, Tenant, ValidationDecision
+from .models import Document, EmailSettings, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, Tenant, ValidationDecision
 from .serializers import (
     DocumentDetailSerializer,
     DocumentListSerializer,
@@ -277,6 +277,19 @@ def document_langextract_view(request, document_id):
         )
     except Exception as exc:
         return Response({"detail": f"Falha na extracao LangExtract: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+    ExtractionResult.objects.update_or_create(
+        document=document,
+        defaults={
+            "schema_id": result.get("schema_id") or schema_config.schema_id,
+            "schema_version": result.get("schema_version") or schema_config.version,
+            "fields": result.get("fields") or {},
+            "confidence": result.get("confidence") or 0.0,
+            "requires_human_validation": result.get("requires_human_validation", True),
+        },
+    )
+    if document.status not in (Document.Status.VALIDATION_PENDING, Document.Status.APPROVED, Document.Status.REJECTED):
+        document.transition_to(Document.Status.EXTRACTION_COMPLETED)
 
     return Response(result)
 

@@ -626,9 +626,19 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
     const [extracting, setExtracting] = useState(false)
     const [extractMessage, setExtractMessage] = useState('')
 
-    // Reset extraction state when the selected document changes.
+    // Populate fieldRows from persisted extraction_result when document changes.
+    // Falls back to empty list when no extraction has been run yet.
     useEffect(() => {
-        setFieldRows([])
+        const persistedFields = selectedDocument?.extraction_result?.fields
+        if (persistedFields && Object.keys(persistedFields).length > 0) {
+            setFieldRows(
+                Object.entries(persistedFields)
+                    .filter(([, value]) => value !== '' && value !== null && value !== undefined)
+                    .map(([name, value]) => ({ name, value: formatEditableValue(value) })),
+            )
+        } else {
+            setFieldRows([])
+        }
         setExtractMessage('')
     }, [selectedDocument?.id])
 

@@ -312,13 +312,49 @@ def _empty_text_fallback_model() -> str:
     return os.getenv("OPENROUTER_FALLBACK_MODEL", OPENROUTER_EMPTY_TEXT_FALLBACK_MODEL).strip()
 
 
+_NO_IMAGE_SUPPORT_MARKERS = (
+    "no endpoints found that support image input",
+    "does not support image",
+    "vision not supported",
+)
+
+
+def _is_no_image_support_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(marker in msg for marker in _NO_IMAGE_SUPPORT_MARKERS)
+
+
 def _call_openrouter_with_empty_text_retry(
     image_bgr: Any,
     page_label: str,
     timeout_s: int,
 ) -> tuple[Dict[str, Any], bool, str]:
     primary_model = os.getenv("OPENROUTER_MODEL", "").strip()
-    result = _call_openrouter(image_bgr, page_label=page_label, timeout_s=timeout_s)
+
+    try:
+        result = _call_openrouter(image_bgr, page_label=page_label, timeout_s=timeout_s)
+    except RuntimeError as exc:
+        if _is_no_image_support_error(exc):
+            fallback_model = _empty_text_fallback_model()
+            if fallback_model and fallback_model != primary_model:
+                logger.warning(
+                    "Primary model %s does not support image input; retrying page=%s with fallback model=%s",
+                    primary_model,
+                    page_label,
+                    fallback_model,
+                )
+                fallback_result = _call_openrouter(
+                    image_bgr,
+                    page_label=f"{page_label}_retry",
+                    timeout_s=timeout_s,
+                    model_override=fallback_model,
+                )
+                fallback_result["_fallback_from_model"] = primary_model
+                fallback_result["_fallback_model"] = fallback_model
+                fallback_result["_fallback_reason"] = "primary_model_no_image_support"
+                return fallback_result, True, fallback_model
+        raise
+
     if _extract_ocr_text(result):
         return result, False, primary_model
 

@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import axios from 'axios'
 import {
     AlertTriangle,
     CheckCircle2,
     ClipboardCheck,
+    Eye,
     FileText,
     Inbox,
     LayoutDashboard,
@@ -12,6 +13,7 @@ import {
     Settings,
     Trash2,
     Upload,
+    X,
     XCircle,
 } from 'lucide-react'
 import './index.css'
@@ -56,6 +58,29 @@ const STATUS_LABELS = {
     ERP_INTEGRATION_REQUESTED: 'ERP solicitado',
     ERP_SENT: 'ERP enviado',
     ERP_FAILED: 'ERP falhou',
+}
+
+const TYPE_ALIASES = {
+    pdf: ['digital_pdf'],
+    scan: ['scanned_image'],
+    escaneado: ['scanned_image'],
+    imagem: ['scanned_image'],
+    manuscrito: ['handwritten', 'manuscrito'],
+}
+
+function filterDocuments(docs, query) {
+    if (!query.trim()) return docs
+    const q = query.trim().toLowerCase()
+    return docs.filter((doc) => {
+        const filename = (doc.original_filename || doc.id || '').toLowerCase()
+        const status = (doc.status || '').toLowerCase()
+        const statusLabel = (STATUS_LABELS[doc.status] || '').toLowerCase()
+        const docType = (doc.document_type || '').toLowerCase()
+        const channel = (doc.channel || '').toLowerCase()
+        if (filename.includes(q) || status.includes(q) || statusLabel.includes(q) || docType.includes(q) || channel.includes(q)) return true
+        const aliasTypes = TYPE_ALIASES[q]
+        return aliasTypes ? aliasTypes.some((t) => docType.includes(t)) : false
+    })
 }
 
 function App() {
@@ -225,6 +250,7 @@ function App() {
                         {activeView === 'validation' ? (
                             <ValidationView
                                 documents={pendingDocuments}
+                                schemas={schemas}
                                 selectedDocument={selectedDocument}
                                 selectedDocumentId={selectedDocumentId}
                                 onSelectDocument={setSelectedDocumentId}
@@ -262,6 +288,8 @@ function NavButton({ item, active, onClick, compact = false }) {
 }
 
 function Dashboard({ metrics, documents }) {
+    const [search, setSearch] = useState('')
+    const displayed = search.trim() ? filterDocuments(documents, search) : documents.slice(0, 8)
     return (
         <div className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -271,18 +299,26 @@ function Dashboard({ metrics, documents }) {
                 <Metric label="Falhas" value={metrics.failed} />
             </div>
             <section className="rounded-md border border-zinc-200 bg-white">
-                <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Ultimos documentos</div>
-                <DocumentTable documents={documents.slice(0, 8)} onSelectDocument={() => {}} />
+                <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+                    <div className="text-sm font-semibold">Ultimos documentos</div>
+                    <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, status, tipo..." />
+                </div>
+                <DocumentTable documents={displayed} onSelectDocument={() => {}} />
             </section>
         </div>
     )
 }
 
 function InboxView({ documents, selectedDocumentId, onSelectDocument }) {
+    const [search, setSearch] = useState('')
+    const displayed = filterDocuments(documents, search)
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
-            <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Documentos recebidos</div>
-            <DocumentTable documents={documents} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} />
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+                <div className="text-sm font-semibold">Documentos recebidos</div>
+                <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, status, tipo..." />
+            </div>
+            <DocumentTable documents={displayed} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} />
         </section>
     )
 }
@@ -576,26 +612,83 @@ function UploadView({ onUploaded }) {
     )
 }
 
-function ValidationView({ documents, selectedDocument, selectedDocumentId, onSelectDocument, onDocumentUpdated, onDocumentDeleted, onValidated }) {
+function ValidationView({ documents, schemas = [], selectedDocument, selectedDocumentId, onSelectDocument, onDocumentUpdated, onDocumentDeleted, onValidated }) {
     const [notes, setNotes] = useState('')
+    const [validationSearch, setValidationSearch] = useState('')
     const [fieldRows, setFieldRows] = useState([])
     const [submitting, setSubmitting] = useState(false)
     const [actionMessage, setActionMessage] = useState('')
     const [reprocessing, setReprocessing] = useState(false)
     const [deleting, setDeleting] = useState(false)
+    const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set())
+    const [bulkProgress, setBulkProgress] = useState(null)
+    const [selectedSchemaId, setSelectedSchemaId] = useState('')
+    const [extracting, setExtracting] = useState(false)
+    const [extractMessage, setExtractMessage] = useState('')
 
+    // Populate fieldRows and auto-select schema when document changes.
+    // Skips legacy_ocr records (produced by the old heuristic extractor, now discontinued).
+    // Falls back to empty list and text-based schema detection when no LangExtract run yet.
     useEffect(() => {
-        const fields = selectedDocument?.extraction_result?.fields
-        if (!fields || typeof fields !== 'object') {
+        const result = selectedDocument?.extraction_result
+        const isLangExtracted = result && result.schema_id !== 'legacy_ocr'
+        const persistedFields = isLangExtracted ? result.fields : null
+        if (persistedFields && Object.keys(persistedFields).length > 0) {
+            setFieldRows(
+                Object.entries(persistedFields)
+                    .filter(([, value]) => value !== '' && value !== null && value !== undefined)
+                    .map(([name, value]) => ({ name, value: formatEditableValue(value) })),
+            )
+        } else {
             setFieldRows([])
-            return
         }
-        setFieldRows(
-            Object.entries(fields)
-                .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                .map(([name, value]) => ({ name, value: formatEditableValue(value) })),
-        )
-    }, [selectedDocument?.id, selectedDocument?.extraction_result?.fields])
+        setExtractMessage('')
+
+        // Auto-select the schema model: prefer the one used in the last extraction,
+        // then fall back to text-based detection using the same helpers as OCR Referência.
+        if (isLangExtracted && result.schema_id) {
+            const match = schemas.find((s) => s.schema_id === result.schema_id)
+            if (match) { setSelectedSchemaId(match.id); return }
+        }
+        const rawText = selectedDocument?.full_transcription || ''
+        if (rawText) {
+            if (isLikelyNotaFiscalText(rawText)) {
+                const s = schemas.find((sc) => sc.schema_id === NOTA_FISCAL_DEFAULT_SCHEMA_ID)
+                if (s) { setSelectedSchemaId(s.id); return }
+            }
+            if (isLikelyContaAguaText(rawText)) {
+                const s = schemas.find((sc) => sc.schema_id === CONTA_AGUA_DEFAULT_SCHEMA_ID)
+                if (s) { setSelectedSchemaId(s.id); return }
+            }
+            if (isLikelyBoletoText(rawText)) {
+                const s = schemas.find((sc) => sc.schema_id === BOLETO_DEFAULT_SCHEMA_ID)
+                if (s) { setSelectedSchemaId(s.id); return }
+            }
+        }
+    }, [selectedDocument?.id])
+
+    const runLangExtract = async () => {
+        if (!selectedDocumentId || !selectedSchemaId || extracting) return
+        setExtracting(true)
+        setExtractMessage('')
+        try {
+            const response = await api.post(`/documents/${selectedDocumentId}/langextract`, {
+                schema_config_id: selectedSchemaId,
+            })
+            const fields = response.data.fields || {}
+            setFieldRows(
+                Object.entries(fields)
+                    .filter(([, value]) => value !== '' && value !== null && value !== undefined)
+                    .map(([name, value]) => ({ name, value: formatEditableValue(value) })),
+            )
+            const pct = response.data.confidence != null ? ` Confianca: ${(response.data.confidence * 100).toFixed(0)}%` : ''
+            setExtractMessage(`Extracao concluida.${pct}`)
+        } catch (requestError) {
+            setExtractMessage(readError(requestError, 'Falha na extracao LangExtract.'))
+        } finally {
+            setExtracting(false)
+        }
+    }
 
     const submitDecision = async (decision) => {
         if (!selectedDocumentId) {
@@ -658,11 +751,101 @@ function ValidationView({ documents, selectedDocument, selectedDocumentId, onSel
         }
     }
 
+    const filteredValidationDocs = filterDocuments(documents, validationSearch)
+
+    const bulkDelete = async () => {
+        if (bulkSelectedIds.size === 0 || bulkProgress) return
+        const ids = [...bulkSelectedIds]
+        const confirmed = window.confirm(`Excluir ${ids.length} documento(s) selecionado(s)? Os arquivos locais serao preservados.`)
+        if (!confirmed) return
+        setBulkProgress({ action: 'delete', done: 0, total: ids.length })
+        let failed = 0
+        for (let i = 0; i < ids.length; i++) {
+            try {
+                await api.delete(`/documents/${ids[i]}/delete`)
+            } catch {
+                failed++
+            }
+            setBulkProgress({ action: 'delete', done: i + 1, total: ids.length })
+        }
+        setBulkProgress(null)
+        setBulkSelectedIds(new Set())
+        await onValidated()
+        if (failed > 0) setActionMessage(`${failed} documento(s) nao puderam ser excluidos.`)
+    }
+
+    const bulkReprocess = async () => {
+        if (bulkSelectedIds.size === 0 || bulkProgress) return
+        const ids = [...bulkSelectedIds]
+        setBulkProgress({ action: 'reprocess', done: 0, total: ids.length })
+        let failed = 0
+        for (let i = 0; i < ids.length; i++) {
+            try {
+                await api.post(`/documents/${ids[i]}/reprocess-ocr`)
+            } catch {
+                failed++
+            }
+            setBulkProgress({ action: 'reprocess', done: i + 1, total: ids.length })
+        }
+        setBulkProgress(null)
+        setBulkSelectedIds(new Set())
+        await onValidated()
+        if (failed > 0) setActionMessage(`${failed} documento(s) nao puderam ser reprocessados.`)
+    }
+
     return (
         <div className="grid gap-4 xl:grid-cols-[340px_minmax(360px,0.9fr)_minmax(460px,1.1fr)]">
             <section className="rounded-md border border-zinc-200 bg-white">
-                <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Fila de validacao</div>
-                <DocumentTable documents={documents} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} compact />
+                <div className="flex flex-col gap-2 border-b border-zinc-200 px-4 py-3">
+                    <div className="text-sm font-semibold">Fila de validacao</div>
+                    <SearchInput value={validationSearch} onChange={(v) => { setValidationSearch(v); setBulkSelectedIds(new Set()) }} placeholder="Buscar..." />
+                </div>
+                {bulkSelectedIds.size > 0 ? (
+                    <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2">
+                        <span className="text-xs font-medium text-zinc-600">
+                            {bulkProgress
+                                ? bulkProgress.action === 'delete'
+                                    ? `Excluindo ${bulkProgress.done}/${bulkProgress.total}...`
+                                    : `Reprocessando ${bulkProgress.done}/${bulkProgress.total}...`
+                                : `${bulkSelectedIds.size} selecionado(s)`}
+                        </span>
+                        <button
+                            type="button"
+                            disabled={!!bulkProgress}
+                            onClick={bulkReprocess}
+                            className="flex items-center gap-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50"
+                        >
+                            <RefreshCw size={12} aria-hidden="true" />
+                            Reprocessar
+                        </button>
+                        <button
+                            type="button"
+                            disabled={!!bulkProgress}
+                            onClick={bulkDelete}
+                            className="flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+                        >
+                            <Trash2 size={12} aria-hidden="true" />
+                            Excluir
+                        </button>
+                        <button
+                            type="button"
+                            disabled={!!bulkProgress}
+                            onClick={() => setBulkSelectedIds(new Set())}
+                            className="ml-auto text-xs text-zinc-400 hover:text-zinc-600 disabled:opacity-50"
+                        >
+                            Limpar selecao
+                        </button>
+                    </div>
+                ) : null}
+                <DocumentTable
+                    documents={filteredValidationDocs}
+                    selectedDocumentId={selectedDocumentId}
+                    onSelectDocument={onSelectDocument}
+                    compact
+                    selectable
+                    bulkSelectedIds={bulkSelectedIds}
+                    onBulkSelectionChange={setBulkSelectedIds}
+                />
             </section>
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
@@ -733,7 +916,17 @@ function ValidationView({ documents, selectedDocument, selectedDocumentId, onSel
                             </Alert>
                         ) : null}
                         <ReadOnlyTranscription value={selectedDocument.full_transcription} />
-                        <EditableFields rows={fieldRows} onChange={setFieldRows} />
+                        <LangExtractPanel
+                            documentId={selectedDocumentId}
+                            schemas={schemas}
+                            selectedSchemaId={selectedSchemaId}
+                            onSchemaChange={setSelectedSchemaId}
+                            extracting={extracting}
+                            extractMessage={extractMessage}
+                            onRunExtract={runLangExtract}
+                            fieldRows={fieldRows}
+                            onFieldRowsChange={setFieldRows}
+                        />
                         <textarea
                             value={notes}
                             onChange={(event) => setNotes(event.target.value)}
@@ -783,6 +976,87 @@ function EditableFields({ rows, onChange }) {
             ) : (
                 <div className="divide-y divide-zinc-100">
                     {rows.map((row, index) => (
+                        <div key={`${row.name}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto]">
+                            <input
+                                value={row.name}
+                                onChange={(event) => updateRow(index, { name: event.target.value })}
+                                className="input"
+                                placeholder="campo"
+                            />
+                            <input
+                                value={row.value}
+                                onChange={(event) => updateRow(index, { value: event.target.value })}
+                                className="input"
+                                placeholder="valor"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => removeRow(index)}
+                                className="h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
+                            >
+                                Remover
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
+
+function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChange, extracting, extractMessage, onRunExtract, fieldRows, onFieldRowsChange }) {
+    const updateRow = (index, patch) => {
+        onFieldRowsChange(fieldRows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
+    }
+    const removeRow = (index) => {
+        onFieldRowsChange(fieldRows.filter((_, rowIndex) => rowIndex !== index))
+    }
+
+    return (
+        <div className="rounded-md border border-zinc-200">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
+                <div className="text-sm font-semibold">Campos extraidos</div>
+                <button
+                    type="button"
+                    onClick={() => onFieldRowsChange([...fieldRows, { name: '', value: '' }])}
+                    className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100"
+                >
+                    Adicionar
+                </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-3 py-3">
+                <select
+                    value={selectedSchemaId}
+                    onChange={(e) => onSchemaChange(e.target.value)}
+                    className="input min-w-0 flex-1"
+                    disabled={extracting}
+                >
+                    <option value="">Selecione um modelo de extracao...</option>
+                    {schemas.map((s) => (
+                        <option key={s.id} value={s.id}>
+                            {s.schema_id} ({s.version})
+                        </option>
+                    ))}
+                </select>
+                <button
+                    type="button"
+                    disabled={!selectedSchemaId || !documentId || extracting}
+                    onClick={onRunExtract}
+                    className="flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                >
+                    {extracting ? 'Extraindo...' : 'Executar Extracao'}
+                </button>
+            </div>
+            {extractMessage ? (
+                <div className="border-b border-zinc-100 px-3 py-2 text-xs text-zinc-500">{extractMessage}</div>
+            ) : null}
+            {fieldRows.length === 0 ? (
+                <div className="px-3 py-6 text-center text-sm text-zinc-400">
+                    Selecione um modelo e clique em Executar Extracao para extrair os campos do documento.
+                </div>
+            ) : (
+                <div className="divide-y divide-zinc-100">
+                    {fieldRows.map((row, index) => (
                         <div key={`${row.name}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto]">
                             <input
                                 value={row.name}
@@ -2199,13 +2473,19 @@ function HintPanel({ title, items, onUse }) {
 }
 
 function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocument, referenceDocument, fields, review, onReviewChange }) {
+    const [search, setSearch] = useState('')
+    const filteredDocs = filterDocuments(documents, search)
+
     return (
         <div className="space-y-4">
             <div className="grid gap-4 xl:grid-cols-[360px_minmax(360px,1fr)_minmax(360px,1fr)]">
                 <section className="rounded-md border border-zinc-200">
-                    <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">Documento de referencia</div>
+                    <div className="flex flex-col gap-2 border-b border-zinc-200 px-3 py-2">
+                        <div className="text-sm font-semibold">Documento de referencia</div>
+                        <SearchInput value={search} onChange={setSearch} placeholder="Buscar..." />
+                    </div>
                     <div className="max-h-[520px] overflow-auto">
-                        {documents.map((document) => (
+                        {filteredDocs.map((document) => (
                             <button
                                 key={document.id}
                                 type="button"
@@ -2376,42 +2656,243 @@ function ExamplesEditor({ examples, onChange, referenceText }) {
     )
 }
 
-function DocumentTable({ documents, selectedDocumentId = '', onSelectDocument, compact = false }) {
+function EmailMetadataModal({ data, onClose }) {
+    const isEmail = data.channel === 'email'
+    const meta = data.metadata_channel || {}
+    const emailRows = isEmail
+        ? [
+              { label: 'Remetente', value: meta.sender },
+              { label: 'Para', value: meta.to },
+              { label: 'CC', value: meta.cc },
+              { label: 'Assunto', value: meta.subject },
+              { label: 'Data de envio', value: meta.date },
+              { label: 'Message-ID', value: meta.message_id },
+              { label: 'Provedor', value: meta.provider },
+          ].filter((row) => row.value)
+        : []
+    const rows = [{ label: 'Código de Processo', value: data.id }, ...emailRows].filter((row) => row.value)
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+            <div
+                className="relative mx-4 w-full max-w-lg rounded-lg border border-zinc-200 bg-white shadow-xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+                    <div className="min-w-0 flex-1 pr-4">
+                        <div className="text-sm font-semibold">{isEmail ? 'Metadados do email' : 'Informações do documento'}</div>
+                        {data.filename ? <div className="mt-0.5 text-xs text-zinc-500 truncate">{data.filename}</div> : null}
+                    </div>
+                    <button type="button" onClick={onClose} className="shrink-0 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
+                        <X size={16} aria-hidden="true" />
+                    </button>
+                </div>
+                {isEmail && emailRows.length === 0 ? (
+                    <div className="divide-y divide-zinc-100 px-5 py-2">
+                        <div className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
+                            <dt className="font-medium text-zinc-500">Código de Processo</dt>
+                            <dd className="min-w-0 break-all text-zinc-800">{data.id}</dd>
+                        </div>
+                        <div className="py-4 text-sm text-zinc-500">
+                            Metadados do email nao disponiveis para este documento. Reimporte-o para capturar as informacoes.
+                        </div>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-zinc-100 px-5 py-2">
+                        {rows.map(({ label, value }) => (
+                            <div key={label} className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
+                                <dt className="font-medium text-zinc-500">{label}</dt>
+                                <dd className="min-w-0 break-all text-zinc-800">{value}</dd>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {meta.attachments?.length > 0 ? (
+                    <div className="border-t border-zinc-200 px-5 py-3">
+                        <div className="mb-1.5 text-xs font-semibold uppercase text-zinc-500">Anexos</div>
+                        <ul className="space-y-1">
+                            {meta.attachments.map((name, i) => (
+                                <li key={i} className="flex items-center gap-1.5 text-sm text-zinc-700">
+                                    <span className="text-zinc-400">·</span>
+                                    {name}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ) : null}
+                {meta.body_text ? (
+                    <div className="border-t border-zinc-200 px-5 py-3">
+                        <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Corpo do email</div>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">{meta.body_text}</pre>
+                    </div>
+                ) : null}
+                <div className="border-t border-zinc-200 px-5 py-3 text-right">
+                    <button type="button" onClick={onClose} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100">
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function DocumentTable({
+    documents,
+    selectedDocumentId = '',
+    onSelectDocument,
+    compact = false,
+    selectable = false,
+    bulkSelectedIds = null,
+    onBulkSelectionChange = null,
+}) {
+    const [sortKey, setSortKey] = useState(null)
+    const [sortDir, setSortDir] = useState('asc')
+    const [emailModalDoc, setEmailModalDoc] = useState(null)
+    const selectAllRef = useRef(null)
+
+    function handleSort(key) {
+        if (sortKey === key) {
+            setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+        } else {
+            setSortKey(key)
+            setSortDir('asc')
+        }
+    }
+
+    const sortedDocuments = sortKey ? [...documents].sort((a, b) => {
+        let aVal, bVal
+        if (sortKey === 'arquivo') {
+            aVal = (a.original_filename || a.id || '').toLowerCase()
+            bVal = (b.original_filename || b.id || '').toLowerCase()
+        } else if (sortKey === 'status') {
+            aVal = (a.status || '').toLowerCase()
+            bVal = (b.status || '').toLowerCase()
+        } else if (sortKey === 'canal') {
+            aVal = (a.channel || '').toLowerCase()
+            bVal = (b.channel || '').toLowerCase()
+        } else if (sortKey === 'tipo') {
+            aVal = (a.document_type || '').toLowerCase()
+            bVal = (b.document_type || '').toLowerCase()
+        } else if (sortKey === 'atualizado') {
+            aVal = a.updated_at || a.received_at || ''
+            bVal = b.updated_at || b.received_at || ''
+        }
+        if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
+        if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
+        return 0
+    }) : documents
+
+    const allSelected = selectable && sortedDocuments.length > 0 && sortedDocuments.every(d => bulkSelectedIds?.has(d.id))
+    const someSelected = selectable && !allSelected && sortedDocuments.some(d => bulkSelectedIds?.has(d.id))
+
+    useEffect(() => {
+        if (selectAllRef.current) {
+            selectAllRef.current.indeterminate = someSelected
+        }
+    }, [someSelected])
+
+    function toggleAll(e) {
+        e.stopPropagation()
+        if (!onBulkSelectionChange) return
+        const next = new Set(bulkSelectedIds)
+        if (allSelected) {
+            sortedDocuments.forEach(d => next.delete(d.id))
+        } else {
+            sortedDocuments.forEach(d => next.add(d.id))
+        }
+        onBulkSelectionChange(next)
+    }
+
+    function toggleOne(e, id) {
+        e.stopPropagation()
+        if (!onBulkSelectionChange) return
+        const next = new Set(bulkSelectedIds)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        onBulkSelectionChange(next)
+    }
+
+    const indicator = (col) =>
+        sortKey !== col
+            ? <span className="ml-1 opacity-30">↕</span>
+            : <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+
+    const thClass = 'cursor-pointer select-none px-3 py-2 hover:text-zinc-700'
+
     if (documents.length === 0) {
         return <EmptyState icon={FileText} text="Nenhum documento encontrado." />
     }
 
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead>
-                    <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-semibold uppercase text-zinc-500">
-                        <th className="px-3 py-2">Arquivo</th>
-                        <th className="px-3 py-2">Status</th>
-                        {compact ? null : <th className="px-3 py-2">Canal</th>}
-                        {compact ? null : <th className="px-3 py-2">Tipo</th>}
-                        <th className="px-3 py-2">Atualizado</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {documents.map((document) => (
-                        <tr
-                            key={document.id}
-                            onClick={() => onSelectDocument(document.id)}
-                            className={`cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 ${
-                                selectedDocumentId === document.id ? 'bg-zinc-100' : ''
-                            }`}
-                        >
-                            <td className="px-3 py-2 font-medium">{document.original_filename || document.id}</td>
-                            <td className="px-3 py-2"><StatusBadge status={document.status} /></td>
-                            {compact ? null : <td className="px-3 py-2">{document.channel || '-'}</td>}
-                            {compact ? null : <td className="px-3 py-2">{document.document_type || '-'}</td>}
-                            <td className="px-3 py-2 text-zinc-500">{formatDate(document.updated_at || document.received_at)}</td>
+        <>
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] border-collapse text-sm">
+                    <thead>
+                        <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-semibold uppercase text-zinc-500">
+                            {selectable ? (
+                                <th className="w-8 px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                        ref={selectAllRef}
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        onChange={toggleAll}
+                                        className="h-4 w-4 cursor-pointer rounded border-zinc-300 accent-zinc-700"
+                                        title="Selecionar todos"
+                                    />
+                                </th>
+                            ) : null}
+                            <th className={thClass} onClick={() => handleSort('arquivo')}>Arquivo{indicator('arquivo')}</th>
+                            <th className={thClass} onClick={() => handleSort('status')}>Status{indicator('status')}</th>
+                            {compact ? null : <th className={thClass} onClick={() => handleSort('canal')}>Canal{indicator('canal')}</th>}
+                            {compact ? null : <th className={thClass} onClick={() => handleSort('tipo')}>Tipo{indicator('tipo')}</th>}
+                            <th className={thClass} onClick={() => handleSort('atualizado')}>Atualizado{indicator('atualizado')}</th>
+                            <th className="w-8 px-2 py-2"></th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
+                    </thead>
+                    <tbody>
+                        {sortedDocuments.map((document) => {
+                            const isChecked = bulkSelectedIds?.has(document.id) ?? false
+                            return (
+                                <tr
+                                    key={document.id}
+                                    onClick={() => onSelectDocument(document.id)}
+                                    className={`cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 ${
+                                        isChecked ? 'bg-zinc-50' : selectedDocumentId === document.id ? 'bg-zinc-100' : ''
+                                    }`}
+                                >
+                                    {selectable ? (
+                                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={(e) => toggleOne(e, document.id)}
+                                                className="h-4 w-4 cursor-pointer rounded border-zinc-300 accent-zinc-700"
+                                            />
+                                        </td>
+                                    ) : null}
+                                    <td className="px-3 py-2 font-medium">{document.original_filename || document.id}</td>
+                                    <td className="px-3 py-2"><StatusBadge status={document.status} /></td>
+                                    {compact ? null : <td className="px-3 py-2">{document.channel || '-'}</td>}
+                                    {compact ? null : <td className="px-3 py-2">{document.document_type || '-'}</td>}
+                                    <td className="px-3 py-2 text-zinc-500">{formatDate(document.updated_at || document.received_at)}</td>
+                                    <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                            type="button"
+                                            title="Ver informações do documento"
+                                            onClick={() => setEmailModalDoc({ id: document.id, filename: document.original_filename || document.id, channel: document.channel, metadata_channel: document.metadata_channel })}
+                                            className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                                        >
+                                            <Eye size={14} aria-hidden="true" />
+                                        </button>
+                                    </td>
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                </table>
+            </div>
+            {emailModalDoc ? <EmailMetadataModal data={emailModalDoc} onClose={() => setEmailModalDoc(null)} /> : null}
+        </>
     )
 }
 
@@ -2466,6 +2947,18 @@ function EmptyState({ icon: Icon, text }) {
             <Icon size={24} aria-hidden="true" />
             <span>{text}</span>
         </div>
+    )
+}
+
+function SearchInput({ value, onChange, placeholder = 'Buscar...' }) {
+    return (
+        <input
+            type="search"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="h-8 w-56 rounded-md border border-zinc-300 bg-white px-3 text-sm placeholder-zinc-400 outline-none focus:border-zinc-500"
+        />
     )
 }
 

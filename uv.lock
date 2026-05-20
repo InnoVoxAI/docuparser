@@ -623,6 +623,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "requests" },
+    { name = "typer" },
 ]
 
 [package.metadata]
@@ -643,6 +644,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "python-multipart", specifier = ">=0.0.26" },
     { name = "requests", specifier = ">=2.33.1" },
+    { name = "typer", specifier = ">=0.21.2" },
 ]
 
 [[package]]

@@ -171,6 +171,13 @@ async def _process_email_files(
             }
             for attachment in attachments
         ]
+        metadata_channel = {
+            "provider": provider,
+            "sender": sender or "",
+            "message_id": message_id or "",
+            "subject": subject or "",
+            "attachments": [p["filename"] for p in attachment_payloads],
+        }
         result = process_email_attachments(
             tenant_id=tenant_id,
             attachments=attachment_payloads,
@@ -178,6 +185,7 @@ async def _process_email_files(
             message_id=message_id,
             subject=subject,
             provider=provider,
+            metadata_channel=metadata_channel,
         )
         return {
             "accepted_count": len(result["documents"]),

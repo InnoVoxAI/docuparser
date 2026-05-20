@@ -90,6 +90,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 X_FRAME_OPTIONS = 'SAMEORIGIN'
 
 BACKEND_OCR_URL = os.environ.get('BACKEND_OCR_URL', 'http://127.0.0.1:8080')
+LANGEXTRACT_SERVICE_URL = os.environ.get('LANGEXTRACT_SERVICE_URL', 'http://127.0.0.1:8091')
 DOCUPARSE_LOCAL_EVENT_DIR = os.environ.get('DOCUPARSE_LOCAL_EVENT_DIR', str(BASE_DIR / '.docuparse-events'))
 DOCUPARSE_LOCAL_STORAGE_DIR = os.environ.get('DOCUPARSE_LOCAL_STORAGE_DIR', str(PROJECT_DIR / '.docuparse-storage'))
 DOCUPARSE_APPROVED_EXPORT_DIR = os.environ.get('DOCUPARSE_APPROVED_EXPORT_DIR', str(BASE_DIR / 'exports' / 'approved'))

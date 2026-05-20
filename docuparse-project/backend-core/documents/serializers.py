@@ -32,6 +32,7 @@ class ExtractionResultSerializer(serializers.ModelSerializer):
 
 class DocumentListSerializer(serializers.ModelSerializer):
     metadata_channel = serializers.SerializerMethodField()
+    extraction_result = ExtractionResultSerializer(read_only=True)
 
     class Meta:
         model = Document
@@ -46,6 +47,7 @@ class DocumentListSerializer(serializers.ModelSerializer):
             "received_at",
             "updated_at",
             "metadata_channel",
+            "extraction_result",
         ]
 
     def get_metadata_channel(self, obj: Document) -> dict | None:

@@ -68,9 +68,15 @@ const TYPE_ALIASES = {
     manuscrito: ['handwritten', 'manuscrito'],
 }
 
+function buildSearchRegex(query) {
+    const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    try { return new RegExp(escaped, 'i') } catch { return null }
+}
+
 function filterDocuments(docs, query) {
     if (!query.trim()) return docs
     const q = query.trim().toLowerCase()
+    const regex = buildSearchRegex(query)
     return docs.filter((doc) => {
         const filename = (doc.original_filename || doc.id || '').toLowerCase()
         const status = (doc.status || '').toLowerCase()
@@ -79,7 +85,19 @@ function filterDocuments(docs, query) {
         const channel = (doc.channel || '').toLowerCase()
         if (filename.includes(q) || status.includes(q) || statusLabel.includes(q) || docType.includes(q) || channel.includes(q)) return true
         const aliasTypes = TYPE_ALIASES[q]
-        return aliasTypes ? aliasTypes.some((t) => docType.includes(t)) : false
+        if (aliasTypes && aliasTypes.some((t) => docType.includes(t))) return true
+        if (regex) {
+            const fields = doc.extraction_result?.fields
+            if (fields && typeof fields === 'object') {
+                return Object.values(fields).some((raw) => {
+                    const fieldValue = raw && typeof raw === 'object' && 'value' in raw
+                        ? String(raw.value ?? '')
+                        : String(raw ?? '')
+                    return regex.test(fieldValue)
+                })
+            }
+        }
+        return false
     })
 }
 
@@ -637,7 +655,7 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
             setFieldRows(
                 Object.entries(persistedFields)
                     .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, value]) => ({ name, value: formatEditableValue(value) })),
+                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } }),
             )
         } else {
             setFieldRows([])
@@ -679,7 +697,7 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
             setFieldRows(
                 Object.entries(fields)
                     .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, value]) => ({ name, value: formatEditableValue(value) })),
+                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } }),
             )
             const pct = response.data.confidence != null ? ` Confianca: ${(response.data.confidence * 100).toFixed(0)}%` : ''
             setExtractMessage(`Extracao concluida.${pct}`)
@@ -1018,7 +1036,7 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
                 <div className="text-sm font-semibold">Campos extraidos</div>
                 <button
                     type="button"
-                    onClick={() => onFieldRowsChange([...fieldRows, { name: '', value: '' }])}
+                    onClick={() => onFieldRowsChange([...fieldRows, { name: '', value: '', confidence: null }])}
                     className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100"
                 >
                     Adicionar
@@ -1057,7 +1075,7 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
             ) : (
                 <div className="divide-y divide-zinc-100">
                     {fieldRows.map((row, index) => (
-                        <div key={`${row.name}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto]">
+                        <div key={`${row.name}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto_auto]">
                             <input
                                 value={row.name}
                                 onChange={(event) => updateRow(index, { name: event.target.value })}
@@ -1069,6 +1087,13 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
                                 onChange={(event) => updateRow(index, { value: event.target.value })}
                                 className="input"
                                 placeholder="valor"
+                            />
+                            <input
+                                readOnly
+                                value={row.confidence != null ? `Confianca: ${(row.confidence * 100).toFixed(0)}%` : ''}
+                                className="input w-32 cursor-default bg-zinc-50 text-zinc-500"
+                                placeholder="—"
+                                tabIndex={-1}
                             />
                             <button
                                 type="button"
@@ -3021,6 +3046,28 @@ function formatEditableValue(value) {
         return JSON.stringify(value)
     }
     return String(value)
+}
+
+function parseFieldEntry(raw) {
+    if (raw === null || raw === undefined) return { value: '', confidence: null }
+    if (typeof raw === 'object' && 'value' in raw) {
+        return {
+            value: raw.value !== null && raw.value !== undefined ? String(raw.value) : '',
+            confidence: typeof raw.confidence === 'number' ? raw.confidence : null,
+        }
+    }
+    if (typeof raw === 'string') {
+        try {
+            const parsed = JSON.parse(raw)
+            if (parsed && typeof parsed === 'object' && 'value' in parsed) {
+                return {
+                    value: parsed.value !== null && parsed.value !== undefined ? String(parsed.value) : '',
+                    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
+                }
+            }
+        } catch {}
+    }
+    return { value: String(raw), confidence: null }
 }
 
 function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument }) {

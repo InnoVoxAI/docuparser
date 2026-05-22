@@ -88,6 +88,7 @@ def _poll_once(
     for message in messages:
         message_sid = str(message.get("sid") or "")
         sender = str(message.get("from") or "").replace("whatsapp:", "")
+        to_number = str(message.get("to") or "").replace("whatsapp:", "") or from_number.replace("whatsapp:", "")
         body = str(message.get("body") or "")
         num_media = int(message.get("num_media") or 0)
 
@@ -140,6 +141,7 @@ def _poll_once(
                 sender=sender,
                 message_sid=message_sid,
                 body=body,
+                to_number=to_number,
             )
             documents.extend(results)
         except DuplicateDocumentError:

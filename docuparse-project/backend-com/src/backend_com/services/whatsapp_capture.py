@@ -12,6 +12,7 @@ def process_whatsapp_media(
     sender: str | None = None,
     message_sid: str | None = None,
     body: str | None = None,
+    to_number: str | None = None,
 ) -> list[dict]:
     results: list[dict] = []
     for index, media in enumerate(media_items, start=1):
@@ -21,12 +22,20 @@ def process_whatsapp_media(
         if content is None:
             raise ValueError("media content is required when MediaUrl download is unavailable")
 
+        metadata_channel = {
+            "provider": "twilio",
+            "sender": sender or "",
+            "to_number": to_number or "",
+            "message_sid": message_sid or "",
+            "body": body or "",
+        }
         metadata = {
             "provider": "twilio",
             "message_sid": message_sid,
             "body": body,
             "media_index": index,
             "media_url": media.get("media_url"),
+            "metadata_channel": metadata_channel,
         }
         results.append(
             ingest_document(

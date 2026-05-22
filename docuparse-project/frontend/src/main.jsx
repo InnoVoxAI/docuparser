@@ -2708,8 +2708,10 @@ function ExamplesEditor({ examples, onChange, referenceText }) {
 
 function EmailMetadataModal({ data, onClose }) {
     const isEmail = data.channel === 'email'
+    const isWhatsApp = data.channel === 'whatsapp'
     const meta = data.metadata_channel || {}
-    const emailRows = isEmail
+
+    const channelRows = isEmail
         ? [
               { label: 'Remetente', value: meta.sender },
               { label: 'Para', value: meta.to },
@@ -2719,8 +2721,28 @@ function EmailMetadataModal({ data, onClose }) {
               { label: 'Message-ID', value: meta.message_id },
               { label: 'Provedor', value: meta.provider },
           ].filter((row) => row.value)
+        : isWhatsApp
+        ? [
+              { label: 'Número que recebeu', value: meta.to_number },
+              { label: 'Número que enviou', value: meta.sender },
+              { label: 'Message SID', value: meta.message_sid },
+              { label: 'Provedor', value: meta.provider },
+          ].filter((row) => row.value)
         : []
-    const rows = [{ label: 'Código de Processo', value: data.id }, ...emailRows].filter((row) => row.value)
+
+    const rows = [{ label: 'Código de Processo', value: data.id }, ...channelRows].filter((row) => row.value)
+
+    const modalTitle = isEmail
+        ? 'Metadados do email'
+        : isWhatsApp
+        ? 'Metadados do WhatsApp'
+        : 'Informações do documento'
+
+    const noMetaWarning = isEmail
+        ? 'Metadados do email nao disponiveis para este documento. Reimporte-o para capturar as informacoes.'
+        : isWhatsApp
+        ? 'Metadados do WhatsApp nao disponiveis para este documento. Reimporte-o para capturar as informacoes.'
+        : null
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -2730,22 +2752,22 @@ function EmailMetadataModal({ data, onClose }) {
             >
                 <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
                     <div className="min-w-0 flex-1 pr-4">
-                        <div className="text-sm font-semibold">{isEmail ? 'Metadados do email' : 'Informações do documento'}</div>
+                        <div className="text-sm font-semibold">{modalTitle}</div>
                         {data.filename ? <div className="mt-0.5 text-xs text-zinc-500 truncate">{data.filename}</div> : null}
                     </div>
                     <button type="button" onClick={onClose} className="shrink-0 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
                         <X size={16} aria-hidden="true" />
                     </button>
                 </div>
-                {isEmail && emailRows.length === 0 ? (
+                {(isEmail || isWhatsApp) && channelRows.length === 0 ? (
                     <div className="divide-y divide-zinc-100 px-5 py-2">
                         <div className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
                             <dt className="font-medium text-zinc-500">Código de Processo</dt>
                             <dd className="min-w-0 break-all text-zinc-800">{data.id}</dd>
                         </div>
-                        <div className="py-4 text-sm text-zinc-500">
-                            Metadados do email nao disponiveis para este documento. Reimporte-o para capturar as informacoes.
-                        </div>
+                        {noMetaWarning ? (
+                            <div className="py-4 text-sm text-zinc-500">{noMetaWarning}</div>
+                        ) : null}
                     </div>
                 ) : (
                     <div className="divide-y divide-zinc-100 px-5 py-2">
@@ -2774,6 +2796,12 @@ function EmailMetadataModal({ data, onClose }) {
                     <div className="border-t border-zinc-200 px-5 py-3">
                         <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Corpo do email</div>
                         <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">{meta.body_text}</pre>
+                    </div>
+                ) : null}
+                {isWhatsApp && meta.body ? (
+                    <div className="border-t border-zinc-200 px-5 py-3">
+                        <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Mensagem de texto</div>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">{meta.body}</pre>
                     </div>
                 ) : null}
                 <div className="border-t border-zinc-200 px-5 py-3 text-right">

@@ -220,7 +220,8 @@ async def whatsapp_webhook(
     try:
         tenant_id = str(form.get("tenant_id") or form.get("TenantId") or "tenant-demo")
         message_sid = str(form.get("MessageSid") or "")
-        sender = str(form.get("From") or form.get("WaId") or "")
+        sender = str(form.get("From") or form.get("WaId") or "").replace("whatsapp:", "")
+        to_number = str(form.get("To") or "").replace("whatsapp:", "")
         body = str(form.get("Body") or "")
         num_media = int(str(form.get("NumMedia") or "0"))
         media_items = [_media_item_from_form(form, index) for index in range(num_media)]
@@ -230,6 +231,7 @@ async def whatsapp_webhook(
             sender=sender,
             message_sid=message_sid,
             body=body,
+            to_number=to_number,
         )
         return {
             "accepted_count": len(documents),

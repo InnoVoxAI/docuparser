@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    classify_text_view,
     document_detail_view,
     document_delete_view,
     document_file_view,
@@ -26,6 +27,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("classify-text", classify_text_view, name="classify-text"),
     path("health", health_view, name="backend-core-health"),
     path("ready", ready_view, name="backend-core-ready"),
     path("engines", list_engines_view, name="ocr-engines"),

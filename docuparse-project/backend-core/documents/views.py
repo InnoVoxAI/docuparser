@@ -34,6 +34,10 @@ from .services.event_consumers import DuplicateDocumentError, consume_document_r
 from .services.dlq_inspector import DEFAULT_DLQ_STREAMS, requeue_dlq_entry, inspect_dlq_streams
 from .services.ocr_processor import process_document_ocr, start_document_ocr_thread
 
+import models.nota_fiscal.schemas as _nf_classifier
+import models.boleto.schemas as _boleto_classifier
+import models.contadeagua.schemas as _agua_classifier
+
 
 @require_GET
 def health_view(request):
@@ -63,6 +67,26 @@ def list_engines_view(request):
         return JsonResponse({"engines": engines})
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=502)
+
+
+@api_view(["POST"])
+def classify_text_view(request):
+    """Classify OCR text and return the best matching document schema_id.
+
+    Cascade: nota_fiscal → contadeagua → boleto → null.
+    Mirrors the heuristics previously embedded in the frontend.
+    """
+    text = (request.data or {}).get("text", "")
+    if not text:
+        return Response({"schema_id": None})
+
+    if _nf_classifier.is_likely(text):
+        return Response({"schema_id": _nf_classifier.SCHEMA_ID})
+    if _agua_classifier.is_likely(text):
+        return Response({"schema_id": _agua_classifier.SCHEMA_ID})
+    if _boleto_classifier.is_likely(text):
+        return Response({"schema_id": _boleto_classifier.SCHEMA_ID})
+    return Response({"schema_id": None})
 
 
 @csrf_exempt

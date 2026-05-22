@@ -92,7 +92,7 @@ def documents_inbox_view(request):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
-    queryset = Document.objects.select_related("tenant").order_by("-received_at")
+    queryset = Document.objects.select_related("tenant", "extraction_result").order_by("-received_at")
     status_filter = request.query_params.get("status")
     tenant_filter = request.query_params.get("tenant")
     if status_filter:

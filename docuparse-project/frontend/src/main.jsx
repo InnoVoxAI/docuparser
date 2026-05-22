@@ -68,9 +68,15 @@ const TYPE_ALIASES = {
     manuscrito: ['handwritten', 'manuscrito'],
 }
 
+function buildSearchRegex(query) {
+    const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    try { return new RegExp(escaped, 'i') } catch { return null }
+}
+
 function filterDocuments(docs, query) {
     if (!query.trim()) return docs
     const q = query.trim().toLowerCase()
+    const regex = buildSearchRegex(query)
     return docs.filter((doc) => {
         const filename = (doc.original_filename || doc.id || '').toLowerCase()
         const status = (doc.status || '').toLowerCase()
@@ -79,7 +85,19 @@ function filterDocuments(docs, query) {
         const channel = (doc.channel || '').toLowerCase()
         if (filename.includes(q) || status.includes(q) || statusLabel.includes(q) || docType.includes(q) || channel.includes(q)) return true
         const aliasTypes = TYPE_ALIASES[q]
-        return aliasTypes ? aliasTypes.some((t) => docType.includes(t)) : false
+        if (aliasTypes && aliasTypes.some((t) => docType.includes(t))) return true
+        if (regex) {
+            const fields = doc.extraction_result?.fields
+            if (fields && typeof fields === 'object') {
+                return Object.values(fields).some((raw) => {
+                    const fieldValue = raw && typeof raw === 'object' && 'value' in raw
+                        ? String(raw.value ?? '')
+                        : String(raw ?? '')
+                    return regex.test(fieldValue)
+                })
+            }
+        }
+        return false
     })
 }
 
@@ -637,7 +655,7 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
             setFieldRows(
                 Object.entries(persistedFields)
                     .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, value]) => ({ name, value: formatEditableValue(value) })),
+                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } }),
             )
         } else {
             setFieldRows([])
@@ -679,7 +697,7 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
             setFieldRows(
                 Object.entries(fields)
                     .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, value]) => ({ name, value: formatEditableValue(value) })),
+                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } }),
             )
             const pct = response.data.confidence != null ? ` Confianca: ${(response.data.confidence * 100).toFixed(0)}%` : ''
             setExtractMessage(`Extracao concluida.${pct}`)
@@ -1018,7 +1036,7 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
                 <div className="text-sm font-semibold">Campos extraidos</div>
                 <button
                     type="button"
-                    onClick={() => onFieldRowsChange([...fieldRows, { name: '', value: '' }])}
+                    onClick={() => onFieldRowsChange([...fieldRows, { name: '', value: '', confidence: null }])}
                     className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100"
                 >
                     Adicionar
@@ -1057,7 +1075,7 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
             ) : (
                 <div className="divide-y divide-zinc-100">
                     {fieldRows.map((row, index) => (
-                        <div key={`${row.name}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto]">
+                        <div key={`${row.name}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto_auto]">
                             <input
                                 value={row.name}
                                 onChange={(event) => updateRow(index, { name: event.target.value })}
@@ -1069,6 +1087,13 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
                                 onChange={(event) => updateRow(index, { value: event.target.value })}
                                 className="input"
                                 placeholder="valor"
+                            />
+                            <input
+                                readOnly
+                                value={row.confidence != null ? `Confianca: ${(row.confidence * 100).toFixed(0)}%` : ''}
+                                className="input w-32 cursor-default bg-zinc-50 text-zinc-500"
+                                placeholder="—"
+                                tabIndex={-1}
                             />
                             <button
                                 type="button"
@@ -1755,6 +1780,25 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         }
     }
 
+    const pollWhatsApp = async () => {
+        setMessage('')
+        try {
+            const response = await comApi.post('/whatsapp/poll', null, {
+                params: { tenant_id: 'tenant-demo' },
+            })
+            const imported = response.data.accepted_count || 0
+            const duplicates = response.data.duplicate_count || 0
+            let pollMsg = `Captura WhatsApp executada: ${imported} documento(s) importado(s).`
+            if (duplicates > 0) {
+                pollMsg += ` ${duplicates} já existia(m) no sistema e foi(ram) ignorado(s).`
+            }
+            setMessage(pollMsg)
+            await onChanged()
+        } catch (requestError) {
+            setMessage(readError(requestError, 'Falha ao executar captura WhatsApp.'))
+        }
+    }
+
     return (
         <div className="space-y-4">
             {message ? <Alert>{message}</Alert> : null}
@@ -2011,7 +2055,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
                         onPoll={testEmailPoll}
                     />
                 ) : null}
-                {activeSettingsArea === 'whatsapp' ? <WhatsAppSettingsPanel /> : null}
+                {activeSettingsArea === 'whatsapp' ? <WhatsAppSettingsPanel onPoll={pollWhatsApp} /> : null}
                 {activeSettingsArea === 'integrations' ? (
                     <IntegrationSettingsPanel
                         settings={integrationSettings}
@@ -2267,13 +2311,19 @@ function EmailSettingsPanel({ settings, onChange, onSave, onPoll }) {
     )
 }
 
-function WhatsAppSettingsPanel() {
+function WhatsAppSettingsPanel({ onPoll }) {
     return (
         <div className="space-y-4 p-4">
             <ConfigIntro
                 title="WhatsApp"
                 text="Configure a recepcao via Twilio WhatsApp. Enquanto as credenciais finais nao estiverem disponiveis, os testes reais podem falhar sem bloquear o restante do desenvolvimento."
             />
+            <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={onPoll} className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
+                    <RefreshCw size={16} aria-hidden="true" />
+                    Processar arquivos do WhatsApp
+                </button>
+            </div>
             <div className="grid gap-4 xl:grid-cols-2">
                 <section className="rounded-md border border-zinc-200 p-4">
                     <div className="mb-3 text-sm font-semibold">Twilio</div>
@@ -2658,8 +2708,10 @@ function ExamplesEditor({ examples, onChange, referenceText }) {
 
 function EmailMetadataModal({ data, onClose }) {
     const isEmail = data.channel === 'email'
+    const isWhatsApp = data.channel === 'whatsapp'
     const meta = data.metadata_channel || {}
-    const emailRows = isEmail
+
+    const channelRows = isEmail
         ? [
               { label: 'Remetente', value: meta.sender },
               { label: 'Para', value: meta.to },
@@ -2669,8 +2721,28 @@ function EmailMetadataModal({ data, onClose }) {
               { label: 'Message-ID', value: meta.message_id },
               { label: 'Provedor', value: meta.provider },
           ].filter((row) => row.value)
+        : isWhatsApp
+        ? [
+              { label: 'Número que recebeu', value: meta.to_number },
+              { label: 'Número que enviou', value: meta.sender },
+              { label: 'Message SID', value: meta.message_sid },
+              { label: 'Provedor', value: meta.provider },
+          ].filter((row) => row.value)
         : []
-    const rows = [{ label: 'Código de Processo', value: data.id }, ...emailRows].filter((row) => row.value)
+
+    const rows = [{ label: 'Código de Processo', value: data.id }, ...channelRows].filter((row) => row.value)
+
+    const modalTitle = isEmail
+        ? 'Metadados do email'
+        : isWhatsApp
+        ? 'Metadados do WhatsApp'
+        : 'Informações do documento'
+
+    const noMetaWarning = isEmail
+        ? 'Metadados do email nao disponiveis para este documento. Reimporte-o para capturar as informacoes.'
+        : isWhatsApp
+        ? 'Metadados do WhatsApp nao disponiveis para este documento. Reimporte-o para capturar as informacoes.'
+        : null
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -2680,22 +2752,22 @@ function EmailMetadataModal({ data, onClose }) {
             >
                 <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
                     <div className="min-w-0 flex-1 pr-4">
-                        <div className="text-sm font-semibold">{isEmail ? 'Metadados do email' : 'Informações do documento'}</div>
+                        <div className="text-sm font-semibold">{modalTitle}</div>
                         {data.filename ? <div className="mt-0.5 text-xs text-zinc-500 truncate">{data.filename}</div> : null}
                     </div>
                     <button type="button" onClick={onClose} className="shrink-0 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
                         <X size={16} aria-hidden="true" />
                     </button>
                 </div>
-                {isEmail && emailRows.length === 0 ? (
+                {(isEmail || isWhatsApp) && channelRows.length === 0 ? (
                     <div className="divide-y divide-zinc-100 px-5 py-2">
                         <div className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
                             <dt className="font-medium text-zinc-500">Código de Processo</dt>
                             <dd className="min-w-0 break-all text-zinc-800">{data.id}</dd>
                         </div>
-                        <div className="py-4 text-sm text-zinc-500">
-                            Metadados do email nao disponiveis para este documento. Reimporte-o para capturar as informacoes.
-                        </div>
+                        {noMetaWarning ? (
+                            <div className="py-4 text-sm text-zinc-500">{noMetaWarning}</div>
+                        ) : null}
                     </div>
                 ) : (
                     <div className="divide-y divide-zinc-100 px-5 py-2">
@@ -2724,6 +2796,12 @@ function EmailMetadataModal({ data, onClose }) {
                     <div className="border-t border-zinc-200 px-5 py-3">
                         <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Corpo do email</div>
                         <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">{meta.body_text}</pre>
+                    </div>
+                ) : null}
+                {isWhatsApp && meta.body ? (
+                    <div className="border-t border-zinc-200 px-5 py-3">
+                        <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Mensagem de texto</div>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">{meta.body}</pre>
                     </div>
                 ) : null}
                 <div className="border-t border-zinc-200 px-5 py-3 text-right">
@@ -3021,6 +3099,28 @@ function formatEditableValue(value) {
         return JSON.stringify(value)
     }
     return String(value)
+}
+
+function parseFieldEntry(raw) {
+    if (raw === null || raw === undefined) return { value: '', confidence: null }
+    if (typeof raw === 'object' && 'value' in raw) {
+        return {
+            value: raw.value !== null && raw.value !== undefined ? String(raw.value) : '',
+            confidence: typeof raw.confidence === 'number' ? raw.confidence : null,
+        }
+    }
+    if (typeof raw === 'string') {
+        try {
+            const parsed = JSON.parse(raw)
+            if (parsed && typeof parsed === 'object' && 'value' in parsed) {
+                return {
+                    value: parsed.value !== null && parsed.value !== undefined ? String(parsed.value) : '',
+                    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
+                }
+            }
+        } catch {}
+    }
+    return { value: String(raw), confidence: null }
 }
 
 function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument }) {

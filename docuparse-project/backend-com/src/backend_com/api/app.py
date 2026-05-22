@@ -16,6 +16,7 @@ from backend_com.services.imap_polling import ImapPollingError, poll_configured_
 from backend_com.services.document_ingest import DuplicateDocumentError
 from backend_com.services.manual_upload import process_manual_upload
 from backend_com.services.whatsapp_capture import process_whatsapp_media
+from backend_com.services.twilio_polling import TwilioPollingError, download_twilio_media, poll_configured_twilio_once
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +220,8 @@ async def whatsapp_webhook(
     try:
         tenant_id = str(form.get("tenant_id") or form.get("TenantId") or "tenant-demo")
         message_sid = str(form.get("MessageSid") or "")
-        sender = str(form.get("From") or form.get("WaId") or "")
+        sender = str(form.get("From") or form.get("WaId") or "").replace("whatsapp:", "")
+        to_number = str(form.get("To") or "").replace("whatsapp:", "")
         body = str(form.get("Body") or "")
         num_media = int(str(form.get("NumMedia") or "0"))
         media_items = [_media_item_from_form(form, index) for index in range(num_media)]
@@ -229,6 +231,7 @@ async def whatsapp_webhook(
             sender=sender,
             message_sid=message_sid,
             body=body,
+            to_number=to_number,
         )
         return {
             "accepted_count": len(documents),
@@ -238,16 +241,42 @@ async def whatsapp_webhook(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/v1/whatsapp/poll")
+async def poll_whatsapp_messages(
+    tenant_id: str = "tenant-demo",
+    authorization: str | None = Header(default=None),
+):
+    _validate_internal_service_token(authorization)
+    try:
+        return poll_configured_twilio_once(tenant_id=tenant_id)
+    except TwilioPollingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _media_item_from_form(form: Any, index: int) -> dict:
     content_type = str(form.get(f"MediaContentType{index}") or "")
     filename = str(form.get(f"MediaFilename{index}") or f"whatsapp-media-{index + 1}")
     media_url = form.get(f"MediaUrl{index}")
     content_base64 = form.get(f"MediaContent{index}") or form.get(f"MediaBody{index}")
+
+    # Tenta baixar a mídia da Twilio quando apenas a URL está presente (fluxo real)
+    content: bytes | None = None
+    if not content_base64 and media_url and settings.twilio_account_sid and settings.twilio_auth_token:
+        try:
+            content, real_filename = download_twilio_media(str(media_url), settings.twilio_account_sid, settings.twilio_auth_token)
+            if real_filename:
+                filename = real_filename
+        except Exception:
+            logger.warning("whatsapp_webhook_media_download_failed", extra={"media_url": str(media_url)})
+
     return {
         "filename": filename,
         "content_type": content_type,
         "media_url": str(media_url) if media_url else None,
         "content_base64": str(content_base64) if content_base64 else None,
+        "content": content,
     }
 
 

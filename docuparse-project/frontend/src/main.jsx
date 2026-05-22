@@ -1780,6 +1780,25 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         }
     }
 
+    const pollWhatsApp = async () => {
+        setMessage('')
+        try {
+            const response = await comApi.post('/whatsapp/poll', null, {
+                params: { tenant_id: 'tenant-demo' },
+            })
+            const imported = response.data.accepted_count || 0
+            const duplicates = response.data.duplicate_count || 0
+            let pollMsg = `Captura WhatsApp executada: ${imported} documento(s) importado(s).`
+            if (duplicates > 0) {
+                pollMsg += ` ${duplicates} já existia(m) no sistema e foi(ram) ignorado(s).`
+            }
+            setMessage(pollMsg)
+            await onChanged()
+        } catch (requestError) {
+            setMessage(readError(requestError, 'Falha ao executar captura WhatsApp.'))
+        }
+    }
+
     return (
         <div className="space-y-4">
             {message ? <Alert>{message}</Alert> : null}
@@ -2036,7 +2055,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
                         onPoll={testEmailPoll}
                     />
                 ) : null}
-                {activeSettingsArea === 'whatsapp' ? <WhatsAppSettingsPanel /> : null}
+                {activeSettingsArea === 'whatsapp' ? <WhatsAppSettingsPanel onPoll={pollWhatsApp} /> : null}
                 {activeSettingsArea === 'integrations' ? (
                     <IntegrationSettingsPanel
                         settings={integrationSettings}
@@ -2292,13 +2311,19 @@ function EmailSettingsPanel({ settings, onChange, onSave, onPoll }) {
     )
 }
 
-function WhatsAppSettingsPanel() {
+function WhatsAppSettingsPanel({ onPoll }) {
     return (
         <div className="space-y-4 p-4">
             <ConfigIntro
                 title="WhatsApp"
                 text="Configure a recepcao via Twilio WhatsApp. Enquanto as credenciais finais nao estiverem disponiveis, os testes reais podem falhar sem bloquear o restante do desenvolvimento."
             />
+            <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={onPoll} className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
+                    <RefreshCw size={16} aria-hidden="true" />
+                    Processar arquivos do WhatsApp
+                </button>
+            </div>
             <div className="grid gap-4 xl:grid-cols-2">
                 <section className="rounded-md border border-zinc-200 p-4">
                     <div className="mb-3 text-sm font-semibold">Twilio</div>

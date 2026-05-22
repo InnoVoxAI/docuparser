@@ -17,15 +17,15 @@ import {
     XCircle,
 } from 'lucide-react'
 import './index.css'
-import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIELDS, isLikelyBoletoText } from './models/boleto/schemas'
+import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIELDS } from './models/boleto/schemas'
 import { boletoPromptForDocumentType } from './models/boleto/prompts'
 import { BOLETO_DEFAULT_EXAMPLES } from './models/boleto/examples'
 import { BOLETO_DEFAULT_RULES } from './models/boleto/rules'
-import { NOTA_FISCAL_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_MODEL_NAME, NOTA_FISCAL_DEFAULT_FIELDS, isLikelyNotaFiscalText } from './models/nota_fiscal/schemas'
+import { NOTA_FISCAL_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_MODEL_NAME, NOTA_FISCAL_DEFAULT_FIELDS } from './models/nota_fiscal/schemas'
 import { notaFiscalPromptForDocumentType } from './models/nota_fiscal/prompts'
 import { NOTA_FISCAL_DEFAULT_EXAMPLES } from './models/nota_fiscal/examples'
 import { NOTA_FISCAL_DEFAULT_RULES } from './models/nota_fiscal/rules'
-import { CONTA_AGUA_DEFAULT_SCHEMA_ID, CONTA_AGUA_DEFAULT_MODEL_NAME, CONTA_AGUA_DEFAULT_FIELDS, isLikelyContaAguaText } from './models/contadeagua/schemas'
+import { CONTA_AGUA_DEFAULT_SCHEMA_ID, CONTA_AGUA_DEFAULT_MODEL_NAME, CONTA_AGUA_DEFAULT_FIELDS } from './models/contadeagua/schemas'
 import { contaAguaPromptForDocumentType } from './models/contadeagua/prompts'
 import { CONTA_AGUA_DEFAULT_EXAMPLES } from './models/contadeagua/examples'
 import { CONTA_AGUA_DEFAULT_RULES } from './models/contadeagua/rules'
@@ -663,26 +663,25 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
         setExtractMessage('')
 
         // Auto-select the schema model: prefer the one used in the last extraction,
-        // then fall back to text-based detection using the same helpers as OCR Referência.
+        // then fall back to backend text classification.
         if (isLangExtracted && result.schema_id) {
             const match = schemas.find((s) => s.schema_id === result.schema_id)
             if (match) { setSelectedSchemaId(match.id); return }
         }
         const rawText = selectedDocument?.full_transcription || ''
-        if (rawText) {
-            if (isLikelyNotaFiscalText(rawText)) {
-                const s = schemas.find((sc) => sc.schema_id === NOTA_FISCAL_DEFAULT_SCHEMA_ID)
-                if (s) { setSelectedSchemaId(s.id); return }
-            }
-            if (isLikelyContaAguaText(rawText)) {
-                const s = schemas.find((sc) => sc.schema_id === CONTA_AGUA_DEFAULT_SCHEMA_ID)
-                if (s) { setSelectedSchemaId(s.id); return }
-            }
-            if (isLikelyBoletoText(rawText)) {
-                const s = schemas.find((sc) => sc.schema_id === BOLETO_DEFAULT_SCHEMA_ID)
-                if (s) { setSelectedSchemaId(s.id); return }
-            }
-        }
+        if (!rawText) return
+
+        let ignore = false
+        api.post('/classify-text', { text: rawText })
+            .then((res) => {
+                if (ignore) return
+                const schemaId = res.data?.schema_id
+                if (!schemaId) return
+                const s = schemas.find((sc) => sc.schema_id === schemaId)
+                if (s) setSelectedSchemaId(s.id)
+            })
+            .catch(() => {})
+        return () => { ignore = true }
     }, [selectedDocument?.id])
 
     const runLangExtract = async () => {
@@ -1327,123 +1326,91 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         }
     }, [selectedDocumentId])
 
-    // Auto-select BOLETO DEFAULT when OCR text indicates a boleto.
+    // Auto-select model when OCR text is loaded — classification delegated to the backend.
     useEffect(() => {
         const rawText = referenceDocument?.full_transcription || ''
-        if (!rawText) {
-            return
-        }
-        if (schemaSelectionSource === 'manual') {
-            return
-        }
+        if (!rawText || schemaSelectionSource === 'manual') return
 
-        const isNotaFiscal = isLikelyNotaFiscalText(rawText)
-        const isContaAgua = !isNotaFiscal && isLikelyContaAguaText(rawText)
-        const isBoleto = !isNotaFiscal && !isContaAgua && isLikelyBoletoText(rawText)
-        const detectedDocumentType = referenceDocument?.document_type || schemaForm.document_type
+        const capturedSchemaId = schemaForm.schema_id
 
-        if (isNotaFiscal) {
-            const notaPrompt = notaFiscalPromptForDocumentType(detectedDocumentType)
-            if (notaFiscalSchema) {
-                loadExistingSchema(notaFiscalSchema.id, { source: 'auto' })
-                setFields(NOTA_FISCAL_DEFAULT_FIELDS)
-                setExamples(NOTA_FISCAL_DEFAULT_EXAMPLES)
-                setNormalizationRules(JSON.stringify(NOTA_FISCAL_DEFAULT_RULES, null, 2))
-                setSchemaForm((current) => ({
-                    ...current,
-                    model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
-                    schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID,
-                    document_type: detectedDocumentType,
-                }))
-                setPrompt(notaPrompt)
-                return
-            }
-            setSelectedSchemaId('')
-            setSchemaForm((current) => ({
-                ...current,
-                model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
-                schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID,
-                document_type: detectedDocumentType,
-            }))
-            setFields(NOTA_FISCAL_DEFAULT_FIELDS)
-            setPrompt(notaPrompt)
-            setExamples(NOTA_FISCAL_DEFAULT_EXAMPLES)
-            setNormalizationRules(JSON.stringify(NOTA_FISCAL_DEFAULT_RULES, null, 2))
-            return
-        }
+        let ignore = false
+        api.post('/classify-text', { text: rawText })
+            .then((res) => {
+                if (ignore) return
+                const detectedType = res.data?.schema_id
+                const docType = referenceDocument?.document_type || schemaForm.document_type
 
-        if (isContaAgua) {
-            const aguaPrompt = contaAguaPromptForDocumentType(detectedDocumentType)
-            if (contaAguaSchema) {
-                loadExistingSchema(contaAguaSchema.id, { source: 'auto' })
-                setFields(CONTA_AGUA_DEFAULT_FIELDS)
-                setExamples(CONTA_AGUA_DEFAULT_EXAMPLES)
-                setNormalizationRules(JSON.stringify(CONTA_AGUA_DEFAULT_RULES, null, 2))
-                setSchemaForm((current) => ({
-                    ...current,
-                    model_name: CONTA_AGUA_DEFAULT_MODEL_NAME,
-                    schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID,
-                    document_type: detectedDocumentType,
-                }))
-                setPrompt(aguaPrompt)
-                return
-            }
-            setSelectedSchemaId('')
-            setSchemaForm((current) => ({
-                ...current,
-                model_name: CONTA_AGUA_DEFAULT_MODEL_NAME,
-                schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID,
-                document_type: detectedDocumentType,
-            }))
-            setFields(CONTA_AGUA_DEFAULT_FIELDS)
-            setPrompt(aguaPrompt)
-            setExamples(CONTA_AGUA_DEFAULT_EXAMPLES)
-            setNormalizationRules(JSON.stringify(CONTA_AGUA_DEFAULT_RULES, null, 2))
-            return
-        }
+                if (detectedType === NOTA_FISCAL_DEFAULT_SCHEMA_ID) {
+                    const notaPrompt = notaFiscalPromptForDocumentType(docType)
+                    if (notaFiscalSchema) {
+                        loadExistingSchema(notaFiscalSchema.id, { source: 'auto' })
+                        setFields(NOTA_FISCAL_DEFAULT_FIELDS)
+                        setExamples(NOTA_FISCAL_DEFAULT_EXAMPLES)
+                        setNormalizationRules(JSON.stringify(NOTA_FISCAL_DEFAULT_RULES, null, 2))
+                        setSchemaForm((current) => ({ ...current, model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME, schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID, document_type: docType }))
+                        setPrompt(notaPrompt)
+                        return
+                    }
+                    setSelectedSchemaId('')
+                    setSchemaForm((current) => ({ ...current, model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME, schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID, document_type: docType }))
+                    setFields(NOTA_FISCAL_DEFAULT_FIELDS)
+                    setPrompt(notaPrompt)
+                    setExamples(NOTA_FISCAL_DEFAULT_EXAMPLES)
+                    setNormalizationRules(JSON.stringify(NOTA_FISCAL_DEFAULT_RULES, null, 2))
+                    return
+                }
 
-        if (!isBoleto) {
-            if ([BOLETO_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_SCHEMA_ID, CONTA_AGUA_DEFAULT_SCHEMA_ID].includes(schemaForm.schema_id)) {
-                setSelectedSchemaId('')
-                setSchemaForm((current) => ({
-                    ...current,
-                    model_name: DEFAULT_MODEL_NAME,
-                    schema_id: DEFAULT_SCHEMA_ID,
-                }))
-                setFields(DEFAULT_LANGEXTRACT_FIELDS)
-                setPrompt(DEFAULT_LANGEXTRACT_PROMPT)
-                setExamples([])
-            }
-            return
-        }
-        const boletoPrompt = boletoPromptForDocumentType(detectedDocumentType)
+                if (detectedType === CONTA_AGUA_DEFAULT_SCHEMA_ID) {
+                    const aguaPrompt = contaAguaPromptForDocumentType(docType)
+                    if (contaAguaSchema) {
+                        loadExistingSchema(contaAguaSchema.id, { source: 'auto' })
+                        setFields(CONTA_AGUA_DEFAULT_FIELDS)
+                        setExamples(CONTA_AGUA_DEFAULT_EXAMPLES)
+                        setNormalizationRules(JSON.stringify(CONTA_AGUA_DEFAULT_RULES, null, 2))
+                        setSchemaForm((current) => ({ ...current, model_name: CONTA_AGUA_DEFAULT_MODEL_NAME, schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID, document_type: docType }))
+                        setPrompt(aguaPrompt)
+                        return
+                    }
+                    setSelectedSchemaId('')
+                    setSchemaForm((current) => ({ ...current, model_name: CONTA_AGUA_DEFAULT_MODEL_NAME, schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID, document_type: docType }))
+                    setFields(CONTA_AGUA_DEFAULT_FIELDS)
+                    setPrompt(aguaPrompt)
+                    setExamples(CONTA_AGUA_DEFAULT_EXAMPLES)
+                    setNormalizationRules(JSON.stringify(CONTA_AGUA_DEFAULT_RULES, null, 2))
+                    return
+                }
 
-        if (boletoSchema) {
-            loadExistingSchema(boletoSchema.id, { source: 'auto' })
-            setFields(BOLETO_DEFAULT_FIELDS)
-            setExamples(BOLETO_DEFAULT_EXAMPLES)
-            setNormalizationRules(JSON.stringify(BOLETO_DEFAULT_RULES, null, 2))
-            setSchemaForm((current) => ({
-                ...current,
-                model_name: BOLETO_DEFAULT_MODEL_NAME,
-                schema_id: BOLETO_DEFAULT_SCHEMA_ID,
-                document_type: detectedDocumentType,
-            }))
-            setPrompt(boletoPrompt)
-            return
-        }
+                if (detectedType === BOLETO_DEFAULT_SCHEMA_ID) {
+                    const boletoPrompt = boletoPromptForDocumentType(docType)
+                    if (boletoSchema) {
+                        loadExistingSchema(boletoSchema.id, { source: 'auto' })
+                        setFields(BOLETO_DEFAULT_FIELDS)
+                        setExamples(BOLETO_DEFAULT_EXAMPLES)
+                        setNormalizationRules(JSON.stringify(BOLETO_DEFAULT_RULES, null, 2))
+                        setSchemaForm((current) => ({ ...current, model_name: BOLETO_DEFAULT_MODEL_NAME, schema_id: BOLETO_DEFAULT_SCHEMA_ID, document_type: docType }))
+                        setPrompt(boletoPrompt)
+                        return
+                    }
+                    setSelectedSchemaId('')
+                    setSchemaForm((current) => ({ ...current, model_name: BOLETO_DEFAULT_MODEL_NAME, schema_id: BOLETO_DEFAULT_SCHEMA_ID, document_type: docType }))
+                    setFields(BOLETO_DEFAULT_FIELDS)
+                    setPrompt(boletoPrompt)
+                    setExamples(BOLETO_DEFAULT_EXAMPLES)
+                    setNormalizationRules(JSON.stringify(BOLETO_DEFAULT_RULES, null, 2))
+                    return
+                }
 
-        setSelectedSchemaId('')
-        setSchemaForm((current) => ({
-            ...current,
-            model_name: BOLETO_DEFAULT_MODEL_NAME,
-            schema_id: BOLETO_DEFAULT_SCHEMA_ID,
-            document_type: detectedDocumentType,
-        }))
-        setFields(BOLETO_DEFAULT_FIELDS)
-        setPrompt(boletoPrompt)
-        setExamples(BOLETO_DEFAULT_EXAMPLES)
-        setNormalizationRules(JSON.stringify(BOLETO_DEFAULT_RULES, null, 2))
+                // No match — reset to default if currently on a known auto-selected schema.
+                if ([BOLETO_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_SCHEMA_ID, CONTA_AGUA_DEFAULT_SCHEMA_ID].includes(capturedSchemaId)) {
+                    setSelectedSchemaId('')
+                    setSchemaForm((current) => ({ ...current, model_name: DEFAULT_MODEL_NAME, schema_id: DEFAULT_SCHEMA_ID }))
+                    setFields(DEFAULT_LANGEXTRACT_FIELDS)
+                    setPrompt(DEFAULT_LANGEXTRACT_PROMPT)
+                    setExamples([])
+                }
+            })
+            .catch(() => {})
+        return () => { ignore = true }
     }, [
         referenceDocument?.id,
         referenceDocument?.full_transcription,

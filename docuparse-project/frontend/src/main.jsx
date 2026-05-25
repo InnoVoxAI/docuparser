@@ -933,6 +933,7 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
                             </Alert>
                         ) : null}
                         <ReadOnlyTranscription value={selectedDocument.full_transcription} />
+                        <ReadOnlyTranscriptionFormatted value={selectedDocument.full_transcription_formatted} />
                         <LangExtractPanel
                             documentId={selectedDocumentId}
                             schemas={schemas}
@@ -1133,6 +1134,25 @@ function ReadOnlyTranscription({ value }) {
                 className="min-h-[160px] w-full resize-y border-0 bg-zinc-50 px-3 py-3 text-sm leading-6 text-zinc-700 outline-none"
                 placeholder="A transcricao aparecera aqui quando o OCR automatico concluir."
             />
+        </div>
+    )
+}
+
+function ReadOnlyTranscriptionFormatted({ value }) {
+    return (
+        <div className="rounded-md border border-zinc-200">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
+                <span className="text-sm font-semibold">Transcricao formatada</span>
+                <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">layout preservado</span>
+            </div>
+            <pre
+                className="min-h-[160px] max-h-[420px] w-full overflow-auto whitespace-pre bg-zinc-50 px-3 py-3 text-xs leading-5 text-zinc-700"
+            >{value || ''}</pre>
+            {!value ? (
+                <div className="px-3 pb-3 text-xs text-zinc-400">
+                    Disponivel apenas para PDFs digitais processados pelo engine Docling.
+                </div>
+            ) : null}
         </div>
     )
 }

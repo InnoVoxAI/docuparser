@@ -54,6 +54,7 @@ class OCRResponse(BaseModel):
     # Dados brutos do OCR
     raw_text: str = Field("", description="Texto bruto extraído pelo OCR")
     raw_text_fallback: str = Field("", description="Texto de fallback se disponível")
+    raw_text_formatted: str = Field("", description="Texto com layout espacial preservado (colunas, tabelas); disponível apenas para DoclingEngine")
 
     # Metadados do processamento
     document_type: str = Field(..., description="Tipo de documento classificado")

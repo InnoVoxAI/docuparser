@@ -100,7 +100,7 @@ Preencher antes das fases que dependem de integracoes reais.
 |-------|--------------------|--------|
 | M0 | Contratos, compose base e dados de ambiente definidos | REVIEW |
 | M1 | `backend-com` captura documentos e publica `document.received` | REVIEW |
-| M2 | `backend-ocr` consome evento e publica `ocr.completed` | TODO |
+| M2 | `backend-ocr` consome evento e publica `ocr.completed` | REVIEW |
 | M3 | `layout-service` classifica layout e publica `layout.classified` | REVIEW |
 | M4 | `langextract-service` extrai dados e publica `extraction.completed` | REVIEW |
 | M5 | `backend-core` persiste estados e suporta validacao humana | REVIEW |
@@ -525,6 +525,9 @@ Preencher antes das fases que dependem de integracoes reais.
   - Usar `backend-ocr-worker` no profile `async-workers` com `DOCUPARSE_AUTO_PROCESS_OCR=false` quando a virada assincrona for feita.
   - Storage operacional permanece em volume local persistente no servidor proprio; MinIO self-hosted e opcional.
   - Carga simulada com OpenRouter mock ainda pendente.
+  - Classificador publica tipos internos de roteamento (`digital_pdf`, `scanned_image`, `handwritten_complex`), nao o contrato `content_type` / `document_type` do PRD; mapeamento pendente antes de o evento `ocr.completed` estar completo.
+  - DoclingEngine usa `pypdfium2` internamente; decisao pendente entre manter adaptador atual ou integrar pacote Docling real (ver Pendencias abertas item 2).
+  - Docker e `requirements` incluem PaddleOCR, EasyOCR e Tesseract desnecessarios para o perfil inicial; enxugar para `requirements-base.txt` + `requirements-openrouter-docling.txt`.
 
 ## Fase 3 - Layout Service
 
@@ -1313,6 +1316,9 @@ Preencher antes das fases que dependem de integracoes reais.
 - [x] Testes de contrato.
 - [x] E2E local ate `erp.sent` mockado para email, WhatsApp e upload manual.
 - [x] Testes de carga simulada local.
+- [ ] Verificacao real de dependencias em `GET /ready` (Redis/event bus, storage, backend-core).
+- [ ] Validacao de assinatura dos webhooks com `hmac.compare_digest()` (email webhook e WhatsApp webhook ainda usam comparacao direta de string).
+- [ ] Dependencias opcionais (`imap-tools`, `httpx`, `twilio`) incluidas no Dockerfile de producao.
 
 ### backend-ocr
 
@@ -1325,6 +1331,8 @@ Preencher antes das fases que dependem de integracoes reais.
 - [ ] Testes OpenRouter mock.
 - [ ] Testes Docling.
 - [ ] Testes de carga simulada.
+- [ ] Contrato `content_type` / `document_type` publicado no evento `ocr.completed` (classificador atual retorna tipos internos de roteamento).
+- [ ] Docker e requirements enxutos para perfil inicial (remover PaddleOCR, EasyOCR, TrOCR do build base).
 
 ### layout-service
 
@@ -1383,10 +1391,15 @@ Preencher antes das fases que dependem de integracoes reais.
 ## Pendencias abertas
 
 1. Conectar workers/publicadores ao Redis Streams real.
-2. Confirmar se Docling deve ser pacote real ou adaptador atual com `pypdfium2`.
-3. Definir stack final do frontend: React/Vite mantido ou Next.js.
-4. Fornecer credenciais e dados da secao "Dados e credenciais necessarios".
-5. Definir metas reais de carga.
-6. Definir campos canonicos do primeiro payload Superlogica.
-7. Ampliar lista inicial de layouts e schemas com fixtures reais.
-8. Definir destino operacional dos exports JSON aprovados.
+2. Confirmar se Docling deve ser pacote real ou adaptador atual com `pypdfium2`; renomear `DoclingEngine` para `PypdfiumEngine` se o backend for mantido.
+3. Implementar mapeamento `content_type` / `document_type` no classificador do `backend-ocr` antes de o contrato `ocr.completed` estar completo (lacuna identificada em `docs/backend-ocr-comments.md` e `docs/specs/ingest_docs_prd.md` secao 3 e 13.4).
+4. Corrigir validacao de assinatura dos webhooks de email e WhatsApp no `backend-com` para usar `hmac.compare_digest()` (lacuna de seguranca identificada em `docs/backend-com-comments.md`).
+5. Adicionar verificacao real de dependencias em `GET /ready` do `backend-com` (Redis/event bus, storage, backend-core) e retornar 503 com diagnostico.
+6. Incluir dependencias opcionais (`imap-tools`, `httpx`, `twilio`) no Dockerfile de producao do `backend-com`.
+7. Enxugar Docker e `requirements` do `backend-ocr` para o perfil inicial (remover PaddleOCR, EasyOCR, TrOCR do build base).
+8. Definir stack final do frontend: React/Vite mantido ou Next.js.
+9. Fornecer credenciais e dados da secao "Dados e credenciais necessarios".
+10. Definir metas reais de carga.
+11. Definir campos canonicos do primeiro payload Superlogica.
+12. Ampliar lista inicial de layouts e schemas com fixtures reais.
+13. Definir destino operacional dos exports JSON aprovados.

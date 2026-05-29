@@ -2,299 +2,218 @@
 
 ## Resumo executivo
 
-O diretorio `docuparse-project/backend-com` atende parcialmente as especificacoes. Ele contem componentes funcionais importantes para captura de email via IMAP, webhook de WhatsApp via Twilio, envio outbound de WhatsApp, utilitario de webhook HTTP, fila com debounce e uma aplicacao FastAPI. Porem, o codigo atual ainda se comporta mais como uma biblioteca reutilizavel chamada `atoms` do que como o microservico `backend-com` especificado para o DocuParse.
+O diretorio `docuparse-project/backend-com` evoluiu de uma biblioteca de utilitarios `atoms` para um microservico de captura de documentos funcional. O servico se apresenta como `"DocuParse Backend COM"`, expoe oito endpoints versionados em `/api/v1/...`, cobre os tres canais de captura (email, WhatsApp e upload manual), publica `document.received` em event bus configuravel (Redis ou JSONL local), persiste arquivos via `docuparse_storage`, e tem Docker de runtime integrado ao `docker-compose` principal. A suite de testes cobre os fluxos criticos com 21 testes.
 
-Para atender ao PRD, o `backend-com` precisa ser promovido a um servico de captura de documentos, com contratos canonicos, armazenamento de arquivos, publicacao de eventos `document.received`, endpoints versionados por canal, multi-tenant, testes especificos de captura e Docker de runtime integrado ao `docker-compose` principal.
+As lacunas remanescentes sao pontuais: os endpoints de readiness nao verificam dependencias externas (Redis, MinIO, backend-core); a validacao de assinatura dos webhooks e por comparacao simples de string em vez de HMAC; e o Dockerfile de producao nao lista as dependencias opcionais necessarias para email e WhatsApp.
 
-## O que ja atende ou pode ser reaproveitado
+## O que ja atende
 
-1. **Arquitetura FastAPI existente**
-   - Existe app FastAPI em `src/atoms/fastapi_app.py`.
-   - Ja agrega rotas de email e WhatsApp.
-   - Pode ser reaproveitado como base do microservico `backend-com`, mas precisa ser renomeado/configurado para DocuParse.
+### 1. Microservico FastAPI dedicado ao DocuParse
 
-2. **Captura de email por IMAP**
-   - `src/atoms/email_reader/service/email_reader.py` le emails nao lidos, extrai metadados, corpo, anexos e imagens inline.
-   - `src/atoms/email_reader/api/v1/fastapi.py` expoe `/fetch_unread`.
-   - O daemon consegue varrer a caixa periodicamente e enviar cada anexo para um webhook externo.
-   - Isso cobre parcialmente o requisito de email, mas ainda nao cobre webhook canonico nem evento `document.received`.
-
-3. **Captura de WhatsApp via webhook Twilio**
-   - `src/atoms/whatsapp/twilio/service/webhook.py` expoe `/webhook/twilio`.
-   - Valida remetente, suporta assinatura Twilio opcional, aplica rate limit simples e repassa payload para webhook externo.
-   - O desenho e reaproveitavel para `POST /api/v1/whatsapp/webhook`.
-
-4. **Fila/debounce reaproveitavel**
-   - `src/atoms/debounce/debounced_queue.py` implementa backends em memoria, Postgres e Celery/Redis.
-   - Isso e util para debounce de mensagens, mas nao substitui o event bus do pipeline de documentos.
-
-5. **Docker de desenvolvimento**
-   - Existe `.devcontainer/docker-compose.yml` com workspace, Postgres e Redis.
-   - Isso ajuda no desenvolvimento, mas nao disponibiliza o `backend-com` no `docuparse-project/docker-compose.yml`.
-
-## Lacunas em relacao as especificacoes
-
-### 1. O projeto ainda nao e um microservico DocuParse completo
-
-O pacote se chama `atoms`, o app se apresenta como "Atoms API" e as rotas sao genericas. A especificacao pede um `backend-com` autonomo para captura de Email, WhatsApp e upload manual.
-
-Alteracoes necessarias:
-
-- Definir uma camada de aplicacao `backend_com` ou `docuparse_backend_com` em cima dos componentes `atoms`.
-- Manter `atoms` como biblioteca interna, se desejado, mas criar endpoints e schemas do dominio DocuParse.
-- Alterar titulo, descricao, tags, configuracoes e logs para `backend-com`.
-- Criar estrutura sugerida:
+`src/backend_com/api/app.py` define o servico `"DocuParse Backend COM"` com lifespan propria. A camada `atoms` permanece como biblioteca interna de utilitarios; o dominio do servico vive em `src/backend_com/`.
 
 ```text
-backend-com/
-  src/
-    backend_com/
-      api/v1/email.py
-      api/v1/whatsapp.py
-      api/v1/documents.py
-      domain/events.py
-      domain/documents.py
-      services/capture_email.py
-      services/capture_whatsapp.py
-      services/manual_upload.py
-      services/storage.py
-      services/event_publisher.py
-      settings.py
+backend_com/
+  api/app.py               # FastAPI com 8 endpoints
+  services/
+    document_ingest.py     # storage + publicacao de eventos
+    email_capture.py
+    imap_polling.py
+    manual_upload.py
+    whatsapp_capture.py
+    twilio_polling.py
+  config.py
+  imap_poll.py             # CLI para poll unico
 ```
 
-### 2. Rotas nao seguem os contratos especificados
+### 2. Todos os endpoints versionados implementados
 
-Rotas atuais relevantes:
+| Metodo | Path | Funcao |
+|--------|------|--------|
+| `GET` | `/health` | Liveness probe |
+| `GET` | `/ready` | Readiness probe |
+| `POST` | `/api/v1/documents/manual` | Upload manual de arquivo |
+| `POST` | `/api/v1/email/webhook` | Webhook de email (SendGrid, Mailgun, etc.) |
+| `POST` | `/api/v1/email/messages` | Ingestao interna de emails IMAP |
+| `POST` | `/api/v1/email/poll` | Dispara poll IMAP uma vez |
+| `POST` | `/api/v1/whatsapp/webhook` | Webhook Twilio de WhatsApp |
+| `POST` | `/api/v1/whatsapp/poll` | Dispara poll Twilio REST API uma vez |
 
-- `POST /fetch_unread`
-- `POST /webhook/twilio`
-- `POST /send_message`
-- `POST /send_typing`
-- `POST /echo_data`
-
-Rotas esperadas pelo PRD:
-
-- `POST /api/v1/email/webhook`
-- `POST /api/v1/email/messages`
-- `GET /api/v1/email/accounts`
-- `POST /api/v1/email/accounts`
-- `POST /api/v1/whatsapp/webhook`
-- `GET /api/v1/whatsapp/numbers`
-- `POST /api/v1/whatsapp/numbers`
-- `POST /api/v1/whatsapp/messages/test`
-- `POST /api/v1/documents/manual`
-
-Alteracoes necessarias:
-
-- Manter adaptadores legados como endpoints internos, se forem uteis.
-- Criar endpoints versionados `/api/v1/...`.
-- Separar claramente API de email e API de WhatsApp.
-- Padronizar respostas com `document_id`, `status`, `accepted_documents`, `ignored_attachments` e `correlation_id`.
-
-### 3. Email atende apenas polling IMAP; falta webhook de provedor
-
-A especificacao pede captura de email por API/webhook quando disponivel, com IMAP como adaptador secundario. Hoje o suporte principal e IMAP via `/fetch_unread` ou daemon.
-
-Alteracoes necessarias:
-
-- Implementar `POST /api/v1/email/webhook` para provedores como SendGrid, Mailgun, Gmail Pub/Sub ou adaptador custom.
-- Normalizar payloads de provedores para um modelo interno `InboundEmail`.
-- Manter IMAP em `POST /api/v1/email/messages` ou worker agendado como fallback.
-- Garantir que cada anexo aceito gere um `document.received`.
-- Validar assinatura/token do provedor de email quando aplicavel.
-
-### 4. WhatsApp recebe webhook, mas nao captura documento para o pipeline
-
-O webhook Twilio atual extrai somente a primeira midia (`MediaUrl0`, `MediaContentType0`) e repassa o payload para um webhook configurado. Ele nao baixa a midia, nao armazena arquivo, nao valida tipo/tamanho, nao cria documento e nao publica `document.received`.
-
-Alteracoes necessarias:
-
-- Processar todas as midias `MediaUrl0..N`, nao apenas a primeira.
-- Baixar midias do Twilio com autenticacao correta.
-- Aceitar somente MIME types suportados pelo pipeline, por exemplo PDF e imagens.
-- Armazenar arquivo em object storage ou volume persistente.
-- Criar `document_id` por midia aceita.
-- Publicar `document.received` com `source="whatsapp"`.
-- Retornar status de recebimento imediatamente ao Twilio, sem depender do webhook externo.
-
-### 5. Upload manual nao existe no backend-com
-
-O PRD exige upload por tela de usuario com metadados. O `backend-com` atual nao possui endpoint de upload manual.
-
-Alteracoes necessarias:
-
-- Criar `POST /api/v1/documents/manual` com `multipart/form-data`.
-- Campos minimos:
-  - `file`
-  - `tenant_id`
-  - `operator_id`
-  - `scan_date`
-  - `expected_document_type`
-  - `batch_id` opcional
-  - `condominio` ou referencia equivalente quando aplicavel
-  - `notes` opcional
-- Validar extensao, MIME type, tamanho, duplicidade e legibilidade basica.
-- Armazenar arquivo e publicar `document.received` com `source="manual"`.
-
-### 6. Nao ha publicacao real no event bus do pipeline
-
-O codigo atual usa `send_to_webhook.py` para repassar payloads HTTP. Isso nao atende a comunicacao por filas/eventos definida no PRD.
-
-Alteracoes necessarias:
-
-- Criar `EventPublisher` com implementacao inicial para Redis/RabbitMQ/Celery ou outra fila escolhida no projeto.
-- Publicar evento canonico:
+Todos os endpoints de ingestao retornam resposta padronizada:
 
 ```json
 {
-  "event": "document.received",
-  "version": "v1",
-  "document_id": "uuid",
-  "tenant_id": "uuid",
-  "source": "email|whatsapp|manual|watched_folder",
-  "file_uri": "s3://bucket/file.pdf",
-  "metadata": {},
-  "correlation_id": "uuid"
+  "accepted_count": 2,
+  "documents": [
+    {
+      "document_id": "uuid",
+      "event_id": "uuid",
+      "file_uri": "local://...",
+      "size_bytes": 123456,
+      "sha256": "hex",
+      "event_type": "document.received",
+      "channel": "email|whatsapp|manual",
+      "core_sync_status": "synced:200|failed|disabled"
+    }
+  ],
+  "duplicate_count": 0
 }
 ```
 
-- Remover dependencia operacional de `imap_reader_webhook_url` e `twilio_webhook_url` como mecanismo principal do pipeline.
-- Manter callbacks HTTP apenas como integracao externa opcional.
+### 3. Publicacao do evento document.received
 
-### 7. Falta persistencia de documento e armazenamento de arquivo
+`services/document_ingest.py` publica o evento canonico via `event_bus_from_env()` (abstrai Redis ou JSONL local via `DOCUPARSE_EVENT_BUS`):
 
-Email e WhatsApp hoje carregam conteudo em memoria ou repassam base64/URL para webhook. A especificacao pede que o `backend-com` armazene o documento original e publique o `file_uri`.
+```json
+{
+  "event_type": "document.received",
+  "tenant_id": "uuid",
+  "document_id": "uuid",
+  "correlation_id": "uuid",
+  "source": "backend-com",
+  "data": {
+    "channel": "manual|email|whatsapp",
+    "received_at": "ISO8601",
+    "sender": "email ou telefone",
+    "file": {
+      "uri": "local://...",
+      "content_type": "application/pdf",
+      "filename": "nota.pdf",
+      "size_bytes": 123456,
+      "sha256": "hex"
+    },
+    "metadata": {
+      "provider": "webhook|imap|twilio",
+      "message_id": "...",
+      "subject": "...",
+      "metadata_channel": { ... }
+    }
+  }
+}
+```
+
+Apos publicar no event bus, o servico tambem sincroniza via HTTP para `BACKEND_CORE_DOCUMENT_RECEIVED_URL`. Falhas de sincronizacao com o core sao registradas em log sem derrubar a ingestao.
+
+### 4. Storage de arquivos implementado
+
+`docuparse_storage.LocalStorage` persiste cada arquivo com chave `document_original_key(tenant_id, document_id)`. O objeto retornado carrega `uri`, `size_bytes` e `sha256`. O diretorio e configuravel via `DOCUPARSE_LOCAL_STORAGE_DIR`.
+
+### 5. Captura de email: webhook e IMAP
+
+- `POST /api/v1/email/webhook`: aceita multiplos anexos via multipart, valida assinatura por header `x-docuparse-signature`, processa cada anexo separadamente.
+- `POST /api/v1/email/poll`: busca configuracoes IMAP por tenant no backend-core (`BACKEND_CORE_EMAIL_SETTINGS_URL`), conecta via `imaplib.IMAP4_SSL`, filtra remetentes bloqueados e MIME types invalidos, respeita limite de tamanho por tenant, marca como lida opcionalmente (`DOCUPARSE_IMAP_MARK_AS_READ`).
+
+### 6. WhatsApp: webhook e polling Twilio completos
+
+- `POST /api/v1/whatsapp/webhook`: processa todas as midias `MediaUrl0..N` (nao apenas a primeira), extrai conteudo base64 inline quando presente, baixa midias do Twilio com autenticacao `Basic(account_sid:auth_token)` quando necessario, filtra por MIME type.
+- `POST /api/v1/whatsapp/poll`: consulta a Twilio Messages API, baixa cada midia, deduplica por SHA256 na sessao, delega ao core para deduplicacao persistente via retorno 409.
+
+### 7. Upload manual com validacao completa
+
+`POST /api/v1/documents/manual`:
+- Aceita `multipart/form-data` com `file`, `tenant_id`, `sender` e `metadata_json`.
+- Valida Bearer token quando `DOCUPARSE_INTERNAL_SERVICE_TOKEN` configurado.
+- Rejeita arquivos acima de `DOCUPARSE_MAX_UPLOAD_BYTES` (padrao 20 MB).
+- Rejeita MIME types fora da lista permitida (PDF, JPEG, PNG, TIFF, WebP).
+- Retorna 409 Conflict para documentos duplicados.
+
+### 8. Multi-tenant implementado
+
+`tenant_id` e resolvido por campo de formulario em todos os endpoints. Cada documento e armazenado sob prefixo do tenant. O poll IMAP busca configuracoes especificas por tenant (host, usuario, MIME types aceitos, remetentes bloqueados, tamanho maximo) diretamente do backend-core.
+
+### 9. Seguranca ajustada
+
+- Bearer token validado com `hmac.compare_digest()` para prevenir timing attacks nos endpoints internos (manual, poll).
+- Credenciais IMAP nao sao logadas; apenas comprimento e registrado no startup.
+- CORS restrito a origens configuradas via `CORS_ALLOWED_ORIGINS`.
+- Limite de tamanho de upload por arquivo e por tenant.
+- Filtro de MIME types em todos os canais.
+
+### 10. Docker de runtime e integracao no compose
+
+`Dockerfile` de producao baseado em `python:3.13-slim`, porta `8070`. O servico esta incluido no `docker-compose.yml` principal com:
+- Volumes montados para storage, events, contratos e shared.
+- Variaveis de ambiente para Redis, MinIO, backend-core.
+- Health check apontando para `GET /health`.
+- Dependencias de Redis e MinIO via `depends_on`.
+
+### 11. Observabilidade com correlation_id
+
+`services/document_ingest.py` usa `log_event()` de `docuparse_observability` com campos:
+- `tenant_id`, `document_id`, `correlation_id`, `event_type`, `channel`, `file_uri`, `core_sync_status`.
+
+O `correlation_id` e gerado por documento e propagado para o evento e os logs.
+
+### 12. Suite de testes abrangente
+
+```text
+tests/
+  conftest.py
+  test_backend_com_app.py    # 21 testes
+```
+
+Cobertura:
+- health e ready.
+- upload manual: storage, evento publicado, validacao de MIME, validacao de token, falha graceful do core.
+- email webhook: zero anexos, multiplos anexos, MIME invalido, assinatura.
+- IMAP poll: ingestao com mock client, filtragem de remetente bloqueado e MIME invalido, exigencia de senha.
+- WhatsApp webhook: zero midias, multiplas midias inline (base64), MIME invalido, assinatura.
+
+## Lacunas remanescentes
+
+### 1. Endpoints /health e /ready nao verificam dependencias
+
+Ambos retornam 200 incondicionalmente. Um servico sem conexao com Redis, sem acesso ao MinIO ou com backend-core indisponivel reporta `ready` da mesma forma que um servico operacional.
 
 Alteracoes necessarias:
 
-- Implementar `StorageService` para salvar documentos em S3/MinIO ou volume local configuravel.
-- Calcular checksum para idempotencia e deduplicacao.
-- Persistir tabela de captura, por exemplo:
-  - `captured_documents`
-  - `capture_sources`
-  - `capture_attempts`
-  - `email_accounts`
-  - `whatsapp_numbers`
-- Registrar `document_id`, `tenant_id`, `source`, `file_uri`, `checksum`, `mime_type`, `size_bytes`, `status`, `created_at`.
+- Adicionar verificacao real em `GET /ready`:
+  - Conectividade com Redis (ou event bus configurado).
+  - Acesso ao diretorio de storage (escrita).
+  - Opcional: `HEAD` no `BACKEND_CORE_DOCUMENT_RECEIVED_URL`.
+- Retornar 503 com detalhe da dependencia que falhou.
 
-### 8. Multi-tenant ainda nao esta implementado
+### 2. Validacao de assinatura dos webhooks e por comparacao simples
 
-As configuracoes atuais sao globais por `.env`. O PRD pede configuracoes isoladas por tenant para email, numeros WhatsApp, webhooks, chaves e canais.
+Os endpoints `POST /api/v1/email/webhook` e `POST /api/v1/whatsapp/webhook` comparam o header `x-docuparse-signature` com o token configurado por igualdade direta de string. Isso e vulneravel a timing attacks.
 
 Alteracoes necessarias:
 
-- Modelar tenants e configuracoes por tenant.
-- Resolver `tenant_id` por email destino, numero WhatsApp destino, subdominio ou token do webhook.
-- Nao usar uma unica conta IMAP global para todos os tenants.
-- Nao usar um unico `twilio_settings.webhook_url` global como destino principal.
+- Substituir comparacao direta por `hmac.compare_digest()`, alinhando com a validacao ja feita nos endpoints internos.
+- Documentar o formato esperado do header (ex: HMAC-SHA256 do corpo ou token Bearer simples).
 
-### 9. Segurança precisa de ajustes imediatos
+### 3. Dependencias opcionais ausentes no Dockerfile de producao
 
-Foi encontrado segredo real ou com aparencia de segredo em `.env` e `.env.example`:
-
-- `imap_reader_password=...`
-
-Mesmo que seja uma senha de teste, nao deve ficar versionada. Alem disso, o webhook Twilio vem com `validate_twilio_signature=False` por padrao.
+O `Dockerfile` instala apenas as dependencias base (fastapi, uvicorn, pydantic, structlog, redis). As dependencias necessarias para email e WhatsApp (`imap-tools`, `httpx`, `twilio`) nao estao listadas, o que pode causar falha silenciosa no runtime.
 
 Alteracoes necessarias:
 
-- Remover segredos de `.env.example`.
-- Rotacionar a senha exposta se ela for valida.
-- Garantir que `.env` nao seja versionado.
-- Exigir `validate_twilio_signature=True` em ambientes nao locais.
-- Proteger endpoints administrativos por token ou autenticacao de servico.
-- Restringir CORS; hoje `allow_origins=["*"]`.
-- Evitar recebimento de credenciais via form em endpoints publicos como `/fetch_unread`.
+- Incluir as dependencias opcionais necessarias no `Dockerfile` ou criar perfis de build:
 
-### 10. Docker e composicao nao atendem ao runtime do sistema
+```text
+requirements-base.txt
+requirements-email.txt
+requirements-whatsapp.txt
+```
 
-Existe Docker apenas no `.devcontainer`. O `docuparse-project/docker-compose.yml` principal nao inclui `backend-com`, Redis, Postgres dedicado, fila/event bus nem storage.
-
-Alteracoes necessarias:
-
-- Criar `docuparse-project/backend-com/Dockerfile` de runtime.
-- Adicionar `backend-com` ao `docuparse-project/docker-compose.yml`.
-- Adicionar variaveis de ambiente especificas do servico.
-- Adicionar dependencia de fila/event bus e storage.
-- Expor porta propria, por exemplo `8010`, evitando conflito com `backend-core` em `8000`.
-- Ajustar `prestart_dev.sh`, que hoje sobe o `backend-com` em `8000`, conflitando conceitualmente com o `backend-core`.
-
-### 11. Observabilidade e logs nao atendem ao PRD
-
-Existe `structlog`, mas a configuracao atual em `fastapi_app.py` usa `json_logs=False` e `console_logs=False`, o que pode descartar logs estruturados. Tambem faltam `correlation_id`, `tenant_id`, `document_id`, metricas e traces.
-
-Alteracoes necessarias:
-
-- Padronizar logs JSON em runtime.
-- Incluir `service="backend-com"`, `correlation_id`, `tenant_id`, `document_id`, `source`.
-- Adicionar health check e readiness:
-  - `GET /health`
-  - `GET /ready`
-- Instrumentar OpenTelemetry.
-- Emitir metricas:
-  - documentos capturados por canal
-  - anexos rejeitados
-  - falhas de webhook
-  - latencia de download de midia
-  - eventos publicados
-
-### 12. Testes atuais nao cobrem o backend-com especificado
-
-Ha testes apenas para `DebouncedQueue` em `src/atoms/debounce/pytest.py`. Nao ha testes de contrato para email, WhatsApp, upload manual, eventos ou Docker.
-
-Alteracoes necessarias:
-
-- Renomear/mover `src/atoms/debounce/pytest.py` para um caminho padrao, por exemplo `tests/test_debounced_queue.py`.
-- Criar testes unitarios:
-  - parser IMAP
-  - normalizacao de email webhook
-  - webhook Twilio com assinatura valida/invalida
-  - download de midia
-  - validacao de arquivo
-  - publicacao de `document.received`
-- Criar testes de integracao:
-  - email com dois anexos gera dois eventos
-  - WhatsApp com N midias gera N documentos
-  - upload manual gera um documento com metadados
-  - evento duplicado nao duplica documento
-  - fila indisponivel gera erro/retry controlado
+- Garantir que a imagem de producao contenha tudo necessario para os canais ativos.
 
 ## Proposta de plano de alteracao
 
-### Prioridade 0 - Seguranca
+### Prioridade 1 - Readiness com verificacao real de dependencias
 
-- Remover segredos de `.env.example`.
-- Rotacionar senha exposta, se valida.
-- Garantir `.env` fora do versionamento.
-- Ativar validacao de assinatura Twilio por ambiente.
+- Implementar checagem de Redis e storage em `GET /ready`.
+- Retornar 503 com diagnose quando alguma dependencia estiver indisponivel.
 
-### Prioridade 1 - Transformar em microservico de captura
+### Prioridade 2 - Proteger assinaturas dos webhooks com timing-safe comparison
 
-- Criar camada `backend_com` com FastAPI propria.
-- Implementar rotas `/api/v1/...` exigidas.
-- Manter codigo `atoms` como adaptadores internos.
-- Adicionar health/readiness.
+- Substituir comparacao direta por `hmac.compare_digest()` em email webhook e WhatsApp webhook.
 
-### Prioridade 2 - Evento canonico e storage
+### Prioridade 3 - Corrigir dependencias no Dockerfile
 
-- Implementar `StorageService`.
-- Implementar `EventPublisher`.
-- Publicar `document.received` para email, WhatsApp e upload manual.
-- Persistir captura e idempotencia.
-
-### Prioridade 3 - Canais
-
-- Email: adicionar webhook de provedor e manter IMAP como fallback.
-- WhatsApp: baixar todas as midias, validar arquivos e publicar eventos.
-- Manual: criar endpoint multipart com metadados.
-
-### Prioridade 4 - Runtime e testes
-
-- Criar Dockerfile de runtime.
-- Adicionar `backend-com` ao compose principal.
-- Adicionar testes unitarios, contrato e integracao.
-- Instrumentar logs JSON, metricas e traces.
+- Mapear quais dependencias sao necessarias por canal ativo.
+- Incluir ou parametrizar no Dockerfile de producao.
 
 ## Veredito
 
-O `backend-com` atual e uma boa base tecnica para reaproveitar captura IMAP, webhook Twilio e algumas utilidades de fila/logging, mas ainda nao atende as especificacoes fechadas como microservico de captura do DocuParse. As principais faltas sao: endpoints canonicos, upload manual, armazenamento, publicacao em fila de `document.received`, multi-tenant, runtime Docker no compose principal e testes de contrato/integracao por canal.
+O `backend-com` esta operacional como microservico de captura. Os tres canais (manual, email e WhatsApp) estao implementados, o evento `document.received` e publicado com contrato canonico, storage e multi-tenant funcionam, o Docker esta integrado ao compose principal e os testes cobrem os fluxos criticos. As lacunas remanescentes sao objetivas: readiness sem verificacao real de dependencias, validacao de assinatura de webhook sem timing-safe comparison, e dependencias opcionais ausentes no Dockerfile.

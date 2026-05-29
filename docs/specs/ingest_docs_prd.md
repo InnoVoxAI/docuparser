@@ -31,10 +31,11 @@ Cada etapa deve ser implementada como módulo/microserviço completo, testável 
 #### API esperada
 
 ```http
-POST /api/v1/email/webhook
-POST /api/v1/email/messages
-GET /api/v1/email/accounts
-POST /api/v1/email/accounts
+POST /api/v1/email/webhook        # implementado
+POST /api/v1/email/messages       # implementado (ingestao interna via IMAP)
+POST /api/v1/email/poll           # implementado (dispara poll IMAP por tenant)
+GET  /api/v1/email/accounts       # pendente
+POST /api/v1/email/accounts       # pendente
 ```
 
 ---
@@ -51,10 +52,11 @@ POST /api/v1/email/accounts
 #### API esperada
 
 ```http
-POST /api/v1/whatsapp/webhook
-GET /api/v1/whatsapp/numbers
-POST /api/v1/whatsapp/numbers
-POST /api/v1/whatsapp/messages/test
+POST /api/v1/whatsapp/webhook         # implementado
+POST /api/v1/whatsapp/poll            # implementado (dispara poll Twilio REST API por tenant)
+GET  /api/v1/whatsapp/numbers         # pendente
+POST /api/v1/whatsapp/numbers         # pendente
+POST /api/v1/whatsapp/messages/test   # pendente
 ```
 
 ---
@@ -105,6 +107,8 @@ O sistema deve classificar automaticamente:
   "content_type": "scanned_pdf"
 }
 ```
+
+> **Estado atual:** o classificador do `backend-ocr` retorna tipos internos de roteamento (`digital_pdf`, `scanned_image`, `handwritten_complex`), usados corretamente para selecionar a engine OCR, mas ainda não produz o contrato `content_type` / `document_type` acima. Esse mapeamento é uma lacuna pendente no `backend-ocr`. Enquanto não for resolvido, o evento `ocr.completed` não carrega `content_type` e `document_type` nos valores esperados pelo pipeline.
 
 ---
 
@@ -172,9 +176,11 @@ Permitir a correta aplicação do schema de extração no LangExtract.
 * Extração de texto bruto
 * Normalização de ruído
 * Aproveitamento da arquitetura já implementada do **backend-ocr**, incluindo FastAPI, classificação básica, roteamento por engine e estratégias de fallback existentes
-* Interface síncrona interna para testes e chamadas externas futuras
-* Consumidor assíncrono de fila para operação normal no pipeline distribuído
-* Publicação do evento `ocr.completed`
+* Interface síncrona interna para testes e chamadas externas futuras — **implementada** (`POST /api/v1/process`)
+* Consumidor assíncrono de fila para operação normal no pipeline distribuído — **implementado** (`application/ocr_event_worker.py` consome `document.received`, publica `ocr.completed` ou `ocr.failed`)
+* Publicação do evento `ocr.completed` — **implementada**
+
+> **Lacuna remanescente:** o `DoclingEngine` usa `pypdfium2` internamente em vez da biblioteca Docling real. A decisão de manter o adaptador atual ou substituir por Docling ainda não foi tomada.
 
 ---
 
@@ -588,30 +594,52 @@ Response:
 
 #### Eventos mínimos
 
-```json
-{
-  "event": "document.received",
-  "version": "v1",
-  "document_id": "uuid",
-  "tenant_id": "uuid",
-  "source": "email|whatsapp|manual|watched_folder",
-  "file_uri": "s3://bucket/file.pdf",
-  "metadata": {},
-  "correlation_id": "uuid"
-}
-```
+Contrato implementado do `document.received` (publicado pelo `backend-com`):
 
 ```json
 {
-  "event": "ocr.completed",
-  "version": "v1",
+  "event_type": "document.received",
   "document_id": "uuid",
-  "raw_text_uri": "s3://bucket/raw_text.json",
-  "document_type": "boleto",
-  "content_type": "scanned_pdf",
-  "confidence": 0.91
+  "tenant_id": "uuid",
+  "correlation_id": "uuid",
+  "source": "backend-com",
+  "data": {
+    "channel": "manual|email|whatsapp",
+    "received_at": "ISO8601",
+    "sender": "email ou telefone",
+    "file": {
+      "uri": "local://...",
+      "content_type": "application/pdf",
+      "filename": "nota.pdf",
+      "size_bytes": 123456,
+      "sha256": "hex"
+    },
+    "metadata": {
+      "provider": "webhook|imap|twilio",
+      "message_id": "...",
+      "subject": "...",
+      "metadata_channel": {}
+    }
+  }
 }
 ```
+
+Contrato implementado do `ocr.completed` (publicado pelo `backend-ocr`):
+
+```json
+{
+  "event_type": "ocr.completed",
+  "document_id": "uuid",
+  "tenant_id": "uuid",
+  "correlation_id": "uuid",
+  "raw_text_uri": "local://.../raw_text.json",
+  "engine_used": "openrouter|docling",
+  "content_type": "scanned_pdf",
+  "document_type": "boleto|fatura|unknown"
+}
+```
+
+> **Nota:** `content_type` e `document_type` no evento `ocr.completed` são uma lacuna pendente — o classificador ainda retorna tipos internos de roteamento. Os valores acima refletem o contrato esperado, não o estado atual.
 
 ```json
 {
@@ -1098,20 +1126,23 @@ captura -> document.received -> OCR -> ocr.completed -> Layout -> layout.classif
 ## 16. 📋 Checklist de Implementação
 
 ### Fase 1 — Backend COM
-- [ ] Aproveitar arquitetura existente do backend-com
-- [ ] Implementar API/webhook de Email separada
-- [ ] Implementar API/webhook de WhatsApp separada
-- [ ] Implementar upload manual via interface
-- [ ] Publicar eventos `document.received`
-- [ ] Criar testes isolados de Email, WhatsApp e upload manual
+- [x] Aproveitar arquitetura existente do backend-com
+- [x] Implementar API/webhook de Email separada (`POST /api/v1/email/webhook`, `POST /api/v1/email/messages`, `POST /api/v1/email/poll`)
+- [x] Implementar API/webhook de WhatsApp separada (`POST /api/v1/whatsapp/webhook`, `POST /api/v1/whatsapp/poll`)
+- [x] Implementar upload manual via interface (`POST /api/v1/documents/manual` — endpoint implementado; tela web é responsabilidade do frontend)
+- [x] Publicar eventos `document.received` (via Redis ou JSONL local, com sincronização HTTP para backend-core)
+- [x] Criar testes isolados de Email, WhatsApp e upload manual (21 testes cobrindo todos os canais)
+- [ ] Gerenciamento de contas de email (`GET/POST /api/v1/email/accounts`)
+- [ ] Gerenciamento de números WhatsApp (`GET/POST /api/v1/whatsapp/numbers`, `POST /api/v1/whatsapp/messages/test`)
 
 ### Fase 2 — Pipeline OCR, Layout e LangExtract
-- [ ] Aproveitar arquitetura existente do backend-ocr
-- [ ] Implementar consumidor de eventos no backend-ocr
-- [ ] Implementar/publicar `ocr.completed`
+- [x] Aproveitar arquitetura existente do backend-ocr
+- [x] Implementar consumidor de eventos no backend-ocr (`application/ocr_event_worker.py`)
+- [x] Implementar/publicar `ocr.completed` e `ocr.failed`
+- [ ] Mapear saída do classificador para contrato `content_type` / `document_type` do PRD
 - [ ] Implementar layout-service como módulo testável
 - [ ] Implementar langextract-service como microserviço separado
-- [ ] Criar testes isolados para OCR, layout e LangExtract
+- [ ] Criar testes isolados para layout e LangExtract (testes OCR já existem)
 
 ### Fase 3 — Backend Core e Orquestração
 - [ ] Consumir eventos do pipeline

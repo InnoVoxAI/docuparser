@@ -57,6 +57,7 @@ class DocumentListSerializer(serializers.ModelSerializer):
 class DocumentDetailSerializer(serializers.ModelSerializer):
     extraction_result = ExtractionResultSerializer(read_only=True)
     full_transcription = serializers.SerializerMethodField()
+    full_transcription_formatted = serializers.SerializerMethodField()
     ocr_metadata = serializers.SerializerMethodField()
 
     class Meta:
@@ -78,27 +79,35 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             "metadata",
             "extraction_result",
             "full_transcription",
+            "full_transcription_formatted",
             "ocr_metadata",
             "created_at",
             "updated_at",
         ]
 
-    def get_full_transcription(self, obj: Document) -> str:
+    def _load_raw_text_payload(self, obj: Document) -> dict:
+        """Lê e decodifica o JSON armazenado em raw_text_uri. Retorna {} em caso de falha."""
         if not obj.raw_text_uri:
-            return ""
+            return {}
         try:
-            payload = json.loads(LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(obj.raw_text_uri).decode("utf-8"))
+            return json.loads(
+                LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+                .get_bytes(obj.raw_text_uri)
+                .decode("utf-8")
+            )
         except (FileNotFoundError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
-            return ""
+            return {}
+
+    def get_full_transcription(self, obj: Document) -> str:
+        payload = self._load_raw_text_payload(obj)
         return str(payload.get("raw_text") or "")
 
+    def get_full_transcription_formatted(self, obj: Document) -> str:
+        payload = self._load_raw_text_payload(obj)
+        return str(payload.get("raw_text_formatted") or "")
+
     def get_ocr_metadata(self, obj: Document) -> dict:
-        if not obj.raw_text_uri:
-            return {}
-        try:
-            payload = json.loads(LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(obj.raw_text_uri).decode("utf-8"))
-        except (FileNotFoundError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
-            return {}
+        payload = self._load_raw_text_payload(obj)
         metadata = payload.get("ocr") or {}
         if not metadata:
             metadata = {

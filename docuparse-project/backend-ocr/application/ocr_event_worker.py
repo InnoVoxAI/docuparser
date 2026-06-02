@@ -48,9 +48,20 @@ def handle_document_received_event(
         file_bytes = storage.get_bytes(event.data.file.uri)
         result = _process_or_mock_document(event, file_bytes)
 
+        raw_text_formatted = result.get("raw_text_formatted", "")
+        log_event(
+            logger,
+            "raw_text_formatted storing",
+            tenant_id=event.tenant_id,
+            document_id=str(event.document_id),
+            raw_text_formatted_chars=len(raw_text_formatted),
+            raw_text_formatted_preview=raw_text_formatted[:300],
+        )
+
         raw_payload = {
             "raw_text": result.get("raw_text", ""),
             "raw_text_fallback": result.get("raw_text_fallback", ""),
+            "raw_text_formatted": raw_text_formatted,
             "document_type": result.get("document_type", "unknown"),
             "engine_used": result.get("engine_used", "unknown"),
             "processing_time_seconds": result.get("processing_time_seconds", 0.0),

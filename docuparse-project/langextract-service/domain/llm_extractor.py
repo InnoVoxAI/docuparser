@@ -99,12 +99,14 @@ def extract_with_llm(
             "langextract.llm_extractor.llm_call_failed | schema_id=%s tenant=%s error=%s",
             schema_id, tenant_id, exc,
         )
-        extracted_fields = {name: None for name in field_names}
+        extracted_fields = {name: {"value": None, "confidence": 0.0} for name in field_names}
 
-    # Replace None with EXTRACTION_NOT_FOUND so each field appears in the UI
+    # Replace missing/null values with EXTRACTION_NOT_FOUND so each field appears in the UI
     for name in field_names:
-        if extracted_fields.get(name) is None:
-            extracted_fields[name] = EXTRACTION_NOT_FOUND
+        entry = extracted_fields.get(name)
+        val = entry.get("value") if isinstance(entry, dict) else entry
+        if val is None:
+            extracted_fields[name] = {"value": EXTRACTION_NOT_FOUND, "confidence": 0.0}
 
     # Log the full list of extracted fields for observability
     logger.info(
@@ -161,9 +163,9 @@ def _build_extraction_prompt(
             ex_lines.append(f'  - campo "{field}": valor "{expected}" extraído de "{source}"')
         examples_block = "\n\nExemplos anotados:\n" + "\n".join(ex_lines)
 
-    # Expected JSON template so the LLM knows exactly what format to return
+    # Expected JSON template with per-field value and confidence
     json_template = json.dumps(
-        {name: "<valor extraído ou null>" for name in [f["name"] for f in fields_spec if f.get("name")]},
+        {name: {"value": "<valor extraído ou null>", "confidence": 0.0} for name in [f["name"] for f in fields_spec if f.get("name")]},
         ensure_ascii=False,
         indent=2,
     )
@@ -185,14 +187,20 @@ def _build_extraction_prompt(
 
 ## Tarefa:
 Extraia os campos listados acima do texto do documento seguindo as instruções.
-Para cada campo:
-- Retorne o valor encontrado no texto, exatamente como aparece (sem inventar).
-- Se não encontrar o campo no texto, retorne null.
-- Não repita o texto completo, somente o valor do campo.
-- NÃO inclua scores de confiança, objetos aninhados ou metadados extras.
-- Cada campo deve ter apenas um valor simples (string, número ou null).
+Para cada campo, retorne um objeto com:
+- "value": o valor encontrado no texto (string, número, ou null se não encontrado)
+- "confidence": número entre 0 e 1 indicando sua confiança na extração
+  - 0.95–1.0: valor explícito e inequívoco no texto
+  - 0.70–0.94: valor claro com pequena ambiguidade
+  - 0.40–0.69: valor inferido com alguma incerteza
+  - 0.0: campo não encontrado (use junto com value: null)
 
-Retorne APENAS um objeto JSON plano e válido (sem objetos aninhados) com o seguinte formato, sem qualquer texto adicional:
+Regras:
+- Retorne o valor exatamente como aparece no texto (sem inventar).
+- Se não encontrar o campo, retorne {{"value": null, "confidence": 0.0}}.
+- Não repita o texto completo, somente o valor do campo.
+
+Retorne APENAS um objeto JSON válido com o seguinte formato, sem qualquer texto adicional:
 {json_template}"""
 
 
@@ -287,11 +295,11 @@ def _call_openrouter(user_prompt: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, Any]:
-    """Extract a dict of {field: value} from the LLM text response.
+    """Parse LLM response into {field: {value, confidence}} structure.
 
     Strategy:
-    1. Full JSON parse with nested-structure normalization (handles models that
-       return {"field": {"value": "...", "confidence": 0.9}} instead of flat values).
+    1. Full JSON parse — normalizes any field to {value, confidence} dict,
+       preserving confidence scores returned by the LLM.
     2. If JSON is truncated or malformed, regex-based partial recovery so fields
        that were already emitted before the truncation point are not lost.
     """
@@ -314,7 +322,7 @@ def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, 
         if not isinstance(parsed, dict):
             raise ValueError("LLM response is not a JSON object")
 
-        result = {name: _normalize_field_value(parsed.get(name)) for name in field_names}
+        result = {name: _normalize_field_entry(parsed.get(name)) for name in field_names}
         logger.info(
             "langextract.llm_extractor.parsed_fields | fields=%s", list(result.keys())
         )
@@ -339,11 +347,13 @@ def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, 
     return {name: None for name in field_names}
 
 
-def _normalize_field_value(value: Any) -> Any:
-    """Flatten {value, confidence} dicts that some models return instead of bare values."""
+def _normalize_field_entry(value: Any) -> dict[str, Any]:
+    """Normalize any LLM field response to {value, confidence} structure."""
     if isinstance(value, dict) and "value" in value:
-        return value.get("value")
-    return value
+        raw_conf = value.get("confidence")
+        confidence = raw_conf if isinstance(raw_conf, (int, float)) else None
+        return {"value": value.get("value"), "confidence": confidence}
+    return {"value": value, "confidence": None}
 
 
 def _recover_partial_fields(text: str, field_names: list[str]) -> dict[str, Any]:
@@ -361,20 +371,20 @@ def _recover_partial_fields(text: str, field_names: list[str]) -> dict[str, Any]
 
     names_pat = "|".join(re.escape(n) for n in field_names)
 
-    # Nested: "field": {"value": "...", ...} or "field": {"value": null, ...}
+    # Nested: "field": {"value": "...", "confidence": 0.9, ...} or {"value": null, ...}
     nested_re = re.compile(
         r'"(' + names_pat + r')"\s*:\s*\{\s*"value"\s*:\s*(?:"([^"]*)"|(null))\b'
     )
     for m in nested_re.finditer(text):
         name = m.group(1)
-        result[name] = None if m.group(3) else m.group(2)
+        result[name] = {"value": None if m.group(3) else m.group(2), "confidence": None}
 
     # Flat string: "field": "value"  (only fills fields not yet recovered)
     flat_str_re = re.compile(r'"(' + names_pat + r')"\s*:\s*"([^"]*)"')
     for m in flat_str_re.finditer(text):
         name = m.group(1)
         if result[name] is None:
-            result[name] = m.group(2)
+            result[name] = {"value": m.group(2), "confidence": None}
 
     # Flat null: "field": null  (only fills fields not yet recovered)
     flat_null_re = re.compile(r'"(' + names_pat + r')"\s*:\s*null\b')
@@ -404,8 +414,13 @@ def _calculate_confidence(
     if not target_names:
         return 0.0
 
+    def _get_field_value(entry: Any) -> Any:
+        if isinstance(entry, dict) and "value" in entry:
+            return entry["value"]
+        return entry
+
     present = sum(
         1 for name in target_names
-        if fields.get(name) and fields[name] != EXTRACTION_NOT_FOUND
+        if _get_field_value(fields.get(name)) and _get_field_value(fields.get(name)) != EXTRACTION_NOT_FOUND
     )
     return round(present / len(target_names), 2)

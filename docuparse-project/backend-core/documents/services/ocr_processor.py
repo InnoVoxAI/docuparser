@@ -25,8 +25,18 @@ def process_document_ocr(document_id) -> Document:
     )
 
     raw_text = result.get("raw_text") or result.get("raw_text_fallback") or ""
+    raw_text_formatted = result.get("raw_text_formatted", "")
+
+    logger.info(
+        "ocr_processor: raw_text_formatted storing | document_id=%s | chars=%d | preview=%r",
+        document_id,
+        len(raw_text_formatted),
+        raw_text_formatted[:300],
+    )
+
     raw_text_payload = {
         "raw_text": raw_text,
+        "raw_text_formatted": raw_text_formatted,
         "document_type": result.get("document_type", "unknown"),
         "engine_used": result.get("engine_used", "unknown"),
         "ocr": {

@@ -209,6 +209,7 @@ def process_document(
 
         "raw_text": ocr_result.get("raw_text", ""),
         "raw_text_fallback": ocr_result.get("raw_text_fallback", ""),
+        "raw_text_formatted": ocr_result.get("raw_text_formatted", ""),
 
         "document_type": doc_type,
         "engine_used": engine_name,

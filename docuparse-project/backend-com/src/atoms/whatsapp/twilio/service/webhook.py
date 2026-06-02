@@ -60,7 +60,7 @@ webhook_sender = WebhookSender(
     url=twilio_settings.webhook_url, headers=twilio_settings.headers
 )
 
-
+# INBOUND: Twilio -> POST /webhook/twilio -> Fila (PostgreSQL) -> Worker
 @router.post("/webhook/twilio")
 async def webhook_twilio(
     message_sid: str = Form(

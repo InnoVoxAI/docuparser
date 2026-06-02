@@ -2,120 +2,37 @@
 
 ## Resumo executivo
 
-O diretorio `docuparse-project/backend-ocr` esta mais proximo das especificacoes do que o `backend-com`: ja existe um microservico FastAPI funcional, com Docker de runtime, arquitetura em camadas, contrato comum de engines, endpoint `/api/v1/process`, endpoint `/api/v1/engines`, health check, testes basicos e adaptadores para OpenRouter e Docling.
+O diretorio `docuparse-project/backend-ocr` avancou consideravelmente desde a analise anterior. O microservico FastAPI esta funcional e o pipeline event-driven ja foi implementado: o worker consome `document.received`, processa OCR, persiste o resultado em storage e publica `ocr.completed` ou `ocr.failed`. Os defaults de engine foram corrigidos para o perfil OpenRouter + Docling, o registry usa lazy loading com tolerancia a falhas, o `FieldExtractor` foi removido do fluxo principal, a observabilidade foi reforcada com `/ready` e logging estruturado, e a suite de testes esta bem mais abrangente.
 
-Mesmo assim, ele ainda nao atende integralmente ao PRD fechado. O principal desalinhamento e que o servico ainda funciona como API HTTP sincrona de OCR + extracao de campos, enquanto a especificacao define o `backend-ocr` como modulo autonomo de OCR no pipeline distribuido por eventos:
+As lacunas remanescentes sao mais localizadas: o `DoclingEngine` ainda usa `pypdfium2` em vez da biblioteca Docling real; a classificacao ainda retorna tipos internos de roteamento (`digital_pdf`, `scanned_image`, `handwritten_complex`) sem produzir o contrato `content_type` / `document_type` esperado pelo PRD; e o Docker e os `requirements` continuam instalando engines pesadas que nao fazem parte do perfil inicial.
 
-```text
-document.received -> backend-ocr -> ocr.completed -> layout-service
-```
+## O que ja atende
 
-Como o LangExtract sera um microservico separado, o `backend-ocr` deve concentrar-se em classificacao basica, conversao/OCR, normalizacao de ruido e publicacao do texto bruto. A extracao de campos estruturados deve sair do caminho principal ou ficar apenas como modo legado/debug.
+### 1. Microservico FastAPI funcional com todos os endpoints
 
-## O que ja atende ou pode ser reaproveitado
+- `GET /`: info do servico.
+- `POST /api/v1/process`: upload de arquivo para OCR sincrono.
+- `GET /api/v1/engines`: lista engines com capacidades.
+- `GET /health`: liveness probe.
+- `GET /ready`: readiness probe — verifica se OpenRouter esta configurado quando habilitado.
+- CORS configuravel via `CORS_ALLOWED_ORIGINS`.
+- Handler global de excecoes: log estruturado e resposta padrao.
 
-1. **Microservico FastAPI funcional**
-   - `api/app.py` cria o app `DocuParse OCR Backend`.
-   - `api/routes/document.py` expoe `POST /api/v1/process` e `GET /api/v1/engines`.
-   - `GET /health` existe e os testes basicos passam.
+### 2. Arquitetura em camadas
 
-2. **Arquitetura em camadas**
-   - `api/`: camada HTTP.
-   - `application/`: orquestracao do processamento.
-   - `domain/`: classificacao, resolucao de engine e extracao de campos.
-   - `infrastructure/`: engines OCR e fallback.
-   - `shared/`: preprocessing e validators.
+- `api/`: camada HTTP.
+- `application/`: orquestracao do processamento e worker de eventos.
+- `domain/`: classificacao, resolucao de engine e extracao de campos.
+- `infrastructure/`: engines OCR e fallback.
+- `shared/`: preprocessing e validators.
 
-3. **Contrato comum de OCR engine**
-   - `infrastructure/engines/base_engine.py` define `BaseOCREngine`.
-   - Isso atende bem ao requisito de modulo autonomo e extensivel.
+### 3. Contrato comum de OCR engine
 
-4. **OpenRouter existente**
-   - `infrastructure/engines/openrouter_engine.py` implementa OCR multimodal via OpenRouter.
-   - Suporta PDF com camada de texto, PDF como imagem e arquivo de imagem.
-   - Para PDF com texto, delega para `DoclingEngine`; para PDF/imagem raster, renderiza imagem e chama OpenRouter.
+`infrastructure/engines/base_engine.py` define `BaseOCREngine` com interface padrao: `name`, `process(content, metadata)` retornando `raw_text`, `document_info`, `entities`, `tables`, `totals` e `_meta`.
 
-5. **DoclingEngine existente**
-   - `infrastructure/engines/docling_engine.py` extrai texto por pagina de PDFs com camada textual usando `pypdfium2`.
-   - Retorna `raw_text`, metadados, blocos e tabelas heuristicas.
+### 4. ENGINE_DEFAULTS alinhados ao perfil inicial
 
-6. **Docker de runtime**
-   - Existe `docuparse-project/backend-ocr/Dockerfile`.
-   - O servico ja esta incluido no `docuparse-project/docker-compose.yml`.
-
-7. **Testes basicos**
-   - `tests/test_main.py` e `tests/test_ocr_flow.py` validam root, health e listagem de engines.
-   - Rodado localmente:
-
-```text
-python -m pytest tests/test_main.py tests/test_ocr_flow.py -q
-5 passed
-```
-
-## Lacunas em relacao as especificacoes
-
-### 1. Falta operacao por eventos e filas
-
-O PRD define comunicacao normal entre modulos por fila/event bus. O `backend-ocr` atual so oferece API HTTP sincrona para upload direto de arquivo.
-
-Alteracoes necessarias:
-
-- Criar consumidor de `document.received`.
-- Buscar o arquivo pelo `file_uri` publicado pelo `backend-com`.
-- Processar OCR.
-- Armazenar `raw_text` e artefatos em storage.
-- Publicar `ocr.completed` ou `ocr.failed`.
-- Manter `POST /api/v1/process` apenas para testes isolados, reprocessamento administrativo e chamadas futuras externas.
-
-Evento esperado de entrada:
-
-```json
-{
-  "event": "document.received",
-  "version": "v1",
-  "document_id": "uuid",
-  "tenant_id": "uuid",
-  "source": "email|whatsapp|manual|watched_folder",
-  "file_uri": "s3://bucket/file.pdf",
-  "metadata": {},
-  "correlation_id": "uuid"
-}
-```
-
-Evento esperado de saida:
-
-```json
-{
-  "event": "ocr.completed",
-  "version": "v1",
-  "document_id": "uuid",
-  "tenant_id": "uuid",
-  "raw_text_uri": "s3://bucket/raw_text.json",
-  "document_type": "boleto|fatura|unknown",
-  "content_type": "pdf_text|scanned_pdf|image|paper_scan",
-  "engine_used": "openrouter|docling",
-  "confidence": 0.91,
-  "correlation_id": "uuid"
-}
-```
-
-### 2. O fluxo inicial OpenRouter + Docling precisa virar default explicito
-
-Voce definiu que, inicialmente, usaremos OCR do OpenRouter e Docling para conversao dos PDFs e imagens. Hoje o resolver default e:
-
-```python
-ENGINE_DEFAULTS = {
-    "digital_pdf": "docling",
-    "scanned_image": "paddle",
-    "handwritten_complex": "handwritten_region",
-}
-```
-
-Isso significa que imagens/PDFs escaneados nao usam OpenRouter por padrao.
-
-Alteracoes necessarias:
-
-- Alterar defaults iniciais para:
+Os defaults foram corrigidos:
 
 ```python
 ENGINE_DEFAULTS = {
@@ -125,353 +42,147 @@ ENGINE_DEFAULTS = {
 }
 ```
 
-- Adicionar feature flag, por exemplo:
+Imagens e PDFs escaneados agora roteiam para OpenRouter por padrao. Tesseract permanece como fallback final sempre disponivel.
+
+### 5. Registry lazy real com tolerancia a falhas
+
+`application/process_document.py` usa lazy loading com `try/except` por engine. Engines com dependencias ausentes ou chaves nao configuradas sao ignoradas no startup sem derrubar o servico.
+
+### 6. OpenRouterEngine robusto
+
+- Arvore de decisao: PDF com texto -> Docling; PDF como imagem -> renderiza + OpenRouter; Imagem -> OpenRouter.
+- Recebe `doc_type` via metadata para evitar reclassificacao.
+- Retry automatico para texto vazio com modelo fallback (`OPENROUTER_FALLBACK_MODEL`).
+- Retry para modelos sem suporte a imagem.
+- Rastreamento de confianca por pagina.
+
+### 7. DoclingEngine funcional
+
+Extrai texto da camada textual de PDFs via `pypdfium2` (fallback: `pymupdf`). Preserva layout por mapeamento de grade de caracteres. Detecta campos obrigatorios (data, moeda, numero de documento) e sinaliza `fallback_recommended = true` quando ausentes.
+
+### 8. Pipeline event-driven implementado
+
+`application/ocr_event_worker.py` e `application/run_worker.py` entregam o fluxo:
 
 ```text
-OCR_INITIAL_ENGINE_PROFILE=openrouter_docling
-OCR_ENABLE_LEGACY_ENGINES=false
+document.received -> backend-ocr -> ocr.completed / ocr.failed
 ```
 
-- Permitir override por `selected_engine`, mas validar contra engines realmente habilitados.
-- Atualizar `CAPABILITIES` para incluir `openrouter`, `docling` e os aliases corretos.
+- Consome stream `document.received` (Redis Streams ou JSONL local).
+- Busca arquivo no storage via `file_uri`.
+- Chama `process_document()` com `legacy_extraction=False`.
+- Persiste `raw_text_formatted` em object storage com chave `documents/{tenant_id}/{document_id}/ocr/raw_text.json`.
+- Publica `ocr.completed` com `raw_text_uri` ou `ocr.failed` com `error_reason`.
+- Dead-letter queue para eventos que falharam.
+- Variaveis de controle: `DOCUPARSE_OCR_WORKER_ENABLED`, `DOCUPARSE_OCR_WORKER_POLL_SECONDS`, `DOCUPARSE_OCR_WORKER_START_AT_LATEST`.
+- `POST /api/v1/process` mantido para testes isolados e reprocessamento administrativo.
 
-### 3. DoclingEngine nao usa o pacote Docling real
+### 9. FieldExtractor removido do fluxo principal
 
-O arquivo chama `DoclingEngine`, mas a implementacao atual usa `pypdfium2` para extrair texto do PDF. Isso pode ser aceitavel como adaptador interno, mas se a especificacao "docling" significa usar a biblioteca Docling real para conversao de PDFs e imagens, falta incluir e integrar essa dependencia.
+`domain/field_extractor.py` e `domain/field_extractor_impl.py` ainda existem, mas nao sao chamados no pipeline HTTP nem no worker de eventos (`semantic_extraction_enabled: False`). A extracao estruturada foi delegada ao `langextract-service`.
 
-Alteracoes necessarias:
+### 10. Storage integrado
 
-- Decidir explicitamente se `DoclingEngine` e:
-  - um adaptador interno baseado em `pypdfium2`; ou
-  - um wrapper da biblioteca Docling real.
-- Se for Docling real:
-  - adicionar dependencia no `requirements.txt`;
-  - implementar conversao via Docling para PDF e imagens;
+Storage via pacote externo `docuparse_storage` (`LocalStorage`). O worker persiste `raw_text_formatted` antes de publicar `ocr.completed`, de forma que o evento carrega `raw_text_uri` em vez de payload inline.
+
+### 11. Observabilidade reforcada
+
+- Logging estruturado com `docuparse_observability.log_event()`.
+- Campos de contexto: `tenant_id`, `document_id`, `correlation_id`, `event_type`, `engine_used`, `content_type`.
+- `GET /ready` verifica OpenRouter configurado quando habilitado e docling disponivel.
+- Worker thread iniciado condicionalmente via lifespan do FastAPI.
+
+### 12. Suite de testes abrangente
+
+```text
+tests/
+  test_main.py                  # endpoints FastAPI
+  test_ocr_event_worker.py      # fluxo completo do worker de eventos
+  test_classifier.py            # classificador (testes unitarios)
+  test_process_document_bugs.py # casos de borda do pipeline
+  test_ocr_flow.py              # fluxo OCR end-to-end
+  test_real_pdf_ocr.py          # PDFs reais
+  conftest.py                   # fixtures e configuracao
+```
+
+### 13. Preprocessing classification-aware
+
+`shared/preprocessing.py` define pipelines por engine e por tipo de documento. Handwriting detection e region segmentation implementados. Cada engine tem funcao de preprocessing dedicada: `preprocess_for_paddle_engine`, `preprocess_for_easyocr_engine`, `preprocess_for_docling_engine`, etc.
+
+## Lacunas remanescentes
+
+### 1. DoclingEngine nao usa o pacote Docling real
+
+O `DoclingEngine` atual extrai texto via `pypdfium2`, nao via a biblioteca Docling. O nome sugere Docling real, mas a implementacao e um adaptador interno baseado em pypdfium2.
+
+Essa lacuna deve ser resolvida de forma explicita:
+
+- Se o objetivo e manter `pypdfium2` como backend, renomear para `PdfTextEngine` ou `PypdfiumEngine` e documentar a escolha.
+- Se o objetivo e usar Docling real:
+  - adicionar `docling` ao `requirements.txt`;
+  - reimplementar conversao via Docling para PDF e imagens;
   - registrar metadados de paginas, tabelas e layout quando disponiveis;
   - testar PDFs digitais, PDFs escaneados e imagens.
 
-### 4. O backend-ocr ainda extrai campos estruturados
+### 2. Classificacao nao produz o contrato `content_type` / `document_type` do PRD
 
-`application/process_document.py` chama `FieldExtractor()` e retorna `fields`, `field_confidence`, `low_confidence_fields`, `totals`, etc. Essa responsabilidade conflita com a arquitetura fechada, onde:
-
-- `backend-ocr`: texto bruto, normalizacao e classificacao basica.
-- `layout-service`: classificacao de layout.
-- `langextract-service`: extracao semantica estruturada.
-
-Alteracoes necessarias:
-
-- Remover `FieldExtractor` do fluxo principal de OCR.
-- Retornar apenas OCR e metadados necessarios para o layout-service.
-- Manter extracao de campos apenas como modo legado, por exemplo `?legacy_extract_fields=true`, se ainda for necessaria para compatibilidade.
-- Ajustar schema de resposta para nao prometer campos estruturados como saida principal.
-
-### 5. Classificacao atual nao produz os tipos exigidos pelo PRD
-
-O PRD espera:
-
-- `document_type`: `boleto | fatura | unknown`
-- `content_type`: `pdf_text | scanned_pdf | image | paper_scan`
-
-O classificador atual retorna:
-
-- `digital_pdf`
-- `scanned_image`
-- `handwritten_complex`
-
-Esses valores sao uteis para roteamento de OCR, mas nao sao o contrato do pipeline.
-
-Alteracoes necessarias:
-
-- Separar dois conceitos:
-  - `content_type`: tipo tecnico do arquivo/conteudo.
-  - `document_type`: tipo de documento de negocio.
-- Exemplo de saida:
+O classificador retorna tipos internos de roteamento (`digital_pdf`, `scanned_image`, `handwritten_complex`). Esses valores sao usados corretamente para selecionar a engine, mas o contrato do evento `ocr.completed` exige:
 
 ```json
 {
-  "document_type": "boleto",
-  "content_type": "scanned_pdf",
-  "ocr_route": "openrouter",
-  "confidence": 0.91
+  "document_type": "boleto|fatura|unknown",
+  "content_type": "pdf_text|scanned_pdf|image|paper_scan"
 }
 ```
 
-- Renomear ou mapear os tipos atuais:
-  - `digital_pdf` -> `content_type=pdf_text`
-  - `scanned_image` com PDF -> `content_type=scanned_pdf`
-  - `scanned_image` com imagem -> `content_type=image`
-  - documento vindo de upload manual com origem paper -> `content_type=paper_scan`
+Os tipos internos nao sao publicados nesse formato. O mapeamento necessario e:
 
-### 6. Bugs concretos encontrados no caminho de processamento
+- `digital_pdf` → `content_type=pdf_text`
+- `scanned_image` com PDF → `content_type=scanned_pdf`
+- `scanned_image` com imagem → `content_type=image`
+- documento de origem paper → `content_type=paper_scan`
+- `document_type` ainda nao e inferido (retorna `unknown` por padrao)
 
-Foram encontrados problemas de codigo que podem afetar `/api/v1/process`:
+Separar os dois conceitos no classificador ou no worker antes de publicar `ocr.completed`.
 
-1. **Chamada incorreta de `classify_document`**
+### 3. Docker e requirements incluem engines pesadas desnecessarias para o perfil inicial
 
-`domain/classifier.py` define:
-
-```python
-def classify_document(filename: str, content: bytes) -> str:
-```
-
-Mas `application/process_document.py` chama:
-
-```python
-doc_type = classify_document(file_bytes)
-```
-
-Isso gera erro de assinatura e faz o fluxo cair sempre no fallback `scanned_image`.
-
-Correcao:
-
-```python
-doc_type = classify_document(filename=filename, content=file_bytes)
-```
-
-2. **Fallback chama `merge_fallback_result` com assinatura errada**
-
-`fallback_handler.py` define:
-
-```python
-merge_fallback_result(primary_data, fallback_data, primary_engine, fallback_engine)
-```
-
-Mas `process_document.py` chama:
-
-```python
-merge_fallback_result(ocr_result, fallback_result)
-```
-
-Correcao:
-
-```python
-ocr_result = merge_fallback_result(
-    primary_data=ocr_result,
-    fallback_data=fallback_result,
-    primary_engine=engine_name,
-    fallback_engine=fallback_engine_name,
-)
-```
-
-3. **`ocr_result` pode estar indefinido no bloco de fallback**
-
-Se `engine.process(...)` levantar excecao antes de atribuir `ocr_result`, o bloco `except` tenta usar `ocr_result` no merge.
-
-Correcao:
-
-- Inicializar `ocr_result = {}` antes do `try`; ou
-- Se a engine primaria falhar por excecao, usar diretamente o resultado do fallback sem merge.
-
-4. **Schema `OCRResponse` tem campo `debug` fora da classe**
-
-Em `api/schemas/ocr_schema.py`, o campo `debug` esta sem indentacao dentro de `OCRResponse`:
-
-```python
-# Debug info
-debug: Optional[Dict[str, Any]] = Field(...)
-```
-
-Isso cria uma variavel de modulo, nao um campo do modelo. Alem disso, `process_document.py` retorna `_debug`, nao `debug`.
-
-Correcao:
-
-- Indentar `debug` dentro de `OCRResponse`; ou
-- Remover do contrato publico.
-- Padronizar `debug` versus `_debug`.
-
-5. **HTTPException de validacao vira 500**
-
-`process_document_endpoint` levanta `HTTPException(400)` dentro de um `try`, mas o `except Exception` captura tudo e transforma em 500.
-
-Correcao:
-
-```python
-except HTTPException:
-    raise
-except Exception as e:
-    ...
-```
-
-### 7. `GET /engines` nao reflete o registry real
-
-`EngineResolver.list_all_engines()` le apenas `CAPABILITIES`. Essa lista nao inclui `openrouter`, `deepseek`, `tesseract` nem `docling` de forma completa para todos os casos. Tambem mistura `paddleocr` nas capabilities, enquanto o registry usa `paddle`.
-
-Alteracoes necessarias:
-
-- Tornar `GET /api/v1/engines` derivado do registry real de engines habilitados.
-- Incluir status: `enabled`, `available`, `missing_dependency`, `requires_api_key`.
-- Para o perfil inicial, listar claramente `docling` e `openrouter`.
-- Nao listar engines desabilitados ou indisponiveis como se estivessem prontos.
-
-### 8. Engines pesadas sao instanciadas no import
-
-`application/process_document.py` registra varias engines no import do modulo:
-
-- DeepSeek
-- Docling
-- EasyOCR
-- LlamaParse
-- OpenRouter
-- Paddle
-- Tesseract
-- TrOCR
-
-Apesar do comentario dizer "lazy loading", o codigo instancia todas as classes no startup. Isso aumenta tempo de boot, uso de memoria e risco de falha por dependencia, especialmente se inicialmente vamos usar apenas OpenRouter e Docling.
-
-Alteracoes necessarias:
-
-- Criar registry lazy real: registrar factories, instanciar somente quando a engine for usada.
-- Habilitar engines por configuracao.
-- No perfil inicial, instanciar apenas:
-  - `docling`
-  - `openrouter`
-- Mover engines legadas para dependencias opcionais.
-
-### 9. OpenRouter deve falhar de forma operacionalmente clara
-
-`OpenRouterOCREngine.process` captura excecoes e retorna `raw_text=""` com `_meta.error`. O pipeline superior pode tratar isso como sucesso parcial, extrair campos vazios e publicar resultado de baixa qualidade.
-
-Alteracoes necessarias:
-
-- Distinguir falha operacional de baixa confianca.
-- Para ausencia de `OPENROUTER_API_KEY` ou `OPENROUTER_MODEL`, marcar engine como indisponivel no readiness e evitar processar.
-- Publicar `ocr.failed` quando nao houver texto util e o erro for operacional.
-- Registrar `error_code`, `retryable`, `provider_status_code` e `provider_message`.
-
-### 10. Falta storage para raw_text e artefatos
-
-O PRD usa `raw_text_uri` no evento `ocr.completed`. Hoje a API retorna `raw_text` inline.
-
-Alteracoes necessarias:
-
-- Criar `StorageService` para gravar:
-  - `raw_text.json`
-  - imagens renderizadas de paginas, se necessario
-  - metadados da engine
-  - logs de qualidade por pagina
-- Publicar URI no evento, nao payload grande inline.
-- Manter retorno inline apenas no endpoint de teste isolado.
-
-### 11. Observabilidade precisa ser reforcada
-
-Existe logging basico, mas falta o padrao definido no PRD.
-
-Alteracoes necessarias:
-
-- Logs JSON estruturados com:
-  - `service=backend-ocr`
-  - `document_id`
-  - `tenant_id`
-  - `correlation_id`
-  - `engine_used`
-  - `content_type`
-- Adicionar `GET /ready`, verificando:
-  - fila/event bus
-  - storage
-  - OpenRouter configurado quando habilitado
-  - Docling disponivel
-- Instrumentar OpenTelemetry.
-- Emitir metricas:
-  - tempo de OCR por engine
-  - documentos processados por content_type
-  - falhas por engine
-  - taxa de fallback
-  - tokens/chamadas OpenRouter, se disponivel
-
-### 12. Docker precisa refletir o perfil inicial
-
-O Dockerfile atual instala varias engines locais pesadas:
-
-- Tesseract
-- PaddleOCR/PaddlePaddle
-- EasyOCR
-- OpenCV
-
-Se o perfil inicial for OpenRouter + Docling, a imagem pode ser reduzida e simplificada.
+O `Dockerfile` instala Tesseract, libgl e dependencias de OpenCV. O `requirements.txt` inclui `PaddleOCR`, `PaddlePaddle` e `EasyOCR`, que somam varios GB e nao fazem parte do perfil inicial OpenRouter + Docling.
 
 Alteracoes necessarias:
 
 - Criar requirements por perfil:
 
 ```text
-requirements-base.txt
+requirements-base.txt              # FastAPI, pypdfium2, OpenRouter client, shared utils
 requirements-openrouter-docling.txt
-requirements-local-ocr.txt
-requirements-dev.txt
+requirements-local-ocr.txt         # paddle, easyocr, tesseract
+requirements-dev.txt               # trocr, torch, transformers
 ```
 
-- No Dockerfile inicial, instalar apenas o necessario para:
-  - FastAPI
-  - OpenRouter client
-  - renderizacao/conversao PDF/imagem
-  - Docling ou adaptador definido
-  - storage/event bus
-- Manter engines locais como extras opcionais.
-
-### 13. Testes ainda nao cobrem o que importa para o PRD
-
-Os testes atuais passaram, mas cobrem somente root, health e listagem de engines. Eles nao exercitam OCR, OpenRouter, Docling, contratos de evento nem o endpoint `/api/v1/process`.
-
-Alteracoes necessarias:
-
-- Testes unitarios:
-  - `classify_document(filename, content)`
-  - resolver com perfil `openrouter_docling`
-  - `DoclingEngine` com PDF textual fixture
-  - `OpenRouterOCREngine` com mock HTTP
-  - erro de OpenRouter sem API key/model
-  - serializacao de `ocr.completed`
-- Testes de contrato:
-  - entrada `document.received`
-  - saida `ocr.completed`
-  - saida `ocr.failed`
-- Testes de integracao:
-  - PDF digital -> Docling -> `ocr.completed`
-  - PDF escaneado -> OpenRouter mock -> `ocr.completed`
-  - imagem -> OpenRouter mock -> `ocr.completed`
-  - falha OpenRouter -> retry/failure controlado
-- Teste E2E local com fila e storage mockados.
+- No Dockerfile inicial, instalar apenas o necessario para o perfil ativo.
+- Manter engines locais como extras opcionais instalados condicionalmente.
 
 ## Proposta de plano de alteracao
 
-### Prioridade 0 - Corrigir bugs que afetam o fluxo atual
+### Prioridade 1 - Decidir e documentar o backend do DoclingEngine
 
-- Corrigir chamada de `classify_document`.
-- Corrigir chamada de `merge_fallback_result`.
-- Corrigir uso de `ocr_result` indefinido no fallback.
-- Corrigir `debug`/`_debug` em `OCRResponse`.
-- Preservar `HTTPException` 400 no endpoint.
+- Renomear para `PypdfiumEngine` se o backend for `pypdfium2`; ou
+- Integrar Docling real se o requisito exigir.
+- Atualizar `ENGINE_DEFAULTS` e `CAPABILITIES` para refletir o nome correto.
 
-### Prioridade 1 - Definir perfil inicial OpenRouter + Docling
+### Prioridade 2 - Produzir `content_type` e `document_type` no contrato de saida
 
-- Ajustar `ENGINE_DEFAULTS`.
-- Atualizar `CAPABILITIES`.
-- Criar configuracao de engines habilitadas.
-- Fazer registry lazy real.
-- Atualizar README e Docker para refletir o perfil inicial.
+- Separar classificacao de roteamento OCR (`digital_pdf`, `scanned_image`) de classificacao de conteudo para o pipeline (`pdf_text`, `scanned_pdf`, `image`, `paper_scan`).
+- Mapear e publicar `content_type` correto no evento `ocr.completed`.
+- Adicionar inferencia basica de `document_type` (boleto, fatura, unknown) a partir de sinais do texto bruto.
 
-### Prioridade 2 - Separar OCR de extracao semantica
+### Prioridade 3 - Reduzir Docker e requirements ao perfil inicial
 
-- Remover `FieldExtractor` do caminho principal.
-- Retornar/publicar apenas texto bruto, classificacao tecnica e metadados.
-- Deixar extracao estruturada para `langextract-service`.
-
-### Prioridade 3 - Event-driven
-
-- Implementar consumidor de `document.received`.
-- Implementar publisher de `ocr.completed` e `ocr.failed`.
-- Integrar storage para `raw_text_uri`.
-- Manter `/api/v1/process` como modo isolado.
-
-### Prioridade 4 - Observabilidade e testes
-
-- Adicionar readiness.
-- Logs JSON com correlation ids.
-- Metricas por engine.
-- Testes unitarios, contrato e integracao para OpenRouter/Docling/eventos.
+- Criar `requirements-base.txt` e `requirements-openrouter-docling.txt`.
+- Atualizar Dockerfile para instalar apenas o perfil ativo.
+- Mover PaddleOCR, EasyOCR e TrOCR para extras opcionais.
 
 ## Veredito
 
-O `backend-ocr` tem boa base arquitetural e e reaproveitavel. Para o recorte inicial OpenRouter + Docling, ele precisa de ajustes objetivos: tornar OpenRouter o default para imagens/PDFs escaneados, esclarecer ou substituir o `DoclingEngine` por Docling real, corrigir bugs do fluxo atual, remover extracao estruturada do caminho principal e adicionar o modo event-driven com `document.received` e `ocr.completed`.
-
-Depois desses ajustes, o servico ficara alinhado com o papel definido no PRD: modulo OCR autonomo, testavel isoladamente e conectado ao restante do sistema pelo orquestrador/event bus.
+O `backend-ocr` esta em bom estado operacional. O pipeline event-driven esta implementado, o perfil OpenRouter + Docling e o default, a extracao estruturada foi removida do fluxo principal, o storage e a observabilidade estao integrados, e os testes cobrem os fluxos criticos. As lacunas remanescentes sao objetivas e localizadas: esclarecer e potencialmente substituir o backend do `DoclingEngine`, produzir o contrato correto de `content_type` / `document_type` no evento de saida, e enxugar o Docker e os requirements para refletir o perfil inicial sem as engines pesadas.

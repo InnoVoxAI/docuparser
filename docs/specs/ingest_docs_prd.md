@@ -1133,15 +1133,15 @@ captura -> document.received -> OCR -> ocr.completed -> Layout -> layout.classif
 - [x] Publicar eventos `document.received` (via Redis ou JSONL local, com sincronização HTTP para backend-core)
 - [x] Criar testes isolados de Email, WhatsApp e upload manual (21 testes cobrindo todos os canais)
 - [ ] Gerenciamento de contas de email (`GET/POST /api/v1/email/accounts`)
-- [ ] Gerenciamento de números WhatsApp (`GET/POST /api/v1/whatsapp/numbers`, `POST /api/v1/whatsapp/messages/test`)
+
 
 ### Fase 2 — Pipeline OCR, Layout e LangExtract
 - [x] Aproveitar arquitetura existente do backend-ocr
 - [x] Implementar consumidor de eventos no backend-ocr (`application/ocr_event_worker.py`)
 - [x] Implementar/publicar `ocr.completed` e `ocr.failed`
 - [ ] Mapear saída do classificador para contrato `content_type` / `document_type` do PRD
-- [ ] Implementar layout-service como módulo testável
-- [ ] Implementar langextract-service como microserviço separado
+- [x] Implementar layout-service como módulo testável
+- [x] Implementar langextract-service como microserviço separado
 - [ ] Criar testes isolados para layout e LangExtract (testes OCR já existem)
 
 ### Fase 3 — Backend Core e Orquestração
@@ -1178,12 +1178,12 @@ captura -> document.received -> OCR -> ocr.completed -> Layout -> layout.classif
 - [ ] Criar sistema de notificações
 
 ### Fase 8 — Frontend
-- [ ] Implementar tela de dashboard
-- [ ] Implementar tela de inbox
-- [ ] Implementar tela de upload manual com metadados
-- [ ] Implementar tela de configuração
-- [ ] Implementar tela de validação
-- [ ] Criar testes de UI para upload e validação
+- [x] Implementar tela de dashboard
+- [x] Implementar tela de inbox
+- [x] Implementar tela de upload manual com metadados
+- [x] Implementar tela de configuração
+- [x] Implementar tela de validação
+- [x] Criar testes de UI para upload e validação
 
 ### Fase 9 — Integração ponta a ponta
 - [ ] Testar fluxo completo de Email até ERP

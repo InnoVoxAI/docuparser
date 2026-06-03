@@ -216,6 +216,13 @@ class DocumentsAPITests(TestCase):
         assert accepted.status_code == 200
 
     def test_operator_can_approve_document_via_api(self) -> None:
+        ExtractionResult.objects.create(
+            document=self.document,
+            schema_id="test",
+            schema_version="v1",
+            fields={},
+            confidence=1.0,
+        )
         response = self.client.post(
             reverse("document-validate", args=[self.document.id]),
             {

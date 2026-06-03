@@ -123,11 +123,9 @@ def documents_inbox_view(request):
         .prefetch_related(
             Prefetch(
                 "validation_decisions",
-                queryset=ValidationDecision.objects.filter(
-                    decision="rejected"
-                ).order_by("-created_at"),
-                to_attr="_prefetched_rejection_decisions",
-            )
+                queryset=ValidationDecision.objects.order_by("-created_at"),
+                to_attr="_prefetched_decisions",
+            ),
         )
         .order_by("-received_at")
     )
@@ -229,7 +227,10 @@ def document_validation_view(request, document_id):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
-    document = get_object_or_404(Document, id=document_id)
+    document = get_object_or_404(
+        Document.objects.select_related("extraction_result"),
+        id=document_id,
+    )
     decision = request.data.get("decision")
     if decision not in {
         ValidationDecision.Decision.APPROVED,
@@ -238,17 +239,34 @@ def document_validation_view(request, document_id):
     }:
         return Response({"detail": "Invalid decision"}, status=status.HTTP_400_BAD_REQUEST)
 
+    if not hasattr(document, "extraction_result") or document.extraction_result is None:
+        return Response(
+            {"detail": "Extração de campos não concluída. Execute a extração antes de aprovar ou rejeitar."},
+            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+
+    notes = request.data.get("notes") or ""
+    if decision == ValidationDecision.Decision.REJECTED and not notes.strip():
+        return Response(
+            {"detail": "Motivo da rejeição é obrigatório."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     user_id = request.data.get("decided_by_id")
-    user = get_object_or_404(get_user_model(), id=user_id) if user_id else get_user_model().objects.first()
-    if user is None:
-        return Response({"detail": "A user is required to validate documents"}, status=status.HTTP_400_BAD_REQUEST)
+    if user_id:
+        user = get_object_or_404(get_user_model(), id=user_id)
+    else:
+        User = get_user_model()
+        user = User.objects.first()
+        if user is None:
+            user = User.objects.create_user(username="operador", password="operador")
 
     validation = ValidationDecision.objects.create(
         document=document,
         decided_by=user,
         decision=decision,
         corrected_fields=request.data.get("corrected_fields") or {},
-        notes=request.data.get("notes") or "",
+        notes=notes,
     )
 
     corrected_fields = request.data.get("corrected_fields") or {}

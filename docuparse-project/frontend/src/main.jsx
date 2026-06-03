@@ -41,6 +41,7 @@ const NAV_ITEMS = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'inbox', label: 'Inbox', icon: Inbox },
     { id: 'upload', label: 'Upload', icon: Upload },
+    { id: 'rejected', label: 'Rejeitados', icon: XCircle },
     { id: 'validation', label: 'Validacao', icon: ClipboardCheck },
     { id: 'operations', label: 'Operacoes', icon: AlertTriangle },
     { id: 'settings', label: 'Configuracoes', icon: Settings },
@@ -184,6 +185,15 @@ function App() {
         () => documents.filter((document) => ['RECEIVED', 'OCR_COMPLETED', 'EXTRACTION_COMPLETED', 'VALIDATION_PENDING'].includes(document.status)),
         [documents],
     )
+    const rejectedDocuments = useMemo(
+        () => documents.filter((d) => d.status === 'REJECTED'),
+        [documents],
+    )
+
+    const navigateToValidation = (documentId) => {
+        setSelectedDocumentId(documentId)
+        setActiveView('validation')
+    }
 
     const handleDocumentUpdated = (updatedDocument) => {
         setSelectedDocument(updatedDocument)
@@ -198,6 +208,25 @@ function App() {
                 }
                 : document
         )))
+    }
+
+    const handleReprocessDocument = async (id) => {
+        try {
+            await api.post(`/documents/${id}/reprocess-ocr`)
+            await refreshData()
+        } catch (requestError) {
+            setError(readError(requestError, 'Falha ao reprocessar documento.'))
+        }
+    }
+
+    const handleDeleteDocument = async (id) => {
+        if (!window.confirm('Excluir este documento permanentemente?')) return
+        try {
+            await api.delete(`/documents/${id}/delete`)
+            await refreshData()
+        } catch (requestError) {
+            setError(readError(requestError, 'Falha ao excluir documento.'))
+        }
     }
 
     return (
@@ -259,25 +288,32 @@ function App() {
                         {activeView === 'dashboard' ? <Dashboard metrics={metrics} documents={documents} /> : null}
                         {activeView === 'inbox' ? (
                             <InboxView
-                                documents={documents}
-                                selectedDocumentId={selectedDocumentId}
-                                onSelectDocument={setSelectedDocumentId}
+                                documents={pendingDocuments}
+                                onNavigateToValidation={navigateToValidation}
+                                onNavigateToUpload={() => setActiveView('upload')}
                             />
                         ) : null}
                         {activeView === 'upload' ? <UploadView onUploaded={refreshData} /> : null}
+                        {activeView === 'rejected' ? (
+                            <RejectedView
+                                documents={rejectedDocuments}
+                                onReprocess={handleReprocessDocument}
+                                onDelete={handleDeleteDocument}
+                                onRefresh={refreshData}
+                            />
+                        ) : null}
                         {activeView === 'validation' ? (
                             <ValidationView
-                                documents={pendingDocuments}
                                 schemas={schemas}
                                 selectedDocument={selectedDocument}
                                 selectedDocumentId={selectedDocumentId}
-                                onSelectDocument={setSelectedDocumentId}
                                 onDocumentUpdated={handleDocumentUpdated}
                                 onDocumentDeleted={() => {
                                     setSelectedDocumentId('')
                                     setSelectedDocument(null)
                                 }}
                                 onValidated={refreshData}
+                                onBackToInbox={() => setActiveView('inbox')}
                             />
                         ) : null}
                         {activeView === 'operations' ? <OperationsView /> : null}
@@ -327,17 +363,109 @@ function Dashboard({ metrics, documents }) {
     )
 }
 
-function InboxView({ documents, selectedDocumentId, onSelectDocument }) {
+function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }) {
     const [search, setSearch] = useState('')
     const displayed = filterDocuments(documents, search)
     return (
+        <div className="space-y-3">
+            <div className="flex items-center justify-between">
+                <button
+                    type="button"
+                    onClick={onNavigateToUpload}
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700"
+                >
+                    <Upload size={16} aria-hidden="true" />
+                    Enviar Documento
+                </button>
+            </div>
+            <section className="rounded-md border border-zinc-200 bg-white">
+                <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+                    <div className="text-sm font-semibold">Documentos pendentes</div>
+                    <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, tipo..." />
+                </div>
+                <DocumentTable documents={displayed} onSelectDocument={onNavigateToValidation} />
+            </section>
+        </div>
+    )
+}
+
+function RejectedView({ documents, onReprocess, onDelete, onRefresh }) {
+    return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-                <div className="text-sm font-semibold">Documentos recebidos</div>
-                <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, status, tipo..." />
+                <div className="text-sm font-semibold">Documentos rejeitados</div>
+                <button
+                    type="button"
+                    onClick={onRefresh}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                >
+                    <RefreshCw size={16} aria-hidden="true" />
+                    Atualizar
+                </button>
             </div>
-            <DocumentTable documents={displayed} selectedDocumentId={selectedDocumentId} onSelectDocument={onSelectDocument} />
+            {documents.length === 0 ? (
+                <EmptyState icon={XCircle} text="Nenhum documento rejeitado." />
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-zinc-200 text-sm">
+                        <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+                            <tr>
+                                <th className="px-4 py-3">Documento</th>
+                                <th className="px-4 py-3">Motivo da rejeicao</th>
+                                <th className="px-4 py-3">Data</th>
+                                <th className="px-4 py-3">Acoes</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                            {documents.map((doc) => (
+                                <RejectedRow
+                                    key={doc.id}
+                                    document={doc}
+                                    onReprocess={onReprocess}
+                                    onDelete={onDelete}
+                                />
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </section>
+    )
+}
+
+function RejectedRow({ document, onReprocess, onDelete }) {
+    return (
+        <tr className="hover:bg-zinc-50">
+            <td className="px-4 py-3">
+                <div className="font-medium">{document.original_filename || document.id}</div>
+            </td>
+            <td className="max-w-[300px] px-4 py-3 text-zinc-600">
+                {document.rejection_notes ?? '—'}
+            </td>
+            <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
+                {formatDate(document.updated_at)}
+            </td>
+            <td className="px-4 py-3">
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => onReprocess(document.id)}
+                        className="inline-flex items-center gap-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium hover:bg-zinc-100"
+                    >
+                        <RefreshCw size={12} aria-hidden="true" />
+                        Reprocessar
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onDelete(document.id)}
+                        className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                    >
+                        <Trash2 size={12} aria-hidden="true" />
+                        Excluir
+                    </button>
+                </div>
+            </td>
+        </tr>
     )
 }
 
@@ -630,16 +758,13 @@ function UploadView({ onUploaded }) {
     )
 }
 
-function ValidationView({ documents, schemas = [], selectedDocument, selectedDocumentId, onSelectDocument, onDocumentUpdated, onDocumentDeleted, onValidated }) {
+function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onDocumentUpdated, onDocumentDeleted, onValidated, onBackToInbox }) {
     const [notes, setNotes] = useState('')
-    const [validationSearch, setValidationSearch] = useState('')
     const [fieldRows, setFieldRows] = useState([])
     const [submitting, setSubmitting] = useState(false)
     const [actionMessage, setActionMessage] = useState('')
     const [reprocessing, setReprocessing] = useState(false)
     const [deleting, setDeleting] = useState(false)
-    const [bulkSelectedIds, setBulkSelectedIds] = useState(new Set())
-    const [bulkProgress, setBulkProgress] = useState(null)
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
     const [extracting, setExtracting] = useState(false)
     const [extractMessage, setExtractMessage] = useState('')
@@ -768,102 +893,24 @@ function ValidationView({ documents, schemas = [], selectedDocument, selectedDoc
         }
     }
 
-    const filteredValidationDocs = filterDocuments(documents, validationSearch)
-
-    const bulkDelete = async () => {
-        if (bulkSelectedIds.size === 0 || bulkProgress) return
-        const ids = [...bulkSelectedIds]
-        const confirmed = window.confirm(`Excluir ${ids.length} documento(s) selecionado(s)? Os arquivos locais serao preservados.`)
-        if (!confirmed) return
-        setBulkProgress({ action: 'delete', done: 0, total: ids.length })
-        let failed = 0
-        for (let i = 0; i < ids.length; i++) {
-            try {
-                await api.delete(`/documents/${ids[i]}/delete`)
-            } catch {
-                failed++
-            }
-            setBulkProgress({ action: 'delete', done: i + 1, total: ids.length })
-        }
-        setBulkProgress(null)
-        setBulkSelectedIds(new Set())
-        await onValidated()
-        if (failed > 0) setActionMessage(`${failed} documento(s) nao puderam ser excluidos.`)
-    }
-
-    const bulkReprocess = async () => {
-        if (bulkSelectedIds.size === 0 || bulkProgress) return
-        const ids = [...bulkSelectedIds]
-        setBulkProgress({ action: 'reprocess', done: 0, total: ids.length })
-        let failed = 0
-        for (let i = 0; i < ids.length; i++) {
-            try {
-                await api.post(`/documents/${ids[i]}/reprocess-ocr`)
-            } catch {
-                failed++
-            }
-            setBulkProgress({ action: 'reprocess', done: i + 1, total: ids.length })
-        }
-        setBulkProgress(null)
-        setBulkSelectedIds(new Set())
-        await onValidated()
-        if (failed > 0) setActionMessage(`${failed} documento(s) nao puderam ser reprocessados.`)
+    if (!selectedDocumentId) {
+        return (
+            <div className="flex flex-col items-center gap-4 py-12 text-zinc-500">
+                <ClipboardCheck size={40} aria-hidden="true" />
+                <p className="text-sm">Selecione um documento no Inbox para iniciar a validacao.</p>
+                <button
+                    type="button"
+                    onClick={onBackToInbox}
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700"
+                >
+                    Ir para o Inbox
+                </button>
+            </div>
+        )
     }
 
     return (
-        <div className="grid gap-4 xl:grid-cols-[340px_minmax(360px,0.9fr)_minmax(460px,1.1fr)]">
-            <section className="rounded-md border border-zinc-200 bg-white">
-                <div className="flex flex-col gap-2 border-b border-zinc-200 px-4 py-3">
-                    <div className="text-sm font-semibold">Fila de validacao</div>
-                    <SearchInput value={validationSearch} onChange={(v) => { setValidationSearch(v); setBulkSelectedIds(new Set()) }} placeholder="Buscar..." />
-                </div>
-                {bulkSelectedIds.size > 0 ? (
-                    <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2">
-                        <span className="text-xs font-medium text-zinc-600">
-                            {bulkProgress
-                                ? bulkProgress.action === 'delete'
-                                    ? `Excluindo ${bulkProgress.done}/${bulkProgress.total}...`
-                                    : `Reprocessando ${bulkProgress.done}/${bulkProgress.total}...`
-                                : `${bulkSelectedIds.size} selecionado(s)`}
-                        </span>
-                        <button
-                            type="button"
-                            disabled={!!bulkProgress}
-                            onClick={bulkReprocess}
-                            className="flex items-center gap-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium hover:bg-zinc-100 disabled:opacity-50"
-                        >
-                            <RefreshCw size={12} aria-hidden="true" />
-                            Reprocessar
-                        </button>
-                        <button
-                            type="button"
-                            disabled={!!bulkProgress}
-                            onClick={bulkDelete}
-                            className="flex items-center gap-1 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
-                        >
-                            <Trash2 size={12} aria-hidden="true" />
-                            Excluir
-                        </button>
-                        <button
-                            type="button"
-                            disabled={!!bulkProgress}
-                            onClick={() => setBulkSelectedIds(new Set())}
-                            className="ml-auto text-xs text-zinc-400 hover:text-zinc-600 disabled:opacity-50"
-                        >
-                            Limpar selecao
-                        </button>
-                    </div>
-                ) : null}
-                <DocumentTable
-                    documents={filteredValidationDocs}
-                    selectedDocumentId={selectedDocumentId}
-                    onSelectDocument={onSelectDocument}
-                    compact
-                    selectable
-                    bulkSelectedIds={bulkSelectedIds}
-                    onBulkSelectionChange={setBulkSelectedIds}
-                />
-            </section>
+        <div className="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(460px,1.1fr)]">
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
                     <div className="text-sm font-semibold">Documento</div>

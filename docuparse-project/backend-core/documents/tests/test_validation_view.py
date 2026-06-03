@@ -35,9 +35,7 @@ class ValidationViewGuardTests(TestCase):
         return reverse("document-validate", args=[self.document.id])
 
     def test_approve_with_extraction_returns_201_and_approved_status(self) -> None:
-        from unittest.mock import patch
-        with patch("documents.views.publish_erp_integration_requested"):
-            response = self.client.post(self._url(), {**self.payload_base, "decision": "approved"}, format="json")
+        response = self.client.post(self._url(), {**self.payload_base, "decision": "approved"}, format="json")
         self.document.refresh_from_db()
 
         assert response.status_code == 201

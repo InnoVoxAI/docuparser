@@ -277,7 +277,6 @@ def document_validation_view(request, document_id):
 
     if decision == ValidationDecision.Decision.APPROVED:
         document.transition_to(Document.Status.APPROVED)
-        publish_erp_integration_requested(document)
     elif decision == ValidationDecision.Decision.REJECTED:
         document.transition_to(Document.Status.REJECTED)
     else:

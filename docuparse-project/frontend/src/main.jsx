@@ -49,17 +49,17 @@ const NAV_ITEMS = [
 ]
 
 const STATUS_LABELS = {
-    RECEIVED: 'Recebido',
-    OCR_COMPLETED: 'OCR concluido',
-    OCR_FAILED: 'OCR falhou',
-    LAYOUT_CLASSIFIED: 'Layout classificado',
-    EXTRACTION_COMPLETED: 'Extracao concluida',
-    VALIDATION_PENDING: 'Validacao pendente',
+    RECEIVED: 'Pendente',
+    OCR_COMPLETED: 'Pendente',
+    OCR_FAILED: 'Pendente',
+    LAYOUT_CLASSIFIED: 'Pendente',
+    EXTRACTION_COMPLETED: 'Pendente',
+    VALIDATION_PENDING: 'Pendente',
     APPROVED: 'Aprovado',
     REJECTED: 'Rejeitado',
-    ERP_INTEGRATION_REQUESTED: 'ERP solicitado',
-    ERP_SENT: 'ERP enviado',
-    ERP_FAILED: 'ERP falhou',
+    ERP_INTEGRATION_REQUESTED: 'Pendente',
+    ERP_SENT: 'Pendente',
+    ERP_FAILED: 'Pendente',
 }
 
 const TYPE_ALIASES = {
@@ -908,6 +908,7 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
             setNotes('')
             setSubmitError('')
             await onValidated()
+            onBackToInbox()
         } catch (requestError) {
             setSubmitError(readError(requestError, 'Falha ao registrar decisão.'))
         } finally {
@@ -3135,8 +3136,8 @@ function SearchInput({ value, onChange, placeholder = 'Buscar...' }) {
 }
 
 function StatusBadge({ status }) {
-    const isGood = status === 'APPROVED' || status === 'ERP_SENT'
-    const isBad = status === 'REJECTED' || status === 'ERP_FAILED' || status === 'OCR_FAILED'
+    const isGood = status === 'APPROVED'
+    const isBad = status === 'REJECTED'
     const classes = isGood
         ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
         : isBad
@@ -3162,9 +3163,9 @@ function buildMetrics(documents) {
     return documents.reduce(
         (acc, document) => {
             acc.total += 1
-            if (document.status === 'VALIDATION_PENDING') acc.pending += 1
-            if (document.status === 'APPROVED' || document.status === 'ERP_INTEGRATION_REQUESTED' || document.status === 'ERP_SENT') acc.approved += 1
-            if (String(document.status || '').includes('FAILED')) acc.failed += 1
+            if (document.status !== 'APPROVED' && document.status !== 'REJECTED') acc.pending += 1
+            if (document.status === 'APPROVED') acc.approved += 1
+            if (document.status === 'REJECTED') acc.failed += 1
             return acc
         },
         { total: 0, pending: 0, approved: 0, failed: 0 },

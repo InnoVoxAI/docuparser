@@ -1,6 +1,7 @@
 import json
 
 from django.contrib.auth import get_user_model
+from django.db.models import Prefetch
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -116,7 +117,20 @@ def documents_inbox_view(request):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
-    queryset = Document.objects.select_related("tenant", "extraction_result").order_by("-received_at")
+    queryset = (
+        Document.objects
+        .select_related("tenant", "extraction_result")
+        .prefetch_related(
+            Prefetch(
+                "validation_decisions",
+                queryset=ValidationDecision.objects.filter(
+                    decision="rejected"
+                ).order_by("-created_at"),
+                to_attr="_prefetched_rejection_decisions",
+            )
+        )
+        .order_by("-received_at")
+    )
     status_filter = request.query_params.get("status")
     tenant_filter = request.query_params.get("tenant")
     if status_filter:
@@ -198,6 +212,9 @@ def document_reprocess_ocr_view(request, document_id):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
+    document = get_object_or_404(Document, id=document_id)
+    if document.status == Document.Status.REJECTED:
+        document.transition_to(Document.Status.RECEIVED)
     try:
         document = process_document_ocr(document_id)
     except (FileNotFoundError, ValueError) as exc:

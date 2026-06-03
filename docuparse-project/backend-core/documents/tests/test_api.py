@@ -494,3 +494,33 @@ class DocumentsAPITests(TestCase):
         assert requeued_events[0]["event_id"] == "event-1"
         assert invalid.status_code == 400
         assert invalid_requeue.status_code == 400
+
+    def test_rejection_notes_in_document_list(self) -> None:
+        ValidationDecision.objects.create(
+            document=self.document,
+            decided_by=self.user,
+            decision=ValidationDecision.Decision.REJECTED,
+            notes="Valor total divergente.",
+        )
+        self.document.transition_to(Document.Status.REJECTED)
+
+        response = self.client.get(reverse("documents-inbox"))
+
+        assert response.status_code == 200
+        doc_data = next((d for d in response.json() if d["id"] == str(self.document.id)), None)
+        assert doc_data is not None
+        assert doc_data["rejection_notes"] == "Valor total divergente."
+
+        doc_no_rejection = Document.objects.create(
+            tenant=self.tenant,
+            status=Document.Status.VALIDATION_PENDING,
+            channel="manual",
+            file_uri="local://documents/tenant-demo/doc-no-rejection/original",
+            original_filename="no_rejection.pdf",
+            content_type="application/pdf",
+            size_bytes=512,
+        )
+        response2 = self.client.get(reverse("documents-inbox"))
+        doc2_data = next((d for d in response2.json() if d["id"] == str(doc_no_rejection.id)), None)
+        assert doc2_data is not None
+        assert doc2_data["rejection_notes"] is None

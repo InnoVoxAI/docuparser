@@ -38,9 +38,9 @@ const api = axios.create({ baseURL: '/api/ocr', headers: authHeaders })
 const comApi = axios.create({ baseURL: '/com/api/v1', headers: authHeaders })
 
 const NAV_ITEMS = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'inbox', label: 'Inbox', icon: Inbox },
     { id: 'upload', label: 'Upload', icon: Upload },
+    { id: 'inbox', label: 'Inbox', icon: Inbox },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'rejected', label: 'Rejeitados', icon: XCircle },
     { id: 'validation', label: 'Validacao', icon: ClipboardCheck },
     { id: 'operations', label: 'Operacoes', icon: AlertTriangle },
@@ -195,20 +195,7 @@ function App() {
         setActiveView('validation')
     }
 
-    const handleDocumentUpdated = (updatedDocument) => {
-        setSelectedDocument(updatedDocument)
-        setDocuments((currentDocuments) => currentDocuments.map((document) => (
-            document.id === updatedDocument.id
-                ? {
-                    ...document,
-                    status: updatedDocument.status,
-                    document_type: updatedDocument.document_type,
-                    layout: updatedDocument.layout,
-                    updated_at: updatedDocument.updated_at,
-                }
-                : document
-        )))
-    }
+
 
     const handleReprocessDocument = async (id) => {
         try {
@@ -307,11 +294,6 @@ function App() {
                                 schemas={schemas}
                                 selectedDocument={selectedDocument}
                                 selectedDocumentId={selectedDocumentId}
-                                onDocumentUpdated={handleDocumentUpdated}
-                                onDocumentDeleted={() => {
-                                    setSelectedDocumentId('')
-                                    setSelectedDocument(null)
-                                }}
                                 onValidated={refreshData}
                                 onBackToInbox={() => setActiveView('inbox')}
                             />
@@ -758,13 +740,10 @@ function UploadView({ onUploaded }) {
     )
 }
 
-function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onDocumentUpdated, onDocumentDeleted, onValidated, onBackToInbox }) {
+function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onValidated, onBackToInbox }) {
     const [notes, setNotes] = useState('')
     const [fieldRows, setFieldRows] = useState([])
     const [submitting, setSubmitting] = useState(false)
-    const [actionMessage, setActionMessage] = useState('')
-    const [reprocessing, setReprocessing] = useState(false)
-    const [deleting, setDeleting] = useState(false)
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
     const [extracting, setExtracting] = useState(false)
     const [extractMessage, setExtractMessage] = useState('')
@@ -780,7 +759,8 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
             setFieldRows(
                 Object.entries(persistedFields)
                     .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } }),
+                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
+                    .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
             )
         } else {
             setFieldRows([])
@@ -821,7 +801,8 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
             setFieldRows(
                 Object.entries(fields)
                     .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } }),
+                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
+                    .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
             )
             const pct = response.data.confidence != null ? ` Confianca: ${(response.data.confidence * 100).toFixed(0)}%` : ''
             setExtractMessage(`Extracao concluida.${pct}`)
@@ -854,45 +835,6 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         }
     }
 
-    const reprocessDocument = async () => {
-        if (!selectedDocumentId || reprocessing) {
-            return
-        }
-        setReprocessing(true)
-        setActionMessage('')
-        try {
-            const response = await api.post(`/documents/${selectedDocumentId}/reprocess-ocr`)
-            onDocumentUpdated(response.data)
-            setActionMessage('Documento reprocessado.')
-            await onValidated()
-        } catch (requestError) {
-            setActionMessage(readError(requestError, 'Falha ao reprocessar documento.'))
-        } finally {
-            setReprocessing(false)
-        }
-    }
-
-    const deleteDocument = async () => {
-        if (!selectedDocumentId || deleting) {
-            return
-        }
-        const confirmed = window.confirm('Excluir este documento da aplicacao? O arquivo local sera preservado.')
-        if (!confirmed) {
-            return
-        }
-        setDeleting(true)
-        setActionMessage('')
-        try {
-            await api.delete(`/documents/${selectedDocumentId}/delete`)
-            onDocumentDeleted()
-            await onValidated()
-        } catch (requestError) {
-            setActionMessage(readError(requestError, 'Falha ao excluir documento.'))
-        } finally {
-            setDeleting(false)
-        }
-    }
-
     if (!selectedDocumentId) {
         return (
             <div className="flex flex-col items-center gap-4 py-12 text-zinc-500">
@@ -913,7 +855,7 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         <div className="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(460px,1.1fr)]">
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-                    <div className="text-sm font-semibold">Documento</div>
+                    <div className="text-sm font-semibold">{selectedDocument?.original_filename || selectedDocument?.id || 'Documento'}</div>
                     {selectedDocument ? (
                         <a
                             href={`/api/ocr/documents/${selectedDocument.id}/file`}
@@ -946,34 +888,10 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                     <EmptyState icon={ClipboardCheck} text="Selecione um documento pendente." />
                 ) : (
                     <div className="space-y-4">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                                <div className="text-sm font-semibold">{selectedDocument.original_filename || selectedDocument.id}</div>
-                                <div className="mt-1 text-xs text-zinc-500">{selectedDocument.file_uri}</div>
-                            </div>
-                            <div className="flex flex-col items-end gap-2">
-                                <OcrMetadataBadge metadata={selectedDocument.ocr_metadata} processing={reprocessing} />
-                                <StatusBadge status={selectedDocument.status} />
-                            </div>
+                        <div className="flex items-center justify-between">
+                            <StatusBadge status={selectedDocument.status} />
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <button type="button" disabled={reprocessing || deleting} onClick={reprocessDocument} className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100">
-                                <RefreshCw size={16} aria-hidden="true" />
-                                {reprocessing ? 'Reprocessando' : 'Reprocessar OCR'}
-                            </button>
-                            <button type="button" disabled={reprocessing || deleting} onClick={deleteDocument} className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100">
-                                <Trash2 size={16} aria-hidden="true" />
-                                {deleting ? 'Excluindo' : 'Excluir'}
-                            </button>
-                            {actionMessage ? <span className="text-sm text-zinc-600">{actionMessage}</span> : null}
-                        </div>
-                        <KeyValueGrid
-                            values={{
-                                schema: selectedDocument.extraction_result?.schema_id ?? '-',
-                                confidence: selectedDocument.extraction_result?.confidence ?? '-',
-                                layout: selectedDocument.layout || '-',
-                            }}
-                        />
+                        <DocumentMetadataPanel document={selectedDocument} />
                         {!selectedDocument.extraction_result ? (
                             <Alert>
                                 Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.
@@ -1157,28 +1075,79 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
     )
 }
 
-function OcrMetadataBadge({ metadata, processing = false }) {
-    const engine = processing ? 'Reprocessando OCR' : (metadata?.engine_used || 'Aguardando OCR')
-    const classification = processing ? 'reclassificando...' : (metadata?.classification || '-')
-    const preprocessingHint = processing ? '-' : (metadata?.preprocessing_hint || '-')
+function DocumentMetadataPanel({ document }) {
+    const meta = document.metadata_channel ?? document.metadata?.metadata_channel ?? {}
+    const rows = [
+        { label: 'Nome do documento', value: document.original_filename },
+        { label: 'Código do processo', value: document.id },
+        { label: 'Remetente', value: meta.sender },
+        { label: 'Destinatário', value: meta.to },
+        { label: 'Assunto', value: meta.subject },
+        { label: 'Data de envio', value: meta.date },
+        { label: 'Message-ID', value: meta.message_id },
+        { label: 'Provedor', value: meta.provider },
+        { label: 'Corpo do email', value: meta.body },
+    ].filter((row) => row.value != null && row.value !== '')
+
+    const attachments = Array.isArray(meta.attachments)
+        ? meta.attachments
+        : meta.attachments
+        ? [meta.attachments]
+        : []
+
+    const isEmpty = rows.length === 0 && attachments.length === 0
+
     return (
-        <div className="max-w-[360px] rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-right">
-            <div className="text-xs font-semibold uppercase text-zinc-500">OCR utilizado</div>
-            <div className="mt-1 text-sm font-semibold text-zinc-800">{engine}</div>
-            <div className="mt-1 text-xs text-zinc-500">classificacao: {classification}</div>
-            <div className="mt-1 break-words text-xs text-zinc-500">hint: {preprocessingHint}</div>
+        <div className="rounded-md border border-zinc-200">
+            <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">
+                Metadados do Documento
+            </div>
+            {isEmpty ? (
+                <EmptyState icon={FileText} text="Nenhum metadado disponível para este documento." />
+            ) : (
+                <div className="divide-y divide-zinc-100">
+                    {rows.map((row) => (
+                        <div key={row.label} className="grid grid-cols-[160px_1fr] gap-2 px-3 py-2">
+                            <div className="text-xs font-medium text-zinc-500">{row.label}</div>
+                            <div className="break-words text-sm text-zinc-800">{row.value}</div>
+                        </div>
+                    ))}
+                    {attachments.length > 0 ? (
+                        <div className="grid grid-cols-[160px_1fr] gap-2 px-3 py-2">
+                            <div className="text-xs font-medium text-zinc-500">Anexos</div>
+                            <div className="space-y-0.5">
+                                {attachments.map((a, i) => (
+                                    <div key={i} className="text-sm text-zinc-800">
+                                        {typeof a === 'object' ? (a.filename || JSON.stringify(a)) : a}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
+                </div>
+            )}
         </div>
     )
 }
 
 function ReadOnlyTranscription({ value }) {
+    const [open, setOpen] = useState(true)
     return (
         <div className="rounded-md border border-zinc-200">
-            <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">Transcricao completa</div>
+            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
+                <div className="text-sm font-semibold">Transcricao completa</div>
+                <button
+                    type="button"
+                    onClick={() => setOpen((o) => !o)}
+                    className="text-xs font-medium text-zinc-500 hover:text-zinc-800"
+                >
+                    {open ? 'Recolher' : 'Expandir'}
+                </button>
+            </div>
             <textarea
                 value={value || ''}
                 readOnly
-                className="min-h-[160px] w-full resize-y border-0 bg-zinc-50 px-3 py-3 text-sm leading-6 text-zinc-700 outline-none"
+                className={`min-h-[160px] w-full resize-y border-0 bg-zinc-50 px-3 py-3 text-sm leading-6 text-zinc-700 outline-none${open ? '' : ' hidden'}`}
                 placeholder="A transcricao aparecera aqui quando o OCR automatico concluir."
             />
         </div>
@@ -1186,15 +1155,25 @@ function ReadOnlyTranscription({ value }) {
 }
 
 function ReadOnlyTranscriptionFormatted({ value }) {
+    const [open, setOpen] = useState(true)
     return (
         <div className="rounded-md border border-zinc-200">
             <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
                 <span className="text-sm font-semibold">Transcricao formatada</span>
-                <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">layout preservado</span>
+                <div className="flex items-center gap-2">
+                    <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">layout preservado</span>
+                    <button
+                        type="button"
+                        onClick={() => setOpen((o) => !o)}
+                        className="text-xs font-medium text-zinc-500 hover:text-zinc-800"
+                    >
+                        {open ? 'Recolher' : 'Expandir'}
+                    </button>
+                </div>
             </div>
-            <pre
-                className="min-h-[160px] max-h-[420px] w-full overflow-auto whitespace-pre bg-zinc-50 px-3 py-3 text-xs leading-5 text-zinc-700"
-            >{value || ''}</pre>
+            <pre className={`min-h-[160px] max-h-[420px] w-full overflow-auto whitespace-pre bg-zinc-50 px-3 py-3 text-xs leading-5 text-zinc-700${open ? '' : ' hidden'}`}>
+                {value || ''}
+            </pre>
             {!value ? (
                 <div className="px-3 pb-3 text-xs text-zinc-400">
                     Disponivel apenas para PDFs digitais processados pelo engine Docling.

@@ -41,6 +41,7 @@ const NAV_ITEMS = [
     { id: 'upload', label: 'Upload', icon: Upload },
     { id: 'inbox', label: 'Inbox', icon: Inbox },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'approved', label: 'Aprovados', icon: CheckCircle2 },
     { id: 'rejected', label: 'Rejeitados', icon: XCircle },
     { id: 'validation', label: 'Validacao', icon: ClipboardCheck },
     { id: 'operations', label: 'Operacoes', icon: AlertTriangle },
@@ -48,17 +49,17 @@ const NAV_ITEMS = [
 ]
 
 const STATUS_LABELS = {
-    RECEIVED: 'Recebido',
-    OCR_COMPLETED: 'OCR concluido',
-    OCR_FAILED: 'OCR falhou',
-    LAYOUT_CLASSIFIED: 'Layout classificado',
-    EXTRACTION_COMPLETED: 'Extracao concluida',
-    VALIDATION_PENDING: 'Validacao pendente',
+    RECEIVED: 'Pendente',
+    OCR_COMPLETED: 'Pendente',
+    OCR_FAILED: 'Pendente',
+    LAYOUT_CLASSIFIED: 'Pendente',
+    EXTRACTION_COMPLETED: 'Pendente',
+    VALIDATION_PENDING: 'Pendente',
     APPROVED: 'Aprovado',
     REJECTED: 'Rejeitado',
-    ERP_INTEGRATION_REQUESTED: 'ERP solicitado',
-    ERP_SENT: 'ERP enviado',
-    ERP_FAILED: 'ERP falhou',
+    ERP_INTEGRATION_REQUESTED: 'Pendente',
+    ERP_SENT: 'Pendente',
+    ERP_FAILED: 'Pendente',
 }
 
 const TYPE_ALIASES = {
@@ -189,6 +190,10 @@ function App() {
         () => documents.filter((d) => d.status === 'REJECTED'),
         [documents],
     )
+    const approvedDocuments = useMemo(
+        () => documents.filter((d) => d.status === 'APPROVED'),
+        [documents],
+    )
 
     const navigateToValidation = (documentId) => {
         setSelectedDocumentId(documentId)
@@ -281,6 +286,9 @@ function App() {
                             />
                         ) : null}
                         {activeView === 'upload' ? <UploadView onUploaded={refreshData} /> : null}
+                        {activeView === 'approved' ? (
+                            <ApprovedView documents={approvedDocuments} />
+                        ) : null}
                         {activeView === 'rejected' ? (
                             <RejectedView
                                 documents={rejectedDocuments}
@@ -371,6 +379,40 @@ function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }) {
     )
 }
 
+function ApprovedView({ documents }) {
+    return (
+        <section className="rounded-md border border-zinc-200 bg-white">
+            <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Documentos aprovados</div>
+            {documents.length === 0 ? (
+                <EmptyState icon={CheckCircle2} text="Nenhum documento aprovado." />
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-zinc-200 text-sm">
+                        <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+                            <tr>
+                                <th className="px-4 py-3">Documento</th>
+                                <th className="px-4 py-3">Status</th>
+                                <th className="px-4 py-3">Data de aprovação</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                            {documents.map((doc) => (
+                                <tr key={doc.id} className="hover:bg-zinc-50">
+                                    <td className="px-4 py-3 font-medium">{doc.original_filename || doc.id}</td>
+                                    <td className="px-4 py-3"><StatusBadge status={doc.status} /></td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
+                                        {formatDate(doc.decision_date ?? doc.updated_at)}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
+    )
+}
+
 function RejectedView({ documents, onReprocess, onDelete, onRefresh }) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
@@ -416,19 +458,41 @@ function RejectedView({ documents, onReprocess, onDelete, onRefresh }) {
 }
 
 function RejectedRow({ document, onReprocess, onDelete }) {
+    const [viewingMotivo, setViewingMotivo] = useState(false)
     return (
         <tr className="hover:bg-zinc-50">
             <td className="px-4 py-3">
                 <div className="font-medium">{document.original_filename || document.id}</div>
             </td>
             <td className="max-w-[300px] px-4 py-3 text-zinc-600">
-                {document.rejection_notes ?? '—'}
+                {viewingMotivo ? (
+                    <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2 text-xs whitespace-pre-wrap">
+                        {document.rejection_notes || '—'}
+                        <button
+                            type="button"
+                            onClick={() => setViewingMotivo(false)}
+                            className="ml-2 text-zinc-400 hover:text-zinc-700"
+                        >
+                            <X size={12} aria-hidden="true" />
+                        </button>
+                    </div>
+                ) : (
+                    <span className="line-clamp-2">{document.rejection_notes ?? '—'}</span>
+                )}
             </td>
             <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
-                {formatDate(document.updated_at)}
+                {formatDate(document.decision_date ?? document.updated_at)}
             </td>
             <td className="px-4 py-3">
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setViewingMotivo((v) => !v)}
+                        className="inline-flex items-center gap-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium hover:bg-zinc-100"
+                    >
+                        <Eye size={12} aria-hidden="true" />
+                        Visualizar Motivo
+                    </button>
                     <button
                         type="button"
                         onClick={() => onReprocess(document.id)}
@@ -742,6 +806,8 @@ function UploadView({ onUploaded }) {
 
 function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onValidated, onBackToInbox }) {
     const [notes, setNotes] = useState('')
+    const [notesError, setNotesError] = useState(false)
+    const [submitError, setSubmitError] = useState('')
     const [fieldRows, setFieldRows] = useState([])
     const [submitting, setSubmitting] = useState(false)
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
@@ -814,9 +880,20 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
     }
 
     const submitDecision = async (decision) => {
-        if (!selectedDocumentId) {
+        if (!selectedDocumentId) return
+        setSubmitError('')
+        setNotesError(false)
+
+        if (!selectedDocument?.extraction_result) {
+            setSubmitError('Execute a extração de campos antes de aprovar ou rejeitar.')
             return
         }
+        if (decision === 'rejected' && !notes.trim()) {
+            setNotesError(true)
+            setSubmitError('O motivo da rejeição é obrigatório.')
+            return
+        }
+
         setSubmitting(true)
         try {
             await api.post(`/documents/${selectedDocumentId}/validate`, {
@@ -829,7 +906,11 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                 ),
             })
             setNotes('')
+            setSubmitError('')
             await onValidated()
+            onBackToInbox()
+        } catch (requestError) {
+            setSubmitError(readError(requestError, 'Falha ao registrar decisão.'))
         } finally {
             setSubmitting(false)
         }
@@ -912,10 +993,11 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                         />
                         <textarea
                             value={notes}
-                            onChange={(event) => setNotes(event.target.value)}
-                            className="input min-h-[86px]"
-                            placeholder="Notas de validacao"
+                            onChange={(event) => { setNotes(event.target.value); setNotesError(false) }}
+                            className={`input min-h-[86px]${notesError ? ' border-red-500 ring-1 ring-red-500' : ''}`}
+                            placeholder="Motivo da rejeição (obrigatório para rejeitar)"
                         />
+                        {submitError ? <Alert tone="error">{submitError}</Alert> : null}
                         <div className="flex flex-wrap gap-2">
                             <button type="button" disabled={submitting} onClick={() => submitDecision('approved')} className="success-button">
                                 <CheckCircle2 size={16} aria-hidden="true" />
@@ -3054,8 +3136,8 @@ function SearchInput({ value, onChange, placeholder = 'Buscar...' }) {
 }
 
 function StatusBadge({ status }) {
-    const isGood = status === 'APPROVED' || status === 'ERP_SENT'
-    const isBad = status === 'REJECTED' || status === 'ERP_FAILED' || status === 'OCR_FAILED'
+    const isGood = status === 'APPROVED'
+    const isBad = status === 'REJECTED'
     const classes = isGood
         ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
         : isBad
@@ -3081,9 +3163,9 @@ function buildMetrics(documents) {
     return documents.reduce(
         (acc, document) => {
             acc.total += 1
-            if (document.status === 'VALIDATION_PENDING') acc.pending += 1
-            if (document.status === 'APPROVED' || document.status === 'ERP_INTEGRATION_REQUESTED' || document.status === 'ERP_SENT') acc.approved += 1
-            if (String(document.status || '').includes('FAILED')) acc.failed += 1
+            if (document.status !== 'APPROVED' && document.status !== 'REJECTED') acc.pending += 1
+            if (document.status === 'APPROVED') acc.approved += 1
+            if (document.status === 'REJECTED') acc.failed += 1
             return acc
         },
         { total: 0, pending: 0, approved: 0, failed: 0 },

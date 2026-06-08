@@ -34,6 +34,7 @@ class DocumentListSerializer(serializers.ModelSerializer):
     metadata_channel = serializers.SerializerMethodField()
     extraction_result = ExtractionResultSerializer(read_only=True)
     rejection_notes = serializers.SerializerMethodField()
+    decision_date = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -50,19 +51,29 @@ class DocumentListSerializer(serializers.ModelSerializer):
             "metadata_channel",
             "extraction_result",
             "rejection_notes",
+            "decision_date",
         ]
 
     def get_metadata_channel(self, obj: Document) -> dict | None:
         return (obj.metadata or {}).get("metadata_channel") or None
 
     def get_rejection_notes(self, obj: Document) -> str | None:
-        decisions = getattr(obj, '_prefetched_rejection_decisions', None)
+        decisions = getattr(obj, '_prefetched_decisions', None)
         if decisions is None:
             decisions = obj.validation_decisions.filter(
                 decision='rejected'
             ).order_by('-created_at')
-        latest = next(iter(decisions), None)
+            latest = next(iter(decisions), None)
+        else:
+            latest = next((d for d in decisions if d.decision == 'rejected'), None)
         return latest.notes if latest else None
+
+    def get_decision_date(self, obj: Document) -> str | None:
+        decisions = getattr(obj, '_prefetched_decisions', None)
+        if decisions is None:
+            decisions = obj.validation_decisions.order_by('-created_at')
+        latest = next(iter(decisions), None)
+        return latest.created_at.isoformat() if latest else None
 
 
 class DocumentDetailSerializer(serializers.ModelSerializer):

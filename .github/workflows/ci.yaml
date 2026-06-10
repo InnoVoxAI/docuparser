@@ -63,8 +63,23 @@ jobs:
       INNOVOX_PASSWORD: ${{ secrets.INNOVOX_PASSWORD }}
 
   # Runs after deploy-core to avoid concurrent pushes to the gitops branch
-  deploy-ocr:
+  deploy-com:
     needs: [pre-deploy, deploy-core]
+    if: needs.pre-deploy.outputs.SKIP != 'true'
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      IMAGE_NAME: docuparser-com
+      IMAGE_VERSION: ${{ needs.pre-deploy.outputs.IMAGE_VERSION }}
+      ENVIRONMENT: docuparser-com
+      BACKEND_DIR: docuparse-project
+      DOCKERFILE_PATH: docuparse-project/backend-com/Dockerfile
+    secrets:
+      ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+      INNOVOX_USERNAME: ${{ secrets.INNOVOX_USERNAME }}
+      INNOVOX_PASSWORD: ${{ secrets.INNOVOX_PASSWORD }}
+
+  deploy-ocr:
+    needs: [pre-deploy, deploy-com]
     if: needs.pre-deploy.outputs.SKIP != 'true'
     uses: ./.github/workflows/deploy.yaml
     with:

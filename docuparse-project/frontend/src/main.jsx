@@ -35,9 +35,10 @@ import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 const internalServiceToken = import.meta.env.VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN
 const _devHeaders = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
+const COM_BASE = import.meta.env.VITE_COM_BASE_URL ?? `${BASE}/com`
 const api = axios.create({ baseURL: `${BASE}/api/ocr` })
 const authApi = axios.create({ baseURL: `${BASE}/api/auth` })
-const comApi = axios.create({ baseURL: `${BASE}/com/api/v1`, headers: _devHeaders })
+const comApi = axios.create({ baseURL: `${COM_BASE}/api/v1`, headers: _devHeaders })
 
 const NAV_ITEMS = [
     { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },

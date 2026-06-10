@@ -10,9 +10,12 @@ from django.views.decorators.http import require_GET, require_POST
 from django.http import Http404
 from django.http import FileResponse
 from io import BytesIO
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
+
+from users.authentication import DocuparseAuthentication
+from users.permissions import require_permission
 
 from docuparse_events import event_bus_from_env
 from docuparse_storage import LocalStorage
@@ -34,6 +37,7 @@ from .services.erp_publisher import publish_erp_integration_requested
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.dlq_inspector import DEFAULT_DLQ_STREAMS, requeue_dlq_entry, inspect_dlq_streams
 from .services.ocr_processor import process_document_ocr, start_document_ocr_thread
+from .services.processing_queue import submit_document_processing
 
 import models.nota_fiscal.schemas as _nf_classifier
 import models.boleto.schemas as _boleto_classifier
@@ -113,10 +117,9 @@ def process_document_view(request):
 
 
 @api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("inbox.view")])
 def documents_inbox_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     queryset = (
         Document.objects
         .select_related("tenant", "extraction_result")
@@ -148,15 +151,14 @@ def document_received_event_view(request):
     except DuplicateDocumentError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
     if settings.DOCUPARSE_AUTO_PROCESS_OCR and not document.raw_text_uri:
-        start_document_ocr_thread(document.id)
+        submit_document_processing(document.id)
     return Response(DocumentDetailSerializer(document).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("inbox.view")])
 def document_detail_view(request, document_id):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     document = get_object_or_404(
         Document.objects.select_related("tenant").prefetch_related("events"),
         id=document_id,
@@ -223,10 +225,9 @@ def document_reprocess_ocr_view(request, document_id):
 
 
 @api_view(["POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("documents.validate")])
 def document_validation_view(request, document_id):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     document = get_object_or_404(
         Document.objects.select_related("extraction_result"),
         id=document_id,

@@ -26,15 +26,16 @@ class Tenant(TimeStampedModel):
 
 
 class UserProfile(TimeStampedModel):
-    class Role(models.TextChoices):
-        OPERATOR = "operator", "Operator"
-        SUPERVISOR = "supervisor", "Supervisor"
-        ADMIN = "admin", "Admin"
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="docuparse_profile")
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="profiles")
-    role = models.CharField(max_length=32, choices=Role.choices, default=Role.OPERATOR)
+    role_ref = models.ForeignKey(
+        "users.Role",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="user_profiles",
+    )
 
     class Meta:
         constraints = [

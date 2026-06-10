@@ -16,4 +16,4 @@ COPY shared/docuparse_observability ./docuparse_observability
 COPY shared/docuparse_storage ./docuparse_storage
 COPY contracts/events ./events
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["sh", "-c", "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]

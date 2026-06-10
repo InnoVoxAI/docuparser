@@ -1,0 +1,77 @@
+name: "CI"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docuparse-project/**"
+      - "pyproject.toml"
+
+jobs:
+  pre-deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      IMAGE_VERSION: ${{ steps.extract_version.outputs.IMAGE_VERSION }}
+      SKIP: ${{ steps.check_version.outputs.SKIP }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+          fetch-depth: 0
+
+      - name: Install UV
+        run: pip install uv
+
+      - name: Install pyproject-parser
+        run: uv tool install "pyproject-parser[cli]"
+
+      - name: Get Version from pyproject.toml
+        id: extract_version
+        run: |
+          VERSION=$(pyproject-info project.version | tr -d '"')
+          echo "IMAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if version is already deployed
+        id: check_version
+        run: |
+          VERSION=${{ steps.extract_version.outputs.IMAGE_VERSION }}
+          git fetch origin gitops
+          DEPLOYED=$(git show origin/gitops:k8s/docuparser-core/deployment.yaml | grep -oP 'docuparser-core:\K[^\s]+')
+          if [ "$VERSION" = "$DEPLOYED" ]; then
+            echo "SKIP=true" >> $GITHUB_OUTPUT
+            echo "Version $VERSION already deployed — skipping."
+          else
+            echo "SKIP=false" >> $GITHUB_OUTPUT
+          fi
+
+  deploy-core:
+    needs: pre-deploy
+    if: needs.pre-deploy.outputs.SKIP != 'true'
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      IMAGE_NAME: docuparser-core
+      IMAGE_VERSION: ${{ needs.pre-deploy.outputs.IMAGE_VERSION }}
+      ENVIRONMENT: docuparser-core
+      BACKEND_DIR: docuparse-project/backend-core
+    secrets:
+      ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+      INNOVOX_USERNAME: ${{ secrets.INNOVOX_USERNAME }}
+      INNOVOX_PASSWORD: ${{ secrets.INNOVOX_PASSWORD }}
+
+  # Runs after deploy-core to avoid concurrent pushes to the gitops branch
+  deploy-ocr:
+    needs: [pre-deploy, deploy-core]
+    if: needs.pre-deploy.outputs.SKIP != 'true'
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      IMAGE_NAME: docuparser-ocr
+      IMAGE_VERSION: ${{ needs.pre-deploy.outputs.IMAGE_VERSION }}
+      ENVIRONMENT: docuparser-ocr
+      BACKEND_DIR: docuparse-project/backend-ocr
+    secrets:
+      ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+      INNOVOX_USERNAME: ${{ secrets.INNOVOX_USERNAME }}
+      INNOVOX_PASSWORD: ${{ secrets.INNOVOX_PASSWORD }}

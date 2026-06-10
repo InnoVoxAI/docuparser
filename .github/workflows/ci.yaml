@@ -55,7 +55,7 @@ jobs:
       IMAGE_NAME: docuparser-core
       IMAGE_VERSION: ${{ needs.pre-deploy.outputs.IMAGE_VERSION }}
       ENVIRONMENT: docuparser-core
-      BACKEND_DIR: docuparse-project/backend-core
+      BACKEND_DIR: docuparse-project
       DOCKERFILE_PATH: docuparse-project/backend-core/Dockerfile
     secrets:
       ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}

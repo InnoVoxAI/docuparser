@@ -1,7 +1,15 @@
+from datetime import timedelta
 from pathlib import Path
 import os
+import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = BASE_DIR.parent
+
+for local_package_dir in (PROJECT_DIR / "contracts", PROJECT_DIR / "shared"):
+    local_package_path = str(local_package_dir)
+    if local_package_dir.exists() and local_package_path not in sys.path:
+        sys.path.insert(0, local_package_path)
 
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-test-key')
 
@@ -17,8 +25,24 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'documents',
+    'users',
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -50,12 +74,24 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+if os.environ.get("POSTGRES_HOST"):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('POSTGRES_DB', 'docuparse'),
+            'USER': os.environ.get('POSTGRES_USER', 'docuparse'),
+            'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'docuparse'),
+            'HOST': os.environ.get('POSTGRES_HOST', 'postgres'),
+            'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = []
 
@@ -68,5 +104,13 @@ STATIC_URL = 'static/'
 
 # Simple static API-only setup for this PoC workflow.
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+X_FRAME_OPTIONS = 'SAMEORIGIN'
 
-BACKEND_OCR_URL = os.environ.get('BACKEND_OCR_URL', 'http://backend-ocr:8080')
+BACKEND_OCR_URL = os.environ.get('BACKEND_OCR_URL', 'http://127.0.0.1:8080')
+LANGEXTRACT_SERVICE_URL = os.environ.get('LANGEXTRACT_SERVICE_URL', 'http://127.0.0.1:8091')
+DOCUPARSE_LOCAL_EVENT_DIR = os.environ.get('DOCUPARSE_LOCAL_EVENT_DIR', str(BASE_DIR / '.docuparse-events'))
+DOCUPARSE_LOCAL_STORAGE_DIR = os.environ.get('DOCUPARSE_LOCAL_STORAGE_DIR', str(PROJECT_DIR / '.docuparse-storage'))
+DOCUPARSE_APPROVED_EXPORT_DIR = os.environ.get('DOCUPARSE_APPROVED_EXPORT_DIR', str(BASE_DIR / 'exports' / 'approved'))
+DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TOKEN', '').strip()
+DOCUPARSE_AUTO_PROCESS_OCR = os.environ.get('DOCUPARSE_AUTO_PROCESS_OCR', 'true').strip().lower() not in {'0', 'false', 'no'}
+DOCUPARSE_AUTO_PROCESS_EXTRACTION = os.environ.get('DOCUPARSE_AUTO_PROCESS_EXTRACTION', 'true').strip().lower() not in {'0', 'false', 'no'}

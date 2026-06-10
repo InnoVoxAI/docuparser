@@ -1,0 +1,56 @@
+[project]
+name = "atoms"
+version = "0.1.0"
+description = "Mini tools for building big things"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "César Medina", email = "cesar.medina@innovox.com.br" },
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.136.0",
+    "camunda-external-task-client-python3>=4.5.0",
+    "pydantic>=2.13.1",
+    "pydantic-settings>=2.13.1",
+    "python-multipart>=0.0.26",
+    "structlog>=25.5.0",
+    "toml>=0.10.2",
+    "uvicorn>=0.44.0",
+    "pytest>=9.0.3",
+    "pre-commit>=4.6.0",
+]
+
+[project.optional-dependencies]
+debounce = [
+    "redis>=7.4.0",
+]
+
+email-reader = [
+    "imap-tools>=1.12.0",
+]
+
+whatsapp-twilio = [
+    "httpx>=0.28.1",
+    "twilio>=9.10.5",
+]
+
+camunda8 = [
+    "pyzeebe>=4.4.0",
+]
+
+# ------------------------------
+# 🔁 Versioning and Release Management
+# ------------------------------
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/atoms/__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/atoms", "README.md"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atoms"]

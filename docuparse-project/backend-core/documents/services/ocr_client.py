@@ -1,7 +1,8 @@
+import mimetypes
+from typing import Any, Dict
+
 import requests
 from django.conf import settings
-from typing import Dict, Any
-import mimetypes
 
 
 class OCRClient:
@@ -13,20 +14,29 @@ class OCRClient:
         """
         Retrieves available OCR engines from backend-ocr.
         """
-        url = f"{self.base_url}/engines"
+        url = f"{self.base_url}/api/v1/engines"
 
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         return response.json()
 
-    def process_document(self, file_obj, filename: str, engine: str | None = None) -> Dict[str, Any]:
+    def process_document(
+        self,
+        file_obj,
+        filename: str,
+        engine: str | None = None,
+        *,
+        legacy_extraction: bool = False,
+    ) -> Dict[str, Any]:
         """
         Sends the file to backend-ocr for processing.
         """
-        url = f"{self.base_url}/process"
+        url = f"{self.base_url}/api/v1/process"
         mime_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
         files = {'file': (filename, file_obj, mime_type)}
-        data = {'engine': engine} if engine else {}
+        data = {'legacy_extraction': str(legacy_extraction).lower()}
+        if engine:
+            data['selected_engine'] = engine
 
         try:
             response = requests.post(url, files=files, data=data, timeout=300)

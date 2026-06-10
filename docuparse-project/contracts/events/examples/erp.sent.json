@@ -1,0 +1,16 @@
+{
+  "event_id": "55555555-5555-4555-8555-555555555555",
+  "event_type": "erp.sent",
+  "event_version": "v1",
+  "occurred_at": "2026-05-01T10:05:00+00:00",
+  "tenant_id": "tenant-demo",
+  "document_id": "22222222-2222-4222-8222-222222222222",
+  "correlation_id": "33333333-3333-4333-8333-333333333333",
+  "source": "backend-conect",
+  "data": {
+    "connector": "mock",
+    "external_id": "mock-123",
+    "idempotency_key": "tenant-demo:22222222-2222-4222-8222-222222222222:v1",
+    "response_metadata": {}
+  }
+}

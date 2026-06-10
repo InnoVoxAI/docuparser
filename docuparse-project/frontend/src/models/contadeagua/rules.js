@@ -1,0 +1,216 @@
+export const CONTA_AGUA_DEFAULT_RULES = {
+    total_pagar: {
+        type: 'decimal',
+        required: true,
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+        max: 9999999,
+        context_priority: [
+            'total a pagar',
+            'vencimento',
+            'codigo de barras',
+        ],
+        avoid_contexts: [
+            'minimo',
+            'tarifa minima',
+            'base de calculo',
+            'historico de consumo',
+        ],
+    },
+    tarifa_minima: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    valor_agua: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    valor_esgoto: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    debito_anterior: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    multa: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    juros: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    desconto_social: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    doacao: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    pis_percentual: {
+        type: 'percentage',
+        min: 0,
+        max: 100,
+    },
+    pis_valor: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    cofins_percentual: {
+        type: 'percentage',
+        min: 0,
+        max: 100,
+    },
+    cofins_valor: {
+        type: 'decimal',
+        normalize_currency: true,
+        decimal_separator: ',',
+        thousand_separator: '.',
+        min: 0,
+    },
+    data_vencimento: {
+        type: 'date',
+        required: true,
+        input_formats: ['DD/MM/YYYY'],
+        normalize_to: 'YYYY-MM-DD',
+    },
+    data_emissao: {
+        type: 'date',
+        input_formats: ['DD/MM/YYYY', 'DD/MM/YYYY HH:mm:ss'],
+        normalize_to: 'YYYY-MM-DD',
+    },
+    inicio_relacao: {
+        type: 'date',
+        input_formats: ['DD/MM/YYYY'],
+        normalize_to: 'YYYY-MM-DD',
+    },
+    referencia: {
+        type: 'string',
+        pattern: '(\\d{2})/(\\d{4})',
+        normalize: 'extract_mm_yyyy',
+    },
+    cnpj_emissor: {
+        type: 'cnpj',
+        required: true,
+        normalize_numeric: true,
+        validate_checksum: true,
+    },
+    matricula: {
+        type: 'string',
+        normalize_numeric: true,
+    },
+    linha_digitavel: {
+        type: 'conta_consumo_linha_digitavel',
+        normalize_numeric: true,
+        remove_spaces: true,
+        remove_dots: true,
+        remove_hyphens: true,
+        allowed_lengths: [47, 48],
+    },
+    numero_economias: {
+        type: 'integer',
+        min: 1,
+        max: 9999,
+    },
+    tipo_consumo: {
+        type: 'enum',
+        allowed: ['medido', 'minimo_fixo', 'estimado'],
+        mapping: {
+            'nao medido': 'minimo_fixo',
+            'não medido': 'minimo_fixo',
+            'min fixad': 'minimo_fixo',
+            'minimo fixo': 'minimo_fixo',
+            'estimado': 'estimado',
+            'medido': 'medido',
+        },
+    },
+    categoria: {
+        type: 'enum',
+        allowed: ['residencial', 'comercial', 'industrial', 'publico'],
+        mapping: {
+            'residencial': 'residencial',
+            'comercial': 'comercial',
+            'industrial': 'industrial',
+            'público': 'publico',
+            'publico': 'publico',
+        },
+    },
+    segment_document: {
+        enabled: true,
+        sections: [
+            {
+                name: 'fatura',
+                anchors: [
+                    'total a pagar',
+                    'vencimento',
+                    'codigo de barras',
+                    'autenticacao mecanica',
+                ],
+            },
+            {
+                name: 'descricao_servicos',
+                anchors: [
+                    'descricao dos servicos e tarifas',
+                    'consumo por faixa',
+                ],
+            },
+            {
+                name: 'tributos',
+                anchors: [
+                    'tributos',
+                    'base de calculo',
+                    'percentual',
+                    'valor do imposto',
+                ],
+            },
+            {
+                name: 'historico_consumo',
+                anchors: [
+                    'historico de consumo',
+                    'referencia/consumo',
+                ],
+            },
+            {
+                name: 'dados_cliente',
+                anchors: [
+                    'dados do cliente',
+                    'matricula',
+                ],
+            },
+        ],
+    },
+    normalize_document_numbers: {
+        remove_non_numeric: true,
+    },
+}

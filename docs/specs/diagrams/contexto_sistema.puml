@@ -1,0 +1,36 @@
+
+@startuml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title Sistema de Ingestao de Documentos (Contexto - v3.0)
+
+Person(operator, "Operador")
+Person(supervisor, "Supervisor")
+
+System(system, "Sistema de Ingestao de Documentos", "Captura documentos, executa OCR, classifica layout, extrai dados, valida com usuario e integra com ERPs por eventos")
+
+System_Ext(email, "Email Provider")
+System_Ext(whatsapp, "WhatsApp Provider")
+System_Ext(scanner, "Scanner Corporativo")
+System_Ext(superlogica, "Superlogica ERP")
+System_Ext(other_erp, "Outros ERPs")
+
+Rel(email, system, "envia documentos por webhook de email")
+Rel(whatsapp, system, "envia documentos por webhook de WhatsApp")
+Rel(scanner, system, "fornece documentos digitalizados para upload")
+
+Rel(operator, system, "faz upload manual, valida e aprova documentos")
+Rel(supervisor, system, "configura canais, schemas, layouts e conectores ERP")
+Rel(system, superlogica, "envia dados aprovados via Backend CONECT")
+Rel(system, other_erp, "envia dados aprovados por conectores plugaveis")
+
+note right of system
+Pipeline obrigatório:
+captura -> OCR -> Layout -> LangExtract
+-> validação pelo usuário -> ERP
+
+Comunicação interna normal:
+fila/event bus com eventos versionados.
+end note
+
+@enduml

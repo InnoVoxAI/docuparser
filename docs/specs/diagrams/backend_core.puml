@@ -1,0 +1,47 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Backend Core (Orquestracao e Validacao por Eventos - v3.0)
+
+Container_Boundary(core, "Backend Core") {
+
+    Component(api, "API REST", "Django", "Endpoints para frontend")
+    Component(document_state, "Document State Service", "Django Service", "Estados, historico e persistencia")
+    Component(validation, "Validation Service", "Django Service", "Validacao humana, correcao e aprovacao")
+    Component(orchestrator, "Orchestrator", "Event-driven", "Coordena transicoes do pipeline")
+    Component(event_consumer, "Event Consumer", "Worker", "Consome eventos do pipeline")
+    Component(event_publisher, "Event Publisher", "Worker", "Publica eventos de validacao e ERP")
+    Component(notification, "Notification Service", "Django Service", "Notifica pendencias para operadores")
+}
+
+Container(com, "Backend COM")
+Container(conect, "Backend CONECT")
+ContainerDb(db, "PostgreSQL")
+Container(queue, "Queue / Event Bus (Redis/RabbitMQ/Celery/Kafka)")
+ContainerDb(storage, "Object Storage")
+Person(operator, "Operador")
+Person(supervisor, "Supervisor")
+
+Rel(operator, api, "consulta, valida e aprova documentos")
+Rel(supervisor, api, "configura schemas, layouts e conectores")
+
+Rel(api, document_state, "consulta documentos e estados")
+Rel(api, validation, "envia correcoes, aprovacoes e rejeicoes")
+Rel(api, com, "consulta metadados de captura quando necessario")
+
+Rel(queue, event_consumer, "consome extraction.completed, erp.sent, erp.failed")
+Rel(event_consumer, orchestrator, "encaminha evento")
+Rel(orchestrator, document_state, "atualiza estado")
+Rel(orchestrator, notification, "cria pendencia de validacao")
+Rel(notification, event_publisher, "pending.validation")
+
+Rel(validation, document_state, "persiste dados validados")
+Rel(validation, event_publisher, "solicita integracao ERP apos aprovacao")
+Rel(event_publisher, queue, "publica pending.validation e erp.integration.requested")
+Rel(queue, conect, "backend-conect consome erp.integration.requested")
+
+Rel(document_state, db, "documentos, estados e auditoria")
+Rel(validation, db, "campos validados e decisoes")
+Rel(api, storage, "visualiza documento original e artefatos")
+
+@enduml

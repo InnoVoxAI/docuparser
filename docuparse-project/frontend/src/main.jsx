@@ -34,7 +34,7 @@ import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
 const internalServiceToken = import.meta.env.VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN
 const _devHeaders = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
-const api = axios.create({ baseURL: '/api/ocr' })
+const api = axios.create({ baseURL: import.meta.env.VITE_API_URL ?? '/api/ocr' })
 const authApi = axios.create({ baseURL: '/api/auth' })
 const comApi = axios.create({ baseURL: '/com/api/v1', headers: _devHeaders })
 

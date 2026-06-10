@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import axios from 'axios'
 import {
@@ -33,19 +33,20 @@ import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } fro
 import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
 const internalServiceToken = import.meta.env.VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN
-const authHeaders = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
-const api = axios.create({ baseURL: '/api/ocr', headers: authHeaders })
-const comApi = axios.create({ baseURL: '/com/api/v1', headers: authHeaders })
+const _devHeaders = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
+const api = axios.create({ baseURL: '/api/ocr' })
+const authApi = axios.create({ baseURL: '/api/auth' })
+const comApi = axios.create({ baseURL: '/com/api/v1', headers: _devHeaders })
 
 const NAV_ITEMS = [
-    { id: 'upload', label: 'Upload', icon: Upload },
-    { id: 'inbox', label: 'Inbox', icon: Inbox },
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'approved', label: 'Aprovados', icon: CheckCircle2 },
-    { id: 'rejected', label: 'Rejeitados', icon: XCircle },
-    { id: 'validation', label: 'Validacao', icon: ClipboardCheck },
-    { id: 'operations', label: 'Operacoes', icon: AlertTriangle },
-    { id: 'settings', label: 'Configuracoes', icon: Settings },
+    { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },
+    { id: 'inbox', label: 'Inbox', icon: Inbox, permission: 'inbox.view' },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'inbox.view' },
+    { id: 'validation', label: 'Validacao', icon: ClipboardCheck, permission: 'documents.validate' },
+    { id: 'operations', label: 'Operacoes', icon: AlertTriangle, permission: 'operations.access' },
+    { id: 'settings', label: 'Configuracoes', icon: Settings, permission: 'roles.manage' },
+    { id: 'users', label: 'Usuários', icon: Settings, permission: 'users.manage' },
+    { id: 'roles', label: 'Roles', icon: Settings, permission: 'roles.manage' },
 ]
 
 const STATUS_LABELS = {
@@ -103,8 +104,195 @@ function filterDocuments(docs, query) {
     })
 }
 
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+const AuthContext = createContext(null)
+
+function AuthProvider({ children }) {
+    const [user, setUser] = useState(null)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        const token = localStorage.getItem('access_token')
+        if (!token) { setLoading(false); return }
+        authApi.get('/me', { headers: { Authorization: `Bearer ${token}` } })
+            .then((r) => setUser(r.data))
+            .catch(() => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token') })
+            .finally(() => setLoading(false))
+    }, [])
+
+    useEffect(() => {
+        const id = api.interceptors.request.use((config) => {
+            const token = localStorage.getItem('access_token')
+            if (token) config.headers = { ...config.headers, Authorization: `Bearer ${token}` }
+            return config
+        })
+        return () => api.interceptors.request.eject(id)
+    }, [])
+
+    const login = async (email, password) => {
+        const r = await authApi.post('/login', { email, password })
+        localStorage.setItem('access_token', r.data.access)
+        localStorage.setItem('refresh_token', r.data.refresh)
+        setUser(r.data.user)
+    }
+
+    const logout = async () => {
+        const refresh = localStorage.getItem('refresh_token')
+        try { if (refresh) await authApi.post('/logout', { refresh }, { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }) }
+        catch (_) { /* ignore */ }
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+        setUser(null)
+    }
+
+    const hasPermission = (code) => Array.isArray(user?.permissions) && user.permissions.includes(code)
+
+    return (
+        <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>
+            {children}
+        </AuthContext.Provider>
+    )
+}
+
+function useAuth() { return useContext(AuthContext) }
+
+function PermissionGuard({ code, children, fallback = null }) {
+    const { hasPermission } = useAuth()
+    return hasPermission(code) ? children : fallback
+}
+
+function AcessoNaoAutorizado() {
+    return (
+        <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
+            <AlertTriangle size={40} className="mb-4" />
+            <p className="text-lg font-medium">Acesso não autorizado</p>
+            <p className="mt-1 text-sm">Você não tem permissão para acessar esta área.</p>
+        </div>
+    )
+}
+
+function LoginPage() {
+    const { login } = useAuth()
+    const [mode, setMode] = useState('login')
+    const [email, setEmail] = useState('')
+    const [password, setPassword] = useState('')
+    const [name, setName] = useState('')
+    const [confirmPassword, setConfirmPassword] = useState('')
+    const [submitting, setSubmitting] = useState(false)
+    const [error, setError] = useState('')
+    const [success, setSuccess] = useState('')
+
+    const handleLogin = async (e) => {
+        e.preventDefault()
+        setError('')
+        setSubmitting(true)
+        try {
+            await login(email, password)
+        } catch (err) {
+            const detail = err?.response?.data?.detail
+            setError(err?.response?.status === 403
+                ? (detail || 'Conta inativa. Aguarde ativação pelo administrador.')
+                : (detail || 'Credenciais inválidas.'))
+        } finally {
+            setSubmitting(false)
+        }
+    }
+
+    const handleRegister = async (e) => {
+        e.preventDefault()
+        setError('')
+        if (password !== confirmPassword) { setError('As senhas não coincidem.'); return }
+        setSubmitting(true)
+        try {
+            await authApi.post('/register', { name, email, password })
+            setSuccess('Conta criada! Aguarde a ativação pelo administrador.')
+            setMode('login')
+            setEmail('')
+            setPassword('')
+        } catch (err) {
+            const data = err?.response?.data
+            setError(data?.detail || data?.email?.[0] || data?.password?.[0] || 'Erro ao criar conta.')
+        } finally {
+            setSubmitting(false)
+        }
+    }
+
+    return (
+        <div className="flex min-h-screen items-center justify-center bg-zinc-50">
+            <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
+                <div className="mb-6 text-center">
+                    <div className="text-2xl font-semibold">DocuParse</div>
+                    <div className="mt-1 text-sm text-zinc-500">{mode === 'login' ? 'Entre com sua conta para continuar' : 'Criar nova conta'}</div>
+                </div>
+                {success && <div className="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</div>}
+                {error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+
+                {mode === 'login' ? (
+                    <form onSubmit={handleLogin} className="space-y-4">
+                        <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-700">E-mail</label>
+                            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="voce@empresa.com" />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-700">Senha</label>
+                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="••••••••" />
+                        </div>
+                        <button type="submit" disabled={submitting}
+                            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
+                            {submitting ? 'Entrando...' : 'Entrar'}
+                        </button>
+                        <button type="button" onClick={() => { setMode('register'); setError('') }}
+                            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-800">
+                            Criar conta
+                        </button>
+                    </form>
+                ) : (
+                    <form onSubmit={handleRegister} className="space-y-4">
+                        <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-700">Nome</label>
+                            <input type="text" value={name} onChange={(e) => setName(e.target.value)} required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="Seu nome" />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-700">E-mail</label>
+                            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="voce@empresa.com" />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-700">Senha</label>
+                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8}
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="Mín. 8 caracteres" />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-700">Confirmar senha</label>
+                            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="••••••••" />
+                        </div>
+                        <button type="submit" disabled={submitting}
+                            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
+                            {submitting ? 'Criando conta...' : 'Criar conta'}
+                        </button>
+                        <button type="button" onClick={() => { setMode('login'); setError('') }}
+                            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-800">
+                            Já tenho conta
+                        </button>
+                    </form>
+                )}
+            </div>
+        </div>
+    )
+}
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+
 function App() {
-    const [activeView, setActiveView] = useState('dashboard')
+    const { user, loading: authLoading, logout, hasPermission } = useAuth()
+    const [activeView, setActiveView] = useState(() =>
+        NAV_ITEMS.find(item => hasPermission(item.permission))?.id ?? 'dashboard'
+    )
     const [documents, setDocuments] = useState([])
     const [schemas, setSchemas] = useState([])
     const [layouts, setLayouts] = useState([])
@@ -112,9 +300,11 @@ function App() {
     const [selectedDocument, setSelectedDocument] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
+    const [rejectedModal, setRejectedModal] = useState(null)
 
-    const refreshData = async () => {
-        setLoading(true)
+    const refreshData = async (silent = false) => {
+        if (!hasPermission('inbox.view')) return
+        if (!silent) setLoading(true)
         setError('')
         try {
             const [documentsResult, schemasResult, layoutsResult] = await Promise.allSettled([
@@ -156,6 +346,13 @@ function App() {
     useEffect(() => {
         refreshData()
     }, [])
+
+    useEffect(() => {
+        const processing = documents.some((d) => d.status === 'RECEIVED' || d.status === 'OCR_COMPLETED')
+        if (!processing) return
+        const timer = setTimeout(() => refreshData(true), 4000)
+        return () => clearTimeout(timer)
+    }, [documents])
 
     useEffect(() => {
         if (!selectedDocumentId) {
@@ -227,18 +424,28 @@ function App() {
                 <aside className="hidden w-64 shrink-0 border-r border-zinc-200 bg-white md:block">
                     <div className="border-b border-zinc-200 px-5 py-5">
                         <div className="text-lg font-semibold">DocuParse</div>
-                        <div className="mt-1 text-xs text-zinc-500">Operacao de documentos</div>
+                        <div className="mt-1 text-xs text-zinc-500">{user?.name || 'Operacao de documentos'}</div>
                     </div>
                     <nav className="space-y-1 px-3 py-4">
                         {NAV_ITEMS.map((item) => (
-                            <NavButton
-                                key={item.id}
-                                item={item}
-                                active={activeView === item.id}
-                                onClick={() => setActiveView(item.id)}
-                            />
+                            <PermissionGuard key={item.id} code={item.permission}>
+                                <NavButton
+                                    item={item}
+                                    active={activeView === item.id}
+                                    onClick={() => setActiveView(item.id)}
+                                />
+                            </PermissionGuard>
                         ))}
                     </nav>
+                    <div className="border-t border-zinc-200 px-3 py-3">
+                        <button
+                            type="button"
+                            onClick={logout}
+                            className="flex w-full h-9 items-center gap-2 rounded-md px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
+                        >
+                            Sair
+                        </button>
+                    </div>
                 </aside>
 
                 <main className="min-w-0 flex-1">
@@ -262,13 +469,14 @@ function App() {
                     <div className="border-b border-zinc-200 bg-white px-2 py-2 md:hidden">
                         <div className="flex gap-1 overflow-x-auto">
                             {NAV_ITEMS.map((item) => (
-                                <NavButton
-                                    key={item.id}
-                                    item={item}
-                                    active={activeView === item.id}
-                                    onClick={() => setActiveView(item.id)}
-                                    compact
-                                />
+                                <PermissionGuard key={item.id} code={item.permission}>
+                                    <NavButton
+                                        item={item}
+                                        active={activeView === item.id}
+                                        onClick={() => setActiveView(item.id)}
+                                        compact
+                                    />
+                                </PermissionGuard>
                             ))}
                         </div>
                     </div>
@@ -277,40 +485,58 @@ function App() {
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}
 
-                        {activeView === 'dashboard' ? <Dashboard metrics={metrics} documents={documents} /> : null}
+                        {activeView === 'dashboard' ? <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}><Dashboard metrics={metrics} documents={documents} onSelectRejected={setRejectedModal} onReprocess={handleReprocessDocument} onDelete={handleDeleteDocument} /></PermissionGuard> : null}
                         {activeView === 'inbox' ? (
-                            <InboxView
-                                documents={pendingDocuments}
-                                onNavigateToValidation={navigateToValidation}
-                                onNavigateToUpload={() => setActiveView('upload')}
-                            />
+                            <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
+                                <InboxView
+                                    documents={pendingDocuments}
+                                    onNavigateToValidation={navigateToValidation}
+                                    onNavigateToUpload={() => setActiveView('upload')}
+                                />
+                            </PermissionGuard>
                         ) : null}
-                        {activeView === 'upload' ? <UploadView onUploaded={refreshData} /> : null}
+                        {activeView === 'upload' ? <PermissionGuard code="documents.send" fallback={<AcessoNaoAutorizado />}><UploadView onUploaded={refreshData} /></PermissionGuard> : null}
                         {activeView === 'approved' ? (
-                            <ApprovedView documents={approvedDocuments} />
+                            <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
+                                <ApprovedView documents={approvedDocuments} />
+                            </PermissionGuard>
                         ) : null}
                         {activeView === 'rejected' ? (
-                            <RejectedView
-                                documents={rejectedDocuments}
-                                onReprocess={handleReprocessDocument}
-                                onDelete={handleDeleteDocument}
-                                onRefresh={refreshData}
-                            />
+                            <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
+                                <RejectedView
+                                    documents={rejectedDocuments}
+                                    onReprocess={handleReprocessDocument}
+                                    onDelete={handleDeleteDocument}
+                                    onRefresh={refreshData}
+                                />
+                            </PermissionGuard>
                         ) : null}
                         {activeView === 'validation' ? (
-                            <ValidationView
-                                schemas={schemas}
-                                selectedDocument={selectedDocument}
-                                selectedDocumentId={selectedDocumentId}
-                                onValidated={refreshData}
-                                onBackToInbox={() => setActiveView('inbox')}
-                            />
+                            <PermissionGuard code="documents.validate" fallback={<AcessoNaoAutorizado />}>
+                                <ValidationView
+                                    schemas={schemas}
+                                    selectedDocument={selectedDocument}
+                                    selectedDocumentId={selectedDocumentId}
+                                    onValidated={refreshData}
+                                    onBackToInbox={() => setActiveView('inbox')}
+                                />
+                            </PermissionGuard>
                         ) : null}
-                        {activeView === 'operations' ? <OperationsView /> : null}
-                        {activeView === 'settings' ? <SettingsView schemas={schemas} layouts={layouts} documents={documents} onChanged={refreshData} /> : null}
+                        {activeView === 'operations' ? <PermissionGuard code="operations.access" fallback={<AcessoNaoAutorizado />}><OperationsView /></PermissionGuard> : null}
+                        {activeView === 'settings' ? <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}><SettingsView schemas={schemas} layouts={layouts} documents={documents} onChanged={refreshData} /></PermissionGuard> : null}
+                        {activeView === 'users' ? <PermissionGuard code="users.manage" fallback={<AcessoNaoAutorizado />}><GerenciarUsuarios /></PermissionGuard> : null}
+                        {activeView === 'roles' ? <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}><GerenciarRoles /></PermissionGuard> : null}
                     </section>
                 </main>
             </div>
+            {rejectedModal ? (
+                <RejectedDocumentModal
+                    doc={rejectedModal}
+                    onClose={() => setRejectedModal(null)}
+                    onReprocess={handleReprocessDocument}
+                    onDelete={handleDeleteDocument}
+                />
+            ) : null}
         </div>
     )
 }
@@ -331,9 +557,66 @@ function NavButton({ item, active, onClick, compact = false }) {
     )
 }
 
-function Dashboard({ metrics, documents }) {
+function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }) {
+    return (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Documento Rejeitado</h3>
+                    <button type="button" onClick={onClose} className="text-zinc-400 hover:text-zinc-700">
+                        <X size={20} aria-hidden="true" />
+                    </button>
+                </div>
+                <div className="space-y-3 text-sm">
+                    <div>
+                        <div className="text-xs font-semibold uppercase text-zinc-500 mb-1">Arquivo</div>
+                        <div className="font-medium">{doc.original_filename || doc.id}</div>
+                    </div>
+                    <div>
+                        <div className="text-xs font-semibold uppercase text-zinc-500 mb-1">Motivo da rejeição</div>
+                        <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2 text-zinc-700 whitespace-pre-wrap">
+                            {doc.rejection_notes || 'Motivo não informado'}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-xs font-semibold uppercase text-zinc-500 mb-1">Data da rejeição</div>
+                        <div className="text-zinc-500">{formatDate(doc.rejected_at ?? doc.decision_date)}</div>
+                    </div>
+                </div>
+                <div className="flex gap-2 justify-end mt-5">
+                    <button
+                        type="button"
+                        onClick={() => { onDelete(doc.id); onClose(); }}
+                        className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+                    >
+                        <Trash2 size={14} aria-hidden="true" />
+                        Excluir
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => { onReprocess(doc.id); onClose(); }}
+                        className="inline-flex items-center gap-1 rounded bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
+                    >
+                        <RefreshCw size={14} aria-hidden="true" />
+                        Reprocessar
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function Dashboard({ metrics, documents, onSelectRejected, onReprocess, onDelete }) {
     const [search, setSearch] = useState('')
     const displayed = search.trim() ? filterDocuments(documents, search) : documents.slice(0, 8)
+
+    function handleSelectDocument(id) {
+        const doc = documents.find(d => d.id === id)
+        if (doc && doc.status === 'REJECTED' && onSelectRejected) {
+            onSelectRejected(doc)
+        }
+    }
+
     return (
         <div className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -347,7 +630,7 @@ function Dashboard({ metrics, documents }) {
                     <div className="text-sm font-semibold">Ultimos documentos</div>
                     <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, status, tipo..." />
                 </div>
-                <DocumentTable documents={displayed} onSelectDocument={() => {}} />
+                <DocumentTable documents={displayed} onSelectDocument={handleSelectDocument} />
             </section>
         </div>
     )
@@ -401,7 +684,7 @@ function ApprovedView({ documents }) {
                                     <td className="px-4 py-3 font-medium">{doc.original_filename || doc.id}</td>
                                     <td className="px-4 py-3"><StatusBadge status={doc.status} /></td>
                                     <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
-                                        {formatDate(doc.decision_date ?? doc.updated_at)}
+                                        {formatDate(doc.approved_at ?? doc.decision_date ?? doc.updated_at)}
                                     </td>
                                 </tr>
                             ))}
@@ -975,7 +1258,9 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                         <DocumentMetadataPanel document={selectedDocument} />
                         {!selectedDocument.extraction_result ? (
                             <Alert>
-                                Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.
+                                {selectedDocument.status === 'OCR_COMPLETED'
+                                    ? 'OCR concluido. Extração de campos pendente — verifique se existe um layout configurado para este tipo de documento.'
+                                    : 'Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.'}
                             </Alert>
                         ) : null}
                         <ReadOnlyTranscription value={selectedDocument.full_transcription} />
@@ -3019,6 +3304,7 @@ function DocumentTable({
                             {compact ? null : <th className={thClass} onClick={() => handleSort('canal')}>Canal{indicator('canal')}</th>}
                             {compact ? null : <th className={thClass} onClick={() => handleSort('tipo')}>Tipo{indicator('tipo')}</th>}
                             <th className={thClass} onClick={() => handleSort('atualizado')}>Atualizado{indicator('atualizado')}</th>
+                            {compact ? null : <th className="px-3 py-2">Decisão em</th>}
                             <th className="w-8 px-2 py-2"></th>
                         </tr>
                     </thead>
@@ -3048,6 +3334,15 @@ function DocumentTable({
                                     {compact ? null : <td className="px-3 py-2">{document.channel || '-'}</td>}
                                     {compact ? null : <td className="px-3 py-2">{document.document_type || '-'}</td>}
                                     <td className="px-3 py-2 text-zinc-500">{formatDate(document.updated_at || document.received_at)}</td>
+                                    {compact ? null : (
+                                        <td className="px-3 py-2 text-zinc-500">
+                                            {document.status === 'APPROVED'
+                                                ? formatDate(document.approved_at)
+                                                : document.status === 'REJECTED'
+                                                    ? formatDate(document.rejected_at)
+                                                    : null}
+                                        </td>
+                                    )}
                                     <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
                                         <button
                                             type="button"
@@ -3321,8 +3616,235 @@ function readError(error, fallback) {
     return fallback
 }
 
+// ─── User Management Screen ───────────────────────────────────────────────────
+
+function GerenciarUsuarios() {
+    const [users, setUsers] = useState([])
+    const [roles, setRoles] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [modal, setModal] = useState(null) // null | { mode: 'create' | 'edit', user?: any }
+    const [form, setForm] = useState({ name: '', email: '', password: '', role_id: '' })
+    const [error, setError] = useState('')
+
+    const load = async () => {
+        setLoading(true)
+        const [u, r] = await Promise.all([api.get('/users'), api.get('/roles')])
+        setUsers(u.data)
+        setRoles(r.data)
+        setLoading(false)
+    }
+
+    useEffect(() => { load() }, [])
+
+    const openCreate = () => { setForm({ name: '', email: '', password: '', role_id: '' }); setModal({ mode: 'create' }); setError('') }
+    const openEdit = (u) => { setForm({ name: u.name, email: u.email, password: '', role_id: u.role?.id || '' }); setModal({ mode: 'edit', user: u }); setError('') }
+
+    const handleSubmit = async (e) => {
+        e.preventDefault()
+        setError('')
+        try {
+            if (modal.mode === 'create') {
+                await api.post('/users', form)
+            } else {
+                const patch = { name: form.name, email: form.email, role_id: form.role_id || null }
+                await api.patch(`/users/${modal.user.id}`, patch)
+            }
+            setModal(null)
+            load()
+        } catch (err) {
+            setError(err?.response?.data?.detail || err?.response?.data?.email?.[0] || 'Erro ao salvar.')
+        }
+    }
+
+    const toggleActive = async (user) => {
+        try {
+            await api.patch(`/users/${user.id}`, { is_active: !user.is_active })
+            load()
+        } catch (err) {
+            alert(err?.response?.data?.detail || 'Erro ao alterar status.')
+        }
+    }
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Usuários</h2>
+                <button onClick={openCreate} className="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700">Novo Usuário</button>
+            </div>
+            {loading ? <div className="text-sm text-zinc-500">Carregando...</div> : (
+                <table className="w-full text-sm border border-zinc-200 rounded-md overflow-hidden">
+                    <thead className="bg-zinc-50 text-zinc-600">
+                        <tr>{['Nome', 'E-mail', 'Role', 'Status', 'Ações'].map(h => <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                        {users.map(u => (
+                            <tr key={u.id} className="border-t border-zinc-100">
+                                <td className="px-3 py-2">{u.name}</td>
+                                <td className="px-3 py-2 text-zinc-500">{u.email}</td>
+                                <td className="px-3 py-2">{u.role?.name || '—'}</td>
+                                <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>{u.is_active ? 'Ativo' : 'Inativo'}</span></td>
+                                <td className="px-3 py-2 flex gap-2">
+                                    <button onClick={() => openEdit(u)} className="text-xs text-zinc-600 hover:underline">Editar</button>
+                                    <button onClick={() => toggleActive(u)} className="text-xs text-zinc-600 hover:underline">{u.is_active ? 'Desativar' : 'Ativar'}</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+            {modal && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
+                        <h3 className="text-lg font-semibold mb-4">{modal.mode === 'create' ? 'Novo Usuário' : 'Editar Usuário'}</h3>
+                        {error && <div className="mb-3 text-sm text-red-600">{error}</div>}
+                        <form onSubmit={handleSubmit} className="space-y-3">
+                            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nome" required className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm" />
+                            <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="E-mail" required className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm" />
+                            {modal.mode === 'create' && <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Senha (mín. 8 chars)" required minLength={8} className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm" />}
+                            <select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))} required className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm">
+                                <option value="">Selecionar role...</option>
+                                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                            </select>
+                            <div className="flex gap-2 justify-end pt-2">
+                                <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-zinc-300 rounded-md">Cancelar</button>
+                                <button type="submit" className="px-4 py-2 text-sm bg-zinc-900 text-white rounded-md">Salvar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ─── Role Management Screen ───────────────────────────────────────────────────
+
+function GerenciarRoles() {
+    const [roles, setRoles] = useState([])
+    const [perms, setPerms] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [modal, setModal] = useState(null)
+    const [form, setForm] = useState({ name: '', permission_codes: [] })
+    const [error, setError] = useState('')
+
+    const load = async () => {
+        setLoading(true)
+        const [r, p] = await Promise.all([api.get('/roles'), api.get('/permissions')])
+        setRoles(r.data)
+        setPerms(p.data)
+        setLoading(false)
+    }
+
+    useEffect(() => { load() }, [])
+
+    const openCreate = () => { setForm({ name: '', permission_codes: [] }); setModal({ mode: 'create' }); setError('') }
+    const openEdit = (r) => { setForm({ name: r.name, permission_codes: (r.permissions || []).map(p => typeof p === 'string' ? p : p.code) }); setModal({ mode: 'edit', role: r }); setError('') }
+
+    const togglePerm = (code) => setForm(f => ({
+        ...f,
+        permission_codes: f.permission_codes.includes(code)
+            ? f.permission_codes.filter(c => c !== code)
+            : [...f.permission_codes, code],
+    }))
+
+    const handleSubmit = async (e) => {
+        e.preventDefault()
+        setError('')
+        try {
+            if (modal.mode === 'create') {
+                await api.post('/roles', form)
+            } else {
+                await api.patch(`/roles/${modal.role.id}`, form)
+            }
+            setModal(null)
+            load()
+        } catch (err) {
+            setError(err?.response?.data?.detail || err?.response?.data?.permission_codes?.[0] || 'Erro ao salvar.')
+        }
+    }
+
+    const handleDelete = async (role) => {
+        if (!window.confirm(`Remover role "${role.name}"?`)) return
+        try {
+            await api.delete(`/roles/${role.id}`)
+            load()
+        } catch (err) {
+            alert(err?.response?.data?.detail || 'Erro ao remover.')
+        }
+    }
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Roles e Permissões</h2>
+                <button onClick={openCreate} className="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700">Nova Role</button>
+            </div>
+            {loading ? <div className="text-sm text-zinc-500">Carregando...</div> : (
+                <table className="w-full text-sm border border-zinc-200 rounded-md overflow-hidden">
+                    <thead className="bg-zinc-50 text-zinc-600">
+                        <tr>{['Nome', 'Permissões', 'Usuários', 'Ações'].map(h => <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                        {roles.map(r => (
+                            <tr key={r.id} className="border-t border-zinc-100">
+                                <td className="px-3 py-2 font-medium">{r.name}</td>
+                                <td className="px-3 py-2 text-zinc-500 text-xs">{(r.permissions || []).map(p => p.description || p.code || p).join(', ')}</td>
+                                <td className="px-3 py-2">{r.users_count}</td>
+                                <td className="px-3 py-2 flex gap-2">
+                                    <button onClick={() => openEdit(r)} className="text-xs text-zinc-600 hover:underline">Editar</button>
+                                    <button onClick={() => handleDelete(r)} className="text-xs text-red-600 hover:underline">Remover</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+            {modal && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
+                        <h3 className="text-lg font-semibold mb-4">{modal.mode === 'create' ? 'Nova Role' : 'Editar Role'}</h3>
+                        {error && <div className="mb-3 text-sm text-red-600">{error}</div>}
+                        <form onSubmit={handleSubmit} className="space-y-3">
+                            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nome da role" required className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm" />
+                            <div>
+                                <div className="mb-2 text-sm font-medium text-zinc-700">Permissões</div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {perms.map(p => (
+                                        <label key={p.code} className="flex items-center gap-2 text-sm cursor-pointer">
+                                            <input type="checkbox" checked={form.permission_codes.includes(p.code)} onChange={() => togglePerm(p.code)} className="rounded" />
+                                            {p.description}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex gap-2 justify-end pt-2">
+                                <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-zinc-300 rounded-md">Cancelar</button>
+                                <button type="submit" className="px-4 py-2 text-sm bg-zinc-900 text-white rounded-md">Salvar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+function Root() {
+    const { user, loading } = useAuth()
+    if (loading) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-zinc-50">
+                <div className="text-sm text-zinc-500">Carregando...</div>
+            </div>
+        )
+    }
+    return user ? <App /> : <LoginPage />
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-        <App />
+        <AuthProvider>
+            <Root />
+        </AuthProvider>
     </React.StrictMode>,
 )

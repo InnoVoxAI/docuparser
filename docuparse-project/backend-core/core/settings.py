@@ -113,3 +113,4 @@ DOCUPARSE_LOCAL_STORAGE_DIR = os.environ.get('DOCUPARSE_LOCAL_STORAGE_DIR', str(
 DOCUPARSE_APPROVED_EXPORT_DIR = os.environ.get('DOCUPARSE_APPROVED_EXPORT_DIR', str(BASE_DIR / 'exports' / 'approved'))
 DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TOKEN', '').strip()
 DOCUPARSE_AUTO_PROCESS_OCR = os.environ.get('DOCUPARSE_AUTO_PROCESS_OCR', 'true').strip().lower() not in {'0', 'false', 'no'}
+DOCUPARSE_AUTO_PROCESS_EXTRACTION = os.environ.get('DOCUPARSE_AUTO_PROCESS_EXTRACTION', 'true').strip().lower() not in {'0', 'false', 'no'}

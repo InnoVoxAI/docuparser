@@ -35,6 +35,8 @@ class DocumentListSerializer(serializers.ModelSerializer):
     extraction_result = ExtractionResultSerializer(read_only=True)
     rejection_notes = serializers.SerializerMethodField()
     decision_date = serializers.SerializerMethodField()
+    approved_at = serializers.SerializerMethodField()
+    rejected_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -52,6 +54,8 @@ class DocumentListSerializer(serializers.ModelSerializer):
             "extraction_result",
             "rejection_notes",
             "decision_date",
+            "approved_at",
+            "rejected_at",
         ]
 
     def get_metadata_channel(self, obj: Document) -> dict | None:
@@ -73,6 +77,24 @@ class DocumentListSerializer(serializers.ModelSerializer):
         if decisions is None:
             decisions = obj.validation_decisions.order_by('-created_at')
         latest = next(iter(decisions), None)
+        return latest.created_at.isoformat() if latest else None
+
+    def get_approved_at(self, obj: Document) -> str | None:
+        decisions = getattr(obj, '_prefetched_decisions', None)
+        if decisions is None:
+            decisions = obj.validation_decisions.filter(decision='approved').order_by('-created_at')
+            latest = next(iter(decisions), None)
+        else:
+            latest = next((d for d in decisions if d.decision == 'approved'), None)
+        return latest.created_at.isoformat() if latest else None
+
+    def get_rejected_at(self, obj: Document) -> str | None:
+        decisions = getattr(obj, '_prefetched_decisions', None)
+        if decisions is None:
+            decisions = obj.validation_decisions.filter(decision='rejected').order_by('-created_at')
+            latest = next(iter(decisions), None)
+        else:
+            latest = next((d for d in decisions if d.decision == 'rejected'), None)
         return latest.created_at.isoformat() if latest else None
 
 

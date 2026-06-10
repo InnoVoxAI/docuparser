@@ -148,8 +148,8 @@ class RoleListSerializer(serializers.Serializer):
     users_count = serializers.IntegerField(read_only=True)
     created_at = serializers.DateTimeField()
 
-    def get_permissions(self, obj: Any) -> list[str]:
-        return list(obj.permissions.values_list("code", flat=True))
+    def get_permissions(self, obj: Any) -> list[dict]:
+        return list(obj.permissions.values("code", "description"))
 
 
 class RoleCreateSerializer(serializers.Serializer):

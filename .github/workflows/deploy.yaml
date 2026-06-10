@@ -15,6 +15,9 @@ on:
       BACKEND_DIR:
         type: string
         required: true
+      DOCKERFILE_PATH:
+        type: string
+        required: true
     secrets:
       ACCOUNT_MODIFY_TOKEN:
         required: true
@@ -49,7 +52,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./${{ inputs.BACKEND_DIR }}
-          file: ./${{ inputs.BACKEND_DIR }}/Dockerfile
+          file: ./${{ inputs.DOCKERFILE_PATH }}
           platforms: linux/amd64
           push: true
           tags: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}

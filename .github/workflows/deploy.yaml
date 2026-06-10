@@ -1,0 +1,81 @@
+name: "Deploy Workflow"
+
+on:
+  workflow_call:
+    inputs:
+      IMAGE_NAME:
+        type: string
+        required: true
+      IMAGE_VERSION:
+        type: string
+        required: true
+      ENVIRONMENT:
+        type: string
+        required: true
+      BACKEND_DIR:
+        type: string
+        required: true
+    secrets:
+      ACCOUNT_MODIFY_TOKEN:
+        required: true
+      INNOVOX_USERNAME:
+        required: true
+      INNOVOX_PASSWORD:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Innovox Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.innovox.ai
+          username: ${{ secrets.INNOVOX_USERNAME }}
+          password: ${{ secrets.INNOVOX_PASSWORD }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ inputs.BACKEND_DIR }}
+          file: ./${{ inputs.BACKEND_DIR }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}
+
+      - name: Checkout GitOps Branch
+        run: |
+          git fetch origin
+          git checkout -f gitops
+
+      - name: Update Image Tag in Deployment
+        run: |
+          sed -i "s|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:.*|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}|" k8s/${{ inputs.ENVIRONMENT }}/deployment.yaml
+
+      - name: Check deployment.yaml after sed
+        run: cat k8s/${{ inputs.ENVIRONMENT }}/deployment.yaml
+
+      - name: Git Status
+        run: git status
+
+      - name: Git Config
+        run: |
+          git config --global user.email "ci-bot@ci.com"
+          git config --global user.name "CI Bot"
+
+      - name: Commit and Push Changes
+        run: |
+          git add k8s/${{ inputs.ENVIRONMENT }}/deployment.yaml
+          git commit -m "Updating the image tag: ${{ inputs.IMAGE_VERSION }}"
+          git push -u origin gitops

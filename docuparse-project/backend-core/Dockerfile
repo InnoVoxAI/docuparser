@@ -14,5 +14,6 @@ COPY backend-core/ .
 COPY shared/docuparse_events ./docuparse_events
 COPY shared/docuparse_observability ./docuparse_observability
 COPY shared/docuparse_storage ./docuparse_storage
+COPY contracts/events ./events
 
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

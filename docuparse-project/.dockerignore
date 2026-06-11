@@ -1,0 +1,29 @@
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.venv/
+**/venv/
+**/*.egg-info/
+
+# Git / IDE
+.git/
+.gitignore
+**/.DS_Store
+**/*.swp
+**/.idea/
+**/.vscode/
+
+# Logs e temporários
+**/*.log
+**/tmp/
+
+# Docs e specs (não necessários no build)
+docs/
+.specify/
+.claude/

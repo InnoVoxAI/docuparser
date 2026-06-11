@@ -36,9 +36,14 @@ const internalServiceToken = import.meta.env.VITE_DOCUPARSE_INTERNAL_SERVICE_TOK
 const _devHeaders = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 const COM_BASE = import.meta.env.VITE_COM_BASE_URL ?? `${BASE}/com`
-const api = axios.create({ baseURL: `${BASE}/api/ocr` })
-const authApi = axios.create({ baseURL: `${BASE}/api/auth` })
-const comApi = axios.create({ baseURL: `${COM_BASE}/api/v1`, headers: _devHeaders })
+const api = axios.create({ baseURL: `${BASE}/api/ocr`, timeout: 15000 })
+const authApi = axios.create({ baseURL: `${BASE}/api/auth`, timeout: 15000 })
+const comApi = axios.create({ baseURL: `${COM_BASE}/api/v1`, headers: _devHeaders, timeout: 15000 })
+
+// Absolute URL to the original document file. Must honour BASE (VITE_API_BASE_URL)
+// exactly like the axios instances above; otherwise iframe/img/href resolve against
+// the frontend origin and the SPA fallback returns index.html (app-inside-the-app).
+const documentFileUrl = (documentId) => `${BASE}/api/ocr/documents/${documentId}/file`
 
 const NAV_ITEMS = [
     { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },
@@ -1224,7 +1229,7 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                     <div className="text-sm font-semibold">{selectedDocument?.original_filename || selectedDocument?.id || 'Documento'}</div>
                     {selectedDocument ? (
                         <a
-                            href={`/api/ocr/documents/${selectedDocument.id}/file`}
+                            href={documentFileUrl(selectedDocument.id)}
                             target="_blank"
                             rel="noreferrer"
                             className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100"
@@ -1238,12 +1243,12 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                 ) : selectedDocument.content_type === 'application/pdf' ? (
                     <iframe
                         title="Documento selecionado"
-                        src={`/api/ocr/documents/${selectedDocument.id}/file`}
+                        src={documentFileUrl(selectedDocument.id)}
                         className="h-[620px] w-full"
                     />
                 ) : selectedDocument.content_type?.startsWith('image/') ? (
                     <div className="max-h-[620px] overflow-auto p-3">
-                        <img src={`/api/ocr/documents/${selectedDocument.id}/file`} alt="Documento selecionado" className="max-w-full rounded border border-zinc-200" />
+                        <img src={documentFileUrl(selectedDocument.id)} alt="Documento selecionado" className="max-w-full rounded border border-zinc-200" />
                     </div>
                 ) : (
                     <EmptyState icon={FileText} text="Formato sem preview disponivel." />
@@ -2974,10 +2979,10 @@ function DocumentPreview({ document }) {
             {!document ? (
                 <EmptyState icon={FileText} text="Selecione um documento." />
             ) : document.content_type === 'application/pdf' ? (
-                <iframe title="Documento de referencia" src={`/api/ocr/documents/${document.id}/file`} className="h-[520px] w-full" />
+                <iframe title="Documento de referencia" src={documentFileUrl(document.id)} className="h-[520px] w-full" />
             ) : document.content_type?.startsWith('image/') ? (
                 <div className="max-h-[520px] overflow-auto p-3">
-                    <img src={`/api/ocr/documents/${document.id}/file`} alt="Documento de referencia" className="max-w-full rounded border border-zinc-200" />
+                    <img src={documentFileUrl(document.id)} alt="Documento de referencia" className="max-w-full rounded border border-zinc-200" />
                 </div>
             ) : (
                 <EmptyState icon={FileText} text="Formato sem preview disponivel." />

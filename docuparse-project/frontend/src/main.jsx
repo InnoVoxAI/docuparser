@@ -40,10 +40,55 @@ const api = axios.create({ baseURL: `${BASE}/api/ocr`, timeout: 15000 })
 const authApi = axios.create({ baseURL: `${BASE}/api/auth`, timeout: 15000 })
 const comApi = axios.create({ baseURL: `${COM_BASE}/api/v1`, headers: _devHeaders, timeout: 15000 })
 
-// Absolute URL to the original document file. Must honour BASE (VITE_API_BASE_URL)
-// exactly like the axios instances above; otherwise iframe/img/href resolve against
-// the frontend origin and the SPA fallback returns index.html (app-inside-the-app).
+// Absolute URL to the original document file. Used only for the "Abrir" link, which is
+// a top-level navigation (not framed) — X-Frame-Options does not apply there.
 const documentFileUrl = (documentId) => `${BASE}/api/ocr/documents/${documentId}/file`
+
+// Fetch the original document through the authenticated axios instance and expose it as a
+// same-origin blob: URL. In production the frontend (Cloudflare Pages) and backend
+// (docuparser-core.innovox.ai) are different origins, so loading the file directly in an
+// <iframe> is blocked by X-Frame-Options: SAMEORIGIN. A blob: URL belongs to the page's
+// own origin, so the iframe is never cross-origin — mirroring the same-origin behaviour we
+// get behind the Vite dev proxy on localhost. Needs no env var or backend change.
+function useDocumentFileBlob(documentId) {
+    const [state, setState] = useState({ url: '', status: 'idle' })
+    useEffect(() => {
+        if (!documentId) { setState({ url: '', status: 'idle' }); return }
+        let active = true
+        let objectUrl = ''
+        setState({ url: '', status: 'loading' })
+        api.get(`/documents/${documentId}/file`, { responseType: 'blob' })
+            .then((response) => {
+                if (!active) return
+                objectUrl = URL.createObjectURL(response.data)
+                setState({ url: objectUrl, status: 'ready' })
+            })
+            .catch(() => { if (active) setState({ url: '', status: 'error' }) })
+        return () => {
+            active = false
+            if (objectUrl) URL.revokeObjectURL(objectUrl)
+        }
+    }, [documentId])
+    return state
+}
+
+function DocumentFileFrame({ document, frameClassName, imageWrapClassName, emptyText = 'Selecione um documento para visualizar.' }) {
+    const { url, status } = useDocumentFileBlob(document?.id)
+    if (!document) return <EmptyState icon={FileText} text={emptyText} />
+    if (status === 'loading' || status === 'idle') return <EmptyState icon={FileText} text="Carregando documento..." />
+    if (status === 'error' || !url) return <EmptyState icon={FileText} text="Nao foi possivel carregar o documento." />
+    if (document.content_type === 'application/pdf') {
+        return <iframe title="Documento" src={url} className={frameClassName} />
+    }
+    if (document.content_type?.startsWith('image/')) {
+        return (
+            <div className={imageWrapClassName}>
+                <img src={url} alt="Documento" className="max-w-full rounded border border-zinc-200" />
+            </div>
+        )
+    }
+    return <EmptyState icon={FileText} text="Formato sem preview disponivel." />
+}
 
 const NAV_ITEMS = [
     { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },
@@ -1238,21 +1283,11 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                         </a>
                     ) : null}
                 </div>
-                {!selectedDocument ? (
-                    <EmptyState icon={FileText} text="Selecione um documento para visualizar." />
-                ) : selectedDocument.content_type === 'application/pdf' ? (
-                    <iframe
-                        title="Documento selecionado"
-                        src={documentFileUrl(selectedDocument.id)}
-                        className="h-[620px] w-full"
-                    />
-                ) : selectedDocument.content_type?.startsWith('image/') ? (
-                    <div className="max-h-[620px] overflow-auto p-3">
-                        <img src={documentFileUrl(selectedDocument.id)} alt="Documento selecionado" className="max-w-full rounded border border-zinc-200" />
-                    </div>
-                ) : (
-                    <EmptyState icon={FileText} text="Formato sem preview disponivel." />
-                )}
+                <DocumentFileFrame
+                    document={selectedDocument}
+                    frameClassName="h-[620px] w-full"
+                    imageWrapClassName="max-h-[620px] overflow-auto p-3"
+                />
             </section>
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white p-4">
                 {!selectedDocument ? (
@@ -2976,17 +3011,12 @@ function DocumentPreview({ document }) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">Original</div>
-            {!document ? (
-                <EmptyState icon={FileText} text="Selecione um documento." />
-            ) : document.content_type === 'application/pdf' ? (
-                <iframe title="Documento de referencia" src={documentFileUrl(document.id)} className="h-[520px] w-full" />
-            ) : document.content_type?.startsWith('image/') ? (
-                <div className="max-h-[520px] overflow-auto p-3">
-                    <img src={documentFileUrl(document.id)} alt="Documento de referencia" className="max-w-full rounded border border-zinc-200" />
-                </div>
-            ) : (
-                <EmptyState icon={FileText} text="Formato sem preview disponivel." />
-            )}
+            <DocumentFileFrame
+                document={document}
+                frameClassName="h-[520px] w-full"
+                imageWrapClassName="max-h-[520px] overflow-auto p-3"
+                emptyText="Selecione um documento."
+            />
         </section>
     )
 }

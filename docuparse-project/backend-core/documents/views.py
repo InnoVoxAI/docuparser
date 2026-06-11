@@ -6,6 +6,7 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.http import require_GET, require_POST
 from django.http import Http404
 from django.http import FileResponse
@@ -176,6 +177,10 @@ def document_delete_view(request, document_id):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# Frontend (Cloudflare Pages) and backend live on different origins, so the
+# default X-Frame-Options: SAMEORIGIN would block the document <iframe> preview.
+# Exempt only this file-serving endpoint so the original document can be framed.
+@xframe_options_exempt
 @api_view(["GET"])
 def document_file_view(request, document_id):
     auth_error = _internal_token_error(request)

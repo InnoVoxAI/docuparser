@@ -20,6 +20,7 @@ class ExtractionResultSerializer(serializers.ModelSerializer):
             "fields",
             "confidence",
             "requires_human_validation",
+            "updated_at",
         ]
 
     def get_cleaned_fields(self, obj: ExtractionResult) -> dict:

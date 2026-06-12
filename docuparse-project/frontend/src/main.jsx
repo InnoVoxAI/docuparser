@@ -90,6 +90,24 @@ function DocumentFileFrame({ document, frameClassName, imageWrapClassName, empty
     return <EmptyState icon={FileText} text="Formato sem preview disponivel." />
 }
 
+// Poll the document detail until its extraction_result changes — i.e. a background LLM
+// extraction finished. Returns the new extraction_result, or null on timeout. Used by the
+// "Executar Extracao" flow, which the backend now processes asynchronously (the inline LLM
+// call was tripping the production gateway's timeout, surfacing as a 502/CORS error).
+async function pollDocumentExtraction(documentId, previousUpdatedAt, { attempts = 40, intervalMs = 2500 } = {}) {
+    for (let i = 0; i < attempts; i++) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs))
+        try {
+            const { data } = await api.get(`/documents/${documentId}`)
+            const extraction = data?.extraction_result
+            if (extraction?.updated_at && extraction.updated_at !== previousUpdatedAt) {
+                return extraction
+            }
+        } catch { /* transient error — keep polling */ }
+    }
+    return null
+}
+
 const NAV_ITEMS = [
     { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, permission: 'inbox.view' },
@@ -1190,23 +1208,37 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         return () => { ignore = true }
     }, [selectedDocument?.id])
 
+    const applyExtractionData = (data) => {
+        const fields = data.fields || {}
+        setFieldRows(
+            Object.entries(fields)
+                .filter(([, value]) => value !== '' && value !== null && value !== undefined)
+                .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
+                .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
+        )
+        const pct = data.confidence != null ? ` Confianca: ${(data.confidence * 100).toFixed(0)}%` : ''
+        setExtractMessage(`Extracao concluida.${pct}`)
+    }
+
     const runLangExtract = async () => {
         if (!selectedDocumentId || !selectedSchemaId || extracting) return
         setExtracting(true)
-        setExtractMessage('')
+        setExtractMessage('Extraindo... isso pode levar alguns segundos.')
+        const previousUpdatedAt = selectedDocument?.extraction_result?.updated_at ?? null
         try {
             const response = await api.post(`/documents/${selectedDocumentId}/langextract`, {
                 schema_config_id: selectedSchemaId,
             })
-            const fields = response.data.fields || {}
-            setFieldRows(
-                Object.entries(fields)
-                    .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
-                    .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
-            )
-            const pct = response.data.confidence != null ? ` Confianca: ${(response.data.confidence * 100).toFixed(0)}%` : ''
-            setExtractMessage(`Extracao concluida.${pct}`)
+            if (response.status === 202) {
+                // Backend queued the LLM extraction (async). Poll the document detail
+                // until the new extraction_result lands.
+                const extraction = await pollDocumentExtraction(selectedDocumentId, previousUpdatedAt)
+                if (extraction) applyExtractionData(extraction)
+                else setExtractMessage('A extracao ainda esta em andamento. Clique em Atualizar em instantes para ver o resultado.')
+            } else {
+                // Synchronous response (e.g. local dev). Apply the result directly.
+                applyExtractionData(response.data)
+            }
         } catch (requestError) {
             setExtractMessage(readError(requestError, 'Falha na extracao LangExtract.'))
         } finally {

@@ -117,6 +117,52 @@ def auto_extract_after_ocr(document: Document) -> None:
         logger.warning("auto_extract_failed", extra={"document_id": str(document.id), "error": str(exc)})
 
 
+def run_langextract_for_document(document_id, schema_config_id) -> dict:
+    """On-demand LLM extraction for a chosen SchemaConfig.
+
+    Runs off the HTTP request path (see processing_queue.submit_document_langextract):
+    the LLM call can take many seconds, and awaiting it inline holds the connection open
+    long enough for the production gateway to return a 502 (without CORS headers).
+    """
+    document = Document.objects.get(id=document_id)
+    schema_config = SchemaConfig.objects.get(id=schema_config_id)
+
+    storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+    payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
+    raw_text = str(payload.get("raw_text") or "")
+    if not raw_text.strip():
+        raise ValueError("document raw text is empty")
+
+    definition = {
+        **schema_config.definition,
+        "schema_id": schema_config.schema_id,
+        "version": schema_config.version,
+    }
+    result = LangExtractClient().extract_with_schema(
+        raw_text=raw_text,
+        schema_definition=definition,
+        layout=document.layout or "generic",
+        document_type=str(document.content_type or "unknown"),
+    )
+    ExtractionResult.objects.update_or_create(
+        document=document,
+        defaults={
+            "schema_id": result.get("schema_id") or schema_config.schema_id,
+            "schema_version": result.get("schema_version") or schema_config.version,
+            "fields": result.get("fields") or {},
+            "confidence": result.get("confidence") or 0.0,
+            "requires_human_validation": result.get("requires_human_validation", True),
+        },
+    )
+    if document.status not in (
+        Document.Status.VALIDATION_PENDING,
+        Document.Status.APPROVED,
+        Document.Status.REJECTED,
+    ):
+        document.transition_to(Document.Status.EXTRACTION_COMPLETED)
+    return result
+
+
 def _classify_raw_text(raw_text: str) -> str | None:
     """Returns the schema_id that best matches the document text, or None."""
     import models.nota_fiscal.schemas as _nf

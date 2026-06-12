@@ -23,6 +23,14 @@ frontend/.vite/
 **/*.log
 **/tmp/
 
+# Dados de runtime — NUNCA empacotar no build (devem ser persistidos fora do container)
+**/db.sqlite3
+**/db.sqlite3-journal
+**/.docuparse-storage/
+**/.docuparse-events/
+**/exports/
+**/.coverage
+
 # Docs e specs (não necessários no build)
 docs/
 .specify/

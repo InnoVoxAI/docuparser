@@ -78,7 +78,35 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-if os.environ.get("POSTGRES_HOST"):
+# Database selection, in priority order: DATABASE_URL → POSTGRES_HOST → SQLite.
+#
+# The SQLite fallback writes to a file *inside the container* (BASE_DIR/db.sqlite3), which
+# is ephemeral: it is wiped on every deploy/restart, silently destroying all data. To stop
+# production from ever booting on it, set DOCUPARSE_REQUIRE_POSTGRES=true — the app will then
+# refuse to start unless a real PostgreSQL connection is configured. Defaults to off so local
+# and dev (SQLite) keep working unchanged.
+_database_url = os.environ.get("DATABASE_URL", "").strip()
+_require_postgres = os.environ.get("DOCUPARSE_REQUIRE_POSTGRES", "false").strip().lower() in {"1", "true", "yes"}
+
+if _database_url:
+    from urllib.parse import unquote, urlparse
+
+    _parsed = urlparse(_database_url)
+    if _parsed.scheme not in ("postgres", "postgresql"):
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(f"Unsupported DATABASE_URL scheme: {_parsed.scheme!r} (expected postgres://)")
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': (_parsed.path or '/docuparse').lstrip('/') or 'docuparse',
+            'USER': unquote(_parsed.username or ''),
+            'PASSWORD': unquote(_parsed.password or ''),
+            'HOST': _parsed.hostname or '',
+            'PORT': str(_parsed.port or '5432'),
+        }
+    }
+elif os.environ.get("POSTGRES_HOST"):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -89,6 +117,14 @@ if os.environ.get("POSTGRES_HOST"):
             'PORT': os.environ.get('POSTGRES_PORT', '5432'),
         }
     }
+elif _require_postgres:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "DOCUPARSE_REQUIRE_POSTGRES is set but no DATABASE_URL/POSTGRES_HOST was provided. "
+        "Refusing to start on the ephemeral in-container SQLite database to avoid data loss. "
+        "Configure a persistent PostgreSQL database for production."
+    )
 else:
     DATABASES = {
         'default': {

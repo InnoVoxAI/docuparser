@@ -1,5 +1,5 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at docs/specs/005-frontend-platform-adjustments/plan.md
+at docs/specs/006-ui-model-management/plan.md
 <!-- SPECKIT END -->

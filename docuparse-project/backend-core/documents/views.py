@@ -52,6 +52,44 @@ def ready_view(request):
     return JsonResponse({"status": "ready", "service": "docuparse-backend-core"})
 
 
+def _probe_http(url: str) -> dict:
+    """Best-effort dependency probe for the diagnostics endpoint."""
+    import requests
+
+    try:
+        resp = requests.get(url, timeout=3)
+        return {"ok": resp.ok, "url": url, "status": resp.status_code}
+    except Exception as exc:
+        return {"ok": False, "url": url, "error": f"{type(exc).__name__}: {exc}"}
+
+
+@require_GET
+def diagnostics_view(request):
+    """Dependency health for the extraction pipeline — makes silent failures visible.
+
+    Reports DB engine + reachability of backend-ocr and langextract-service (the service
+    that actually runs the LLM extraction). If langextract-service is unreachable here,
+    field extraction cannot complete no matter what the UI shows.
+    """
+    checks: dict = {}
+
+    from django.db import connection
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        checks["database"] = {"ok": True, "engine": connection.settings_dict.get("ENGINE")}
+    except Exception as exc:
+        checks["database"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    checks["langextract_service"] = _probe_http(f"{settings.LANGEXTRACT_SERVICE_URL}/health")
+    checks["backend_ocr"] = _probe_http(f"{settings.BACKEND_OCR_URL}/health")
+
+    overall_ok = all(check.get("ok") for check in checks.values())
+    return JsonResponse({"ok": overall_ok, "checks": checks}, status=200 if overall_ok else 503)
+
+
 def _internal_token_error(request):
     token = settings.DOCUPARSE_INTERNAL_SERVICE_TOKEN
     if not token:

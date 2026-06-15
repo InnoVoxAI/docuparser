@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from io import BytesIO
 
 from django.conf import settings
@@ -61,6 +62,25 @@ def process_document_ocr(document_id) -> Document:
     return document
 
 
+def _record_extraction(document: Document, state: str, **details) -> None:
+    """Persist the extraction lifecycle into document.metadata['extraction'].
+
+    Makes pipeline failures visible in the UI and queryable in the DB instead of being
+    swallowed by a logger.warning. States: running | completed | failed | pending_no_schema.
+    """
+    meta = dict(document.metadata or {})
+    extraction = dict(meta.get("extraction") or {})
+    extraction["state"] = state
+    extraction["updated_at"] = timezone.now().isoformat()
+    extraction["service_url"] = getattr(settings, "LANGEXTRACT_SERVICE_URL", "")
+    for key, value in details.items():
+        if value is not None:
+            extraction[key] = value
+    meta["extraction"] = extraction
+    document.metadata = meta
+    document.save(update_fields=["metadata", "updated_at"])
+
+
 def auto_extract_after_ocr(document: Document) -> None:
     if not settings.DOCUPARSE_AUTO_PROCESS_EXTRACTION:
         return
@@ -88,8 +108,14 @@ def auto_extract_after_ocr(document: Document) -> None:
                 "document_type": document.document_type,
             },
         )
+        _record_extraction(
+            document, "pending_no_schema",
+            layout=document.layout, document_type=document.document_type, trigger="auto",
+        )
         return
 
+    started = time.monotonic()
+    _record_extraction(document, "running", schema_id=schema_config.schema_id, trigger="auto")
     try:
         definition = {
             **schema_config.definition,
@@ -112,9 +138,28 @@ def auto_extract_after_ocr(document: Document) -> None:
                 "requires_human_validation": result.get("requires_human_validation", True),
             },
         )
+        _record_extraction(
+            document, "completed", schema_id=schema_config.schema_id,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            confidence=result.get("confidence"), trigger="auto",
+        )
         document.transition_to(Document.Status.VALIDATION_PENDING)
     except Exception as exc:
-        logger.warning("auto_extract_failed", extra={"document_id": str(document.id), "error": str(exc)})
+        logger.error(
+            "auto_extract_failed",
+            exc_info=True,
+            extra={
+                "document_id": str(document.id),
+                "schema_id": schema_config.schema_id,
+                "service_url": LangExtractClient().base_url,
+                "error": str(exc),
+            },
+        )
+        _record_extraction(
+            document, "failed", schema_id=schema_config.schema_id,
+            error=str(exc), error_type=type(exc).__name__,
+            duration_ms=int((time.monotonic() - started) * 1000), trigger="auto",
+        )
 
 
 def run_langextract_for_document(document_id, schema_config_id) -> dict:
@@ -126,41 +171,66 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
     """
     document = Document.objects.get(id=document_id)
     schema_config = SchemaConfig.objects.get(id=schema_config_id)
+    started = time.monotonic()
+    _record_extraction(document, "running", schema_id=schema_config.schema_id, trigger="manual")
 
-    storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
-    payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
-    raw_text = str(payload.get("raw_text") or "")
-    if not raw_text.strip():
-        raise ValueError("document raw text is empty")
+    try:
+        storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+        payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
+        raw_text = str(payload.get("raw_text") or "")
+        if not raw_text.strip():
+            raise ValueError("document raw text is empty")
 
-    definition = {
-        **schema_config.definition,
-        "schema_id": schema_config.schema_id,
-        "version": schema_config.version,
-    }
-    result = LangExtractClient().extract_with_schema(
-        raw_text=raw_text,
-        schema_definition=definition,
-        layout=document.layout or "generic",
-        document_type=str(document.content_type or "unknown"),
-    )
-    ExtractionResult.objects.update_or_create(
-        document=document,
-        defaults={
-            "schema_id": result.get("schema_id") or schema_config.schema_id,
-            "schema_version": result.get("schema_version") or schema_config.version,
-            "fields": result.get("fields") or {},
-            "confidence": result.get("confidence") or 0.0,
-            "requires_human_validation": result.get("requires_human_validation", True),
-        },
-    )
-    if document.status not in (
-        Document.Status.VALIDATION_PENDING,
-        Document.Status.APPROVED,
-        Document.Status.REJECTED,
-    ):
-        document.transition_to(Document.Status.EXTRACTION_COMPLETED)
-    return result
+        definition = {
+            **schema_config.definition,
+            "schema_id": schema_config.schema_id,
+            "version": schema_config.version,
+        }
+        result = LangExtractClient().extract_with_schema(
+            raw_text=raw_text,
+            schema_definition=definition,
+            layout=document.layout or "generic",
+            document_type=str(document.content_type or "unknown"),
+        )
+        ExtractionResult.objects.update_or_create(
+            document=document,
+            defaults={
+                "schema_id": result.get("schema_id") or schema_config.schema_id,
+                "schema_version": result.get("schema_version") or schema_config.version,
+                "fields": result.get("fields") or {},
+                "confidence": result.get("confidence") or 0.0,
+                "requires_human_validation": result.get("requires_human_validation", True),
+            },
+        )
+        if document.status not in (
+            Document.Status.VALIDATION_PENDING,
+            Document.Status.APPROVED,
+            Document.Status.REJECTED,
+        ):
+            document.transition_to(Document.Status.EXTRACTION_COMPLETED)
+        _record_extraction(
+            document, "completed", schema_id=schema_config.schema_id,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            confidence=result.get("confidence"), trigger="manual",
+        )
+        return result
+    except Exception as exc:
+        logger.error(
+            "langextract_failed",
+            exc_info=True,
+            extra={
+                "document_id": str(document_id),
+                "schema_id": schema_config.schema_id,
+                "service_url": LangExtractClient().base_url,
+                "error": str(exc),
+            },
+        )
+        _record_extraction(
+            document, "failed", schema_id=schema_config.schema_id,
+            error=str(exc), error_type=type(exc).__name__,
+            duration_ms=int((time.monotonic() - started) * 1000), trigger="manual",
+        )
+        raise
 
 
 def _classify_raw_text(raw_text: str) -> str | None:

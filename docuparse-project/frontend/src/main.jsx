@@ -6,6 +6,7 @@ import {
     CheckCircle2,
     ClipboardCheck,
     Eye,
+    FileJson,
     FileText,
     Inbox,
     LayoutDashboard,
@@ -94,24 +95,31 @@ function DocumentFileFrame({ document, frameClassName, imageWrapClassName, empty
 // extraction finished. Returns the new extraction_result, or null on timeout. Used by the
 // "Executar Extracao" flow, which the backend now processes asynchronously (the inline LLM
 // call was tripping the production gateway's timeout, surfacing as a 502/CORS error).
-async function pollDocumentExtraction(documentId, previousUpdatedAt, { attempts = 40, intervalMs = 2500 } = {}) {
+async function pollDocumentExtraction(documentId, baseline, { attempts = 40, intervalMs = 2500 } = {}) {
     for (let i = 0; i < attempts; i++) {
         await new Promise((resolve) => setTimeout(resolve, intervalMs))
         try {
             const { data } = await api.get(`/documents/${documentId}`)
             const extraction = data?.extraction_result
-            if (extraction?.updated_at && extraction.updated_at !== previousUpdatedAt) {
-                return extraction
+            if (extraction?.updated_at && extraction.updated_at !== baseline.resultUpdatedAt) {
+                return { status: 'completed', extraction }
+            }
+            // Surface a real backend failure (e.g. langextract-service unreachable) instead
+            // of polling forever — see document.metadata.extraction recorded by the backend.
+            const meta = data?.metadata?.extraction
+            if (meta?.state === 'failed' && meta.updated_at !== baseline.metaUpdatedAt) {
+                return { status: 'failed', error: meta.error || 'Erro desconhecido na extracao.' }
             }
         } catch { /* transient error — keep polling */ }
     }
-    return null
+    return { status: 'timeout' }
 }
 
 const NAV_ITEMS = [
     { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, permission: 'inbox.view' },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'inbox.view' },
+    { id: 'approved', label: 'Aprovados', icon: CheckCircle2, permission: 'inbox.view' },
     { id: 'validation', label: 'Validacao', icon: ClipboardCheck, permission: 'documents.validate' },
     { id: 'operations', label: 'Operacoes', icon: AlertTriangle, permission: 'operations.access' },
     { id: 'settings', label: 'Configuracoes', icon: Settings, permission: 'roles.manage' },
@@ -733,36 +741,85 @@ function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }) {
 }
 
 function ApprovedView({ documents }) {
+    const [selectedDoc, setSelectedDoc] = useState(null)
     return (
-        <section className="rounded-md border border-zinc-200 bg-white">
-            <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Documentos aprovados</div>
-            {documents.length === 0 ? (
-                <EmptyState icon={CheckCircle2} text="Nenhum documento aprovado." />
-            ) : (
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-zinc-200 text-sm">
-                        <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
-                            <tr>
-                                <th className="px-4 py-3">Documento</th>
-                                <th className="px-4 py-3">Status</th>
-                                <th className="px-4 py-3">Data de aprovação</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-100">
-                            {documents.map((doc) => (
-                                <tr key={doc.id} className="hover:bg-zinc-50">
-                                    <td className="px-4 py-3 font-medium">{doc.original_filename || doc.id}</td>
-                                    <td className="px-4 py-3"><StatusBadge status={doc.status} /></td>
-                                    <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
-                                        {formatDate(doc.approved_at ?? doc.decision_date ?? doc.updated_at)}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+        <>
+            <section className="rounded-md border border-zinc-200 bg-white">
+                <div className="border-b border-zinc-200 px-4 py-3">
+                    <div className="text-sm font-semibold">Documentos aprovados</div>
+                    <div className="mt-0.5 text-xs text-zinc-500">Documentos aprovados e os seus campos extraídos que serão utilizados na próxima fase</div>
                 </div>
+                {documents.length === 0 ? (
+                    <EmptyState icon={CheckCircle2} text="Nenhum documento aprovado." />
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-zinc-200 text-sm">
+                            <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
+                                <tr>
+                                    <th className="px-4 py-3">Documento</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3">Data de aprovação</th>
+                                    <th className="px-4 py-3">Campos extraídos</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100">
+                                {documents.map((doc) => (
+                                    <tr key={doc.id} className="hover:bg-zinc-50">
+                                        <td className="px-4 py-3 font-medium">{doc.original_filename || doc.id}</td>
+                                        <td className="px-4 py-3"><StatusBadge status={doc.status} /></td>
+                                        <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
+                                            {formatDate(doc.approved_at ?? doc.decision_date ?? doc.updated_at)}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            {doc.extraction_result?.fields && Object.keys(doc.extraction_result.fields).length > 0 ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedDoc(doc)}
+                                                    className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                                                >
+                                                    <FileJson size={14} aria-hidden="true" />
+                                                    Ver campos
+                                                </button>
+                                            ) : (
+                                                <span className="text-xs text-zinc-400">—</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </section>
+            {selectedDoc && (
+                <ExtractedFieldsModal doc={selectedDoc} onClose={() => setSelectedDoc(null)} />
             )}
-        </section>
+        </>
+    )
+}
+
+function ExtractedFieldsModal({ doc, onClose }) {
+    const fields = doc.extraction_result?.fields || {}
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+            <div
+                className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-white p-6 shadow-lg"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="mb-4 flex flex-shrink-0 items-center justify-between">
+                    <div>
+                        <h3 className="text-base font-semibold">Campos extraídos</h3>
+                        <div className="mt-0.5 text-xs text-zinc-500">{doc.original_filename || doc.id}</div>
+                    </div>
+                    <button type="button" onClick={onClose} className="text-zinc-400 hover:text-zinc-700">
+                        <X size={20} aria-hidden="true" />
+                    </button>
+                </div>
+                <pre className="flex-1 overflow-auto rounded-md bg-zinc-950 p-4 text-xs text-zinc-50">
+                    {JSON.stringify(fields, null, 2)}
+                </pre>
+            </div>
+        </div>
     )
 }
 
@@ -1224,16 +1281,20 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         if (!selectedDocumentId || !selectedSchemaId || extracting) return
         setExtracting(true)
         setExtractMessage('Extraindo... isso pode levar alguns segundos.')
-        const previousUpdatedAt = selectedDocument?.extraction_result?.updated_at ?? null
+        const baseline = {
+            resultUpdatedAt: selectedDocument?.extraction_result?.updated_at ?? null,
+            metaUpdatedAt: selectedDocument?.metadata?.extraction?.updated_at ?? null,
+        }
         try {
             const response = await api.post(`/documents/${selectedDocumentId}/langextract`, {
                 schema_config_id: selectedSchemaId,
             })
             if (response.status === 202) {
                 // Backend queued the LLM extraction (async). Poll the document detail
-                // until the new extraction_result lands.
-                const extraction = await pollDocumentExtraction(selectedDocumentId, previousUpdatedAt)
-                if (extraction) applyExtractionData(extraction)
+                // until the new extraction_result lands — or a failure is recorded.
+                const outcome = await pollDocumentExtraction(selectedDocumentId, baseline)
+                if (outcome.status === 'completed') applyExtractionData(outcome.extraction)
+                else if (outcome.status === 'failed') setExtractMessage(`Falha na extracao: ${outcome.error}`)
                 else setExtractMessage('A extracao ainda esta em andamento. Clique em Atualizar em instantes para ver o resultado.')
             } else {
                 // Synchronous response (e.g. local dev). Apply the result directly.
@@ -1337,7 +1398,6 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                                     : 'Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.'}
                             </Alert>
                         ) : null}
-                        <ReadOnlyTranscription value={selectedDocument.full_transcription} />
                         <ReadOnlyTranscriptionFormatted value={selectedDocument.full_transcription_formatted} />
                         <LangExtractPanel
                             documentId={selectedDocumentId}
@@ -1625,8 +1685,8 @@ function ReadOnlyTranscriptionFormatted({ value }) {
 }
 
 const SETTINGS_TABS = [
+    { id: 'ocr', label: 'Documento' },
     { id: 'setup', label: 'Modelo' },
-    { id: 'ocr', label: 'OCR referencia' },
     { id: 'schema', label: 'Schema' },
     { id: 'instructions', label: 'Instrucoes' },
     { id: 'examples', label: 'Exemplos' },
@@ -1649,7 +1709,7 @@ const SETTINGS_TAB_HELP = {
         text: 'Defina a identidade do template de extracao: nome, schema, tipo de documento, versao e status. Esses dados controlam qual configuracao sera aplicada apos OCR e classificacao.',
     },
     ocr: {
-        title: 'OCR de referencia',
+        title: 'Documento',
         text: 'Escolha um documento real ja processado para usar como base. Compare o original com a transcricao OCR e confirme se o texto tem qualidade suficiente para criar exemplos e regras.',
     },
     schema: {
@@ -2447,39 +2507,12 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
                     ) : null}
 
                     {activeTab === 'publish' ? (
-                        <div className="grid gap-4 xl:grid-cols-2">
+                        <div>
                             <section className="rounded-md border border-zinc-200 p-4">
                                 <div className="mb-3 text-sm font-semibold">Salvar modelo como schema</div>
                                 <pre className="max-h-[360px] overflow-auto rounded-md bg-zinc-950 p-3 text-xs text-zinc-50">{JSON.stringify(schemaDefinition, null, 2)}</pre>
                                 <button type="button" onClick={createSchema} disabled={!schemaForm.schema_id.trim()} className="primary-button mt-3">
                                     Salvar schema LangExtract
-                                </button>
-                            </section>
-                            <section className="rounded-md border border-zinc-200 p-4">
-                                <div className="mb-3 text-sm font-semibold">Vincular layout ao schema</div>
-                                <div className="grid gap-3 md:grid-cols-2">
-                                    <Field label="Layout">
-                                        <input value={layoutForm.layout} onChange={(event) => setLayoutForm({ ...layoutForm, layout: event.target.value })} className="input" />
-                                    </Field>
-                                    <Field label="Tipo documento">
-                                        <input value={layoutForm.document_type} onChange={(event) => setLayoutForm({ ...layoutForm, document_type: event.target.value })} className="input" />
-                                    </Field>
-                                    <Field label="Schema">
-                                        <select value={layoutForm.schema_config_id} onChange={(event) => setLayoutForm({ ...layoutForm, schema_config_id: event.target.value })} className="input">
-                                            <option value="">Selecionar</option>
-                                            {schemas.map((schema) => (
-                                                <option key={schema.id} value={schema.id}>
-                                                    {schema.schema_id} {schema.version}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </Field>
-                                    <Field label="Confianca minima">
-                                        <input value={layoutForm.confidence_threshold} onChange={(event) => setLayoutForm({ ...layoutForm, confidence_threshold: event.target.value })} className="input" />
-                                    </Field>
-                                </div>
-                                <button type="button" onClick={createLayout} disabled={!layoutForm.layout.trim() || !layoutForm.schema_config_id} className="primary-button mt-3">
-                                    Criar layout
                                 </button>
                             </section>
                         </div>

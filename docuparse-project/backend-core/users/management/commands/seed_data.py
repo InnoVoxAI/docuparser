@@ -49,3 +49,24 @@ class Command(BaseCommand):
         profile.tenant = tenant
         profile.save()
         self.stdout.write("seed_data: admin profile ready")
+
+        from documents.models import SchemaConfig
+        import models.nota_fiscal.definition as _nf_def
+        import models.contadeagua.definition as _agua_def
+
+        DEFAULT_SCHEMAS = [
+            {"schema_id": _nf_def.SCHEMA_ID, "version": _nf_def.VERSION, "definition": _nf_def.EXTRACTION_DEFINITION},
+            {"schema_id": _agua_def.SCHEMA_ID, "version": _agua_def.VERSION, "definition": _agua_def.EXTRACTION_DEFINITION},
+        ]
+
+        for schema_spec in DEFAULT_SCHEMAS:
+            _, created = SchemaConfig.objects.update_or_create(
+                tenant=tenant,
+                schema_id=schema_spec["schema_id"],
+                version=schema_spec["version"],
+                defaults={"definition": schema_spec["definition"], "is_active": True},
+            )
+            if created:
+                self.stdout.write(f"seed_data: created schema {schema_spec['schema_id']}")
+            else:
+                self.stdout.write(f"seed_data: updated schema {schema_spec['schema_id']}")

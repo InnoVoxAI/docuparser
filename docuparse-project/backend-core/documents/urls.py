@@ -13,6 +13,7 @@ from .views import (
     documents_inbox_view,
     dlq_events_view,
     dlq_requeue_view,
+    diagnostics_view,
     dlq_summary_view,
     email_settings_view,
     health_view,
@@ -29,6 +30,7 @@ from .views import (
 urlpatterns = [
     path("classify-text", classify_text_view, name="classify-text"),
     path("health", health_view, name="backend-core-health"),
+    path("diagnostics", diagnostics_view, name="backend-core-diagnostics"),
     path("ready", ready_view, name="backend-core-ready"),
     path("engines", list_engines_view, name="ocr-engines"),
     path("process", process_document_view, name="ocr-process"),

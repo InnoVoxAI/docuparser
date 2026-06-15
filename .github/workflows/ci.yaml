@@ -92,3 +92,18 @@ jobs:
       ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
       INNOVOX_USERNAME: ${{ secrets.INNOVOX_USERNAME }}
       INNOVOX_PASSWORD: ${{ secrets.INNOVOX_PASSWORD }}
+
+  deploy-langextract:
+    needs: [pre-deploy, deploy-ocr]
+    if: needs.pre-deploy.outputs.SKIP != 'true'
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      IMAGE_NAME: docuparser-langextract
+      IMAGE_VERSION: ${{ needs.pre-deploy.outputs.IMAGE_VERSION }}
+      ENVIRONMENT: docuparser-langextract
+      BACKEND_DIR: docuparse-project
+      DOCKERFILE_PATH: docuparse-project/langextract-service/Dockerfile
+    secrets:
+      ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+      INNOVOX_USERNAME: ${{ secrets.INNOVOX_USERNAME }}
+      INNOVOX_PASSWORD: ${{ secrets.INNOVOX_PASSWORD }}

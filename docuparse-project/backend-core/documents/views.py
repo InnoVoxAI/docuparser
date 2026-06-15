@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Prefetch
+from django.db.models import Prefetch, ProtectedError
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -386,7 +386,10 @@ def schema_configs_view(request):
     return Response(SchemaConfigSerializer(config).data, status=response_status)
 
 
-@api_view(["GET", "PATCH"])
+PROTECTED_SCHEMA_IDS = ["nota_fiscal_default", "conta_agua_default"]
+
+
+@api_view(["GET", "PATCH", "DELETE"])
 def schema_config_detail_view(request, schema_id):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
@@ -394,7 +397,20 @@ def schema_config_detail_view(request, schema_id):
     config = get_object_or_404(SchemaConfig.objects.select_related("tenant"), id=schema_id)
     if request.method == "GET":
         return Response(SchemaConfigSerializer(config).data)
-
+    if request.method == "DELETE":
+        if config.schema_id in PROTECTED_SCHEMA_IDS:
+            return Response(
+                {"detail": "Este modelo é padrão do sistema e não pode ser excluído."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            config.delete()
+        except ProtectedError:
+            return Response(
+                {"detail": "Este modelo possui layouts vinculados e não pode ser excluído."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
     serializer = SchemaConfigSerializer(config, data={**request.data, "tenant_id": str(config.tenant_id)}, partial=True)
     serializer.is_valid(raise_exception=True)
     for field in ("schema_id", "version", "definition", "is_active"):

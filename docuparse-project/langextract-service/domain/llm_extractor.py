@@ -140,6 +140,8 @@ def _build_extraction_prompt(
     """Compose the user-facing extraction prompt sent to the LLM."""
 
     # Describe each field (name, type, required flag, extraction rule)
+    ### TEST 
+    print("Fields spec:", fields_spec)
     fields_lines = []
     for f in fields_spec:
         name = f.get("name", "")

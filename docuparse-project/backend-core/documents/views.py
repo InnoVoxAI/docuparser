@@ -25,12 +25,14 @@ from .serializers import (
     DocumentDetailSerializer,
     DocumentListSerializer,
     EmailSettingsSerializer,
+    ExtractionFieldVersionSerializer,
     IntegrationSettingsSerializer,
     LayoutConfigSerializer,
     OCRSettingsSerializer,
     SchemaConfigSerializer,
     ValidationDecisionSerializer,
 )
+from .services import field_versioning
 from .services.ocr_client import OCRClient
 from .services.langextract_client import LangExtractClient
 from .services.erp_publisher import publish_erp_integration_requested
@@ -272,9 +274,18 @@ def document_validation_view(request, document_id):
 
     corrected_fields = request.data.get("corrected_fields") or {}
     if corrected_fields and hasattr(document, "extraction_result"):
-        document.extraction_result.fields = corrected_fields
         document.extraction_result.requires_human_validation = False
-        document.extraction_result.save(update_fields=["fields", "requires_human_validation", "updated_at"])
+        document.extraction_result.save(update_fields=["requires_human_validation", "updated_at"])
+        active = field_versioning.get_active_version(document)
+        try:
+            field_versioning.save_manual_edit(
+                document,
+                incoming_fields=[{"name": name, "value": value} for name, value in corrected_fields.items()],
+                base_version_number=active.version_number if active else None,
+                created_by=user,
+            )
+        except (field_versioning.NoChangesError, field_versioning.EmptyFieldListError):
+            pass  # sem alteração efetiva ou lista vazia: não cria versão
 
     if decision == ValidationDecision.Decision.APPROVED:
         document.transition_to(Document.Status.APPROVED)
@@ -284,6 +295,70 @@ def document_validation_view(request, document_id):
         document.transition_to(Document.Status.VALIDATION_PENDING)
 
     return Response(ValidationDecisionSerializer(validation).data, status=status.HTTP_201_CREATED)
+
+
+def _resolve_request_user(request):
+    """Usuário autenticado, ou fallback por `edited_by_id` (chamadas service token)."""
+    if getattr(request.user, "is_authenticated", False):
+        return request.user
+    user_id = request.data.get("edited_by_id")
+    if user_id:
+        return get_object_or_404(get_user_model(), id=user_id)
+    return None
+
+
+@api_view(["PUT"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("documents.validate")])
+def document_save_fields_view(request, document_id):
+    """Salva edições/remoções/adições como nova versão ativa MANUAL_EDIT (US1/US2)."""
+    document = get_object_or_404(Document.objects.select_related("extraction_result"), id=document_id)
+
+    incoming_fields = request.data.get("fields")
+    if not isinstance(incoming_fields, list):
+        return Response({"detail": "O campo 'fields' deve ser uma lista."}, status=status.HTTP_400_BAD_REQUEST)
+
+    base_version_number = request.data.get("base_version_number")
+
+    try:
+        version = field_versioning.save_manual_edit(
+            document,
+            incoming_fields=incoming_fields,
+            base_version_number=base_version_number,
+            created_by=_resolve_request_user(request),
+        )
+    except field_versioning.VersionConflictError as exc:
+        return Response(
+            {
+                "detail": "A lista de campos foi atualizada por outro processo. Recarregue a versão ativa antes de salvar.",
+                "active_version_number": exc.active_version_number,
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    except field_versioning.EmptyFieldListError:
+        return Response({"detail": "Não é possível salvar uma lista de campos vazia."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+    except field_versioning.NoChangesError:
+        return Response({"detail": "Nenhuma alteração a salvar."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+    return Response(ExtractionFieldVersionSerializer(version).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("documents.validate")])
+def document_field_versions_view(request, document_id):
+    """Histórico somente leitura de versões da lista de campos (US3)."""
+    document = get_object_or_404(Document, id=document_id)
+    versions = document.field_versions.select_related("previous_version", "created_by").order_by("-version_number")
+    active = versions.filter(is_active=True).first()
+    data = ExtractionFieldVersionSerializer(versions, many=True).data
+    return Response(
+        {
+            "results": data,
+            "count": len(data),
+            "active_version_number": active.version_number if active else None,
+        }
+    )
 
 
 @api_view(["POST"])
@@ -337,15 +412,24 @@ def document_langextract_view(request, document_id):
     except Exception as exc:
         return Response({"detail": f"Falha na extracao LangExtract: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
 
+    result_fields = result.get("fields") or {}
+    result_confidence = result.get("confidence") or 0.0
+    source_type = field_versioning.initial_or_reprocess_source(document)
     ExtractionResult.objects.update_or_create(
         document=document,
         defaults={
             "schema_id": result.get("schema_id") or schema_config.schema_id,
             "schema_version": result.get("schema_version") or schema_config.version,
-            "fields": result.get("fields") or {},
-            "confidence": result.get("confidence") or 0.0,
+            "fields": result_fields,
+            "confidence": result_confidence,
             "requires_human_validation": result.get("requires_human_validation", True),
         },
+    )
+    field_versioning.create_version(
+        document,
+        fields=result_fields,
+        source_type=source_type,
+        confidence=result_confidence,
     )
     if document.status not in (Document.Status.VALIDATION_PENDING, Document.Status.APPROVED, Document.Status.REJECTED):
         document.transition_to(Document.Status.EXTRACTION_COMPLETED)

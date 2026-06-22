@@ -113,6 +113,63 @@ class ExtractionResult(TimeStampedModel):
     requires_human_validation = models.BooleanField(default=True)
 
 
+class ExtractionFieldVersion(TimeStampedModel):
+    """Snapshot imutável da lista de campos extraídos de um documento.
+
+    Uma nova versão é criada a cada extração, processamento, reprocessamento ou
+    edição manual. Há no máximo uma versão ativa por documento (a mais recente).
+    """
+
+    class SourceType(models.TextChoices):
+        INITIAL_EXTRACTION = "INITIAL_EXTRACTION", "Initial extraction"
+        PROCESSING = "PROCESSING", "Processing"
+        REPROCESSING = "REPROCESSING", "Reprocessing"
+        MANUAL_EDIT = "MANUAL_EDIT", "Manual edit"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="field_versions")
+    version_number = models.PositiveIntegerField()
+    source_type = models.CharField(max_length=32, choices=SourceType.choices)
+    fields = models.JSONField(default=dict)
+    confidence = models.FloatField(default=0.0)
+    previous_version = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="next_versions",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="extraction_field_versions",
+    )
+    is_active = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-version_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["document", "version_number"],
+                name="unique_field_version_per_document",
+            ),
+            models.UniqueConstraint(
+                fields=["document"],
+                condition=models.Q(is_active=True),
+                name="unique_active_field_version_per_document",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["document", "version_number"]),
+            models.Index(fields=["document", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.document_id} v{self.version_number} ({self.source_type})"
+
+
 class ValidationDecision(TimeStampedModel):
     class Decision(models.TextChoices):
         APPROVED = "approved", "Approved"

@@ -7,9 +7,11 @@ import {
     ClipboardCheck,
     Eye,
     FileText,
+    History,
     Inbox,
     LayoutDashboard,
     RefreshCw,
+    Save,
     Settings,
     Trash2,
     Upload,
@@ -1096,6 +1098,13 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
     const [extracting, setExtracting] = useState(false)
     const [extractMessage, setExtractMessage] = useState('')
+    const [saving, setSaving] = useState(false)
+    const [saveMessage, setSaveMessage] = useState(null)
+    const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
+    const [historyOpen, setHistoryOpen] = useState(false)
+    const [history, setHistory] = useState(null)
+    const [historyLoading, setHistoryLoading] = useState(false)
+    const [historyError, setHistoryError] = useState('')
 
     // Populate fieldRows and auto-select schema when document changes.
     // Skips legacy_ocr records (produced by the old heuristic extractor, now discontinued).
@@ -1115,6 +1124,7 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
             setFieldRows([])
         }
         setExtractMessage('')
+        setSaveMessage(null)
 
         // Auto-select the schema model: prefer the one used in the last extraction,
         // then fall back to backend text classification.
@@ -1199,6 +1209,62 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         }
     }
 
+    const buildFieldsPayload = () =>
+        fieldRows
+            .filter((row) => row.name.trim())
+            .map((row) => ({ name: row.name.trim(), value: row.value }))
+
+    const handleSaveFields = async () => {
+        setConfirmSaveOpen(false)
+        if (!selectedDocumentId) return
+        setSaving(true)
+        setSaveMessage(null)
+        try {
+            const response = await api.put(`/documents/${selectedDocumentId}/fields`, {
+                base_version_number: selectedDocument?.active_field_version_number ?? null,
+                fields: buildFieldsPayload(),
+            })
+            // Reflete a versão salva (campos editados/adicionados com confiança 100%).
+            setFieldRows(
+                Object.entries(response.data.fields || {}).map(([name, raw]) => {
+                    const { value, confidence } = parseFieldEntry(raw)
+                    return { name, value, confidence }
+                }),
+            )
+            setSaveMessage({ tone: 'success', text: `Versão ${response.data.version_number} salva com sucesso.` })
+            await onValidated()
+        } catch (requestError) {
+            const statusCode = requestError?.response?.status
+            if (statusCode === 409) {
+                const active = requestError.response.data?.active_version_number
+                setSaveMessage({
+                    tone: 'error',
+                    text: `A lista foi atualizada por outro processo (versão ativa atual: ${active}). Recarregue a versão ativa antes de salvar.`,
+                })
+                await onValidated()
+            } else {
+                setSaveMessage({ tone: 'error', text: readError(requestError, 'Falha ao salvar alterações.') })
+            }
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const openHistory = async () => {
+        setHistoryOpen(true)
+        setHistoryLoading(true)
+        setHistoryError('')
+        setHistory(null)
+        try {
+            const response = await api.get(`/documents/${selectedDocumentId}/field-versions`)
+            setHistory(response.data)
+        } catch (requestError) {
+            setHistoryError(readError(requestError, 'Falha ao carregar o histórico de versões.'))
+        } finally {
+            setHistoryLoading(false)
+        }
+    }
+
     if (!selectedDocumentId) {
         return (
             <div className="flex flex-col items-center gap-4 py-12 text-zinc-500">
@@ -1276,6 +1342,43 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                             fieldRows={fieldRows}
                             onFieldRowsChange={setFieldRows}
                         />
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                disabled={saving}
+                                onClick={() => { setSaveMessage(null); setConfirmSaveOpen(true) }}
+                                className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                            >
+                                <Save size={16} aria-hidden="true" />
+                                {saving ? 'Salvando...' : 'Salvar Alterações'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={openHistory}
+                                className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                            >
+                                <History size={16} aria-hidden="true" />
+                                Visualizar Histórico
+                            </button>
+                        </div>
+                        {saveMessage ? <Alert tone={saveMessage.tone}>{saveMessage.text}</Alert> : null}
+                        {confirmSaveOpen ? (
+                            <ConfirmDialog
+                                title="Salvar alterações?"
+                                message="Uma nova versão da lista de campos será criada e se tornará a versão ativa. Deseja continuar?"
+                                confirmLabel="Salvar"
+                                onConfirm={handleSaveFields}
+                                onCancel={() => setConfirmSaveOpen(false)}
+                            />
+                        ) : null}
+                        {historyOpen ? (
+                            <FieldVersionHistoryModal
+                                history={history}
+                                loading={historyLoading}
+                                error={historyError}
+                                onClose={() => setHistoryOpen(false)}
+                            />
+                        ) : null}
                         <textarea
                             value={notes}
                             onChange={(event) => { setNotes(event.target.value); setNotesError(false) }}
@@ -1438,6 +1541,100 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
                     ))}
                 </div>
             )}
+        </div>
+    )
+}
+
+const FIELD_VERSION_SOURCE_LABELS = {
+    INITIAL_EXTRACTION: 'Extração inicial',
+    PROCESSING: 'Processamento',
+    REPROCESSING: 'Reprocessamento',
+    MANUAL_EDIT: 'Edição manual',
+}
+
+function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', onConfirm, onCancel }) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+            <div className="w-full max-w-sm rounded-md border border-zinc-200 bg-white p-4 shadow-lg">
+                <div className="text-sm font-semibold text-zinc-900">{title}</div>
+                <p className="mt-2 text-sm text-zinc-600">{message}</p>
+                <div className="mt-4 flex justify-end gap-2">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                    >
+                        {cancelLabel}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onConfirm}
+                        className="h-9 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700"
+                    >
+                        {confirmLabel}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function FieldVersionHistoryModal({ history, loading, error, onClose }) {
+    const versions = history?.results ?? []
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+            <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-md border border-zinc-200 bg-white shadow-lg">
+                <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+                    <div className="text-sm font-semibold">Histórico de versões (somente leitura)</div>
+                    <button type="button" onClick={onClose} className="rounded p-1 text-zinc-500 hover:bg-zinc-100" aria-label="Fechar">
+                        <X size={16} aria-hidden="true" />
+                    </button>
+                </div>
+                <div className="overflow-auto p-4">
+                    {loading ? (
+                        <div className="py-6 text-center text-sm text-zinc-500">Carregando histórico...</div>
+                    ) : error ? (
+                        <Alert tone="error">{error}</Alert>
+                    ) : versions.length === 0 ? (
+                        <div className="py-6 text-center text-sm text-zinc-400">Nenhuma versão registrada para este documento.</div>
+                    ) : (
+                        <div className="space-y-3">
+                            {versions.map((version) => (
+                                <div key={version.version_number} className="rounded-md border border-zinc-200">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2">
+                                        <div className="text-sm font-semibold">
+                                            Versão {version.version_number}
+                                            {version.is_active ? (
+                                                <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-700">Ativa</span>
+                                            ) : null}
+                                        </div>
+                                        <div className="text-xs text-zinc-500">
+                                            {FIELD_VERSION_SOURCE_LABELS[version.source_type] || version.source_type}
+                                            {' · '}
+                                            {version.created_at ? new Date(version.created_at).toLocaleString() : ''}
+                                            {version.created_by ? ` · ${version.created_by}` : ''}
+                                        </div>
+                                    </div>
+                                    <div className="divide-y divide-zinc-100">
+                                        {Object.entries(version.fields || {}).map(([name, raw]) => {
+                                            const { value, confidence } = parseFieldEntry(raw)
+                                            return (
+                                                <div key={name} className="grid grid-cols-[200px_1fr_auto] gap-2 px-3 py-2 text-sm">
+                                                    <div className="font-medium text-zinc-600">{name}</div>
+                                                    <div className="break-words text-zinc-900">{value}</div>
+                                                    <div className="text-xs text-zinc-400">
+                                                        {confidence != null ? `${(confidence * 100).toFixed(0)}%` : '—'}
+                                                    </div>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
         </div>
     )
 }

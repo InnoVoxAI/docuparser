@@ -117,6 +117,26 @@ export interface SchemaExample {
 /** Conjunto de regras de pós-processamento (`*_DEFAULT_RULES`) — heterogêneo. */
 export type SchemaRules = Record<string, unknown>
 
+/**
+ * Configuração de schema vinda do backend (`SchemaConfigSerializer`). A forma
+ * exata varia entre endpoints; mantemos os campos consumidos pela UI e um índice
+ * permissivo para o restante (sem alterar contrato).
+ */
+export interface SchemaConfig {
+  id: string
+  schema_id?: string
+  name?: string
+  schema_version?: string
+  [key: string]: any
+}
+
+/** Configuração de layout vinda do backend (`LayoutConfigSerializer`). */
+export interface LayoutConfig {
+  id: string
+  name?: string
+  [key: string]: any
+}
+
 // =========================================================
 // Autenticação / Permissões
 // =========================================================
@@ -163,6 +183,8 @@ export type ActiveView =
   | 'inbox'
   | 'dashboard'
   | 'validation'
+  | 'approved'
+  | 'rejected'
   | 'operations'
   | 'settings'
   | 'users'

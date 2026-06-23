@@ -18,8 +18,23 @@ import {
     X,
     XCircle,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import './index.css'
-import type { AuthContextValue, User } from './types'
+import type {
+    AuthContextValue,
+    User,
+    Document,
+    DocumentStatus,
+    ActiveView,
+    FieldRow,
+    SaveMessage,
+    ExtractionField,
+    ExtractionFieldVersion,
+    FieldVersionsResponse,
+    FieldsMap,
+    SchemaConfig,
+    LayoutConfig,
+} from './types'
 import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIELDS } from './models/boleto/schemas'
 import { boletoPromptForDocumentType } from './models/boleto/prompts'
 import { BOLETO_DEFAULT_EXAMPLES } from './models/boleto/examples'
@@ -41,7 +56,21 @@ const api = axios.create({ baseURL: '/api/ocr' })
 const authApi = axios.create({ baseURL: '/api/auth' })
 const comApi = axios.create({ baseURL: '/com/api/v1', headers: _devHeaders })
 
-const NAV_ITEMS = [
+interface NavItem {
+    id: ActiveView
+    label: string
+    icon: LucideIcon
+    permission: string
+}
+
+interface DashboardMetrics {
+    total: number
+    pending: number
+    approved: number
+    failed: number
+}
+
+const NAV_ITEMS: NavItem[] = [
     { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, permission: 'inbox.view' },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'inbox.view' },
@@ -164,7 +193,11 @@ function useAuth(): AuthContextValue {
     return ctx
 }
 
-function PermissionGuard({ code, children, fallback = null }) {
+function PermissionGuard({ code, children, fallback = null }: {
+    code: string
+    children: React.ReactNode
+    fallback?: React.ReactNode
+}) {
     const { hasPermission } = useAuth()
     return hasPermission(code) ? children : fallback
 }
@@ -548,7 +581,12 @@ function App() {
     )
 }
 
-function NavButton({ item, active, onClick, compact = false }) {
+function NavButton({ item, active, onClick, compact = false }: {
+    item: NavItem
+    active: boolean
+    onClick: () => void
+    compact?: boolean
+}) {
     const Icon = item.icon
     return (
         <button
@@ -564,7 +602,12 @@ function NavButton({ item, active, onClick, compact = false }) {
     )
 }
 
-function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }) {
+function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }: {
+    doc: Document
+    onClose: () => void
+    onReprocess: (id: string) => void
+    onDelete: (id: string) => void
+}) {
     return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
@@ -613,11 +656,17 @@ function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }) {
     )
 }
 
-function Dashboard({ metrics, documents, onSelectRejected, onReprocess, onDelete }) {
+function Dashboard({ metrics, documents, onSelectRejected, onReprocess, onDelete }: {
+    metrics: DashboardMetrics
+    documents: Document[]
+    onSelectRejected?: (doc: Document) => void
+    onReprocess: (id: string) => void
+    onDelete: (id: string) => void
+}) {
     const [search, setSearch] = useState('')
     const displayed = search.trim() ? filterDocuments(documents, search) : documents.slice(0, 8)
 
-    function handleSelectDocument(id) {
+    function handleSelectDocument(id: string) {
         const doc = documents.find(d => d.id === id)
         if (doc && doc.status === 'REJECTED' && onSelectRejected) {
             onSelectRejected(doc)
@@ -643,7 +692,11 @@ function Dashboard({ metrics, documents, onSelectRejected, onReprocess, onDelete
     )
 }
 
-function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }) {
+function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }: {
+    documents: Document[]
+    onNavigateToValidation: (id: string) => void
+    onNavigateToUpload: () => void
+}) {
     const [search, setSearch] = useState('')
     const displayed = filterDocuments(documents, search)
     return (
@@ -669,7 +722,7 @@ function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }) {
     )
 }
 
-function ApprovedView({ documents }) {
+function ApprovedView({ documents }: { documents: Document[] }) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Documentos aprovados</div>
@@ -703,7 +756,12 @@ function ApprovedView({ documents }) {
     )
 }
 
-function RejectedView({ documents, onReprocess, onDelete, onRefresh }) {
+function RejectedView({ documents, onReprocess, onDelete, onRefresh }: {
+    documents: Document[]
+    onReprocess: (id: string) => void
+    onDelete: (id: string) => void
+    onRefresh: () => void
+}) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
@@ -747,7 +805,11 @@ function RejectedView({ documents, onReprocess, onDelete, onRefresh }) {
     )
 }
 
-function RejectedRow({ document, onReprocess, onDelete }) {
+function RejectedRow({ document, onReprocess, onDelete }: {
+    document: Document
+    onReprocess: (id: string) => void
+    onDelete: (id: string) => void
+}) {
     const [viewingMotivo, setViewingMotivo] = useState(false)
     return (
         <tr className="hover:bg-zinc-50">
@@ -815,7 +877,7 @@ function OperationsView() {
     const [loading, setLoading] = useState(false)
     const [requeueing, setRequeueing] = useState(false)
     const [message, setMessage] = useState('')
-    const [messageTone, setMessageTone] = useState('neutral')
+    const [messageTone, setMessageTone] = useState<'neutral' | 'error'>('neutral')
 
     const loadOperations = async (stream = selectedStream) => {
         setLoading(true)
@@ -1001,8 +1063,8 @@ function OperationsView() {
     )
 }
 
-function UploadView({ onUploaded }) {
-    const [file, setFile] = useState(null)
+function UploadView({ onUploaded }: { onUploaded: () => void | Promise<void> }) {
+    const [file, setFile] = useState<File | null>(null)
     const [previewUrl, setPreviewUrl] = useState('')
     const [tenantId, setTenantId] = useState('tenant-demo')
     const [sender, setSender] = useState('')
@@ -1094,20 +1156,26 @@ function UploadView({ onUploaded }) {
     )
 }
 
-export function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onValidated, onBackToInbox }) {
+export function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onValidated, onBackToInbox }: {
+    schemas?: SchemaConfig[]
+    selectedDocument: Document | null
+    selectedDocumentId: string
+    onValidated: () => void | Promise<void>
+    onBackToInbox: () => void
+}) {
     const [notes, setNotes] = useState('')
     const [notesError, setNotesError] = useState(false)
     const [submitError, setSubmitError] = useState('')
-    const [fieldRows, setFieldRows] = useState([])
+    const [fieldRows, setFieldRows] = useState<FieldRow[]>([])
     const [submitting, setSubmitting] = useState(false)
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
     const [extracting, setExtracting] = useState(false)
     const [extractMessage, setExtractMessage] = useState('')
     const [saving, setSaving] = useState(false)
-    const [saveMessage, setSaveMessage] = useState(null)
+    const [saveMessage, setSaveMessage] = useState<SaveMessage | null>(null)
     const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(false)
-    const [history, setHistory] = useState(null)
+    const [history, setHistory] = useState<FieldVersionsResponse | null>(null)
     const [historyLoading, setHistoryLoading] = useState(false)
     const [historyError, setHistoryError] = useState('')
 
@@ -1177,7 +1245,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         }
     }
 
-    const submitDecision = async (decision) => {
+    const submitDecision = async (decision: 'approved' | 'rejected') => {
         if (!selectedDocumentId) return
         setSubmitError('')
         setNotesError(false)
@@ -1408,12 +1476,17 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
     )
 }
 
-function EditableFields({ rows, onChange }) {
-    const updateRow = (index, patch) => {
+type EditableRow = { name: string; value: string; confidence?: number | null }
+
+function EditableFields({ rows, onChange }: {
+    rows: EditableRow[]
+    onChange: (rows: EditableRow[]) => void
+}) {
+    const updateRow = (index: number, patch: Partial<EditableRow>) => {
         onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
     }
 
-    const removeRow = (index) => {
+    const removeRow = (index: number) => {
         onChange(rows.filter((_, rowIndex) => rowIndex !== index))
     }
 
@@ -1462,11 +1535,21 @@ function EditableFields({ rows, onChange }) {
     )
 }
 
-function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChange, extracting, extractMessage, onRunExtract, fieldRows, onFieldRowsChange }) {
-    const updateRow = (index, patch) => {
+function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChange, extracting, extractMessage, onRunExtract, fieldRows, onFieldRowsChange }: {
+    documentId: string
+    schemas: SchemaConfig[]
+    selectedSchemaId: string
+    onSchemaChange: (id: string) => void
+    extracting: boolean
+    extractMessage: string
+    onRunExtract: () => void | Promise<void>
+    fieldRows: FieldRow[]
+    onFieldRowsChange: (rows: FieldRow[]) => void
+}) {
+    const updateRow = (index: number, patch: Partial<FieldRow>) => {
         onFieldRowsChange(fieldRows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
     }
-    const removeRow = (index) => {
+    const removeRow = (index: number) => {
         onFieldRowsChange(fieldRows.filter((_, rowIndex) => rowIndex !== index))
     }
 
@@ -1557,7 +1640,14 @@ const FIELD_VERSION_SOURCE_LABELS = {
     MANUAL_EDIT: 'Edição manual',
 }
 
-function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', onConfirm, onCancel }) {
+function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', onConfirm, onCancel }: {
+    title: React.ReactNode
+    message: React.ReactNode
+    confirmLabel?: string
+    cancelLabel?: string
+    onConfirm: () => void | Promise<void>
+    onCancel: () => void
+}) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
             <div className="w-full max-w-sm rounded-md border border-zinc-200 bg-white p-4 shadow-lg">
@@ -1584,7 +1674,12 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel
     )
 }
 
-function FieldVersionHistoryModal({ history, loading, error, onClose }) {
+function FieldVersionHistoryModal({ history, loading, error, onClose }: {
+    history: FieldVersionsResponse | null
+    loading: boolean
+    error: string
+    onClose: () => void
+}) {
     const versions = history?.results ?? []
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
@@ -1644,8 +1739,9 @@ function FieldVersionHistoryModal({ history, loading, error, onClose }) {
     )
 }
 
-function DocumentMetadataPanel({ document }) {
-    const meta = document.metadata_channel ?? document.metadata?.metadata_channel ?? {}
+function DocumentMetadataPanel({ document }: { document: Document }) {
+    // Metadados de canal (email/whatsapp) têm forma dinâmica conforme o provedor.
+    const meta: any = document.metadata_channel ?? document.metadata?.metadata_channel ?? {}
     const rows = [
         { label: 'Nome do documento', value: document.original_filename },
         { label: 'Código do processo', value: document.id },
@@ -1699,7 +1795,7 @@ function DocumentMetadataPanel({ document }) {
     )
 }
 
-function ReadOnlyTranscription({ value }) {
+function ReadOnlyTranscription({ value }: { value?: string }) {
     const [open, setOpen] = useState(true)
     return (
         <div className="rounded-md border border-zinc-200">
@@ -1723,7 +1819,7 @@ function ReadOnlyTranscription({ value }) {
     )
 }
 
-function ReadOnlyTranscriptionFormatted({ value }) {
+function ReadOnlyTranscriptionFormatted({ value }: { value?: string }) {
     const [open, setOpen] = useState(true)
     return (
         <div className="rounded-md border border-zinc-200">
@@ -3566,7 +3662,7 @@ function DocumentTable({
     )
 }
 
-function Metric({ label, value }) {
+function Metric({ label, value }: { label: React.ReactNode; value: React.ReactNode }) {
     return (
         <div className="rounded-md border border-zinc-200 bg-white p-4">
             <div className="text-xs font-semibold uppercase text-zinc-500">{label}</div>
@@ -3575,7 +3671,12 @@ function Metric({ label, value }) {
     )
 }
 
-function ConfigList({ title, items, primaryKey, secondaryKey }) {
+function ConfigList({ title, items, primaryKey, secondaryKey }: {
+    title: React.ReactNode
+    items: Array<Record<string, any> & { id: React.Key }>
+    primaryKey: string
+    secondaryKey: string
+}) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">{title}</div>
@@ -3595,7 +3696,7 @@ function ConfigList({ title, items, primaryKey, secondaryKey }) {
     )
 }
 
-function Field({ label, children }) {
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
     return (
         <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase text-zinc-500">{label}</span>
@@ -3604,14 +3705,14 @@ function Field({ label, children }) {
     )
 }
 
-function Alert({ children, tone = 'neutral' }) {
+function Alert({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'error' | 'success' }) {
     const classes = tone === 'error'
         ? 'border-red-200 bg-red-50 text-red-700'
         : 'border-zinc-200 bg-white text-zinc-600'
     return <div className={`mb-4 rounded-md border px-3 py-2 text-sm ${classes}`}>{children}</div>
 }
 
-function EmptyState({ icon: Icon, text }) {
+function EmptyState({ icon: Icon, text }: { icon: LucideIcon; text: React.ReactNode }) {
     return (
         <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm text-zinc-500">
             <Icon size={24} aria-hidden="true" />
@@ -3620,7 +3721,11 @@ function EmptyState({ icon: Icon, text }) {
     )
 }
 
-function SearchInput({ value, onChange, placeholder = 'Buscar...' }) {
+function SearchInput({ value, onChange, placeholder = 'Buscar...' }: {
+    value: string
+    onChange: (value: string) => void
+    placeholder?: string
+}) {
     return (
         <input
             type="search"
@@ -3632,7 +3737,7 @@ function SearchInput({ value, onChange, placeholder = 'Buscar...' }) {
     )
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status }: { status?: string }) {
     const isGood = status === 'APPROVED'
     const isBad = status === 'REJECTED'
     const classes = isGood
@@ -3643,7 +3748,7 @@ function StatusBadge({ status }) {
     return <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ring-1 ${classes}`}>{STATUS_LABELS[status] || status || '-'}</span>
 }
 
-function KeyValueGrid({ values }) {
+function KeyValueGrid({ values }: { values: Record<string, unknown> }) {
     return (
         <dl className="grid gap-2 sm:grid-cols-3">
             {Object.entries(values).map(([key, value]) => (

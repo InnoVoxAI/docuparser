@@ -4,10 +4,11 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from './mocks/server'
 import { ValidationView } from '../main'
+import type { Document } from '../types'
 
 // US1 / T018 — fluxo de Validação (feature 007: salvar campos / conflito 409 / histórico).
 const docId = 'doc-1'
-const baseDoc = {
+const baseDoc: Document = {
   id: docId,
   status: 'EXTRACTION_COMPLETED',
   channel: 'manual',

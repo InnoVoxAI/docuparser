@@ -35,7 +35,7 @@ import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } fro
 import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
 const internalServiceToken = import.meta.env.VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN
-const _devHeaders = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
+const _devHeaders: Record<string, string> = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
 const api = axios.create({ baseURL: '/api/ocr' })
 const authApi = axios.create({ baseURL: '/api/auth' })
 const comApi = axios.create({ baseURL: '/com/api/v1', headers: _devHeaders })
@@ -126,7 +126,7 @@ function AuthProvider({ children }) {
     useEffect(() => {
         const id = api.interceptors.request.use((config) => {
             const token = localStorage.getItem('access_token')
-            if (token) config.headers = { ...config.headers, Authorization: `Bearer ${token}` }
+            if (token) config.headers.Authorization = `Bearer ${token}`
             return config
         })
         return () => api.interceptors.request.eject(id)
@@ -459,7 +459,7 @@ function App() {
                             </div>
                             <button
                                 type="button"
-                                onClick={refreshData}
+                                onClick={refreshData as unknown as React.MouseEventHandler<HTMLButtonElement>}
                                 className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
                             >
                                 <RefreshCw size={16} aria-hidden="true" />
@@ -3079,7 +3079,7 @@ function SettingsStepActions({ activeTab, onSaveDraft, onNext }) {
     )
 }
 
-function HintPanel({ title, items, onUse }) {
+function HintPanel({ title, items, onUse = undefined }) {
     return (
         <aside className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
             <div className="text-sm font-semibold">{title}</div>
@@ -4045,3 +4045,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         </AuthProvider>
     </React.StrictMode>,
 )
+

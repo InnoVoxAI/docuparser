@@ -1,7 +1,9 @@
+import type { SchemaField } from '../../types'
+
 export const CONTA_AGUA_DEFAULT_SCHEMA_ID = 'conta_agua_default'
 export const CONTA_AGUA_DEFAULT_MODEL_NAME = 'CONTA AGUA DEFAULT'
 
-export const CONTA_AGUA_DEFAULT_FIELDS = [
+export const CONTA_AGUA_DEFAULT_FIELDS: SchemaField[] = [
 
     // =========================================================
     // IDENTIFICACAO DO DOCUMENTO
@@ -429,6 +431,6 @@ function scoreContaAguaText(rawText) {
     return score
 }
 
-export function isLikelyContaAguaText(rawText, threshold = 3) {
+export function isLikelyContaAguaText(rawText: string, threshold = 3): boolean {
     return scoreContaAguaText(rawText) >= threshold
 }

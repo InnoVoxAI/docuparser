@@ -1,4 +1,6 @@
-export const BOLETO_DEFAULT_RULES = {
+import type { SchemaRules } from '../../types'
+
+export const BOLETO_DEFAULT_RULES: SchemaRules = {
     valor_boleto: {
         type: 'decimal',
         required: true,

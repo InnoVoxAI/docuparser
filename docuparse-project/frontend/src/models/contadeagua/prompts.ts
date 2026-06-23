@@ -71,7 +71,7 @@ export const PROMPT_CONTA_AGUA_SCANNED = [
     '- tributos: PIS e COFINS podem estar em tabela; percentual e valor frequentemente confundidos — percentual tem no maximo 2 casas decimais e raramente passa de 10',
 ].join('\n')
 
-export function contaAguaPromptForDocumentType(documentType) {
+export function contaAguaPromptForDocumentType(documentType: string): string {
     if (documentType === 'digital_pdf') {
         return PROMPT_CONTA_AGUA_DIGITAL
     }

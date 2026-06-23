@@ -1,4 +1,6 @@
-export const CONTA_AGUA_DEFAULT_RULES = {
+import type { SchemaRules } from '../../types'
+
+export const CONTA_AGUA_DEFAULT_RULES: SchemaRules = {
     total_pagar: {
         type: 'decimal',
         required: true,

@@ -25,15 +25,12 @@ import type {
     User,
     LoginResponse,
     Document,
-    DocumentStatus,
     ActiveView,
     ExtractionResult,
     FieldRow,
     SaveMessage,
-    ExtractionField,
     ExtractionFieldVersion,
     FieldVersionsResponse,
-    FieldsMap,
     SchemaConfig,
     LayoutConfig,
     SchemaField,
@@ -334,7 +331,7 @@ function LoginPage() {
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 function App() {
-    const { user, loading: authLoading, logout, hasPermission } = useAuth()
+    const { user, logout, hasPermission } = useAuth()
     const [activeView, setActiveView] = useState(() =>
         NAV_ITEMS.find(item => hasPermission(item.permission))?.id ?? 'dashboard'
     )
@@ -530,7 +527,7 @@ function App() {
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}
 
-                        {activeView === 'dashboard' ? <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}><Dashboard metrics={metrics} documents={documents} onSelectRejected={setRejectedModal} onReprocess={handleReprocessDocument} onDelete={handleDeleteDocument} /></PermissionGuard> : null}
+                        {activeView === 'dashboard' ? <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}><Dashboard metrics={metrics} documents={documents} onSelectRejected={setRejectedModal} /></PermissionGuard> : null}
                         {activeView === 'inbox' ? (
                             <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
                                 <InboxView
@@ -661,12 +658,10 @@ function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }: {
     )
 }
 
-function Dashboard({ metrics, documents, onSelectRejected, onReprocess, onDelete }: {
+function Dashboard({ metrics, documents, onSelectRejected }: {
     metrics: DashboardMetrics
     documents: Document[]
     onSelectRejected?: (doc: Document) => void
-    onReprocess: (id: string) => void
-    onDelete: (id: string) => void
 }) {
     const [search, setSearch] = useState('')
     const displayed = search.trim() ? filterDocuments(documents, search) : documents.slice(0, 8)
@@ -1501,65 +1496,6 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                     </div>
                 )}
             </section>
-        </div>
-    )
-}
-
-type EditableRow = { name: string; value: string; confidence?: number | null }
-
-function EditableFields({ rows, onChange }: {
-    rows: EditableRow[]
-    onChange: (rows: EditableRow[]) => void
-}) {
-    const updateRow = (index: number, patch: Partial<EditableRow>) => {
-        onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
-    }
-
-    const removeRow = (index: number) => {
-        onChange(rows.filter((_, rowIndex) => rowIndex !== index))
-    }
-
-    return (
-        <div className="rounded-md border border-zinc-200">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-                <div className="text-sm font-semibold">Campos extraidos</div>
-                <button
-                    type="button"
-                    onClick={() => onChange([...rows, { name: '', value: '' }])}
-                    className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100"
-                >
-                    Adicionar
-                </button>
-            </div>
-            {rows.length === 0 ? (
-                <div className="px-3 py-6 text-sm text-zinc-500">Nenhum campo extraido para editar.</div>
-            ) : (
-                <div className="divide-y divide-zinc-100">
-                    {rows.map((row, index) => (
-                        <div key={`${row.name}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto]">
-                            <input
-                                value={row.name}
-                                onChange={(event) => updateRow(index, { name: event.target.value })}
-                                className="input"
-                                placeholder="campo"
-                            />
-                            <input
-                                value={row.value}
-                                onChange={(event) => updateRow(index, { value: event.target.value })}
-                                className="input"
-                                placeholder="valor"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => removeRow(index)}
-                                className="h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
-                            >
-                                Remover
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            )}
         </div>
     )
 }
@@ -3944,16 +3880,6 @@ function formatDate(value?: string | number | Date | null): string {
         dateStyle: 'short',
         timeStyle: 'short',
     }).format(new Date(value))
-}
-
-function formatEditableValue(value: unknown): string {
-    if (value === null || value === undefined) {
-        return ''
-    }
-    if (typeof value === 'object') {
-        return JSON.stringify(value)
-    }
-    return String(value)
 }
 
 function parseFieldEntry(raw: any): { value: string; confidence: number | null } {

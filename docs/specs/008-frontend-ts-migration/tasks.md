@@ -98,12 +98,12 @@ Pacote único em `docuparse-project/frontend/`. Caminhos relativos à raiz do re
 
 **Independent Test**: Inspecionar o código e confirmar tipos de domínio/contexto/props/DTOs; alterar um uso de DTO de forma incompatível gera erro de tipo.
 
-- [ ] T022 [P] [US3] Criar `docuparse-project/frontend/src/types.ts` com domínio + DTOs (`ExtractionField`/`FieldsMap`, `ExtractionResult`, `ExtractionFieldVersion`, `DocumentStatus`, `Document`, `User`, `AuthContextValue`, `FieldRow`, `SaveMessage`, `ActiveView`) (data-model.md)
-- [ ] T023 [P] [US3] Tipar os exports de `docuparse-project/frontend/src/models/**/*.ts` (`SchemaField[]`, `isLikely*Text`, `*PromptForDocumentType`)
-- [ ] T024 [US3] Tipar o núcleo transversal em `docuparse-project/frontend/src/main.tsx`: `AuthContext`/`AuthProvider`/`useAuth` (usar `AuthContextValue`/`User`), as 3 instâncias axios e `readError`
-- [ ] T025 [US3] Tipar props (incluindo children, callbacks, eventos React) dos componentes utilitários e de domínio em `docuparse-project/frontend/src/main.tsx` (`Alert`, `Field`, `StatusBadge`, `DocumentTable`, `LangExtractPanel`, `ValidationView`, modais, etc.)
-- [ ] T026 [US3] Tipar telas e `App`/`Root`, estados não triviais (`useState<...>`) e estruturas de formulário em `docuparse-project/frontend/src/main.tsx`
-- [ ] T027 [US3] Aplicar DTOs aos acessos de API via generics do axios (`api.get<Document[]>`, `api.put<ExtractionFieldVersion>`, etc.) em `docuparse-project/frontend/src/main.tsx`, sem alterar endpoints/payloads (contrato)
+- [X] T022 [P] [US3] Criar `docuparse-project/frontend/src/types.ts` com domínio + DTOs (`ExtractionField`/`FieldsMap`, `ExtractionResult`, `ExtractionFieldVersion`, `DocumentStatus`, `Document`, `User`, `AuthContextValue`, `FieldRow`, `SaveMessage`, `ActiveView`) (data-model.md)
+- [X] T023 [P] [US3] Tipar os exports de `docuparse-project/frontend/src/models/**/*.ts` (`SchemaField[]`, `isLikely*Text`, `*PromptForDocumentType`)
+- [X] T024 [US3] Tipar o núcleo transversal em `docuparse-project/frontend/src/main.tsx`: `AuthContext`/`AuthProvider`/`useAuth` (usar `AuthContextValue`/`User`), as 3 instâncias axios e `readError`
+- [X] T025 [US3] Tipar props (incluindo children, callbacks, eventos React) dos componentes utilitários e de domínio em `docuparse-project/frontend/src/main.tsx` (`Alert`, `Field`, `StatusBadge`, `DocumentTable`, `LangExtractPanel`, `ValidationView`, modais, etc.)
+- [X] T026 [US3] Tipar telas e `App`/`Root`, estados não triviais (`useState<...>`) e estruturas de formulário em `docuparse-project/frontend/src/main.tsx`
+- [X] T027 [US3] Aplicar DTOs aos acessos de API via generics do axios (`api.get<Document[]>`, `api.put<ExtractionFieldVersion>`, etc.) em `docuparse-project/frontend/src/main.tsx`, sem alterar endpoints/payloads (contrato)
 
 **Checkpoint**: Domínio, contextos, props e integrações tipados; erros de uso de DTO são detectados.
 

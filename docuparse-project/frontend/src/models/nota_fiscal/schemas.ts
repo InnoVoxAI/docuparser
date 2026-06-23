@@ -560,7 +560,7 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
 ]
 
 
-function scoreNotaFiscalText(rawText) {
+function scoreNotaFiscalText(rawText: string): number {
     if (!rawText) {
         return 0
     }

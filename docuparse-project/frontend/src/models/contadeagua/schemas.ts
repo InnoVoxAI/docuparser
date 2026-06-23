@@ -395,7 +395,7 @@ export const CONTA_AGUA_DEFAULT_FIELDS: SchemaField[] = [
 ]
 
 
-function scoreContaAguaText(rawText) {
+function scoreContaAguaText(rawText: string): number {
     if (!rawText) {
         return 0
     }

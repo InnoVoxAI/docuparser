@@ -632,7 +632,7 @@ export const BOLETO_DEFAULT_FIELDS: SchemaField[] = [
 
 ]
 
-function scoreBoletoText(rawText) {
+function scoreBoletoText(rawText: string): number {
     if (!rawText) {
         return 0
     }

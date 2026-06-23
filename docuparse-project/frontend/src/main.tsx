@@ -85,7 +85,7 @@ const NAV_ITEMS: NavItem[] = [
     { id: 'roles', label: 'Roles', icon: Settings, permission: 'roles.manage' },
 ]
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<string, string> = {
     RECEIVED: 'Pendente',
     OCR_COMPLETED: 'Pendente',
     OCR_FAILED: 'Pendente',
@@ -99,7 +99,7 @@ const STATUS_LABELS = {
     ERP_FAILED: 'Pendente',
 }
 
-const TYPE_ALIASES = {
+const TYPE_ALIASES: Record<string, string[]> = {
     pdf: ['digital_pdf'],
     scan: ['scanned_image'],
     escaneado: ['scanned_image'],
@@ -1809,7 +1809,7 @@ function DocumentMetadataPanel({ document }: { document: Document }) {
                         <div className="grid grid-cols-[160px_1fr] gap-2 px-3 py-2">
                             <div className="text-xs font-medium text-zinc-500">Anexos</div>
                             <div className="space-y-0.5">
-                                {attachments.map((a, i) => (
+                                {attachments.map((a: any, i: number) => (
                                     <div key={i} className="text-sm text-zinc-800">
                                         {typeof a === 'object' ? (a.filename || JSON.stringify(a)) : a}
                                     </div>
@@ -1895,7 +1895,7 @@ const SETTINGS_AREAS = [
     { id: 'integrations', label: 'Integracoes' },
 ]
 
-const SETTINGS_TAB_HELP = {
+const SETTINGS_TAB_HELP: Record<string, { title: string; text: string }> = {
     setup: {
         title: 'Setup do modelo',
         text: 'Defina a identidade do template de extracao: nome, schema, tipo de documento, versao e status. Esses dados controlam qual configuracao sera aplicada apos OCR e classificacao.',
@@ -2333,7 +2333,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }: {
         referenceDocument,
     }), [schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument])
 
-    const loadExistingSchema = (schemaId, { source = 'manual' } = {}) => {
+    const loadExistingSchema = (schemaId: string, { source = 'manual' }: { source?: string } = {}) => {
         // Preserve the selection source so auto-detection does not override manual choices.
         setSchemaSelectionSource(source)
         setSelectedSchemaId(schemaId)
@@ -2367,7 +2367,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }: {
             }))
         }
         if (Array.isArray(definition.fields)) {
-            setFields(definition.fields.map((field) => ({
+            setFields(definition.fields.map((field: any) => ({
                 name: field.name || '',
                 type: field.type || 'string',
                 required: Boolean(field.required),
@@ -3610,7 +3610,7 @@ function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: (
                     <div className="border-t border-zinc-200 px-5 py-3">
                         <div className="mb-1.5 text-xs font-semibold uppercase text-zinc-500">Anexos</div>
                         <ul className="space-y-1">
-                            {meta.attachments.map((name, i) => (
+                            {meta.attachments.map((name: any, i: number) => (
                                 <li key={i} className="flex items-center gap-1.5 text-sm text-zinc-700">
                                     <span className="text-zinc-400">·</span>
                                     {name}
@@ -3977,7 +3977,15 @@ function parseFieldEntry(raw: any): { value: string; confidence: number | null }
     return { value: String(raw), confidence: null }
 }
 
-function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument }) {
+function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument }: {
+    schemaForm: SchemaForm
+    fields: SchemaField[]
+    prompt: string
+    examples: SchemaExample[]
+    normalizationRules: string
+    referenceReview: ReferenceReview
+    referenceDocument: Document | null
+}) {
     let parsedRules = {}
     try {
         parsedRules = JSON.parse(normalizationRules || '{}')
@@ -4016,8 +4024,8 @@ function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, norm
     }
 }
 
-function buildLangExtractPreview(text, fields) {
-    const output = {}
+function buildLangExtractPreview(text: string, fields: SchemaField[]): string {
+    const output: Record<string, unknown> = {}
     fields.forEach((field) => {
         if (!field.name) {
             return
@@ -4033,7 +4041,7 @@ function buildLangExtractPreview(text, fields) {
     return JSON.stringify(output, null, 2)
 }
 
-function findLikelySourceLine(text, fieldName) {
+function findLikelySourceLine(text: string, fieldName: string): string {
     if (!text || !fieldName) {
         return ''
     }
@@ -4041,7 +4049,7 @@ function findLikelySourceLine(text, fieldName) {
     return text.split(/\r?\n/).find((line) => normalizeSearchText(line).includes(normalizedField)) || ''
 }
 
-function renderHighlightedText(text, highlights) {
+function renderHighlightedText(text: string, highlights: string[]): React.ReactNode {
     const terms = [...new Set(highlights.map((term) => term.trim()).filter((term) => term.length > 2))]
     if (terms.length === 0) {
         return text
@@ -4058,11 +4066,11 @@ function renderHighlightedText(text, highlights) {
     })
 }
 
-function normalizeSearchText(value) {
+function normalizeSearchText(value: unknown): string {
     return String(value || '').trim().toLowerCase()
 }
 
-function escapeRegExp(value) {
+function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 

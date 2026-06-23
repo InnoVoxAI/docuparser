@@ -234,8 +234,9 @@ function LoginPage() {
         try {
             await login(email, password)
         } catch (err) {
-            const detail = err?.response?.data?.detail
-            setError(err?.response?.status === 403
+            const e = asApiError(err)
+            const detail = e.response?.data?.detail
+            setError(e.response?.status === 403
                 ? (detail || 'Conta inativa. Aguarde ativação pelo administrador.')
                 : (detail || 'Credenciais inválidas.'))
         } finally {
@@ -255,7 +256,7 @@ function LoginPage() {
             setEmail('')
             setPassword('')
         } catch (err) {
-            const data = err?.response?.data
+            const data = asApiError(err).response?.data
             setError(data?.detail || data?.email?.[0] || data?.password?.[0] || 'Erro ao criar conta.')
         } finally {
             setSubmitting(false)
@@ -1335,9 +1336,9 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
             setSaveMessage({ tone: 'success', text: `Versão ${response.data.version_number} salva com sucesso.` })
             await onValidated()
         } catch (requestError) {
-            const statusCode = requestError?.response?.status
+            const statusCode = asApiError(requestError).response?.status
             if (statusCode === 409) {
-                const active = requestError.response.data?.active_version_number
+                const active = asApiError(requestError).response?.data?.active_version_number
                 setSaveMessage({
                     tone: 'error',
                     text: `A lista foi atualizada por outro processo (versão ativa atual: ${active}). Recarregue a versão ativa antes de salvar.`,
@@ -4074,17 +4075,29 @@ function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-// `error` é mantido como `any`: aceita AxiosError e quaisquer formas de erro
-// (network, código, resposta do backend) sem alterar o acesso defensivo atual.
-function readError(error: any, fallback: string): string {
-    const backendMessage = error?.response?.data?.detail || error?.response?.data?.error
+// Forma defensiva de erros de axios/rede. As respostas de erro variam por
+// endpoint, então `data` permanece `any` — este é o único ponto documentado de
+// `any` para leitura de erros (FR-010); todos os catch passam por `asApiError`.
+interface ApiError {
+    response?: { status?: number; data?: any }
+    code?: string
+    message?: string
+}
+
+function asApiError(error: unknown): ApiError {
+    return (error ?? {}) as ApiError
+}
+
+function readError(error: unknown, fallback: string): string {
+    const e = asApiError(error)
+    const backendMessage = e.response?.data?.detail || e.response?.data?.error
     if (backendMessage) {
         return backendMessage
     }
-    if (error?.response?.status === 401) {
+    if (e.response?.status === 401) {
         return 'A API recusou a chamada por falta de token interno. Configure VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN no frontend ou remova DOCUPARSE_INTERNAL_SERVICE_TOKEN no backend local.'
     }
-    if (error?.code === 'ERR_NETWORK' || error?.message === 'Network Error') {
+    if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
         return `${fallback} Verifique se backend-core e backend-com estao rodando.`
     }
     return fallback
@@ -4155,7 +4168,8 @@ function GerenciarUsuarios() {
             setModal(null)
             load()
         } catch (err) {
-            setError(err?.response?.data?.detail || err?.response?.data?.email?.[0] || 'Erro ao salvar.')
+            const data = asApiError(err).response?.data
+            setError(data?.detail || data?.email?.[0] || 'Erro ao salvar.')
         }
     }
 
@@ -4164,7 +4178,7 @@ function GerenciarUsuarios() {
             await api.patch(`/users/${user.id}`, { is_active: !user.is_active })
             load()
         } catch (err) {
-            alert(err?.response?.data?.detail || 'Erro ao alterar status.')
+            alert(asApiError(err).response?.data?.detail || 'Erro ao alterar status.')
         }
     }
 
@@ -4262,7 +4276,8 @@ function GerenciarRoles() {
             setModal(null)
             load()
         } catch (err) {
-            setError(err?.response?.data?.detail || err?.response?.data?.permission_codes?.[0] || 'Erro ao salvar.')
+            const data = asApiError(err).response?.data
+            setError(data?.detail || data?.permission_codes?.[0] || 'Erro ao salvar.')
         }
     }
 
@@ -4272,7 +4287,7 @@ function GerenciarRoles() {
             await api.delete(`/roles/${role.id}`)
             load()
         } catch (err) {
-            alert(err?.response?.data?.detail || 'Erro ao remover.')
+            alert(asApiError(err).response?.data?.detail || 'Erro ao remover.')
         }
     }
 

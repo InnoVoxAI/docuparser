@@ -105,12 +105,12 @@ const TYPE_ALIASES = {
     manuscrito: ['handwritten', 'manuscrito'],
 }
 
-function buildSearchRegex(query) {
+function buildSearchRegex(query: string): RegExp | null {
     const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     try { return new RegExp(escaped, 'i') } catch { return null }
 }
 
-function filterDocuments(docs, query) {
+function filterDocuments(docs: Document[], query: string): Document[] {
     if (!query.trim()) return docs
     const q = query.trim().toLowerCase()
     const regex = buildSearchRegex(query)
@@ -216,7 +216,7 @@ function AcessoNaoAutorizado() {
 
 function LoginPage() {
     const { login } = useAuth()
-    const [mode, setMode] = useState('login')
+    const [mode, setMode] = useState<'login' | 'register'>('login')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [name, setName] = useState('')
@@ -225,7 +225,7 @@ function LoginPage() {
     const [error, setError] = useState('')
     const [success, setSuccess] = useState('')
 
-    const handleLogin = async (e) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
         setSubmitting(true)
@@ -241,7 +241,7 @@ function LoginPage() {
         }
     }
 
-    const handleRegister = async (e) => {
+    const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
         if (password !== confirmPassword) { setError('As senhas não coincidem.'); return }
@@ -335,14 +335,14 @@ function App() {
     const [activeView, setActiveView] = useState(() =>
         NAV_ITEMS.find(item => hasPermission(item.permission))?.id ?? 'dashboard'
     )
-    const [documents, setDocuments] = useState([])
-    const [schemas, setSchemas] = useState([])
-    const [layouts, setLayouts] = useState([])
+    const [documents, setDocuments] = useState<Document[]>([])
+    const [schemas, setSchemas] = useState<SchemaConfig[]>([])
+    const [layouts, setLayouts] = useState<LayoutConfig[]>([])
     const [selectedDocumentId, setSelectedDocumentId] = useState('')
-    const [selectedDocument, setSelectedDocument] = useState(null)
+    const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
-    const [rejectedModal, setRejectedModal] = useState(null)
+    const [rejectedModal, setRejectedModal] = useState<Document | null>(null)
 
     const refreshData = async (silent = false) => {
         if (!hasPermission('inbox.view')) return
@@ -434,14 +434,14 @@ function App() {
         [documents],
     )
 
-    const navigateToValidation = (documentId) => {
+    const navigateToValidation = (documentId: string) => {
         setSelectedDocumentId(documentId)
         setActiveView('validation')
     }
 
 
 
-    const handleReprocessDocument = async (id) => {
+    const handleReprocessDocument = async (id: string) => {
         try {
             await api.post(`/documents/${id}/reprocess-ocr`)
             await refreshData()
@@ -450,7 +450,7 @@ function App() {
         }
     }
 
-    const handleDeleteDocument = async (id) => {
+    const handleDeleteDocument = async (id: string) => {
         if (!window.confirm('Excluir este documento permanentemente?')) return
         try {
             await api.delete(`/documents/${id}/delete`)
@@ -871,11 +871,35 @@ function RejectedRow({ document, onReprocess, onDelete }: {
 
 const DEFAULT_DLQ_STREAM = 'ocr.completed.dlq'
 
+// Os eventos/streams de DLQ têm forma dinâmica (payloads de workers diversos);
+// campos ad-hoc são renderizados diretamente, por isso o índice permissivo.
+interface DlqStream {
+    stream: string
+    count: number
+    latest?: DlqEvent
+    [key: string]: any
+}
+
+interface DlqSummary {
+    total: number
+    streams: DlqStream[]
+}
+
+interface DlqEvent {
+    id?: string
+    original_stream?: string
+    source?: string
+    error_type?: string
+    error?: string
+    payload?: unknown
+    [key: string]: any
+}
+
 function OperationsView() {
-    const [summary, setSummary] = useState({ total: 0, streams: [] })
+    const [summary, setSummary] = useState<DlqSummary>({ total: 0, streams: [] })
     const [selectedStream, setSelectedStream] = useState(DEFAULT_DLQ_STREAM)
-    const [events, setEvents] = useState([])
-    const [selectedEvent, setSelectedEvent] = useState(null)
+    const [events, setEvents] = useState<DlqEvent[]>([])
+    const [selectedEvent, setSelectedEvent] = useState<DlqEvent | null>(null)
     const [loading, setLoading] = useState(false)
     const [requeueing, setRequeueing] = useState(false)
     const [message, setMessage] = useState('')
@@ -904,12 +928,12 @@ function OperationsView() {
         loadOperations(DEFAULT_DLQ_STREAM)
     }, [])
 
-    const selectStream = (stream) => {
+    const selectStream = (stream: string) => {
         setSelectedStream(stream)
         loadOperations(stream)
     }
 
-    const requeueSelectedEvent = async ({ execute }) => {
+    const requeueSelectedEvent = async ({ execute }: { execute: boolean }) => {
         if (!selectedEvent || requeueing) {
             return
         }
@@ -3892,7 +3916,7 @@ function KeyValueGrid({ values }: { values: Record<string, unknown> }) {
     )
 }
 
-function buildMetrics(documents) {
+function buildMetrics(documents: Document[]): DashboardMetrics {
     return documents.reduce(
         (acc, document) => {
             acc.total += 1
@@ -3905,11 +3929,11 @@ function buildMetrics(documents) {
     )
 }
 
-function viewTitle(view) {
+function viewTitle(view: ActiveView): string {
     return NAV_ITEMS.find((item) => item.id === view)?.label ?? 'DocuParse'
 }
 
-function formatDate(value) {
+function formatDate(value?: string | number | Date | null): string {
     if (!value) {
         return '-'
     }
@@ -3919,7 +3943,7 @@ function formatDate(value) {
     }).format(new Date(value))
 }
 
-function formatEditableValue(value) {
+function formatEditableValue(value: unknown): string {
     if (value === null || value === undefined) {
         return ''
     }
@@ -3929,7 +3953,7 @@ function formatEditableValue(value) {
     return String(value)
 }
 
-function parseFieldEntry(raw) {
+function parseFieldEntry(raw: any): { value: string; confidence: number | null } {
     if (raw === null || raw === undefined) return { value: '', confidence: null }
     if (typeof raw === 'object' && 'value' in raw) {
         return {
@@ -4058,11 +4082,40 @@ function readError(error: any, fallback: string): string {
 
 // ─── User Management Screen ───────────────────────────────────────────────────
 
+interface AdminRoleRef {
+    id: string
+    name: string
+}
+
+interface AdminUser {
+    id: string
+    name: string
+    email: string
+    role?: AdminRoleRef | null
+    is_active?: boolean
+    [key: string]: unknown
+}
+
+interface AdminPermission {
+    code: string
+    name?: string
+    description?: string
+    [key: string]: unknown
+}
+
+interface AdminRole {
+    id: string
+    name: string
+    permissions?: Array<AdminPermission | string>
+    users_count?: number
+    [key: string]: unknown
+}
+
 function GerenciarUsuarios() {
-    const [users, setUsers] = useState([])
-    const [roles, setRoles] = useState([])
+    const [users, setUsers] = useState<AdminUser[]>([])
+    const [roles, setRoles] = useState<AdminRole[]>([])
     const [loading, setLoading] = useState(true)
-    const [modal, setModal] = useState(null) // null | { mode: 'create' | 'edit', user?: any }
+    const [modal, setModal] = useState<{ mode: 'create' | 'edit'; user?: AdminUser } | null>(null)
     const [form, setForm] = useState({ name: '', email: '', password: '', role_id: '' })
     const [error, setError] = useState('')
 
@@ -4077,13 +4130,13 @@ function GerenciarUsuarios() {
     useEffect(() => { load() }, [])
 
     const openCreate = () => { setForm({ name: '', email: '', password: '', role_id: '' }); setModal({ mode: 'create' }); setError('') }
-    const openEdit = (u) => { setForm({ name: u.name, email: u.email, password: '', role_id: u.role?.id || '' }); setModal({ mode: 'edit', user: u }); setError('') }
+    const openEdit = (u: AdminUser) => { setForm({ name: u.name, email: u.email, password: '', role_id: u.role?.id || '' }); setModal({ mode: 'edit', user: u }); setError('') }
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
         try {
-            if (modal.mode === 'create') {
+            if (modal?.mode === 'create') {
                 await api.post('/users', form)
             } else {
                 const patch = { name: form.name, email: form.email, role_id: form.role_id || null }
@@ -4096,7 +4149,7 @@ function GerenciarUsuarios() {
         }
     }
 
-    const toggleActive = async (user) => {
+    const toggleActive = async (user: AdminUser) => {
         try {
             await api.patch(`/users/${user.id}`, { is_active: !user.is_active })
             load()
@@ -4160,11 +4213,11 @@ function GerenciarUsuarios() {
 // ─── Role Management Screen ───────────────────────────────────────────────────
 
 function GerenciarRoles() {
-    const [roles, setRoles] = useState([])
-    const [perms, setPerms] = useState([])
+    const [roles, setRoles] = useState<AdminRole[]>([])
+    const [perms, setPerms] = useState<AdminPermission[]>([])
     const [loading, setLoading] = useState(true)
-    const [modal, setModal] = useState(null)
-    const [form, setForm] = useState({ name: '', permission_codes: [] })
+    const [modal, setModal] = useState<{ mode: 'create' | 'edit'; role?: AdminRole } | null>(null)
+    const [form, setForm] = useState<{ name: string; permission_codes: string[] }>({ name: '', permission_codes: [] })
     const [error, setError] = useState('')
 
     const load = async () => {
@@ -4178,23 +4231,23 @@ function GerenciarRoles() {
     useEffect(() => { load() }, [])
 
     const openCreate = () => { setForm({ name: '', permission_codes: [] }); setModal({ mode: 'create' }); setError('') }
-    const openEdit = (r) => { setForm({ name: r.name, permission_codes: (r.permissions || []).map(p => typeof p === 'string' ? p : p.code) }); setModal({ mode: 'edit', role: r }); setError('') }
+    const openEdit = (r: AdminRole) => { setForm({ name: r.name, permission_codes: (r.permissions || []).map(p => typeof p === 'string' ? p : p.code) }); setModal({ mode: 'edit', role: r }); setError('') }
 
-    const togglePerm = (code) => setForm(f => ({
+    const togglePerm = (code: string) => setForm(f => ({
         ...f,
         permission_codes: f.permission_codes.includes(code)
             ? f.permission_codes.filter(c => c !== code)
             : [...f.permission_codes, code],
     }))
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
         try {
-            if (modal.mode === 'create') {
+            if (modal?.mode === 'create') {
                 await api.post('/roles', form)
             } else {
-                await api.patch(`/roles/${modal.role.id}`, form)
+                await api.patch(`/roles/${modal?.role?.id}`, form)
             }
             setModal(null)
             load()
@@ -4203,7 +4256,7 @@ function GerenciarRoles() {
         }
     }
 
-    const handleDelete = async (role) => {
+    const handleDelete = async (role: AdminRole) => {
         if (!window.confirm(`Remover role "${role.name}"?`)) return
         try {
             await api.delete(`/roles/${role.id}`)
@@ -4228,7 +4281,7 @@ function GerenciarRoles() {
                         {roles.map(r => (
                             <tr key={r.id} className="border-t border-zinc-100">
                                 <td className="px-3 py-2 font-medium">{r.name}</td>
-                                <td className="px-3 py-2 text-zinc-500 text-xs">{(r.permissions || []).map(p => p.description || p.code || p).join(', ')}</td>
+                                <td className="px-3 py-2 text-zinc-500 text-xs">{(r.permissions || []).map((p: any) => p.description || p.code || p).join(', ')}</td>
                                 <td className="px-3 py-2">{r.users_count}</td>
                                 <td className="px-3 py-2 flex gap-2">
                                     <button onClick={() => openEdit(r)} className="text-xs text-zinc-600 hover:underline">Editar</button>

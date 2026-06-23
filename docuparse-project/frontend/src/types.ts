@@ -91,6 +91,8 @@ export interface Document {
   full_transcription_formatted?: string
   rejection_notes?: string | null
   decision_date?: string | null
+  approved_at?: string | null
+  rejected_at?: string | null
   // Campos adicionais do List/DetailSerializer são tolerados conforme uso.
   [key: string]: unknown
 }

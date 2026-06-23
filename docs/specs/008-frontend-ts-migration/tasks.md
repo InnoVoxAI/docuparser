@@ -115,10 +115,10 @@ Pacote único em `docuparse-project/frontend/`. Caminhos relativos à raiz do re
 
 **Independent Test**: Em estados intermediários, app compila/roda com JS+TS; ao final, `strict:true` ativo, `typecheck` sem erros bloqueantes e suíte verde.
 
-- [ ] T028 [US4] Ativar `noImplicitAny` e corrigir, em `docuparse-project/frontend/tsconfig.json` + `src/main.tsx` (manter app rodando e suíte verde)
-- [ ] T029 [US4] Ativar `strictNullChecks` e corrigir (tratar `| null`/opcionais) em `docuparse-project/frontend/tsconfig.json` + `src/main.tsx`
-- [ ] T030 [US4] Ativar `strict: true` completo e remover `// @ts-expect-error`/`any` temporários onde viável; `any` remanescente deve ser **pontual e documentado** (FR-010), em `docuparse-project/frontend/tsconfig.json` + `src/main.tsx`
-- [ ] T031 [US4] Desligar `allowJs` (todos os `models/**` já em `.ts`) em `docuparse-project/frontend/tsconfig.json` e confirmar `typecheck` verde
+- [X] T028 [US4] Ativar `noImplicitAny` e corrigir, em `docuparse-project/frontend/tsconfig.json` + `src/main.tsx` (manter app rodando e suíte verde)
+- [X] T029 [US4] Ativar `strictNullChecks` e corrigir (tratar `| null`/opcionais) em `docuparse-project/frontend/tsconfig.json` + `src/main.tsx`
+- [X] T030 [US4] Ativar `strict: true` completo e remover `// @ts-expect-error`/`any` temporários onde viável; `any` remanescente deve ser **pontual e documentado** (FR-010), em `docuparse-project/frontend/tsconfig.json` + `src/main.tsx`
+- [X] T031 [US4] Desligar `allowJs` (todos os `models/**` já em `.ts`) em `docuparse-project/frontend/tsconfig.json` e confirmar `typecheck` verde
 
 **Checkpoint**: Configuração estrita atingida; aplicação e testes íntegros.
 

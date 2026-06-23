@@ -34,6 +34,8 @@ import type {
     FieldsMap,
     SchemaConfig,
     LayoutConfig,
+    SchemaField,
+    SchemaExample,
 } from './types'
 import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIELDS } from './models/boleto/schemas'
 import { boletoPromptForDocumentType } from './models/boleto/prompts'
@@ -1063,7 +1065,7 @@ function OperationsView() {
     )
 }
 
-function UploadView({ onUploaded }: { onUploaded: () => void | Promise<void> }) {
+function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> }) {
     const [file, setFile] = useState<File | null>(null)
     const [previewUrl, setPreviewUrl] = useState('')
     const [tenantId, setTenantId] = useState('tenant-demo')
@@ -1160,7 +1162,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
     schemas?: SchemaConfig[]
     selectedDocument: Document | null
     selectedDocumentId: string
-    onValidated: () => void | Promise<void>
+    onValidated: () => void | Promise<unknown>
     onBackToInbox: () => void
 }) {
     const [notes, setNotes] = useState('')
@@ -1542,7 +1544,7 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
     onSchemaChange: (id: string) => void
     extracting: boolean
     extractMessage: string
-    onRunExtract: () => void | Promise<void>
+    onRunExtract: () => void | Promise<unknown>
     fieldRows: FieldRow[]
     onFieldRowsChange: (rows: FieldRow[]) => void
 }) {
@@ -1645,7 +1647,7 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel
     message: React.ReactNode
     confirmLabel?: string
     cancelLabel?: string
-    onConfirm: () => void | Promise<void>
+    onConfirm: () => void | Promise<unknown>
     onCancel: () => void
 }) {
     return (
@@ -1913,10 +1915,77 @@ const PROMPT_HINTS = [
     'Priorizar campos proximos ao rotulo',
 ]
 
-function SettingsView({ schemas, layouts, documents, onChanged }) {
+// Formas dos formulários de configuração (estado local da SettingsView). Espelham
+// os payloads dos respectivos endpoints; campos numéricos podem receber strings
+// dos inputs antes do envio (comportamento preservado).
+interface OcrSettingsForm {
+    tenant_slug: string
+    digital_pdf_engine: string
+    scanned_image_engine: string
+    handwritten_engine: string
+    technical_fallback_engine: string
+    openrouter_model: string
+    openrouter_fallback_model: string
+    timeout_seconds: number | string
+    retry_empty_text_enabled: boolean
+    digital_pdf_min_text_blocks: number | string
+}
+
+interface EmailSettingsForm {
+    tenant_slug: string
+    provider: string
+    inbox_folder: string
+    imap_host: string
+    imap_port: number | string
+    username: string
+    webhook_url: string
+    accepted_content_types: string
+    max_attachment_mb: number | string
+    blocked_senders: string
+    is_active: boolean
+}
+
+interface IntegrationSettingsForm {
+    tenant_slug: string
+    approved_export_enabled: boolean
+    approved_export_dir: string
+    approved_export_format: string
+    superlogica_base_url: string
+    superlogica_mode: string
+}
+
+interface SchemaForm {
+    tenant_slug: string
+    schema_id: string
+    version: string
+    model_name: string
+    document_type: string
+    status: string
+}
+
+interface LayoutForm {
+    tenant_slug: string
+    layout: string
+    document_type: string
+    schema_config_id: string
+    confidence_threshold: string
+}
+
+interface ReferenceReview {
+    quality: string
+    action: string
+    notes: string
+}
+
+function SettingsView({ schemas, layouts, documents, onChanged }: {
+    schemas: SchemaConfig[]
+    layouts: LayoutConfig[]
+    documents: Document[]
+    onChanged: () => void | Promise<unknown>
+}) {
     const [activeSettingsArea, setActiveSettingsArea] = useState('extraction')
     const [activeTab, setActiveTab] = useState('setup')
-    const [schemaForm, setSchemaForm] = useState({
+    const [schemaForm, setSchemaForm] = useState<SchemaForm>({
         tenant_slug: 'tenant-demo',
         schema_id: 'recibo_servico',
         version: 'v1',
@@ -1924,7 +1993,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         document_type: 'scanned_image',
         status: 'draft',
     })
-    const [layoutForm, setLayoutForm] = useState({
+    const [layoutForm, setLayoutForm] = useState<LayoutForm>({
         tenant_slug: 'tenant-demo',
         layout: 'recibo',
         document_type: 'scanned_image',
@@ -1934,26 +2003,26 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
     const [fields, setFields] = useState(DEFAULT_LANGEXTRACT_FIELDS)
     const [prompt, setPrompt] = useState(DEFAULT_LANGEXTRACT_PROMPT)
     const [normalizationRules, setNormalizationRules] = useState('{\n  "valor_total": { "type": "decimal", "required": true, "min": 0 },\n  "fornecedor_cnpj": { "type": "cnpj", "validate_checksum": true }\n}')
-    const [examples, setExamples] = useState([
+    const [examples, setExamples] = useState<SchemaExample[]>([
         {
             field: 'valor_total',
             expected: '120.00',
             source: 'Valor: 120,00',
         },
     ])
-    const [referenceReview, setReferenceReview] = useState({
+    const [referenceReview, setReferenceReview] = useState<ReferenceReview>({
         quality: 'pending',
         action: 'review_before_examples',
         notes: '',
     })
     const [selectedDocumentId, setSelectedDocumentId] = useState('')
-    const [referenceDocument, setReferenceDocument] = useState(null)
+    const [referenceDocument, setReferenceDocument] = useState<Document | null>(null)
     const [testOutput, setTestOutput] = useState('{}')
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
     // Track whether schema selection came from the user or auto-detection.
     const [schemaSelectionSource, setSchemaSelectionSource] = useState('auto')
     const [message, setMessage] = useState('')
-    const [integrationSettings, setIntegrationSettings] = useState({
+    const [integrationSettings, setIntegrationSettings] = useState<IntegrationSettingsForm>({
         tenant_slug: 'tenant-demo',
         approved_export_enabled: true,
         approved_export_dir: 'docuparse-project/exports/approved',
@@ -1961,7 +2030,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         superlogica_base_url: '',
         superlogica_mode: 'disabled',
     })
-    const [ocrSettings, setOcrSettings] = useState({
+    const [ocrSettings, setOcrSettings] = useState<OcrSettingsForm>({
         tenant_slug: 'tenant-demo',
         digital_pdf_engine: 'docling',
         scanned_image_engine: 'openrouter',
@@ -1973,7 +2042,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         retry_empty_text_enabled: true,
         digital_pdf_min_text_blocks: 5,
     })
-    const [emailSettings, setEmailSettings] = useState({
+    const [emailSettings, setEmailSettings] = useState<EmailSettingsForm>({
         tenant_slug: 'tenant-demo',
         provider: 'imap',
         inbox_folder: 'INBOX',
@@ -2746,7 +2815,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
     )
 }
 
-function TabHelp({ tab }) {
+function TabHelp({ tab }: { tab: string }) {
     const help = SETTINGS_TAB_HELP[tab]
     if (!help) {
         return null
@@ -2759,8 +2828,12 @@ function TabHelp({ tab }) {
     )
 }
 
-function OcrSettingsPanel({ settings, onChange, onSave }) {
-    const updateField = (field, value) => {
+function OcrSettingsPanel({ settings, onChange, onSave }: {
+    settings: OcrSettingsForm
+    onChange: React.Dispatch<React.SetStateAction<OcrSettingsForm>>
+    onSave: () => void | Promise<unknown>
+}) {
+    const updateField = (field: keyof OcrSettingsForm, value: any) => {
         onChange((current) => ({ ...current, [field]: value }))
     }
 
@@ -2894,7 +2967,7 @@ function OcrSettingsPanel({ settings, onChange, onSave }) {
     )
 }
 
-function EngineSelect({ value, onChange }) {
+function EngineSelect({ value, onChange }: { value?: string; onChange: (value: string) => void }) {
     return (
         <select className="input" value={value || 'docling'} onChange={(event) => onChange(event.target.value)}>
             <option value="docling">Docling</option>
@@ -2904,16 +2977,21 @@ function EngineSelect({ value, onChange }) {
     )
 }
 
-function engineLabel(value) {
-    return {
+function engineLabel(value?: string): string {
+    return ({
         docling: 'Docling',
         openrouter: 'OpenRouter',
         tesseract: 'Tesseract',
-    }[value] || value || '-'
+    } as Record<string, string>)[value ?? ''] || value || '-'
 }
 
-function EmailSettingsPanel({ settings, onChange, onSave, onPoll }) {
-    const updateField = (field, value) => {
+function EmailSettingsPanel({ settings, onChange, onSave, onPoll }: {
+    settings: EmailSettingsForm
+    onChange: React.Dispatch<React.SetStateAction<EmailSettingsForm>>
+    onSave: () => void | Promise<unknown>
+    onPoll: () => void | Promise<unknown>
+}) {
+    const updateField = (field: keyof EmailSettingsForm, value: any) => {
         onChange((current) => ({ ...current, [field]: value }))
     }
 
@@ -2989,7 +3067,7 @@ function EmailSettingsPanel({ settings, onChange, onSave, onPoll }) {
     )
 }
 
-function WhatsAppSettingsPanel({ onPoll }) {
+function WhatsAppSettingsPanel({ onPoll }: { onPoll: () => void | Promise<unknown> }) {
     return (
         <div className="space-y-4 p-4">
             <ConfigIntro
@@ -3048,8 +3126,12 @@ function WhatsAppSettingsPanel({ onPoll }) {
     )
 }
 
-function IntegrationSettingsPanel({ settings, onChange, onSave }) {
-    const updateField = (field, value) => {
+function IntegrationSettingsPanel({ settings, onChange, onSave }: {
+    settings: IntegrationSettingsForm
+    onChange: React.Dispatch<React.SetStateAction<IntegrationSettingsForm>>
+    onSave: () => void | Promise<unknown>
+}) {
+    const updateField = (field: keyof IntegrationSettingsForm, value: any) => {
         onChange((current) => ({ ...current, [field]: value }))
     }
 
@@ -3130,7 +3212,7 @@ function IntegrationSettingsPanel({ settings, onChange, onSave }) {
     )
 }
 
-function ConfigIntro({ title, text }) {
+function ConfigIntro({ title, text }: { title: React.ReactNode; text: React.ReactNode }) {
     return (
         <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3">
             <div className="text-sm font-semibold text-sky-950">{title}</div>
@@ -3139,7 +3221,12 @@ function ConfigIntro({ title, text }) {
     )
 }
 
-function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeModel }) {
+function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeModel }: {
+    schemaForm: SchemaForm
+    layoutForm: LayoutForm
+    activeLayout?: LayoutConfig
+    onChangeModel: () => void
+}) {
     return (
         <div className="mb-4 rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3163,7 +3250,11 @@ function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeMo
     )
 }
 
-function SettingsStepActions({ activeTab, onSaveDraft, onNext }) {
+function SettingsStepActions({ activeTab, onSaveDraft, onNext }: {
+    activeTab: string
+    onSaveDraft: () => void | Promise<unknown>
+    onNext: () => void | Promise<unknown>
+}) {
     const currentIndex = SETTINGS_TABS.findIndex((tab) => tab.id === activeTab)
     const nextTab = SETTINGS_TABS[currentIndex + 1]
     return (
@@ -3180,7 +3271,11 @@ function SettingsStepActions({ activeTab, onSaveDraft, onNext }) {
     )
 }
 
-function HintPanel({ title, items, onUse = undefined }) {
+function HintPanel({ title, items, onUse = undefined }: {
+    title: React.ReactNode
+    items: string[]
+    onUse?: (item: string) => void
+}) {
     return (
         <aside className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
             <div className="text-sm font-semibold">{title}</div>
@@ -3200,7 +3295,15 @@ function HintPanel({ title, items, onUse = undefined }) {
     )
 }
 
-function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocument, referenceDocument, fields, review, onReviewChange }) {
+function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocument, referenceDocument, fields, review, onReviewChange }: {
+    documents: Document[]
+    selectedDocumentId: string
+    onSelectDocument: (id: string) => void
+    referenceDocument: Document | null
+    fields: SchemaField[]
+    review: ReferenceReview
+    onReviewChange: (review: ReferenceReview) => void
+}) {
     const [search, setSearch] = useState('')
     const filteredDocs = filterDocuments(documents, search)
 
@@ -3263,7 +3366,7 @@ function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocumen
     )
 }
 
-function DocumentPreview({ document }) {
+function DocumentPreview({ document }: { document: Document | null }) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">Original</div>
@@ -3282,7 +3385,11 @@ function DocumentPreview({ document }) {
     )
 }
 
-function HighlightedOcrText({ text, fields, examples }) {
+function HighlightedOcrText({ text, fields, examples }: {
+    text?: string
+    fields: SchemaField[]
+    examples: SchemaExample[]
+}) {
     const highlights = [
         ...fields.map((field) => field.name).filter(Boolean),
         ...examples.map((example) => example.source).filter(Boolean),
@@ -3298,8 +3405,12 @@ function HighlightedOcrText({ text, fields, examples }) {
     )
 }
 
-function SchemaFieldsEditor({ fields, onChange, schemaForm }) {
-    const updateField = (index, patch) => {
+function SchemaFieldsEditor({ fields, onChange, schemaForm }: {
+    fields: SchemaField[]
+    onChange: (fields: SchemaField[]) => void
+    schemaForm: SchemaForm
+}) {
+    const updateField = (index: number, patch: Partial<SchemaField>) => {
         onChange(fields.map((field, fieldIndex) => (fieldIndex === index ? { ...field, ...patch } : field)))
     }
 
@@ -3350,8 +3461,12 @@ function SchemaFieldsEditor({ fields, onChange, schemaForm }) {
     )
 }
 
-function ExamplesEditor({ examples, onChange, referenceText }) {
-    const updateExample = (index, patch) => {
+function ExamplesEditor({ examples, onChange, referenceText }: {
+    examples: SchemaExample[]
+    onChange: (examples: SchemaExample[]) => void
+    referenceText?: string
+}) {
+    const updateExample = (index: number, patch: Partial<SchemaExample>) => {
         onChange(examples.map((example, exampleIndex) => (exampleIndex === index ? { ...example, ...patch } : example)))
     }
 
@@ -3384,10 +3499,18 @@ function ExamplesEditor({ examples, onChange, referenceText }) {
     )
 }
 
-function EmailMetadataModal({ data, onClose }) {
+interface EmailModalDoc {
+    id: string
+    filename: string
+    channel?: string
+    metadata_channel?: Record<string, unknown> | null
+}
+
+function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: () => void }) {
     const isEmail = data.channel === 'email'
     const isWhatsApp = data.channel === 'whatsapp'
-    const meta = data.metadata_channel || {}
+    // Metadados de canal têm forma dinâmica conforme o provedor.
+    const meta: any = data.metadata_channel || {}
 
     const channelRows = isEmail
         ? [
@@ -3500,13 +3623,21 @@ function DocumentTable({
     selectable = false,
     bulkSelectedIds = null,
     onBulkSelectionChange = null,
+}: {
+    documents: Document[]
+    selectedDocumentId?: string
+    onSelectDocument: (id: string) => void
+    compact?: boolean
+    selectable?: boolean
+    bulkSelectedIds?: Set<string> | null
+    onBulkSelectionChange?: ((ids: Set<string>) => void) | null
 }) {
-    const [sortKey, setSortKey] = useState(null)
-    const [sortDir, setSortDir] = useState('asc')
-    const [emailModalDoc, setEmailModalDoc] = useState(null)
-    const selectAllRef = useRef(null)
+    const [sortKey, setSortKey] = useState<string | null>(null)
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+    const [emailModalDoc, setEmailModalDoc] = useState<EmailModalDoc | null>(null)
+    const selectAllRef = useRef<HTMLInputElement | null>(null)
 
-    function handleSort(key) {
+    function handleSort(key: string) {
         if (sortKey === key) {
             setSortDir(d => d === 'asc' ? 'desc' : 'asc')
         } else {
@@ -3516,7 +3647,7 @@ function DocumentTable({
     }
 
     const sortedDocuments = sortKey ? [...documents].sort((a, b) => {
-        let aVal, bVal
+        let aVal = '', bVal = ''
         if (sortKey === 'arquivo') {
             aVal = (a.original_filename || a.id || '').toLowerCase()
             bVal = (b.original_filename || b.id || '').toLowerCase()
@@ -3547,7 +3678,7 @@ function DocumentTable({
         }
     }, [someSelected])
 
-    function toggleAll(e) {
+    function toggleAll(e: React.ChangeEvent<HTMLInputElement>) {
         e.stopPropagation()
         if (!onBulkSelectionChange) return
         const next = new Set(bulkSelectedIds)
@@ -3559,7 +3690,7 @@ function DocumentTable({
         onBulkSelectionChange(next)
     }
 
-    function toggleOne(e, id) {
+    function toggleOne(e: React.ChangeEvent<HTMLInputElement>, id: string) {
         e.stopPropagation()
         if (!onBulkSelectionChange) return
         const next = new Set(bulkSelectedIds)
@@ -3568,7 +3699,7 @@ function DocumentTable({
         onBulkSelectionChange(next)
     }
 
-    const indicator = (col) =>
+    const indicator = (col: string) =>
         sortKey !== col
             ? <span className="ml-1 opacity-30">↕</span>
             : <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from './mocks/server'
@@ -68,6 +68,85 @@ describe('Validação — salvar campos e histórico', () => {
     await user.click(screen.getByRole('button', { name: /^Salvar$/i }))
 
     expect(await screen.findByText(/atualizada por outro processo/i)).toBeInTheDocument()
+  })
+
+  it('aprova o documento e volta para o inbox', async () => {
+    const user = userEvent.setup()
+    const onValidated = vi.fn()
+    const onBackToInbox = vi.fn()
+    render(
+      <ValidationView
+        schemas={[]}
+        selectedDocument={baseDoc}
+        selectedDocumentId={docId}
+        onValidated={onValidated}
+        onBackToInbox={onBackToInbox}
+      />,
+    )
+    await screen.findByDisplayValue('100')
+
+    await user.click(screen.getByRole('button', { name: /Aprovar/i }))
+    await waitFor(() => expect(onBackToInbox).toHaveBeenCalled())
+    expect(onValidated).toHaveBeenCalled()
+  })
+
+  it('exige motivo ao rejeitar e bloqueia o envio', async () => {
+    const user = userEvent.setup()
+    const onBackToInbox = vi.fn()
+    render(
+      <ValidationView
+        schemas={[]}
+        selectedDocument={baseDoc}
+        selectedDocumentId={docId}
+        onValidated={vi.fn()}
+        onBackToInbox={onBackToInbox}
+      />,
+    )
+    await screen.findByDisplayValue('100')
+
+    await user.click(screen.getByRole('button', { name: /Rejeitar/i }))
+    expect(await screen.findByText(/motivo da rejeição é obrigatório/i)).toBeInTheDocument()
+    expect(onBackToInbox).not.toHaveBeenCalled()
+  })
+
+  it('rejeita com motivo informado', async () => {
+    const user = userEvent.setup()
+    const onBackToInbox = vi.fn()
+    render(
+      <ValidationView
+        schemas={[]}
+        selectedDocument={baseDoc}
+        selectedDocumentId={docId}
+        onValidated={vi.fn()}
+        onBackToInbox={onBackToInbox}
+      />,
+    )
+    await screen.findByDisplayValue('100')
+
+    await user.type(screen.getByPlaceholderText(/Motivo da rejeição/i), 'Valor divergente')
+    await user.click(screen.getByRole('button', { name: /Rejeitar/i }))
+    await waitFor(() => expect(onBackToInbox).toHaveBeenCalled())
+  })
+
+  it('permite adicionar e remover um campo editável', async () => {
+    const user = userEvent.setup()
+    render(
+      <ValidationView
+        schemas={[]}
+        selectedDocument={baseDoc}
+        selectedDocumentId={docId}
+        onValidated={vi.fn()}
+        onBackToInbox={vi.fn()}
+      />,
+    )
+    await screen.findByDisplayValue('100')
+
+    const before = screen.getAllByPlaceholderText('campo').length
+    await user.click(screen.getByRole('button', { name: /Adicionar/i }))
+    expect(screen.getAllByPlaceholderText('campo').length).toBe(before + 1)
+
+    await user.click(screen.getAllByRole('button', { name: /Remover/i })[0])
+    expect(screen.getAllByPlaceholderText('campo').length).toBe(before)
   })
 
   it('abre o histórico de versões (somente leitura)', async () => {

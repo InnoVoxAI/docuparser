@@ -19,6 +19,7 @@ import {
     XCircle,
 } from 'lucide-react'
 import './index.css'
+import type { AuthContextValue, User } from './types'
 import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIELDS } from './models/boleto/schemas'
 import { boletoPromptForDocumentType } from './models/boleto/prompts'
 import { BOLETO_DEFAULT_EXAMPLES } from './models/boleto/examples'
@@ -108,10 +109,10 @@ function filterDocuments(docs, query) {
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
-const AuthContext = createContext(null)
+const AuthContext = createContext<AuthContextValue | null>(null)
 
-export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null)
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+    const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
@@ -132,14 +133,14 @@ export function AuthProvider({ children }) {
         return () => api.interceptors.request.eject(id)
     }, [])
 
-    const login = async (email, password) => {
+    const login = async (email: string, password: string): Promise<void> => {
         const r = await authApi.post('/login', { email, password })
         localStorage.setItem('access_token', r.data.access)
         localStorage.setItem('refresh_token', r.data.refresh)
         setUser(r.data.user)
     }
 
-    const logout = async () => {
+    const logout = async (): Promise<void> => {
         const refresh = localStorage.getItem('refresh_token')
         try { if (refresh) await authApi.post('/logout', { refresh }, { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }) }
         catch (_) { /* ignore */ }
@@ -148,7 +149,7 @@ export function AuthProvider({ children }) {
         setUser(null)
     }
 
-    const hasPermission = (code) => Array.isArray(user?.permissions) && user.permissions.includes(code)
+    const hasPermission = (code: string): boolean => Array.isArray(user?.permissions) && user.permissions.includes(code)
 
     return (
         <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>
@@ -157,7 +158,11 @@ export function AuthProvider({ children }) {
     )
 }
 
-function useAuth() { return useContext(AuthContext) }
+function useAuth(): AuthContextValue {
+    const ctx = useContext(AuthContext)
+    if (!ctx) throw new Error('useAuth deve ser usado dentro de AuthProvider')
+    return ctx
+}
 
 function PermissionGuard({ code, children, fallback = null }) {
     const { hasPermission } = useAuth()
@@ -3799,7 +3804,9 @@ function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function readError(error, fallback) {
+// `error` é mantido como `any`: aceita AxiosError e quaisquer formas de erro
+// (network, código, resposta do backend) sem alterar o acesso defensivo atual.
+function readError(error: any, fallback: string): string {
     const backendMessage = error?.response?.data?.detail || error?.response?.data?.error
     if (backendMessage) {
         return backendMessage

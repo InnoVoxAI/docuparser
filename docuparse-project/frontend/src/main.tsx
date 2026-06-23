@@ -23,9 +23,11 @@ import './index.css'
 import type {
     AuthContextValue,
     User,
+    LoginResponse,
     Document,
     DocumentStatus,
     ActiveView,
+    ExtractionResult,
     FieldRow,
     SaveMessage,
     ExtractionField,
@@ -149,7 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         const token = localStorage.getItem('access_token')
         if (!token) { setLoading(false); return }
-        authApi.get('/me', { headers: { Authorization: `Bearer ${token}` } })
+        authApi.get<User>('/me', { headers: { Authorization: `Bearer ${token}` } })
             .then((r) => setUser(r.data))
             .catch(() => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token') })
             .finally(() => setLoading(false))
@@ -165,7 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, [])
 
     const login = async (email: string, password: string): Promise<void> => {
-        const r = await authApi.post('/login', { email, password })
+        const r = await authApi.post<LoginResponse>('/login', { email, password })
         localStorage.setItem('access_token', r.data.access)
         localStorage.setItem('refresh_token', r.data.refresh)
         setUser(r.data.user)
@@ -350,9 +352,9 @@ function App() {
         setError('')
         try {
             const [documentsResult, schemasResult, layoutsResult] = await Promise.allSettled([
-                api.get('/documents'),
-                api.get('/schema-configs'),
-                api.get('/layout-configs'),
+                api.get<Document[]>('/documents'),
+                api.get<SchemaConfig[]>('/schema-configs'),
+                api.get<LayoutConfig[]>('/layout-configs'),
             ])
 
             if (documentsResult.status === 'fulfilled') {
@@ -375,7 +377,7 @@ function App() {
             }
 
             if (selectedDocumentId) {
-                const detailResponse = await api.get(`/documents/${selectedDocumentId}`)
+                const detailResponse = await api.get<Document>(`/documents/${selectedDocumentId}`)
                 setSelectedDocument(detailResponse.data)
             }
         } catch (requestError) {
@@ -403,7 +405,7 @@ function App() {
         }
 
         let ignore = false
-        api.get(`/documents/${selectedDocumentId}`)
+        api.get<Document>(`/documents/${selectedDocumentId}`)
             .then((response) => {
                 if (!ignore) {
                     setSelectedDocument(response.data)
@@ -1235,7 +1237,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         if (!rawText) return
 
         let ignore = false
-        api.post('/classify-text', { text: rawText })
+        api.post<{ schema_id?: string }>('/classify-text', { text: rawText })
             .then((res) => {
                 if (ignore) return
                 const schemaId = res.data?.schema_id
@@ -1252,7 +1254,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         setExtracting(true)
         setExtractMessage('')
         try {
-            const response = await api.post(`/documents/${selectedDocumentId}/langextract`, {
+            const response = await api.post<ExtractionResult>(`/documents/${selectedDocumentId}/langextract`, {
                 schema_config_id: selectedSchemaId,
             })
             const fields = response.data.fields || {}
@@ -1319,7 +1321,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         setSaving(true)
         setSaveMessage(null)
         try {
-            const response = await api.put(`/documents/${selectedDocumentId}/fields`, {
+            const response = await api.put<ExtractionFieldVersion>(`/documents/${selectedDocumentId}/fields`, {
                 base_version_number: selectedDocument?.active_field_version_number ?? null,
                 fields: buildFieldsPayload(),
             })
@@ -1355,7 +1357,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         setHistoryError('')
         setHistory(null)
         try {
-            const response = await api.get(`/documents/${selectedDocumentId}/field-versions`)
+            const response = await api.get<FieldVersionsResponse>(`/documents/${selectedDocumentId}/field-versions`)
             setHistory(response.data)
         } catch (requestError) {
             setHistoryError(readError(requestError, 'Falha ao carregar o histórico de versões.'))
@@ -2108,7 +2110,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }: {
         // Reset to auto so new documents can trigger default selection.
         setSchemaSelectionSource('auto')
         let ignore = false
-        api.get(`/documents/${selectedDocumentId}`)
+        api.get<Document>(`/documents/${selectedDocumentId}`)
             .then((response) => {
                 if (!ignore) {
                     setReferenceDocument(response.data)
@@ -2138,7 +2140,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }: {
         const capturedSchemaId = schemaForm.schema_id
 
         let ignore = false
-        api.post('/classify-text', { text: rawText })
+        api.post<{ schema_id?: string }>('/classify-text', { text: rawText })
             .then((res) => {
                 if (ignore) return
                 const detectedType = res.data?.schema_id
@@ -4121,7 +4123,7 @@ function GerenciarUsuarios() {
 
     const load = async () => {
         setLoading(true)
-        const [u, r] = await Promise.all([api.get('/users'), api.get('/roles')])
+        const [u, r] = await Promise.all([api.get<AdminUser[]>('/users'), api.get<AdminRole[]>('/roles')])
         setUsers(u.data)
         setRoles(r.data)
         setLoading(false)
@@ -4222,7 +4224,7 @@ function GerenciarRoles() {
 
     const load = async () => {
         setLoading(true)
-        const [r, p] = await Promise.all([api.get('/roles'), api.get('/permissions')])
+        const [r, p] = await Promise.all([api.get<AdminRole[]>('/roles'), api.get<AdminPermission[]>('/permissions')])
         setRoles(r.data)
         setPerms(p.data)
         setLoading(false)

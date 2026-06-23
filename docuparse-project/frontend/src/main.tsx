@@ -110,7 +110,7 @@ function filterDocuments(docs, query) {
 
 const AuthContext = createContext(null)
 
-function AuthProvider({ children }) {
+export function AuthProvider({ children }) {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
 
@@ -1089,7 +1089,7 @@ function UploadView({ onUploaded }) {
     )
 }
 
-function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onValidated, onBackToInbox }) {
+export function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onValidated, onBackToInbox }) {
     const [notes, setNotes] = useState('')
     const [notesError, setNotesError] = useState(false)
     const [submitError, setSubmitError] = useState('')
@@ -4026,7 +4026,7 @@ function GerenciarRoles() {
     )
 }
 
-function Root() {
+export function Root() {
     const { user, loading } = useAuth()
     if (loading) {
         return (
@@ -4038,11 +4038,14 @@ function Root() {
     return user ? <App /> : <LoginPage />
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-    <React.StrictMode>
-        <AuthProvider>
-            <Root />
-        </AuthProvider>
-    </React.StrictMode>,
-)
+const rootElement = document.getElementById('root')
+if (rootElement) {
+    ReactDOM.createRoot(rootElement).render(
+        <React.StrictMode>
+            <AuthProvider>
+                <Root />
+            </AuthProvider>
+        </React.StrictMode>,
+    )
+}
 

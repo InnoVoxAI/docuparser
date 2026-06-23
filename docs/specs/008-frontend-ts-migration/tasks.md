@@ -77,15 +77,15 @@ Pacote único em `docuparse-project/frontend/`. Caminhos relativos à raiz do re
 
 ### Tests for User Story 1 ⚠️ (rede de regressão — base da preservação)
 
-- [ ] T015 [P] [US1] Testes de render/smoke de todas as telas (Login, Dashboard, Inbox, Validação, Aprovados, Rejeitados, Operações, Configurações, Usuários, Roles) em `docuparse-project/frontend/src/__tests__/screens.test.tsx`
-- [ ] T016 [P] [US1] Testes de permissões: visibilidade de `NAV_ITEMS` por `user.permissions` e gating de `PermissionGuard`/`AcessoNaoAutorizado`, em `docuparse-project/frontend/src/__tests__/permissions.test.tsx`
-- [ ] T017 [P] [US1] Testes de integração de auth (login persiste tokens + seta user; `/me` restaura; logout limpa) com MSW, em `docuparse-project/frontend/src/__tests__/auth.test.tsx`
-- [ ] T018 [P] [US1] Testes de integração da Validação (extração; editar/remover/adicionar campo; **Salvar** 201/409/422; **Histórico** somente leitura; aprovar/rejeitar) com MSW, em `docuparse-project/frontend/src/__tests__/validation.test.tsx`
+- [X] T015 [P] [US1] Testes de render/smoke de todas as telas (Login, Dashboard, Inbox, Validação, Aprovados, Rejeitados, Operações, Configurações, Usuários, Roles) em `docuparse-project/frontend/src/__tests__/screens.test.tsx`
+- [X] T016 [P] [US1] Testes de permissões: visibilidade de `NAV_ITEMS` por `user.permissions` e gating de `PermissionGuard`/`AcessoNaoAutorizado`, em `docuparse-project/frontend/src/__tests__/permissions.test.tsx`
+- [X] T017 [P] [US1] Testes de integração de auth (login persiste tokens + seta user; `/me` restaura; logout limpa) com MSW, em `docuparse-project/frontend/src/__tests__/auth.test.tsx`
+- [X] T018 [P] [US1] Testes de integração da Validação (extração; editar/remover/adicionar campo; **Salvar** 201/409/422; **Histórico** somente leitura; aprovar/rejeitar) com MSW, em `docuparse-project/frontend/src/__tests__/validation.test.tsx`
 - [ ] T019 [P] [US1] Testes de integração de Inbox/Rejeitados/Configurações/Operações (listagem+busca, reprocessar/excluir, salvar settings, DLQ) com MSW, em `docuparse-project/frontend/src/__tests__/flows.test.tsx`
 
 ### Implementação / verificação
 
-- [ ] T020 [US1] Ajustar `handlers.ts` (MSW) para refletir exatamente os endpoints/params/payloads do contrato e fazer toda a suíte passar (`npm run test:run`), em `docuparse-project/frontend/src/__tests__/mocks/handlers.ts`
+- [X] T020 [US1] Ajustar `handlers.ts` (MSW) para refletir exatamente os endpoints/params/payloads do contrato e fazer toda a suíte passar (`npm run test:run`), em `docuparse-project/frontend/src/__tests__/mocks/handlers.ts`
 - [ ] T021 [US1] Executar o checklist de regressão manual do `quickstart.md` (visual + funcional + Network) e registrar evidência; corrigir qualquer divergência **sem alterar comportamento**
 
 **Checkpoint**: Rede de regressão automatizada verde + checklist OK — preservação comprovada (MVP de segurança).

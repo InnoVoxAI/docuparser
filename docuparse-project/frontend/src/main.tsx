@@ -1118,7 +1118,7 @@ function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> 
         setSubmitting(true)
         setMessage('')
         const formData = new FormData()
-        formData.append('file', file)
+        if (file) formData.append('file', file)
         formData.append('tenant_id', tenantId)
         if (sender.trim()) {
             formData.append('sender', sender)
@@ -2344,7 +2344,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }: {
         const definition = schema.definition || {}
         setSchemaForm((current) => ({
             ...current,
-            schema_id: schema.schema_id,
+            schema_id: schema.schema_id ?? current.schema_id,
             version: schema.version,
             model_name: definition.model_name || schema.schema_id,
             document_type: definition.document_type || current.document_type,
@@ -3902,7 +3902,7 @@ function StatusBadge({ status }: { status?: string }) {
         : isBad
             ? 'bg-red-50 text-red-700 ring-red-200'
             : 'bg-amber-50 text-amber-700 ring-amber-200'
-    return <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ring-1 ${classes}`}>{STATUS_LABELS[status] || status || '-'}</span>
+    return <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ring-1 ${classes}`}>{(status ? STATUS_LABELS[status] : '') || status || '-'}</span>
 }
 
 function KeyValueGrid({ values }: { values: Record<string, unknown> }) {
@@ -4150,7 +4150,7 @@ function GerenciarUsuarios() {
                 await api.post('/users', form)
             } else {
                 const patch = { name: form.name, email: form.email, role_id: form.role_id || null }
-                await api.patch(`/users/${modal.user.id}`, patch)
+                await api.patch(`/users/${modal?.user?.id}`, patch)
             }
             setModal(null)
             load()

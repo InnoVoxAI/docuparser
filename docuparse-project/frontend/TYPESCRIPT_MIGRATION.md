@@ -391,3 +391,29 @@ Abrir `http://localhost:5173/` e navegar por todas as telas.
 `typescript + tsconfig (permissivo)` → `vite-env.d.ts` → `models/*.ts` → `vite.config.ts` → `main.tsx` → tipar núcleo (Auth/axios) → tipar componentes/telas → DTOs de API → endurecer `strict` por etapas → limpeza + regressão.
 
 > **Fora do escopo (trabalho futuro):** quebrar `main.tsx` em módulos por domínio (Auth, Documents, Settings, UI) e adicionar ESLint/Prettier + testes. Fazer **depois** que o TypeScript estiver estável, como mudança separada — para não misturar refatoração estrutural com a migração de tipos.
+
+---
+
+## Estado Final (migração concluída)
+
+A migração foi concluída e endurecida até **`strict: true`** com `allowJs: false`.
+
+### Configuração TypeScript
+- `tsconfig.json`: `strict: true`, `allowJs: false`, `noEmit: true`, `jsx: "react-jsx"`, `moduleResolution: "bundler"`, paths `@/*`.
+- `tsconfig.node.json` cobre `vite.config.ts`/`vitest.config.ts`; `src/vite-env.d.ts` tipa `import.meta.env`.
+- `npm run typecheck` (`tsc --noEmit`) e `npm run build` (`tsc --noEmit && vite build`) **verdes**.
+
+### Tipagem
+- `src/types.ts`: domínio + DTOs espelhando o backend (`Document`, `ExtractionResult`, `ExtractionField`/`FieldsMap`, `ExtractionFieldVersion`, `FieldVersionsResponse`, `User`, `AuthContextValue`, `SchemaConfig`/`LayoutConfig`, `SchemaField`/`SchemaExample`, `FieldRow`, `SaveMessage`, `ActiveView`, etc.).
+- `src/models/**/*.ts`: exports tipados (`SchemaField[]`, `SchemaExample[]`, `isLikely*Text`, `*PromptForDocumentType`).
+- `src/main.tsx`: contexto de auth, props de todos os componentes/telas, estados (`useState<...>`), formulários (Ocr/Email/Integration/Schema/Layout) e DTOs via generics do axios (`api.get<Document[]>`, `api.put<ExtractionFieldVersion>`, …).
+- **Leitura de erros**: `ApiError`/`asApiError` centralizam o único `any` documentado para respostas de erro; todos os `catch` passam por ele.
+- `any` remanescente é **pontual e documentado**: índices de payloads dinâmicos (`SchemaConfig`/`LayoutConfig`/DLQ), metadados de canal (email/whatsapp), setters genéricos de formulário e `parseFieldEntry`. Sem `// @ts-ignore`/`// @ts-expect-error`.
+
+### Suíte de testes (Vitest + Testing Library + MSW)
+- Scripts: `npm run test`, `test:run`, `coverage`.
+- **23 testes** cobrindo: autenticação (login/`/me`/logout), permissões/navegação, validação 007 (salvar/409/histórico/aprovar/rejeitar/editar), Inbox (busca), Dashboard (modal de rejeição), Operações (DLQ), Configurações (saves de OCR/Email/Integrações), CRUD de Usuários/Roles e upload manual.
+- Cobertura de linhas **~67%** com piso de regressão em `vitest.config.ts` (`lines/statements 65`, `branches 58`, `functions 40`). Meta aspiracional (críticos ≥90%, demais ≥80%) é por fluxo; a métrica por arquivo é diluída pelo monólito preservado (sem split, por decisão de US1).
+
+### Fora do escopo (trabalho futuro)
+Quebrar `main.tsx` por domínio e adicionar ESLint/Prettier permanecem como mudança separada, posterior à estabilização do TypeScript.

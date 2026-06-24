@@ -19,6 +19,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reportsDirectory: './coverage',
+      // Não apaga a pasta inteira a cada run (preserva o coverage/README.md);
+      // os relatórios (index.html, main.tsx.html, *.json, *.xml) são reescritos.
+      clean: false,
       // Foco nos fluxos da aplicação; configs/dados são excluídos da métrica.
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/__tests__/**', 'src/vite-env.d.ts', 'src/models/**'],

@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import axios from 'axios'
 import {
     AlertTriangle,
     CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     ClipboardCheck,
     Eye,
     FileText,
@@ -35,6 +37,8 @@ import type {
     LayoutConfig,
     SchemaField,
     SchemaExample,
+    Paginated,
+    DocumentListParams,
 } from './types'
 import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIELDS } from './models/boleto/schemas'
 import { boletoPromptForDocumentType } from './models/boleto/prompts'
@@ -96,45 +100,118 @@ const STATUS_LABELS: Record<string, string> = {
     ERP_FAILED: 'Pendente',
 }
 
-const TYPE_ALIASES: Record<string, string[]> = {
-    pdf: ['digital_pdf'],
-    scan: ['scanned_image'],
-    escaneado: ['scanned_image'],
-    imagem: ['scanned_image'],
-    manuscrito: ['handwritten', 'manuscrito'],
+// ─── Paginação (feature 009) ──────────────────────────────────────────────────
+
+const PAGE_SIZE = 25
+
+const EMPTY_PAGE: Paginated<Document> = { results: [], count: 0, page: 1, page_size: PAGE_SIZE, total_pages: 0 }
+
+/** Conta documentos de um bucket (status CSV) lendo só o `count` do envelope. */
+async function fetchDocumentCount(statusCsv?: string): Promise<number> {
+    const params: DocumentListParams = { page: 1, page_size: 1 }
+    if (statusCsv) params.status = statusCsv
+    const response = await api.get<Paginated<Document>>('/documents', { params })
+    return response.data.count
 }
 
-function buildSearchRegex(query: string): RegExp | null {
-    const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    try { return new RegExp(escaped, 'i') } catch { return null }
-}
+/**
+ * Estado de uma listagem paginada server-side de documentos (feature 009).
+ * Cada tela mantém sua própria `page`/`search`; alterar a busca reinicia em 1.
+ * `refreshSignal` força refetch (ações externas: upload, reprocessar, excluir).
+ * `autoRefresh` reconsulta a página atual enquanto houver documentos em
+ * processamento, preservando filtros (FR-009).
+ */
+function useDocumentPage(
+    statusCsv?: string,
+    options: { autoRefresh?: boolean; refreshSignal?: number } = {},
+) {
+    const { autoRefresh = false, refreshSignal = 0 } = options
+    const [page, setPage] = useState(1)
+    const [search, setSearchState] = useState('')
+    const [data, setData] = useState<Paginated<Document>>(EMPTY_PAGE)
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
 
-function filterDocuments(docs: Document[], query: string): Document[] {
-    if (!query.trim()) return docs
-    const q = query.trim().toLowerCase()
-    const regex = buildSearchRegex(query)
-    return docs.filter((doc) => {
-        const filename = (doc.original_filename || doc.id || '').toLowerCase()
-        const status = (doc.status || '').toLowerCase()
-        const statusLabel = (STATUS_LABELS[doc.status] || '').toLowerCase()
-        const docType = (doc.document_type || '').toLowerCase()
-        const channel = (doc.channel || '').toLowerCase()
-        if (filename.includes(q) || status.includes(q) || statusLabel.includes(q) || docType.includes(q) || channel.includes(q)) return true
-        const aliasTypes = TYPE_ALIASES[q]
-        if (aliasTypes && aliasTypes.some((t) => docType.includes(t))) return true
-        if (regex) {
-            const fields = doc.extraction_result?.fields
-            if (fields && typeof fields === 'object') {
-                return Object.values(fields).some((raw) => {
-                    const fieldValue = raw && typeof raw === 'object' && 'value' in raw
-                        ? String(raw.value ?? '')
-                        : String(raw ?? '')
-                    return regex.test(fieldValue)
-                })
-            }
+    const fetchPage = useCallback(async (silent = false) => {
+        if (!silent) setLoading(true)
+        setError('')
+        try {
+            const params: DocumentListParams = { page, page_size: PAGE_SIZE }
+            if (statusCsv) params.status = statusCsv
+            const term = search.trim()
+            if (term) params.search = term
+            const response = await api.get<Paginated<Document>>('/documents', { params })
+            setData(response.data)
+        } catch (requestError) {
+            setError(readError(requestError, 'Nao foi possivel carregar os documentos.'))
+        } finally {
+            if (!silent) setLoading(false)
         }
-        return false
-    })
+    }, [page, search, statusCsv])
+
+    useEffect(() => { fetchPage() }, [fetchPage, refreshSignal])
+
+    useEffect(() => {
+        if (!autoRefresh) return
+        const processing = data.results.some((d) => d.status === 'RECEIVED' || d.status === 'OCR_COMPLETED')
+        if (!processing) return
+        const timer = setTimeout(() => fetchPage(true), 4000)
+        return () => clearTimeout(timer)
+    }, [data, fetchPage, autoRefresh])
+
+    const setSearch = (value: string) => {
+        setSearchState(value)
+        setPage(1)
+    }
+
+    return { page, setPage, search, setSearch, data, loading, error, refresh: fetchPage }
+}
+
+/** Controles de navegação reutilizáveis: posição, total e anterior/próxima. */
+function Pagination({ page, totalPages, count, pageSize, onPageChange }: {
+    page: number
+    totalPages: number
+    count: number
+    pageSize: number
+    onPageChange: (page: number) => void
+}) {
+    if (count === 0) return null
+    const effectiveTotal = Math.max(totalPages, 1)
+    const from = (page - 1) * pageSize + 1
+    const to = Math.min(page * pageSize, count)
+    return (
+        <nav
+            aria-label="Paginação de documentos"
+            className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 px-4 py-3 text-sm"
+        >
+            <span className="text-zinc-500">
+                Mostrando {from}–{to} de {count} {count === 1 ? 'documento' : 'documentos'}
+            </span>
+            <div className="flex items-center gap-2">
+                <button
+                    type="button"
+                    onClick={() => onPageChange(page - 1)}
+                    disabled={page <= 1}
+                    aria-label="Página anterior"
+                    className="inline-flex h-8 items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                    <ChevronLeft size={16} aria-hidden="true" /> Anterior
+                </button>
+                <span aria-live="polite" className="px-1 text-zinc-600">
+                    Página {page} de {effectiveTotal}
+                </span>
+                <button
+                    type="button"
+                    onClick={() => onPageChange(page + 1)}
+                    disabled={page >= effectiveTotal}
+                    aria-label="Próxima página"
+                    className="inline-flex h-8 items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                    Próxima <ChevronRight size={16} aria-hidden="true" />
+                </button>
+            </div>
+        </nav>
+    )
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -335,7 +412,6 @@ function App() {
     const [activeView, setActiveView] = useState(() =>
         NAV_ITEMS.find(item => hasPermission(item.permission))?.id ?? 'dashboard'
     )
-    const [documents, setDocuments] = useState<Document[]>([])
     const [schemas, setSchemas] = useState<SchemaConfig[]>([])
     const [layouts, setLayouts] = useState<LayoutConfig[]>([])
     const [selectedDocumentId, setSelectedDocumentId] = useState('')
@@ -343,23 +419,24 @@ function App() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [rejectedModal, setRejectedModal] = useState<Document | null>(null)
+    // Sinal incrementado para forçar as listagens paginadas a recarregar a página
+    // atual após ações externas (upload, reprocessar, excluir, "Atualizar").
+    const [refreshSignal, setRefreshSignal] = useState(0)
 
+    // feature 009: as listagens (Dashboard/Inbox/Aprovados/Rejeitados) passaram a
+    // buscar suas próprias páginas server-side (ver useDocumentPage). Aqui só
+    // carregamos schemas/layouts (Validação/Configurações) e o documento
+    // selecionado; os documentos não são mais carregados em massa no cliente.
     const refreshData = async (silent = false) => {
+        setRefreshSignal((n) => n + 1)
         if (!hasPermission('inbox.view')) return
         if (!silent) setLoading(true)
         setError('')
         try {
-            const [documentsResult, schemasResult, layoutsResult] = await Promise.allSettled([
-                api.get<Document[]>('/documents'),
+            const [schemasResult, layoutsResult] = await Promise.allSettled([
                 api.get<SchemaConfig[]>('/schema-configs'),
                 api.get<LayoutConfig[]>('/layout-configs'),
             ])
-
-            if (documentsResult.status === 'fulfilled') {
-                setDocuments(documentsResult.value.data ?? [])
-            } else {
-                setError(readError(documentsResult.reason, 'Nao foi possivel carregar os documentos.'))
-            }
 
             if (schemasResult.status === 'fulfilled') {
                 setSchemas(schemasResult.value.data ?? [])
@@ -370,8 +447,8 @@ function App() {
             }
 
             const configError = [schemasResult, layoutsResult].find((result) => result.status === 'rejected')
-            if (documentsResult.status === 'fulfilled' && configError) {
-                setError(readError(configError.reason, 'Documentos carregados, mas nao foi possivel carregar todas as configuracoes.'))
+            if (configError) {
+                setError(readError(configError.reason, 'Nao foi possivel carregar todas as configuracoes.'))
             }
 
             if (selectedDocumentId) {
@@ -388,13 +465,6 @@ function App() {
     useEffect(() => {
         refreshData()
     }, [])
-
-    useEffect(() => {
-        const processing = documents.some((d) => d.status === 'RECEIVED' || d.status === 'OCR_COMPLETED')
-        if (!processing) return
-        const timer = setTimeout(() => refreshData(true), 4000)
-        return () => clearTimeout(timer)
-    }, [documents])
 
     useEffect(() => {
         if (!selectedDocumentId) {
@@ -419,20 +489,6 @@ function App() {
             ignore = true
         }
     }, [selectedDocumentId])
-
-    const metrics = useMemo(() => buildMetrics(documents), [documents])
-    const pendingDocuments = useMemo(
-        () => documents.filter((document) => ['RECEIVED', 'OCR_COMPLETED', 'EXTRACTION_COMPLETED', 'VALIDATION_PENDING'].includes(document.status)),
-        [documents],
-    )
-    const rejectedDocuments = useMemo(
-        () => documents.filter((d) => d.status === 'REJECTED'),
-        [documents],
-    )
-    const approvedDocuments = useMemo(
-        () => documents.filter((d) => d.status === 'APPROVED'),
-        [documents],
-    )
 
     const navigateToValidation = (documentId: string) => {
         setSelectedDocumentId(documentId)
@@ -527,11 +583,11 @@ function App() {
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}
 
-                        {activeView === 'dashboard' ? <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}><Dashboard metrics={metrics} documents={documents} onSelectRejected={setRejectedModal} /></PermissionGuard> : null}
+                        {activeView === 'dashboard' ? <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}><Dashboard refreshSignal={refreshSignal} onSelectRejected={setRejectedModal} /></PermissionGuard> : null}
                         {activeView === 'inbox' ? (
                             <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
                                 <InboxView
-                                    documents={pendingDocuments}
+                                    refreshSignal={refreshSignal}
                                     onNavigateToValidation={navigateToValidation}
                                     onNavigateToUpload={() => setActiveView('upload')}
                                 />
@@ -540,13 +596,13 @@ function App() {
                         {activeView === 'upload' ? <PermissionGuard code="documents.send" fallback={<AcessoNaoAutorizado />}><UploadView onUploaded={refreshData} /></PermissionGuard> : null}
                         {activeView === 'approved' ? (
                             <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
-                                <ApprovedView documents={approvedDocuments} />
+                                <ApprovedView refreshSignal={refreshSignal} />
                             </PermissionGuard>
                         ) : null}
                         {activeView === 'rejected' ? (
                             <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
                                 <RejectedView
-                                    documents={rejectedDocuments}
+                                    refreshSignal={refreshSignal}
                                     onReprocess={handleReprocessDocument}
                                     onDelete={handleDeleteDocument}
                                     onRefresh={refreshData}
@@ -565,7 +621,7 @@ function App() {
                             </PermissionGuard>
                         ) : null}
                         {activeView === 'operations' ? <PermissionGuard code="operations.access" fallback={<AcessoNaoAutorizado />}><OperationsView /></PermissionGuard> : null}
-                        {activeView === 'settings' ? <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}><SettingsView schemas={schemas} layouts={layouts} documents={documents} onChanged={refreshData} /></PermissionGuard> : null}
+                        {activeView === 'settings' ? <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}><SettingsView schemas={schemas} layouts={layouts} onChanged={refreshData} /></PermissionGuard> : null}
                         {activeView === 'users' ? <PermissionGuard code="users.manage" fallback={<AcessoNaoAutorizado />}><GerenciarUsuarios /></PermissionGuard> : null}
                         {activeView === 'roles' ? <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}><GerenciarRoles /></PermissionGuard> : null}
                     </section>
@@ -658,16 +714,34 @@ function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }: {
     )
 }
 
-function Dashboard({ metrics, documents, onSelectRejected }: {
-    metrics: DashboardMetrics
-    documents: Document[]
+function Dashboard({ refreshSignal, onSelectRejected }: {
+    refreshSignal?: number
     onSelectRejected?: (doc: Document) => void
 }) {
-    const [search, setSearch] = useState('')
-    const displayed = filterDocuments(documents, search)
+    const { page, setPage, search, setSearch, data, loading, error } = useDocumentPage(undefined, {
+        autoRefresh: true,
+        refreshSignal,
+    })
+    const [metrics, setMetrics] = useState<DashboardMetrics>({ total: 0, pending: 0, approved: 0, failed: 0 })
+
+    useEffect(() => {
+        let ignore = false
+        Promise.all([
+            fetchDocumentCount(),
+            fetchDocumentCount('APPROVED'),
+            fetchDocumentCount('REJECTED'),
+        ])
+            .then(([total, approved, failed]) => {
+                if (!ignore) {
+                    setMetrics({ total, approved, failed, pending: Math.max(total - approved - failed, 0) })
+                }
+            })
+            .catch(() => { /* métricas best-effort; a lista já reporta erros */ })
+        return () => { ignore = true }
+    }, [refreshSignal, data])
 
     function handleSelectDocument(id: string) {
-        const doc = documents.find(d => d.id === id)
+        const doc = data.results.find((d) => d.id === id)
         if (doc && doc.status === 'REJECTED' && onSelectRejected) {
             onSelectRejected(doc)
         }
@@ -686,19 +760,26 @@ function Dashboard({ metrics, documents, onSelectRejected }: {
                     <div className="text-sm font-semibold">Documentos</div>
                     <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, status, tipo..." />
                 </div>
-                <DocumentTable documents={displayed} onSelectDocument={handleSelectDocument} />
+                {error ? <Alert tone="error">{error}</Alert> : null}
+                {loading ? <Alert>Carregando documentos...</Alert> : null}
+                <DocumentTable documents={data.results} onSelectDocument={handleSelectDocument} />
+                <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
             </section>
         </div>
     )
 }
 
-function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }: {
-    documents: Document[]
+const INBOX_STATUS_BUCKET = 'RECEIVED,OCR_COMPLETED,EXTRACTION_COMPLETED,VALIDATION_PENDING'
+
+function InboxView({ refreshSignal, onNavigateToValidation, onNavigateToUpload }: {
+    refreshSignal?: number
     onNavigateToValidation: (id: string) => void
     onNavigateToUpload: () => void
 }) {
-    const [search, setSearch] = useState('')
-    const displayed = filterDocuments(documents, search)
+    const { page, setPage, search, setSearch, data, loading, error } = useDocumentPage(INBOX_STATUS_BUCKET, {
+        autoRefresh: true,
+        refreshSignal,
+    })
     return (
         <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -716,17 +797,26 @@ function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }: {
                     <div className="text-sm font-semibold">Documentos pendentes</div>
                     <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, tipo..." />
                 </div>
-                <DocumentTable documents={displayed} onSelectDocument={onNavigateToValidation} />
+                {error ? <Alert tone="error">{error}</Alert> : null}
+                {loading ? <Alert>Carregando documentos...</Alert> : null}
+                <DocumentTable documents={data.results} onSelectDocument={onNavigateToValidation} />
+                <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
             </section>
         </div>
     )
 }
 
-function ApprovedView({ documents }: { documents: Document[] }) {
+function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
+    const { page, setPage, search, setSearch, data, loading, error } = useDocumentPage('APPROVED', { refreshSignal })
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
-            <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Documentos aprovados</div>
-            {documents.length === 0 ? (
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+                <div className="text-sm font-semibold">Documentos aprovados</div>
+                <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, tipo..." />
+            </div>
+            {error ? <Alert tone="error">{error}</Alert> : null}
+            {loading ? <Alert>Carregando documentos...</Alert> : null}
+            {data.results.length === 0 ? (
                 <EmptyState icon={CheckCircle2} text="Nenhum documento aprovado." />
             ) : (
                 <div className="overflow-x-auto">
@@ -739,7 +829,7 @@ function ApprovedView({ documents }: { documents: Document[] }) {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100">
-                            {documents.map((doc) => (
+                            {data.results.map((doc) => (
                                 <tr key={doc.id} className="hover:bg-zinc-50">
                                     <td className="px-4 py-3 font-medium">{doc.original_filename || doc.id}</td>
                                     <td className="px-4 py-3"><StatusBadge status={doc.status} /></td>
@@ -752,30 +842,37 @@ function ApprovedView({ documents }: { documents: Document[] }) {
                     </table>
                 </div>
             )}
+            <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
         </section>
     )
 }
 
-function RejectedView({ documents, onReprocess, onDelete, onRefresh }: {
-    documents: Document[]
+function RejectedView({ refreshSignal, onReprocess, onDelete, onRefresh }: {
+    refreshSignal?: number
     onReprocess: (id: string) => void
     onDelete: (id: string) => void
     onRefresh: () => void
 }) {
+    const { page, setPage, search, setSearch, data, loading, error } = useDocumentPage('REJECTED', { refreshSignal })
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
                 <div className="text-sm font-semibold">Documentos rejeitados</div>
-                <button
-                    type="button"
-                    onClick={onRefresh}
-                    className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
-                >
-                    <RefreshCw size={16} aria-hidden="true" />
-                    Atualizar
-                </button>
+                <div className="flex items-center gap-2">
+                    <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, motivo..." />
+                    <button
+                        type="button"
+                        onClick={onRefresh}
+                        className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                    >
+                        <RefreshCw size={16} aria-hidden="true" />
+                        Atualizar
+                    </button>
+                </div>
             </div>
-            {documents.length === 0 ? (
+            {error ? <Alert tone="error">{error}</Alert> : null}
+            {loading ? <Alert>Carregando documentos...</Alert> : null}
+            {data.results.length === 0 ? (
                 <EmptyState icon={XCircle} text="Nenhum documento rejeitado." />
             ) : (
                 <div className="overflow-x-auto">
@@ -789,7 +886,7 @@ function RejectedView({ documents, onReprocess, onDelete, onRefresh }: {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100">
-                            {documents.map((doc) => (
+                            {data.results.map((doc) => (
                                 <RejectedRow
                                     key={doc.id}
                                     document={doc}
@@ -801,6 +898,7 @@ function RejectedView({ documents, onReprocess, onDelete, onRefresh }: {
                     </table>
                 </div>
             )}
+            <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
         </section>
     )
 }
@@ -1915,10 +2013,9 @@ interface ReferenceReview {
     notes: string
 }
 
-function SettingsView({ schemas, layouts, documents, onChanged }: {
+function SettingsView({ schemas, layouts, onChanged }: {
     schemas: SchemaConfig[]
     layouts: LayoutConfig[]
-    documents: Document[]
     onChanged: () => void | Promise<unknown>
 }) {
     const [activeSettingsArea, setActiveSettingsArea] = useState('extraction')
@@ -2619,7 +2716,6 @@ function SettingsView({ schemas, layouts, documents, onChanged }: {
 
                     {activeTab === 'ocr' ? (
                         <ReferenceDocumentPanel
-                            documents={documents}
                             selectedDocumentId={selectedDocumentId}
                             onSelectDocument={setSelectedDocumentId}
                             referenceDocument={referenceDocument}
@@ -3233,8 +3329,7 @@ function HintPanel({ title, items, onUse = undefined }: {
     )
 }
 
-function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocument, referenceDocument, fields, review, onReviewChange }: {
-    documents: Document[]
+function ReferenceDocumentPanel({ selectedDocumentId, onSelectDocument, referenceDocument, fields, review, onReviewChange }: {
     selectedDocumentId: string
     onSelectDocument: (id: string) => void
     referenceDocument: Document | null
@@ -3242,8 +3337,10 @@ function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocumen
     review: ReferenceReview
     onReviewChange: (review: ReferenceReview) => void
 }) {
-    const [search, setSearch] = useState('')
-    const filteredDocs = filterDocuments(documents, search)
+    // feature 009: o seletor de referência fica fora da paginação por tela
+    // (Clarifications), mas a busca agora é server-side e carrega só a primeira
+    // página (mais recentes) em vez de toda a base no cliente.
+    const { search, setSearch, data } = useDocumentPage(undefined, {})
 
     return (
         <div className="space-y-4">
@@ -3254,7 +3351,7 @@ function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocumen
                         <SearchInput value={search} onChange={setSearch} placeholder="Buscar..." />
                     </div>
                     <div className="max-h-[520px] overflow-auto">
-                        {filteredDocs.map((document) => (
+                        {data.results.map((document) => (
                             <button
                                 key={document.id}
                                 type="button"
@@ -3441,7 +3538,68 @@ interface EmailModalDoc {
     id: string
     filename: string
     channel?: string
+    content_type?: string
     metadata_channel?: Record<string, unknown> | null
+}
+
+/**
+ * Pré-visualização inline do documento original (feature 009). Busca o arquivo
+ * como blob autenticado (o interceptor injeta o JWT → respeita as permissões,
+ * FR-015) e renderiza inline sem forçar download (FR-011): PDF via iframe,
+ * imagem via <img>, fallback amigável para os demais formatos.
+ */
+function DocumentBlobPreview({ documentId, contentType, filename }: {
+    documentId: string
+    contentType?: string
+    filename?: string
+}) {
+    const [blobUrl, setBlobUrl] = useState('')
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState('')
+
+    useEffect(() => {
+        let ignore = false
+        let objectUrl = ''
+        setLoading(true)
+        setError('')
+        api.get(`/documents/${documentId}/file`, { responseType: 'blob' })
+            .then((response) => {
+                if (ignore) return
+                objectUrl = URL.createObjectURL(response.data as Blob)
+                setBlobUrl(objectUrl)
+            })
+            .catch((requestError) => {
+                if (!ignore) setError(readError(requestError, 'Nao foi possivel carregar a pre-visualizacao do documento.'))
+            })
+            .finally(() => { if (!ignore) setLoading(false) })
+        return () => {
+            ignore = true
+            if (objectUrl) URL.revokeObjectURL(objectUrl)
+        }
+    }, [documentId])
+
+    if (loading) {
+        return <div className="flex min-h-[200px] items-center justify-center text-sm text-zinc-500">Carregando documento...</div>
+    }
+    if (error) {
+        return <div className="flex min-h-[200px] items-center justify-center px-4 text-center text-sm text-red-600">{error}</div>
+    }
+    if (!blobUrl) {
+        return <EmptyState icon={FileText} text="Documento indisponivel." />
+    }
+    const isPdf = contentType === 'application/pdf' || (filename ?? '').toLowerCase().endsWith('.pdf')
+    const isImage = (contentType ?? '').startsWith('image/')
+    if (isPdf) {
+        return <iframe title={`Documento ${filename ?? documentId}`} src={blobUrl} className="h-[420px] w-full rounded border border-zinc-200" />
+    }
+    if (isImage) {
+        return (
+            <div className="max-h-[420px] overflow-auto p-2">
+                <img src={blobUrl} alt={`Documento ${filename ?? documentId}`} className="max-w-full rounded border border-zinc-200" />
+            </div>
+        )
+    }
+    return <EmptyState icon={FileText} text="Formato sem pre-visualizacao inline." />
 }
 
 function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: () => void }) {
@@ -3486,7 +3644,7 @@ function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: (
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
             <div
-                className="relative mx-4 w-full max-w-lg rounded-lg border border-zinc-200 bg-white shadow-xl"
+                className="relative mx-4 max-h-[90vh] w-full max-w-4xl overflow-auto rounded-lg border border-zinc-200 bg-white shadow-xl"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
@@ -3498,6 +3656,11 @@ function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: (
                         <X size={16} aria-hidden="true" />
                     </button>
                 </div>
+                {/* feature 009: as informações existentes ficam à esquerda e a
+                    pré-visualização do documento é ADICIONADA à direita (sem
+                    remover nada — FR-012/FR-019). */}
+                <div className="grid md:grid-cols-2">
+                <div className="min-w-0 md:border-r md:border-zinc-200">
                 {(isEmail || isWhatsApp) && channelRows.length === 0 ? (
                     <div className="divide-y divide-zinc-100 px-5 py-2">
                         <div className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
@@ -3543,6 +3706,12 @@ function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: (
                         <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">{meta.body}</pre>
                     </div>
                 ) : null}
+                </div>
+                <div className="min-w-0 border-t border-zinc-200 px-5 py-4 md:border-t-0">
+                    <div className="mb-2 text-xs font-semibold uppercase text-zinc-500">Documento original</div>
+                    <DocumentBlobPreview documentId={data.id} contentType={data.content_type} filename={data.filename} />
+                </div>
+                </div>
                 <div className="border-t border-zinc-200 px-5 py-3 text-right">
                     <button type="button" onClick={onClose} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100">
                         Fechar
@@ -3714,7 +3883,7 @@ function DocumentTable({
                                         <button
                                             type="button"
                                             title="Ver informações do documento"
-                                            onClick={() => setEmailModalDoc({ id: document.id, filename: document.original_filename || document.id, channel: document.channel, metadata_channel: document.metadata_channel })}
+                                            onClick={() => setEmailModalDoc({ id: document.id, filename: document.original_filename || document.id, channel: document.channel, content_type: document.content_type, metadata_channel: document.metadata_channel })}
                                             className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
                                         >
                                             <Eye size={14} aria-hidden="true" />
@@ -3827,19 +3996,6 @@ function KeyValueGrid({ values }: { values: Record<string, unknown> }) {
                 </div>
             ))}
         </dl>
-    )
-}
-
-function buildMetrics(documents: Document[]): DashboardMetrics {
-    return documents.reduce(
-        (acc, document) => {
-            acc.total += 1
-            if (document.status !== 'APPROVED' && document.status !== 'REJECTED') acc.pending += 1
-            if (document.status === 'APPROVED') acc.approved += 1
-            if (document.status === 'REJECTED') acc.failed += 1
-            return acc
-        },
-        { total: 0, pending: 0, approved: 0, failed: 0 },
     )
 }
 

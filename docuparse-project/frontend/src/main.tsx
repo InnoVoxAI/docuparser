@@ -664,7 +664,7 @@ function Dashboard({ metrics, documents, onSelectRejected }: {
     onSelectRejected?: (doc: Document) => void
 }) {
     const [search, setSearch] = useState('')
-    const displayed = search.trim() ? filterDocuments(documents, search) : documents.slice(0, 8)
+    const displayed = filterDocuments(documents, search)
 
     function handleSelectDocument(id: string) {
         const doc = documents.find(d => d.id === id)
@@ -683,7 +683,7 @@ function Dashboard({ metrics, documents, onSelectRejected }: {
             </div>
             <section className="rounded-md border border-zinc-200 bg-white">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-                    <div className="text-sm font-semibold">Ultimos documentos</div>
+                    <div className="text-sm font-semibold">Documentos</div>
                     <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, status, tipo..." />
                 </div>
                 <DocumentTable documents={displayed} onSelectDocument={handleSelectDocument} />
@@ -1426,7 +1426,6 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                                     : 'Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.'}
                             </Alert>
                         ) : null}
-                        <ReadOnlyTranscription value={selectedDocument.full_transcription} />
                         <ReadOnlyTranscriptionFormatted value={selectedDocument.full_transcription_formatted} />
                         <LangExtractPanel
                             documentId={selectedDocumentId}
@@ -1756,30 +1755,6 @@ function DocumentMetadataPanel({ document }: { document: Document }) {
                     ) : null}
                 </div>
             )}
-        </div>
-    )
-}
-
-function ReadOnlyTranscription({ value }: { value?: string }) {
-    const [open, setOpen] = useState(true)
-    return (
-        <div className="rounded-md border border-zinc-200">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-                <div className="text-sm font-semibold">Transcricao completa</div>
-                <button
-                    type="button"
-                    onClick={() => setOpen((o) => !o)}
-                    className="text-xs font-medium text-zinc-500 hover:text-zinc-800"
-                >
-                    {open ? 'Recolher' : 'Expandir'}
-                </button>
-            </div>
-            <textarea
-                value={value || ''}
-                readOnly
-                className={`min-h-[160px] w-full resize-y border-0 bg-zinc-50 px-3 py-3 text-sm leading-6 text-zinc-700 outline-none${open ? '' : ' hidden'}`}
-                placeholder="A transcricao aparecera aqui quando o OCR automatico concluir."
-            />
         </div>
     )
 }

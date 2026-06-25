@@ -17,13 +17,13 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
           fetch-depth: 0
 
       - name: Install UV
-        run: pip install uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Install pyproject-parser
         run: uv tool install "pyproject-parser[cli]"

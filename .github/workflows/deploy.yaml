@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
           fetch-depth: 0
@@ -57,28 +57,31 @@ jobs:
           push: true
           tags: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}
 
-      - name: Checkout GitOps Branch
-        run: |
-          git fetch origin
-          git checkout -f gitops
-
-      - name: Update Image Tag in Deployment
-        run: |
-          sed -i "s|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:.*|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}|" k8s/${{ inputs.ENVIRONMENT }}/deployment.yaml
-
-      - name: Check deployment.yaml after sed
-        run: cat k8s/${{ inputs.ENVIRONMENT }}/deployment.yaml
-
-      - name: Git Status
-        run: git status
-
       - name: Git Config
         run: |
           git config --global user.email "ci-bot@ci.com"
           git config --global user.name "CI Bot"
 
+      - name: Checkout Kubernetes Deployments Repository
+        uses: actions/checkout@v4
+        with:
+          repository: InnoVoxAI/innovox-kubernetes-deployments
+          token: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+          path: k8s-deployments
+
+      - name: Update Image Tag in Deployment
+        run: |
+          sed -i "s|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:.*|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}|" k8s-deployments/apps/docuparser/${{ inputs.ENVIRONMENT }}/deployment.yaml
+
       - name: Commit and Push Changes
         run: |
-          git add k8s/${{ inputs.ENVIRONMENT }}/deployment.yaml
-          git commit -m "Updating the image tag: ${{ inputs.IMAGE_VERSION }}"
-          git push -u origin gitops
+          cd k8s-deployments
+          git add apps/docuparser/${{ inputs.ENVIRONMENT }}/deployment.yaml
+          if git diff --cached --quiet; then
+            echo "No changes to commit — image tag already up to date"
+          else
+            git commit -m "Updating the image tag: ${{ inputs.IMAGE_VERSION }}"
+            git push
+          fi
+
+

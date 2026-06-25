@@ -69,14 +69,22 @@ jobs:
           token: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
           path: k8s-deployments
 
+      - name: Set Deploy Folder
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "DEPLOY_FOLDER=prod" >> $GITHUB_ENV
+          else
+            echo "DEPLOY_FOLDER=hml" >> $GITHUB_ENV
+          fi
+
       - name: Update Image Tag in Deployment
         run: |
-          sed -i "s|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:.*|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}|" k8s-deployments/apps/docuparser/${{ inputs.ENVIRONMENT }}/deployment.yaml
+          sed -i "s|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:.*|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}|" k8s-deployments/apps/docuparser/${{ env.DEPLOY_FOLDER }}/${{ inputs.ENVIRONMENT }}/deployment.yaml
 
       - name: Commit and Push Changes
         run: |
           cd k8s-deployments
-          git add apps/docuparser/${{ inputs.ENVIRONMENT }}/deployment.yaml
+          git add apps/docuparser/${{ env.DEPLOY_FOLDER }}/${{ inputs.ENVIRONMENT }}/deployment.yaml
           if git diff --cached --quiet; then
             echo "No changes to commit — image tag already up to date"
           else

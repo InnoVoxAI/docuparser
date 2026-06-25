@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - staging
     paths:
       - "docuparse-project/**"
       - "pyproject.toml"
@@ -34,22 +35,8 @@ jobs:
           VERSION=$(pyproject-info project.version | tr -d '"')
           echo "IMAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Check if version is already deployed
-        id: check_version
-        run: |
-          VERSION=${{ steps.extract_version.outputs.IMAGE_VERSION }}
-          git fetch origin gitops
-          DEPLOYED=$(git show origin/gitops:k8s/docuparser-core/deployment.yaml | grep -oP 'docuparser-core:\K[^\s]+')
-          if [ "$VERSION" = "$DEPLOYED" ]; then
-            echo "SKIP=true" >> $GITHUB_OUTPUT
-            echo "Version $VERSION already deployed — skipping."
-          else
-            echo "SKIP=false" >> $GITHUB_OUTPUT
-          fi
-
   deploy-core:
     needs: pre-deploy
-    if: needs.pre-deploy.outputs.SKIP != 'true'
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-core
@@ -65,7 +52,6 @@ jobs:
   # Runs after deploy-core to avoid concurrent pushes to the gitops branch
   deploy-com:
     needs: [pre-deploy, deploy-core]
-    if: needs.pre-deploy.outputs.SKIP != 'true'
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-com
@@ -80,7 +66,6 @@ jobs:
 
   deploy-ocr:
     needs: [pre-deploy, deploy-com]
-    if: needs.pre-deploy.outputs.SKIP != 'true'
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-ocr
@@ -95,7 +80,6 @@ jobs:
 
   deploy-langextract:
     needs: [pre-deploy, deploy-ocr]
-    if: needs.pre-deploy.outputs.SKIP != 'true'
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-langextract

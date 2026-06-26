@@ -45,7 +45,7 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', 'https://docuparser.pages.dev').split(',') if o.strip()]
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', 'https://docuparser.innovox.ai').split(',') if o.strip()]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

@@ -6,9 +6,10 @@ import path from 'path'
 // Derive backend URLs from the branch so import.meta.env picks them up.
 const branch = process.env.CF_PAGES_BRANCH
 if (branch && !process.env.VITE_API_BASE_URL) {
-    const prefix = branch === 'main' ? '' : `${branch}.`
-    process.env.VITE_API_BASE_URL = `https://${prefix}docuparser-core.innovox.ai`
-    process.env.VITE_COM_BASE_URL = `https://${prefix}docuparser-com.innovox.ai`
+    // K8s environments: main → prod (no prefix), staging → hml
+    const k8sEnv = branch === 'main' ? '' : 'staging.'
+    process.env.VITE_API_BASE_URL = `https://${k8sEnv}docuparser-core.innovox.ai`
+    process.env.VITE_COM_BASE_URL = `https://${k8sEnv}docuparser-com.innovox.ai`
 }
 
 // https://vitejs.dev/config/

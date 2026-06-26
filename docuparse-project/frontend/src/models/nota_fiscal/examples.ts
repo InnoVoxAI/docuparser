@@ -16,7 +16,9 @@
 // Mesmo que o OCR insira espaços no CNPJ, o valor deve ser
 // normalizado para apenas dígitos.
 
-export const NOTA_FISCAL_DEFAULT_EXAMPLES = [
+import type { SchemaExample } from '../../types'
+
+export const NOTA_FISCAL_DEFAULT_EXAMPLES: SchemaExample[] = [
     {
         field: 'tipo_documento',
         expected: 'NFS-e',

@@ -1,7 +1,9 @@
+import type { SchemaField } from '../../types'
+
 export const BOLETO_DEFAULT_SCHEMA_ID = 'boleto_default'
 export const BOLETO_DEFAULT_MODEL_NAME = 'BOLETO DEFAULT'
 
-export const BOLETO_DEFAULT_FIELDS = [
+export const BOLETO_DEFAULT_FIELDS: SchemaField[] = [
 
     // =========================================================
     // IDENTIFICACAO DO BOLETO
@@ -630,7 +632,7 @@ export const BOLETO_DEFAULT_FIELDS = [
 
 ]
 
-function scoreBoletoText(rawText) {
+function scoreBoletoText(rawText: string): number {
     if (!rawText) {
         return 0
     }
@@ -661,6 +663,6 @@ function scoreBoletoText(rawText) {
     return score
 }
 
-export function isLikelyBoletoText(rawText, threshold = 4) {
+export function isLikelyBoletoText(rawText: string, threshold = 4): boolean {
     return scoreBoletoText(rawText) >= threshold
 }

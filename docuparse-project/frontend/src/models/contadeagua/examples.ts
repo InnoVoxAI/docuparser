@@ -34,7 +34,9 @@
 // =========================================================
 // Valores adicionais que aparecem em algumas faturas.
 
-export const CONTA_AGUA_DEFAULT_EXAMPLES = [
+import type { SchemaExample } from '../../types'
+
+export const CONTA_AGUA_DEFAULT_EXAMPLES: SchemaExample[] = [
 
     // — Exemplo 1: identificacao e emissora —
     {

@@ -36,7 +36,9 @@
 // Boleto com múltiplos blocos (Pix, demonstrativo, bloco postal).
 // Deve sinalizar documento_hibrido=true e listar os subdocumentos.
 
-export const BOLETO_DEFAULT_EXAMPLES = [
+import type { SchemaExample } from '../../types'
+
+export const BOLETO_DEFAULT_EXAMPLES: SchemaExample[] = [
     // — Exemplo 1: campos de identificação —
     {
         field: 'tipo_documento',

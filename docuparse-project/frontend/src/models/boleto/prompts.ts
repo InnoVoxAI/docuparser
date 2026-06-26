@@ -29,7 +29,7 @@ export const PROMPT_BOLETO_SCANNED = [
     '- Se nao encontrar um campo, value = null e confidence = 0',
 ].join('\n')    
 
-export function boletoPromptForDocumentType(documentType) {
+export function boletoPromptForDocumentType(documentType: string): string {
     if (documentType === 'digital_pdf') {
         return PROMPT_BOLETO_DIGITAL
     }

@@ -1494,18 +1494,12 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                 </div>
                 {!selectedDocument ? (
                     <EmptyState icon={FileText} text="Selecione um documento para visualizar." />
-                ) : selectedDocument.content_type === 'application/pdf' ? (
-                    <iframe
-                        title="Documento selecionado"
-                        src={`/api/ocr/documents/${selectedDocument.id}/file`}
-                        className="h-[620px] w-full"
-                    />
-                ) : selectedDocument.content_type?.startsWith('image/') ? (
-                    <div className="max-h-[620px] overflow-auto p-3">
-                        <img src={`/api/ocr/documents/${selectedDocument.id}/file`} alt="Documento selecionado" className="max-w-full rounded border border-zinc-200" />
-                    </div>
                 ) : (
-                    <EmptyState icon={FileText} text="Formato sem preview disponivel." />
+                    <DocumentBlobPreview
+                        documentId={selectedDocument.id}
+                        contentType={selectedDocument.content_type}
+                        filename={selectedDocument.original_filename}
+                    />
                 )}
             </section>
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white p-4">

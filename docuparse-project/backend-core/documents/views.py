@@ -503,10 +503,9 @@ def document_langextract_view(request, document_id):
 
 
 @api_view(["GET", "POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("inbox.view")])
 def schema_configs_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     if request.method == "GET":
         queryset = SchemaConfig.objects.select_related("tenant").order_by("schema_id", "version")
         return Response(SchemaConfigSerializer(queryset, many=True).data)
@@ -528,10 +527,9 @@ def schema_configs_view(request):
 
 
 @api_view(["GET", "PATCH"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("inbox.view")])
 def schema_config_detail_view(request, schema_id):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     config = get_object_or_404(SchemaConfig.objects.select_related("tenant"), id=schema_id)
     if request.method == "GET":
         return Response(SchemaConfigSerializer(config).data)
@@ -546,10 +544,9 @@ def schema_config_detail_view(request, schema_id):
 
 
 @api_view(["GET", "POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("inbox.view")])
 def layout_configs_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     if request.method == "GET":
         queryset = LayoutConfig.objects.select_related("tenant", "schema_config").order_by("layout")
         return Response(LayoutConfigSerializer(queryset, many=True).data)

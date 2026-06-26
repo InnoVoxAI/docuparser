@@ -425,6 +425,17 @@ class DocumentsAPITests(TestCase):
         assert config.blocked_senders == "blocked@example.test"
 
     def test_schema_and_layout_config_endpoints(self) -> None:
+        # Dual-auth: o endpoint exige JWT do usuário com permissão "inbox.view"
+        # (ou o token interno de serviço). Autentica o usuário com a permissão.
+        from users.models import Permission, Role
+        from documents.models import UserProfile
+
+        permission = Permission.objects.create(code="inbox.view", description="Inbox view")
+        role = Role.objects.create(name="Operador")
+        role.permissions.add(permission)
+        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
+        self.client.force_authenticate(user=self.user)
+
         schema_response = self.client.post(
             reverse("schema-configs"),
             {
@@ -468,6 +479,29 @@ class DocumentsAPITests(TestCase):
         schema.refresh_from_db()
         assert draft_response.status_code == 200
         assert schema.definition == {"fields": ["valor", "vencimento"], "status": "draft"}
+
+    def test_schema_and_layout_configs_accept_internal_service_token(self) -> None:
+        # Regressão (staging): com DOCUPARSE_INTERNAL_SERVICE_TOKEN configurado, o
+        # caller serviço↔serviço (ex.: langextract) deve continuar autorizado via
+        # token interno — sem JWT de usuário.
+        with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN="secret"):
+            schemas = self.client.get(
+                reverse("schema-configs"), HTTP_AUTHORIZATION="Bearer secret"
+            )
+            layouts = self.client.get(
+                reverse("layout-configs"), HTTP_AUTHORIZATION="Bearer secret"
+            )
+
+        assert schemas.status_code == 200
+        assert layouts.status_code == 200
+
+    def test_schema_and_layout_configs_reject_unauthenticated_when_token_configured(self) -> None:
+        # Regressão (staging): sem JWT e sem token interno, o acesso é negado em
+        # vez de ficar aberto (fecha o AllowAny default anterior).
+        with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN="secret"):
+            schemas = self.client.get(reverse("schema-configs"))
+
+        assert schemas.status_code in (401, 403)
 
     def test_dlq_operation_endpoints(self) -> None:
         with tempfile.TemporaryDirectory() as event_dir, self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir):

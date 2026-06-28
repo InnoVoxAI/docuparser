@@ -39,6 +39,7 @@ def ingest_document(
     content: bytes,
     sender: str | None = None,
     metadata: dict | None = None,
+    skip_auto_process: bool = False,
 ) -> dict:
     if not tenant_id.strip():
         raise ValueError("tenant_id is required")
@@ -78,7 +79,7 @@ def ingest_document(
     )
     event_payload = event.model_dump(mode="json")
     event_bus_from_env(settings.local_event_dir).publish("document.received", event_payload)
-    core_sync_status = _sync_document_received_to_core(event_payload)
+    core_sync_status = _sync_document_received_to_core(event_payload, skip_auto_process=skip_auto_process)
     log_event(
         logger,
         "document.received published",
@@ -103,16 +104,19 @@ def ingest_document(
     }
 
 
-def _sync_document_received_to_core(event_payload: dict) -> str:
+def _sync_document_received_to_core(event_payload: dict, *, skip_auto_process: bool = False) -> str:
     if not settings.backend_core_document_received_url:
         return "disabled"
 
+    url = settings.backend_core_document_received_url
+    if skip_auto_process:
+        url = f"{url}?skip_auto_process=true"
     body = json.dumps(event_payload, separators=(",", ":")).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if settings.internal_service_token:
         headers["Authorization"] = f"Bearer {settings.internal_service_token}"
     request = urllib.request.Request(
-        settings.backend_core_document_received_url,
+        url,
         data=body,
         headers=headers,
         method="POST",

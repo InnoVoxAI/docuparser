@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class ClassifyLayoutRequest(BaseModel):
     raw_text: str = Field("", description="Texto bruto produzido pelo OCR")
+    raw_text_uri: str = Field("", description="URI local:// para o texto bruto (alternativa a raw_text)")
     document_type: str = Field("unknown", description="Tipo de documento classificado pelo OCR")
     metadata: dict[str, Any] = Field(default_factory=dict)
 

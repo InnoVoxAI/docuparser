@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 
 LAYOUTS = {
+    "nota_fiscal",
     "boleto_caixa",
     "boleto_bb",
     "boleto_bradesco",
@@ -24,6 +25,7 @@ class LayoutClassification:
 def classify_layout(raw_text: str, document_type: str = "unknown") -> LayoutClassification:
     text = _normalize(raw_text)
     scores = {
+        "nota_fiscal": _score_nota_fiscal(text),
         "boleto_caixa": _score_boleto_caixa(text),
         "boleto_bb": _score_boleto_bb(text),
         "boleto_bradesco": _score_boleto_bradesco(text),
@@ -45,6 +47,29 @@ def classify_layout(raw_text: str, document_type: str = "unknown") -> LayoutClas
 
 def _normalize(raw_text: str) -> str:
     return re.sub(r"\s+", " ", (raw_text or "").lower()).strip()
+
+
+def _score_nota_fiscal(text: str) -> float:
+    import re
+    score = _weighted_score(
+        text,
+        {
+            "nota fiscal": 0.30,
+            "nf-e": 0.20,
+            "nfs-e": 0.20,
+            "nfe": 0.10,
+            "chave de acesso": 0.15,
+            "icms": 0.10,
+            "valor total": 0.10,
+            "tomador": 0.10,
+            "fornecedor": 0.10,
+            "prestador de servi": 0.10,
+            "secretaria municipal": 0.10,
+        },
+    )
+    if re.search(r"\b\d{44}\b", text):
+        score += 0.25
+    return min(score, 0.99)
 
 
 def _score_boleto_caixa(text: str) -> float:

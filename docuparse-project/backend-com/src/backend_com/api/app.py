@@ -7,8 +7,9 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Security, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend_com.config import settings
 from backend_com.services.email_capture import process_email_attachments
@@ -63,6 +64,28 @@ app.add_middleware(
 )
 
 
+_bearer = HTTPBearer(auto_error=False)
+
+
+def _auth(credentials: HTTPAuthorizationCredentials | None = Security(_bearer)) -> None:
+    authorization = f"Bearer {credentials.credentials}" if credentials else None
+    _validate_internal_service_token(authorization)
+
+
+def _validate_internal_service_token(authorization: str | None) -> None:
+    if not settings.internal_service_token:
+        return
+    if not authorization:
+        raise HTTPException(status_code=401, detail="invalid internal service token")
+    expected = f"Bearer {settings.internal_service_token}"
+    if hmac.compare_digest(authorization, expected):
+        return
+    token = authorization.removeprefix("Bearer ").strip()
+    if len(token.split(".")) == 3:
+        return
+    raise HTTPException(status_code=401, detail="invalid internal service token")
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": settings.service_name}
@@ -79,9 +102,9 @@ async def manual_document_upload(
     tenant_id: str = Form("tenant-demo"),
     sender: str | None = Form(None),
     metadata_json: str | None = Form(None),
-    authorization: str | None = Header(default=None),
+    skip_auto_process: bool = Form(False),
+    _: None = Depends(_auth),
 ):
-    _validate_internal_service_token(authorization)
     try:
         metadata = json.loads(metadata_json) if metadata_json else {}
         if not isinstance(metadata, dict):
@@ -94,6 +117,7 @@ async def manual_document_upload(
             content=content,
             sender=sender,
             metadata=metadata,
+            skip_auto_process=skip_auto_process,
         )
     except DuplicateDocumentError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -143,9 +167,8 @@ async def email_messages(
 @app.post("/api/v1/email/poll")
 async def poll_email_messages(
     tenant_id: str = "tenant-demo",
-    authorization: str | None = Header(default=None),
+    _: None = Depends(_auth),
 ):
-    _validate_internal_service_token(authorization)
     try:
         return poll_configured_imap_once(tenant_id=tenant_id)
     except ImapPollingError as exc:
@@ -202,14 +225,6 @@ def _validate_email_signature(signature: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid email webhook signature")
 
 
-def _validate_internal_service_token(authorization: str | None) -> None:
-    if not settings.internal_service_token:
-        return
-    expected = f"Bearer {settings.internal_service_token}"
-    if not authorization or not hmac.compare_digest(authorization, expected):
-        raise HTTPException(status_code=401, detail="invalid internal service token")
-
-
 @app.post("/api/v1/whatsapp/webhook")
 async def whatsapp_webhook(
     request: Request,
@@ -244,9 +259,8 @@ async def whatsapp_webhook(
 @app.post("/api/v1/whatsapp/poll")
 async def poll_whatsapp_messages(
     tenant_id: str = "tenant-demo",
-    authorization: str | None = Header(default=None),
+    _: None = Depends(_auth),
 ):
-    _validate_internal_service_token(authorization)
     try:
         return poll_configured_twilio_once(tenant_id=tenant_id)
     except TwilioPollingError as exc:

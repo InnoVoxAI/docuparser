@@ -229,7 +229,8 @@ def document_received_event_view(request):
         document = consume_document_received(request.data)
     except DuplicateDocumentError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-    if settings.DOCUPARSE_AUTO_PROCESS_OCR and not document.raw_text_uri:
+    skip_auto = request.query_params.get("skip_auto_process", "").lower() in ("1", "true", "yes")
+    if settings.DOCUPARSE_AUTO_PROCESS_OCR and not document.raw_text_uri and not skip_auto:
         submit_document_processing(document.id)
     return Response(DocumentDetailSerializer(document).data, status=status.HTTP_201_CREATED)
 

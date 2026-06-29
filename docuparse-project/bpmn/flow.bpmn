@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+  id="Definitions_1"
+  targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <bpmn:process id="docuparse-pipeline" name="DocuParse - Document Processing" isExecutable="true">
+
+    <bpmn:startEvent id="StartEvent_1" name="Documento Recebido">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:serviceTask id="Task_Ingestion" name="Ingestão e Validação">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-register-document" retries="3"/>
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId"       target="document_id"/>
+          <zeebe:input source="=tenantId"         target="tenant_id"/>
+          <zeebe:input source="=fileUri"          target="file_uri"/>
+          <zeebe:input source="=originalFilename" target="original_filename"/>
+          <zeebe:input source="=contentType"      target="content_type"/>
+          <zeebe:input source="=sizeBytes"        target="size_bytes"/>
+          <zeebe:input source="=sha256"           target="sha256"/>
+          <zeebe:input source="=channel"          target="channel"/>
+          <zeebe:input source="=correlationId"    target="correlation_id"/>
+          <zeebe:output source="=doc_status"  target="docStatus"/>
+          <zeebe:output source="=duplicate"   target="isDuplicate"/>
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_OCR" name="Processamento OCR">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-process-ocr" retries="2"/>
+        <zeebe:taskHeaders>
+          <zeebe:header key="retryBackoff" value="PT30S"/>
+        </zeebe:taskHeaders>
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id"/>
+          <zeebe:output source="=doc_status"    target="docStatus"/>
+          <zeebe:output source="=document_type" target="documentType"/>
+          <zeebe:output source="=raw_text_uri"  target="rawTextUri"/>
+          <zeebe:output source="=ocr_engine"    target="ocrEngine"/>
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Layout" name="Classificação de Layout">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-classify-layout" retries="2"/>
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId"   target="document_id"/>
+          <zeebe:input source="=rawTextUri"   target="raw_text_uri"/>
+          <zeebe:input source="=documentType" target="document_type"/>
+          <zeebe:output source="=layout"                           target="layout"/>
+          <zeebe:output source="=layout_confidence"                target="layoutConfidence"/>
+          <zeebe:output source="=layout_requires_human_validation" target="extractionNeedsReview"/>
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_Extraction" name="Extração de Dados (LLM)">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-extract-fields" retries="2"/>
+        <zeebe:taskHeaders>
+          <zeebe:header key="retryBackoff" value="PT30S"/>
+        </zeebe:taskHeaders>
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id"/>
+          <zeebe:output source="=doc_status"                           target="docStatus"/>
+          <zeebe:output source="=schema_id"                            target="schemaId"/>
+          <zeebe:output source="=extraction_confidence"                target="extractionConfidence"/>
+          <zeebe:output source="=extraction_requires_human_validation" target="extractionNeedsReview"/>
+          <zeebe:output source="=extraction_skipped"                   target="extractionSkipped"/>
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="Gateway_Validation" name="Requer Validação?">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_HumanVal</bpmn:outgoing>
+      <bpmn:outgoing>Flow_AutoApprove</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="Task_HumanVal" name="Validação Humana">
+      <bpmn:extensionElements>
+        <zeebe:assignmentDefinition candidateGroups="operators"/>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_HumanVal</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="Task_ERP" name="Integração ERP">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-export-erp" retries="3"/>
+        <zeebe:taskHeaders>
+          <zeebe:header key="retryBackoff" value="PT1M"/>
+        </zeebe:taskHeaders>
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId"         target="document_id"/>
+          <zeebe:input source="=tenantId"           target="tenant_id"/>
+          <zeebe:input source="=validationDecision" target="validation_decision"/>
+          <zeebe:input source="=validationNotes"    target="validation_notes"/>
+          <zeebe:input source="=extractionSkipped"  target="extraction_skipped"/>
+          <zeebe:output source="=erp_status" target="erpStatus"/>
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:incoming>Flow_AutoApprove</bpmn:incoming>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="EndEvent_1" name="Processo Concluído">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_Ingestion"/>
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Ingestion" targetRef="Task_OCR"/>
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Task_OCR" targetRef="Task_Layout"/>
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_Layout" targetRef="Task_Extraction"/>
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_Extraction" targetRef="Gateway_Validation"/>
+    <bpmn:sequenceFlow id="Flow_HumanVal" name="Sim" sourceRef="Gateway_Validation" targetRef="Task_HumanVal">
+      <bpmn:conditionExpression>=extractionNeedsReview = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_AutoApprove" name="Não" sourceRef="Gateway_Validation" targetRef="Task_ERP">
+      <bpmn:conditionExpression>=extractionNeedsReview = false</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="Task_HumanVal" targetRef="Task_ERP"/>
+    <bpmn:sequenceFlow id="Flow_7" sourceRef="Task_ERP" targetRef="EndEvent_1"/>
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="docuparse-pipeline">
+      <bpmndi:BPMNShape id="Shape_StartEvent_1" bpmnElement="StartEvent_1">
+        <dc:Bounds x="150" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Ingestion" bpmnElement="Task_Ingestion">
+        <dc:Bounds x="240" y="78" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_OCR" bpmnElement="Task_OCR">
+        <dc:Bounds x="400" y="78" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Layout" bpmnElement="Task_Layout">
+        <dc:Bounds x="560" y="78" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_Extraction" bpmnElement="Task_Extraction">
+        <dc:Bounds x="720" y="78" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Validation" bpmnElement="Gateway_Validation" isMarkerVisible="true">
+        <dc:Bounds x="880" y="93" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="813" y="166" width="54" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_ERP" bpmnElement="Task_ERP">
+        <dc:Bounds x="1000" y="78" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EndEvent_1" bpmnElement="EndEvent_1">
+        <dc:Bounds x="1160" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Task_HumanVal" bpmnElement="Task_HumanVal">
+        <dc:Bounds x="860" y="220" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_Flow_1" bpmnElement="Flow_1">
+        <di:waypoint x="186" y="118" />
+        <di:waypoint x="240" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_2" bpmnElement="Flow_2">
+        <di:waypoint x="340" y="118" />
+        <di:waypoint x="400" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_3" bpmnElement="Flow_3">
+        <di:waypoint x="500" y="118" />
+        <di:waypoint x="560" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_4" bpmnElement="Flow_4">
+        <di:waypoint x="660" y="118" />
+        <di:waypoint x="720" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_5" bpmnElement="Flow_5">
+        <di:waypoint x="820" y="118" />
+        <di:waypoint x="880" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_HumanVal" bpmnElement="Flow_HumanVal">
+        <di:waypoint x="893" y="131" />
+        <di:waypoint x="893" y="220" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="920" y="193" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_AutoApprove" bpmnElement="Flow_AutoApprove">
+        <di:waypoint x="930" y="118" />
+        <di:waypoint x="1000" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_6" bpmnElement="Flow_6">
+        <di:waypoint x="960" y="260" />
+        <di:waypoint x="1030" y="260" />
+        <di:waypoint x="1030" y="158" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_Flow_7" bpmnElement="Flow_7">
+        <di:waypoint x="1100" y="118" />
+        <di:waypoint x="1160" y="118" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

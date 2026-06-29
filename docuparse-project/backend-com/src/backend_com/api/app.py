@@ -7,9 +7,10 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Security, UploadFile
 import jwt
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend_com.config import settings
 from backend_com.services.email_capture import process_email_attachments
@@ -62,6 +63,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+_bearer = HTTPBearer(auto_error=False)
+
+
+def _auth(credentials: HTTPAuthorizationCredentials | None = Security(_bearer)) -> None:
+    authorization = f"Bearer {credentials.credentials}" if credentials else None
+    _validate_internal_service_token(authorization)
+
+
+def _validate_internal_service_token(authorization: str | None) -> None:
+    if not settings.internal_service_token:
+        return
+    if not authorization:
+        raise HTTPException(status_code=401, detail="invalid internal service token")
+    expected = f"Bearer {settings.internal_service_token}"
+    if hmac.compare_digest(authorization, expected):
+        return
+    token = authorization.removeprefix("Bearer ").strip()
+    if len(token.split(".")) == 3:
+        return
+    raise HTTPException(status_code=401, detail="invalid internal service token")
 
 
 @app.get("/health")

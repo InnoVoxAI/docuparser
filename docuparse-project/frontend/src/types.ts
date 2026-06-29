@@ -98,6 +98,28 @@ export interface Document {
 }
 
 // =========================================================
+// Paginação (feature 009)
+// =========================================================
+
+/** Envelope paginado genérico (espelha o backend `documents/pagination.py`). */
+export interface Paginated<T> {
+  results: T[]
+  count: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+/** Parâmetros de uma requisição de listagem paginada de documentos. */
+export interface DocumentListParams {
+  page: number
+  page_size?: number // default 25 (cap 25)
+  status?: string // single ou CSV (buckets por tela)
+  search?: string
+  tenant?: string
+}
+
+// =========================================================
 // Modelos documentais (src/models/**)
 // =========================================================
 

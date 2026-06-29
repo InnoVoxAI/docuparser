@@ -3,6 +3,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from './mocks/server'
+import { paginatedDocuments } from './mocks/handlers'
 import { renderApp } from './utils'
 
 // US1 / T019 — integração de Inbox / Dashboard (rejeitados) / Operações (DLQ) /
@@ -22,7 +23,7 @@ function mockSession(documents: unknown[] = []) {
     http.get('/api/auth/me', () =>
       HttpResponse.json({ id: 'u1', name: 'Admin', email: 'admin@docuparse.local', permissions: ALL_PERMISSIONS }),
     ),
-    http.get('/api/ocr/documents', () => HttpResponse.json(documents)),
+    http.get('/api/ocr/documents', ({ request }) => HttpResponse.json(paginatedDocuments(documents as Record<string, unknown>[], request.url))),
     http.get('/api/ocr/schema-configs', () => HttpResponse.json([])),
     http.get('/api/ocr/layout-configs', () => HttpResponse.json([])),
   )
@@ -234,5 +235,50 @@ describe('Upload', () => {
     await user.click(screen.getByRole('button', { name: /^Enviar$/i }))
 
     expect(await screen.findByText(/Documento recebido: doc-123/i)).toBeInTheDocument()
+  })
+})
+
+describe('Visualização do documento (ação de olho)', () => {
+  it('mantém as informações existentes e adiciona a pré-visualização do documento', async () => {
+    ;(URL as unknown as { createObjectURL: () => string }).createObjectURL = vi.fn(() => 'blob:preview')
+    ;(URL as unknown as { revokeObjectURL: () => void }).revokeObjectURL = vi.fn()
+    let fileRequested = ''
+    server.use(
+      http.get('/api/ocr/documents/:id/file', ({ params }) => {
+        fileRequested = String(params.id)
+        return new HttpResponse(new Blob(['%PDF']), { headers: { 'Content-Type': 'application/pdf' } })
+      }),
+    )
+    mockSession([doc({ id: 'd1', original_filename: 'nota-fiscal.pdf', status: 'RECEIVED', content_type: 'application/pdf' })])
+    const user = await navigate('Inbox')
+
+    await screen.findByText('nota-fiscal.pdf')
+    await user.click(screen.getByRole('button', { name: /Ver informações do documento/i }))
+
+    // Informações já existentes permanecem (FR-012/FR-019).
+    expect(await screen.findByText('Informações do documento')).toBeInTheDocument()
+    expect(screen.getByText('Código de Processo')).toBeInTheDocument()
+    expect(screen.getByText('Documento original')).toBeInTheDocument()
+
+    // Pré-visualização inline do documento correto, sem download (blob → object URL).
+    await waitFor(() => expect(screen.getByTitle(/Documento nota-fiscal\.pdf/i)).toBeInTheDocument())
+    expect(fileRequested).toBe('d1')
+    expect(URL.createObjectURL).toHaveBeenCalled()
+  })
+
+  it('exibe estado de erro quando o arquivo não carrega', async () => {
+    ;(URL as unknown as { createObjectURL: () => string }).createObjectURL = vi.fn(() => 'blob:preview')
+    ;(URL as unknown as { revokeObjectURL: () => void }).revokeObjectURL = vi.fn()
+    server.use(
+      http.get('/api/ocr/documents/:id/file', () => new HttpResponse(null, { status: 404 })),
+    )
+    mockSession([doc({ id: 'd1', original_filename: 'nota-fiscal.pdf', status: 'RECEIVED', content_type: 'application/pdf' })])
+    const user = await navigate('Inbox')
+
+    await screen.findByText('nota-fiscal.pdf')
+    await user.click(screen.getByRole('button', { name: /Ver informações do documento/i }))
+
+    expect(await screen.findByText('Informações do documento')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText(/Nao foi possivel carregar a pre-visualizacao/i)).toBeInTheDocument())
   })
 })

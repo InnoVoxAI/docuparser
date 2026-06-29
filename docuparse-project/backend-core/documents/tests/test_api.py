@@ -112,6 +112,17 @@ class DocumentsAPITests(TestCase):
         start_thread.assert_called_once_with(document_id)
 
     def test_document_file_endpoint_serves_original_file(self) -> None:
+        # feature 009: o endpoint passou a exigir JWT do usuário com permissão
+        # "inbox.view" (ou token interno). Autentica o usuário com a permissão.
+        from users.models import Permission, Role
+        from documents.models import UserProfile
+
+        permission = Permission.objects.create(code="inbox.view", description="Inbox view")
+        role = Role.objects.create(name="Operador")
+        role.permissions.add(permission)
+        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
+        self.client.force_authenticate(user=self.user)
+
         with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
             stored = LocalStorage(storage_dir).put_bytes(
                 document_original_key(self.tenant.slug, str(self.document.id)),

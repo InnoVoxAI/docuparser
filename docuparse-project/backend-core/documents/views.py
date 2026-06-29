@@ -1,7 +1,8 @@
 import json
 
 from django.contrib.auth import get_user_model
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q, TextField
+from django.db.models.functions import Cast
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -21,6 +22,7 @@ from docuparse_events import event_bus_from_env
 from docuparse_storage import LocalStorage
 
 from .models import Document, EmailSettings, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, Tenant, ValidationDecision
+from .pagination import paginate_queryset
 from .serializers import (
     DocumentDetailSerializer,
     DocumentListSerializer,
@@ -120,6 +122,64 @@ def process_document_view(request):
         return JsonResponse({"error": str(exc)}, status=502)
 
 
+# Rótulos amigáveis de status mapeados para os valores reais (busca por texto).
+_STATUS_LABEL_MAP: dict[str, list[str]] = {
+    "aprovado": [Document.Status.APPROVED],
+    "aprovados": [Document.Status.APPROVED],
+    "rejeitado": [Document.Status.REJECTED],
+    "rejeitados": [Document.Status.REJECTED],
+    "pendente": [
+        Document.Status.RECEIVED,
+        Document.Status.OCR_COMPLETED,
+        Document.Status.EXTRACTION_COMPLETED,
+        Document.Status.VALIDATION_PENDING,
+    ],
+    "pendentes": [
+        Document.Status.RECEIVED,
+        Document.Status.OCR_COMPLETED,
+        Document.Status.EXTRACTION_COMPLETED,
+        Document.Status.VALIDATION_PENDING,
+    ],
+}
+
+
+def _apply_status_filter(queryset, status_filter: str | None):
+    """Filtra por `status` aceitando um único valor ou CSV (buckets por tela)."""
+    if not status_filter:
+        return queryset
+    statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+    if not statuses:
+        return queryset
+    if len(statuses) == 1:
+        return queryset.filter(status=statuses[0])
+    return queryset.filter(status__in=statuses)
+
+
+def _apply_search(queryset, term: str | None):
+    """Busca `icontains` em nome/status/tipo/canal e nos valores dos campos
+    extraídos (`extraction_result.fields`, via cast do JSON para texto), além de
+    mapear rótulos de status amigáveis (ex.: "aprovado" → APPROVED)."""
+    if not term:
+        return queryset
+    term = term.strip()
+    if not term:
+        return queryset
+    queryset = queryset.annotate(
+        _fields_text=Cast("extraction_result__fields", output_field=TextField()),
+    )
+    predicate = (
+        Q(original_filename__icontains=term)
+        | Q(status__icontains=term)
+        | Q(document_type__icontains=term)
+        | Q(channel__icontains=term)
+        | Q(_fields_text__icontains=term)
+    )
+    mapped = _STATUS_LABEL_MAP.get(term.lower())
+    if mapped:
+        predicate |= Q(status__in=mapped)
+    return queryset.filter(predicate)
+
+
 @api_view(["GET"])
 @authentication_classes([DocuparseAuthentication])
 @permission_classes([require_permission("inbox.view")])
@@ -136,13 +196,15 @@ def documents_inbox_view(request):
         )
         .order_by("-received_at")
     )
-    status_filter = request.query_params.get("status")
+    queryset = _apply_status_filter(queryset, request.query_params.get("status"))
     tenant_filter = request.query_params.get("tenant")
-    if status_filter:
-        queryset = queryset.filter(status=status_filter)
     if tenant_filter:
         queryset = queryset.filter(tenant__slug=tenant_filter)
-    return Response(DocumentListSerializer(queryset[:200], many=True).data)
+    queryset = _apply_search(queryset, request.query_params.get("search"))
+
+    page = paginate_queryset(queryset, request)
+    serialized = DocumentListSerializer(page.items, many=True).data
+    return Response(page.envelope(serialized))
 
 
 @api_view(["POST"])
@@ -182,10 +244,13 @@ def document_delete_view(request, document_id):
 
 
 @api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("inbox.view")])
 def document_file_view(request, document_id):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
+    # Dual-auth (feature 009): aceita o token interno de serviço (via
+    # DocuparseAuthentication → request.auth == "service_token") OU o JWT do
+    # usuário com a permissão "inbox.view" (caso da pré-visualização na UI),
+    # respeitando as permissões existentes sem forçar download.
     document = get_object_or_404(Document, id=document_id)
     try:
         content = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(document.file_uri)

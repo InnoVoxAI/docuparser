@@ -32,7 +32,10 @@ INSTALLED_APPS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Resolve tanto o JWT do usuário quanto o token interno de serviço.
+        # Sem isso, chamadas com o token interno (Bearer <token>) seriam
+        # rejeitadas pela JWTAuthentication antes de qualquer verificação.
+        'users.authentication.DocuparseAuthentication',
     ],
 }
 
@@ -111,6 +114,6 @@ LANGEXTRACT_SERVICE_URL = os.environ.get('LANGEXTRACT_SERVICE_URL', 'http://127.
 DOCUPARSE_LOCAL_EVENT_DIR = os.environ.get('DOCUPARSE_LOCAL_EVENT_DIR', str(BASE_DIR / '.docuparse-events'))
 DOCUPARSE_LOCAL_STORAGE_DIR = os.environ.get('DOCUPARSE_LOCAL_STORAGE_DIR', str(PROJECT_DIR / '.docuparse-storage'))
 DOCUPARSE_APPROVED_EXPORT_DIR = os.environ.get('DOCUPARSE_APPROVED_EXPORT_DIR', str(BASE_DIR / 'exports' / 'approved'))
-DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TOKEN', '').strip()
+DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TOKEN', 'teste123').strip()
 DOCUPARSE_AUTO_PROCESS_OCR = os.environ.get('DOCUPARSE_AUTO_PROCESS_OCR', 'true').strip().lower() not in {'0', 'false', 'no'}
 DOCUPARSE_AUTO_PROCESS_EXTRACTION = os.environ.get('DOCUPARSE_AUTO_PROCESS_EXTRACTION', 'true').strip().lower() not in {'0', 'false', 'no'}

@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 import {
     AlertTriangle,
     CheckCircle2,
@@ -55,11 +55,11 @@ import { CONTA_AGUA_DEFAULT_RULES } from './models/contadeagua/rules'
 import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } from './models/recibo/schemas'
 import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
-const internalServiceToken = import.meta.env.VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN
-const _devHeaders: Record<string, string> = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
 const api = axios.create({ baseURL: '/api/ocr' })
 const authApi = axios.create({ baseURL: '/api/auth' })
-const comApi = axios.create({ baseURL: '/com/api/v1', headers: _devHeaders })
+// backend-com (upload/poll) autentica pelo JWT do usuário — anexado via
+// interceptor abaixo, igual ao `api`. Nenhum segredo é embutido no frontend.
+const comApi = axios.create({ baseURL: '/com/api/v1' })
 
 interface NavItem {
     id: ActiveView
@@ -232,12 +232,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, [])
 
     useEffect(() => {
-        const id = api.interceptors.request.use((config) => {
+        const attachToken = (config: InternalAxiosRequestConfig) => {
             const token = localStorage.getItem('access_token')
             if (token) config.headers.Authorization = `Bearer ${token}`
             return config
-        })
-        return () => api.interceptors.request.eject(id)
+        }
+        const apiId = api.interceptors.request.use(attachToken)
+        const comId = comApi.interceptors.request.use(attachToken)
+        return () => {
+            api.interceptors.request.eject(apiId)
+            comApi.interceptors.request.eject(comId)
+        }
     }, [])
 
     const login = async (email: string, password: string): Promise<void> => {
@@ -4152,7 +4157,7 @@ function readError(error: unknown, fallback: string): string {
         return backendMessage
     }
     if (e.response?.status === 401) {
-        return 'A API recusou a chamada por falta de token interno. Configure VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN no frontend ou remova DOCUPARSE_INTERNAL_SERVICE_TOKEN no backend local.'
+        return 'Sessao expirada ou nao autenticada. Faca login novamente.'
     }
     if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
         return `${fallback} Verifique se backend-core e backend-com estao rodando.`

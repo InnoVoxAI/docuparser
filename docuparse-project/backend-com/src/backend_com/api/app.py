@@ -7,6 +7,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
+import jwt
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -81,7 +82,7 @@ async def manual_document_upload(
     metadata_json: str | None = Form(None),
     authorization: str | None = Header(default=None),
 ):
-    _validate_internal_service_token(authorization)
+    _authenticate_caller(authorization)
     try:
         metadata = json.loads(metadata_json) if metadata_json else {}
         if not isinstance(metadata, dict):
@@ -145,7 +146,7 @@ async def poll_email_messages(
     tenant_id: str = "tenant-demo",
     authorization: str | None = Header(default=None),
 ):
-    _validate_internal_service_token(authorization)
+    _authenticate_caller(authorization)
     try:
         return poll_configured_imap_once(tenant_id=tenant_id)
     except ImapPollingError as exc:
@@ -202,12 +203,49 @@ def _validate_email_signature(signature: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid email webhook signature")
 
 
-def _validate_internal_service_token(authorization: str | None) -> None:
+def _bearer_token(authorization: str | None) -> str:
+    if authorization and authorization.startswith("Bearer "):
+        return authorization[len("Bearer "):].strip()
+    return ""
+
+
+def _is_valid_user_jwt(token: str) -> bool:
+    """Verifica o JWT do usuário emitido pelo backend-core.
+
+    Usa a mesma SECRET_KEY e algoritmo (HS256) do backend-core — por isso ambos
+    precisam compartilhar a SECRET_KEY. PyJWT já valida assinatura e expiração
+    (`exp`); exigimos também que seja um access token.
+    """
+    if not token:
+        return False
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError:
+        return False
+    return payload.get("token_type") == "access"
+
+
+def _authenticate_caller(authorization: str | None) -> None:
+    """Autoriza requisições de usuário aceitando o JWT do usuário OU o token
+    interno de serviço (mesmo modelo do backend-core).
+
+    - JWT do usuário (frontend)          -> verificado via SECRET_KEY compartilhada
+    - token interno (serviço↔serviço)    -> comparado com DOCUPARSE_INTERNAL_SERVICE_TOKEN
+    - token interno não configurado      -> acesso aberto (dev/local), preservando
+                                            o comportamento histórico
+
+    Só retorna 401 quando o token interno está configurado e a requisição não
+    traz nenhuma credencial válida.
+    """
     if not settings.internal_service_token:
         return
-    expected = f"Bearer {settings.internal_service_token}"
-    if not authorization or not hmac.compare_digest(authorization, expected):
-        raise HTTPException(status_code=401, detail="invalid internal service token")
+
+    token = _bearer_token(authorization)
+    if token and hmac.compare_digest(token, settings.internal_service_token):
+        return
+    if _is_valid_user_jwt(token):
+        return
+    raise HTTPException(status_code=401, detail="invalid internal service token")
 
 
 @app.post("/api/v1/whatsapp/webhook")
@@ -246,7 +284,7 @@ async def poll_whatsapp_messages(
     tenant_id: str = "tenant-demo",
     authorization: str | None = Header(default=None),
 ):
-    _validate_internal_service_token(authorization)
+    _authenticate_caller(authorization)
     try:
         return poll_configured_twilio_once(tenant_id=tenant_id)
     except TwilioPollingError as exc:

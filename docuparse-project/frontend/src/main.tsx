@@ -18,7 +18,24 @@ import {
     X,
     XCircle,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import './index.css'
+import type {
+    AuthContextValue,
+    User,
+    LoginResponse,
+    Document,
+    ActiveView,
+    ExtractionResult,
+    FieldRow,
+    SaveMessage,
+    ExtractionFieldVersion,
+    FieldVersionsResponse,
+    SchemaConfig,
+    LayoutConfig,
+    SchemaField,
+    SchemaExample,
+} from './types'
 import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIELDS } from './models/boleto/schemas'
 import { boletoPromptForDocumentType } from './models/boleto/prompts'
 import { BOLETO_DEFAULT_EXAMPLES } from './models/boleto/examples'
@@ -35,12 +52,26 @@ import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } fro
 import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
 const internalServiceToken = import.meta.env.VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN
-const _devHeaders = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
+const _devHeaders: Record<string, string> = internalServiceToken ? { Authorization: `Bearer ${internalServiceToken}` } : {}
 const api = axios.create({ baseURL: '/api/ocr' })
 const authApi = axios.create({ baseURL: '/api/auth' })
 const comApi = axios.create({ baseURL: '/com/api/v1', headers: _devHeaders })
 
-const NAV_ITEMS = [
+interface NavItem {
+    id: ActiveView
+    label: string
+    icon: LucideIcon
+    permission: string
+}
+
+interface DashboardMetrics {
+    total: number
+    pending: number
+    approved: number
+    failed: number
+}
+
+const NAV_ITEMS: NavItem[] = [
     { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, permission: 'inbox.view' },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'inbox.view' },
@@ -51,7 +82,7 @@ const NAV_ITEMS = [
     { id: 'roles', label: 'Roles', icon: Settings, permission: 'roles.manage' },
 ]
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<string, string> = {
     RECEIVED: 'Pendente',
     OCR_COMPLETED: 'Pendente',
     OCR_FAILED: 'Pendente',
@@ -65,7 +96,7 @@ const STATUS_LABELS = {
     ERP_FAILED: 'Pendente',
 }
 
-const TYPE_ALIASES = {
+const TYPE_ALIASES: Record<string, string[]> = {
     pdf: ['digital_pdf'],
     scan: ['scanned_image'],
     escaneado: ['scanned_image'],
@@ -73,12 +104,12 @@ const TYPE_ALIASES = {
     manuscrito: ['handwritten', 'manuscrito'],
 }
 
-function buildSearchRegex(query) {
+function buildSearchRegex(query: string): RegExp | null {
     const escaped = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     try { return new RegExp(escaped, 'i') } catch { return null }
 }
 
-function filterDocuments(docs, query) {
+function filterDocuments(docs: Document[], query: string): Document[] {
     if (!query.trim()) return docs
     const q = query.trim().toLowerCase()
     const regex = buildSearchRegex(query)
@@ -108,16 +139,16 @@ function filterDocuments(docs, query) {
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
-const AuthContext = createContext(null)
+const AuthContext = createContext<AuthContextValue | null>(null)
 
-function AuthProvider({ children }) {
-    const [user, setUser] = useState(null)
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+    const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
         const token = localStorage.getItem('access_token')
         if (!token) { setLoading(false); return }
-        authApi.get('/me', { headers: { Authorization: `Bearer ${token}` } })
+        authApi.get<User>('/me', { headers: { Authorization: `Bearer ${token}` } })
             .then((r) => setUser(r.data))
             .catch(() => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token') })
             .finally(() => setLoading(false))
@@ -126,20 +157,20 @@ function AuthProvider({ children }) {
     useEffect(() => {
         const id = api.interceptors.request.use((config) => {
             const token = localStorage.getItem('access_token')
-            if (token) config.headers = { ...config.headers, Authorization: `Bearer ${token}` }
+            if (token) config.headers.Authorization = `Bearer ${token}`
             return config
         })
         return () => api.interceptors.request.eject(id)
     }, [])
 
-    const login = async (email, password) => {
-        const r = await authApi.post('/login', { email, password })
+    const login = async (email: string, password: string): Promise<void> => {
+        const r = await authApi.post<LoginResponse>('/login', { email, password })
         localStorage.setItem('access_token', r.data.access)
         localStorage.setItem('refresh_token', r.data.refresh)
         setUser(r.data.user)
     }
 
-    const logout = async () => {
+    const logout = async (): Promise<void> => {
         const refresh = localStorage.getItem('refresh_token')
         try { if (refresh) await authApi.post('/logout', { refresh }, { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }) }
         catch (_) { /* ignore */ }
@@ -148,7 +179,7 @@ function AuthProvider({ children }) {
         setUser(null)
     }
 
-    const hasPermission = (code) => Array.isArray(user?.permissions) && user.permissions.includes(code)
+    const hasPermission = (code: string): boolean => Array.isArray(user?.permissions) && user.permissions.includes(code)
 
     return (
         <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>
@@ -157,9 +188,17 @@ function AuthProvider({ children }) {
     )
 }
 
-function useAuth() { return useContext(AuthContext) }
+function useAuth(): AuthContextValue {
+    const ctx = useContext(AuthContext)
+    if (!ctx) throw new Error('useAuth deve ser usado dentro de AuthProvider')
+    return ctx
+}
 
-function PermissionGuard({ code, children, fallback = null }) {
+function PermissionGuard({ code, children, fallback = null }: {
+    code: string
+    children: React.ReactNode
+    fallback?: React.ReactNode
+}) {
     const { hasPermission } = useAuth()
     return hasPermission(code) ? children : fallback
 }
@@ -176,7 +215,7 @@ function AcessoNaoAutorizado() {
 
 function LoginPage() {
     const { login } = useAuth()
-    const [mode, setMode] = useState('login')
+    const [mode, setMode] = useState<'login' | 'register'>('login')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [name, setName] = useState('')
@@ -185,15 +224,16 @@ function LoginPage() {
     const [error, setError] = useState('')
     const [success, setSuccess] = useState('')
 
-    const handleLogin = async (e) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
         setSubmitting(true)
         try {
             await login(email, password)
         } catch (err) {
-            const detail = err?.response?.data?.detail
-            setError(err?.response?.status === 403
+            const e = asApiError(err)
+            const detail = e.response?.data?.detail
+            setError(e.response?.status === 403
                 ? (detail || 'Conta inativa. Aguarde ativação pelo administrador.')
                 : (detail || 'Credenciais inválidas.'))
         } finally {
@@ -201,7 +241,7 @@ function LoginPage() {
         }
     }
 
-    const handleRegister = async (e) => {
+    const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
         if (password !== confirmPassword) { setError('As senhas não coincidem.'); return }
@@ -213,7 +253,7 @@ function LoginPage() {
             setEmail('')
             setPassword('')
         } catch (err) {
-            const data = err?.response?.data
+            const data = asApiError(err).response?.data
             setError(data?.detail || data?.email?.[0] || data?.password?.[0] || 'Erro ao criar conta.')
         } finally {
             setSubmitting(false)
@@ -291,18 +331,18 @@ function LoginPage() {
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 function App() {
-    const { user, loading: authLoading, logout, hasPermission } = useAuth()
+    const { user, logout, hasPermission } = useAuth()
     const [activeView, setActiveView] = useState(() =>
         NAV_ITEMS.find(item => hasPermission(item.permission))?.id ?? 'dashboard'
     )
-    const [documents, setDocuments] = useState([])
-    const [schemas, setSchemas] = useState([])
-    const [layouts, setLayouts] = useState([])
+    const [documents, setDocuments] = useState<Document[]>([])
+    const [schemas, setSchemas] = useState<SchemaConfig[]>([])
+    const [layouts, setLayouts] = useState<LayoutConfig[]>([])
     const [selectedDocumentId, setSelectedDocumentId] = useState('')
-    const [selectedDocument, setSelectedDocument] = useState(null)
+    const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
-    const [rejectedModal, setRejectedModal] = useState(null)
+    const [rejectedModal, setRejectedModal] = useState<Document | null>(null)
 
     const refreshData = async (silent = false) => {
         if (!hasPermission('inbox.view')) return
@@ -310,9 +350,9 @@ function App() {
         setError('')
         try {
             const [documentsResult, schemasResult, layoutsResult] = await Promise.allSettled([
-                api.get('/documents'),
-                api.get('/schema-configs'),
-                api.get('/layout-configs'),
+                api.get<Document[]>('/documents'),
+                api.get<SchemaConfig[]>('/schema-configs'),
+                api.get<LayoutConfig[]>('/layout-configs'),
             ])
 
             if (documentsResult.status === 'fulfilled') {
@@ -335,7 +375,7 @@ function App() {
             }
 
             if (selectedDocumentId) {
-                const detailResponse = await api.get(`/documents/${selectedDocumentId}`)
+                const detailResponse = await api.get<Document>(`/documents/${selectedDocumentId}`)
                 setSelectedDocument(detailResponse.data)
             }
         } catch (requestError) {
@@ -363,7 +403,7 @@ function App() {
         }
 
         let ignore = false
-        api.get(`/documents/${selectedDocumentId}`)
+        api.get<Document>(`/documents/${selectedDocumentId}`)
             .then((response) => {
                 if (!ignore) {
                     setSelectedDocument(response.data)
@@ -394,14 +434,14 @@ function App() {
         [documents],
     )
 
-    const navigateToValidation = (documentId) => {
+    const navigateToValidation = (documentId: string) => {
         setSelectedDocumentId(documentId)
         setActiveView('validation')
     }
 
 
 
-    const handleReprocessDocument = async (id) => {
+    const handleReprocessDocument = async (id: string) => {
         try {
             await api.post(`/documents/${id}/reprocess-ocr`)
             await refreshData()
@@ -410,7 +450,7 @@ function App() {
         }
     }
 
-    const handleDeleteDocument = async (id) => {
+    const handleDeleteDocument = async (id: string) => {
         if (!window.confirm('Excluir este documento permanentemente?')) return
         try {
             await api.delete(`/documents/${id}/delete`)
@@ -459,7 +499,7 @@ function App() {
                             </div>
                             <button
                                 type="button"
-                                onClick={refreshData}
+                                onClick={refreshData as unknown as React.MouseEventHandler<HTMLButtonElement>}
                                 className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
                             >
                                 <RefreshCw size={16} aria-hidden="true" />
@@ -487,7 +527,7 @@ function App() {
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}
 
-                        {activeView === 'dashboard' ? <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}><Dashboard metrics={metrics} documents={documents} onSelectRejected={setRejectedModal} onReprocess={handleReprocessDocument} onDelete={handleDeleteDocument} /></PermissionGuard> : null}
+                        {activeView === 'dashboard' ? <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}><Dashboard metrics={metrics} documents={documents} onSelectRejected={setRejectedModal} /></PermissionGuard> : null}
                         {activeView === 'inbox' ? (
                             <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
                                 <InboxView
@@ -543,7 +583,12 @@ function App() {
     )
 }
 
-function NavButton({ item, active, onClick, compact = false }) {
+function NavButton({ item, active, onClick, compact = false }: {
+    item: NavItem
+    active: boolean
+    onClick: () => void
+    compact?: boolean
+}) {
     const Icon = item.icon
     return (
         <button
@@ -559,7 +604,12 @@ function NavButton({ item, active, onClick, compact = false }) {
     )
 }
 
-function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }) {
+function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }: {
+    doc: Document
+    onClose: () => void
+    onReprocess: (id: string) => void
+    onDelete: (id: string) => void
+}) {
     return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
@@ -608,11 +658,15 @@ function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }) {
     )
 }
 
-function Dashboard({ metrics, documents, onSelectRejected, onReprocess, onDelete }) {
+function Dashboard({ metrics, documents, onSelectRejected }: {
+    metrics: DashboardMetrics
+    documents: Document[]
+    onSelectRejected?: (doc: Document) => void
+}) {
     const [search, setSearch] = useState('')
-    const displayed = search.trim() ? filterDocuments(documents, search) : documents.slice(0, 8)
+    const displayed = filterDocuments(documents, search)
 
-    function handleSelectDocument(id) {
+    function handleSelectDocument(id: string) {
         const doc = documents.find(d => d.id === id)
         if (doc && doc.status === 'REJECTED' && onSelectRejected) {
             onSelectRejected(doc)
@@ -629,7 +683,7 @@ function Dashboard({ metrics, documents, onSelectRejected, onReprocess, onDelete
             </div>
             <section className="rounded-md border border-zinc-200 bg-white">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-                    <div className="text-sm font-semibold">Ultimos documentos</div>
+                    <div className="text-sm font-semibold">Documentos</div>
                     <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome, status, tipo..." />
                 </div>
                 <DocumentTable documents={displayed} onSelectDocument={handleSelectDocument} />
@@ -638,7 +692,11 @@ function Dashboard({ metrics, documents, onSelectRejected, onReprocess, onDelete
     )
 }
 
-function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }) {
+function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }: {
+    documents: Document[]
+    onNavigateToValidation: (id: string) => void
+    onNavigateToUpload: () => void
+}) {
     const [search, setSearch] = useState('')
     const displayed = filterDocuments(documents, search)
     return (
@@ -664,7 +722,7 @@ function InboxView({ documents, onNavigateToValidation, onNavigateToUpload }) {
     )
 }
 
-function ApprovedView({ documents }) {
+function ApprovedView({ documents }: { documents: Document[] }) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Documentos aprovados</div>
@@ -698,7 +756,12 @@ function ApprovedView({ documents }) {
     )
 }
 
-function RejectedView({ documents, onReprocess, onDelete, onRefresh }) {
+function RejectedView({ documents, onReprocess, onDelete, onRefresh }: {
+    documents: Document[]
+    onReprocess: (id: string) => void
+    onDelete: (id: string) => void
+    onRefresh: () => void
+}) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
@@ -742,7 +805,11 @@ function RejectedView({ documents, onReprocess, onDelete, onRefresh }) {
     )
 }
 
-function RejectedRow({ document, onReprocess, onDelete }) {
+function RejectedRow({ document, onReprocess, onDelete }: {
+    document: Document
+    onReprocess: (id: string) => void
+    onDelete: (id: string) => void
+}) {
     const [viewingMotivo, setViewingMotivo] = useState(false)
     return (
         <tr className="hover:bg-zinc-50">
@@ -802,15 +869,39 @@ function RejectedRow({ document, onReprocess, onDelete }) {
 
 const DEFAULT_DLQ_STREAM = 'ocr.completed.dlq'
 
+// Os eventos/streams de DLQ têm forma dinâmica (payloads de workers diversos);
+// campos ad-hoc são renderizados diretamente, por isso o índice permissivo.
+interface DlqStream {
+    stream: string
+    count: number
+    latest?: DlqEvent
+    [key: string]: any
+}
+
+interface DlqSummary {
+    total: number
+    streams: DlqStream[]
+}
+
+interface DlqEvent {
+    id?: string
+    original_stream?: string
+    source?: string
+    error_type?: string
+    error?: string
+    payload?: unknown
+    [key: string]: any
+}
+
 function OperationsView() {
-    const [summary, setSummary] = useState({ total: 0, streams: [] })
+    const [summary, setSummary] = useState<DlqSummary>({ total: 0, streams: [] })
     const [selectedStream, setSelectedStream] = useState(DEFAULT_DLQ_STREAM)
-    const [events, setEvents] = useState([])
-    const [selectedEvent, setSelectedEvent] = useState(null)
+    const [events, setEvents] = useState<DlqEvent[]>([])
+    const [selectedEvent, setSelectedEvent] = useState<DlqEvent | null>(null)
     const [loading, setLoading] = useState(false)
     const [requeueing, setRequeueing] = useState(false)
     const [message, setMessage] = useState('')
-    const [messageTone, setMessageTone] = useState('neutral')
+    const [messageTone, setMessageTone] = useState<'neutral' | 'error'>('neutral')
 
     const loadOperations = async (stream = selectedStream) => {
         setLoading(true)
@@ -835,12 +926,12 @@ function OperationsView() {
         loadOperations(DEFAULT_DLQ_STREAM)
     }, [])
 
-    const selectStream = (stream) => {
+    const selectStream = (stream: string) => {
         setSelectedStream(stream)
         loadOperations(stream)
     }
 
-    const requeueSelectedEvent = async ({ execute }) => {
+    const requeueSelectedEvent = async ({ execute }: { execute: boolean }) => {
         if (!selectedEvent || requeueing) {
             return
         }
@@ -996,8 +1087,8 @@ function OperationsView() {
     )
 }
 
-function UploadView({ onUploaded }) {
-    const [file, setFile] = useState(null)
+function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> }) {
+    const [file, setFile] = useState<File | null>(null)
     const [previewUrl, setPreviewUrl] = useState('')
     const [tenantId, setTenantId] = useState('tenant-demo')
     const [sender, setSender] = useState('')
@@ -1023,7 +1114,7 @@ function UploadView({ onUploaded }) {
         setSubmitting(true)
         setMessage('')
         const formData = new FormData()
-        formData.append('file', file)
+        if (file) formData.append('file', file)
         formData.append('tenant_id', tenantId)
         if (sender.trim()) {
             formData.append('sender', sender)
@@ -1089,20 +1180,26 @@ function UploadView({ onUploaded }) {
     )
 }
 
-function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onValidated, onBackToInbox }) {
+export function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onValidated, onBackToInbox }: {
+    schemas?: SchemaConfig[]
+    selectedDocument: Document | null
+    selectedDocumentId: string
+    onValidated: () => void | Promise<unknown>
+    onBackToInbox: () => void
+}) {
     const [notes, setNotes] = useState('')
     const [notesError, setNotesError] = useState(false)
     const [submitError, setSubmitError] = useState('')
-    const [fieldRows, setFieldRows] = useState([])
+    const [fieldRows, setFieldRows] = useState<FieldRow[]>([])
     const [submitting, setSubmitting] = useState(false)
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
     const [extracting, setExtracting] = useState(false)
     const [extractMessage, setExtractMessage] = useState('')
     const [saving, setSaving] = useState(false)
-    const [saveMessage, setSaveMessage] = useState(null)
+    const [saveMessage, setSaveMessage] = useState<SaveMessage | null>(null)
     const [confirmSaveOpen, setConfirmSaveOpen] = useState(false)
     const [historyOpen, setHistoryOpen] = useState(false)
-    const [history, setHistory] = useState(null)
+    const [history, setHistory] = useState<FieldVersionsResponse | null>(null)
     const [historyLoading, setHistoryLoading] = useState(false)
     const [historyError, setHistoryError] = useState('')
 
@@ -1136,7 +1233,7 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         if (!rawText) return
 
         let ignore = false
-        api.post('/classify-text', { text: rawText })
+        api.post<{ schema_id?: string }>('/classify-text', { text: rawText })
             .then((res) => {
                 if (ignore) return
                 const schemaId = res.data?.schema_id
@@ -1153,7 +1250,7 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         setExtracting(true)
         setExtractMessage('')
         try {
-            const response = await api.post(`/documents/${selectedDocumentId}/langextract`, {
+            const response = await api.post<ExtractionResult>(`/documents/${selectedDocumentId}/langextract`, {
                 schema_config_id: selectedSchemaId,
             })
             const fields = response.data.fields || {}
@@ -1172,7 +1269,7 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         }
     }
 
-    const submitDecision = async (decision) => {
+    const submitDecision = async (decision: 'approved' | 'rejected') => {
         if (!selectedDocumentId) return
         setSubmitError('')
         setNotesError(false)
@@ -1220,7 +1317,7 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         setSaving(true)
         setSaveMessage(null)
         try {
-            const response = await api.put(`/documents/${selectedDocumentId}/fields`, {
+            const response = await api.put<ExtractionFieldVersion>(`/documents/${selectedDocumentId}/fields`, {
                 base_version_number: selectedDocument?.active_field_version_number ?? null,
                 fields: buildFieldsPayload(),
             })
@@ -1234,9 +1331,9 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
             setSaveMessage({ tone: 'success', text: `Versão ${response.data.version_number} salva com sucesso.` })
             await onValidated()
         } catch (requestError) {
-            const statusCode = requestError?.response?.status
+            const statusCode = asApiError(requestError).response?.status
             if (statusCode === 409) {
-                const active = requestError.response.data?.active_version_number
+                const active = asApiError(requestError).response?.data?.active_version_number
                 setSaveMessage({
                     tone: 'error',
                     text: `A lista foi atualizada por outro processo (versão ativa atual: ${active}). Recarregue a versão ativa antes de salvar.`,
@@ -1256,7 +1353,7 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
         setHistoryError('')
         setHistory(null)
         try {
-            const response = await api.get(`/documents/${selectedDocumentId}/field-versions`)
+            const response = await api.get<FieldVersionsResponse>(`/documents/${selectedDocumentId}/field-versions`)
             setHistory(response.data)
         } catch (requestError) {
             setHistoryError(readError(requestError, 'Falha ao carregar o histórico de versões.'))
@@ -1329,7 +1426,6 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
                                     : 'Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.'}
                             </Alert>
                         ) : null}
-                        <ReadOnlyTranscription value={selectedDocument.full_transcription} />
                         <ReadOnlyTranscriptionFormatted value={selectedDocument.full_transcription_formatted} />
                         <LangExtractPanel
                             documentId={selectedDocumentId}
@@ -1403,65 +1499,21 @@ function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, on
     )
 }
 
-function EditableFields({ rows, onChange }) {
-    const updateRow = (index, patch) => {
-        onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
-    }
-
-    const removeRow = (index) => {
-        onChange(rows.filter((_, rowIndex) => rowIndex !== index))
-    }
-
-    return (
-        <div className="rounded-md border border-zinc-200">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-                <div className="text-sm font-semibold">Campos extraidos</div>
-                <button
-                    type="button"
-                    onClick={() => onChange([...rows, { name: '', value: '' }])}
-                    className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100"
-                >
-                    Adicionar
-                </button>
-            </div>
-            {rows.length === 0 ? (
-                <div className="px-3 py-6 text-sm text-zinc-500">Nenhum campo extraido para editar.</div>
-            ) : (
-                <div className="divide-y divide-zinc-100">
-                    {rows.map((row, index) => (
-                        <div key={`${row.name}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto]">
-                            <input
-                                value={row.name}
-                                onChange={(event) => updateRow(index, { name: event.target.value })}
-                                className="input"
-                                placeholder="campo"
-                            />
-                            <input
-                                value={row.value}
-                                onChange={(event) => updateRow(index, { value: event.target.value })}
-                                className="input"
-                                placeholder="valor"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => removeRow(index)}
-                                className="h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
-                            >
-                                Remover
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-    )
-}
-
-function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChange, extracting, extractMessage, onRunExtract, fieldRows, onFieldRowsChange }) {
-    const updateRow = (index, patch) => {
+function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChange, extracting, extractMessage, onRunExtract, fieldRows, onFieldRowsChange }: {
+    documentId: string
+    schemas: SchemaConfig[]
+    selectedSchemaId: string
+    onSchemaChange: (id: string) => void
+    extracting: boolean
+    extractMessage: string
+    onRunExtract: () => void | Promise<unknown>
+    fieldRows: FieldRow[]
+    onFieldRowsChange: (rows: FieldRow[]) => void
+}) {
+    const updateRow = (index: number, patch: Partial<FieldRow>) => {
         onFieldRowsChange(fieldRows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
     }
-    const removeRow = (index) => {
+    const removeRow = (index: number) => {
         onFieldRowsChange(fieldRows.filter((_, rowIndex) => rowIndex !== index))
     }
 
@@ -1552,7 +1604,14 @@ const FIELD_VERSION_SOURCE_LABELS = {
     MANUAL_EDIT: 'Edição manual',
 }
 
-function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', onConfirm, onCancel }) {
+function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', onConfirm, onCancel }: {
+    title: React.ReactNode
+    message: React.ReactNode
+    confirmLabel?: string
+    cancelLabel?: string
+    onConfirm: () => void | Promise<unknown>
+    onCancel: () => void
+}) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
             <div className="w-full max-w-sm rounded-md border border-zinc-200 bg-white p-4 shadow-lg">
@@ -1579,7 +1638,12 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel
     )
 }
 
-function FieldVersionHistoryModal({ history, loading, error, onClose }) {
+function FieldVersionHistoryModal({ history, loading, error, onClose }: {
+    history: FieldVersionsResponse | null
+    loading: boolean
+    error: string
+    onClose: () => void
+}) {
     const versions = history?.results ?? []
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
@@ -1639,8 +1703,9 @@ function FieldVersionHistoryModal({ history, loading, error, onClose }) {
     )
 }
 
-function DocumentMetadataPanel({ document }) {
-    const meta = document.metadata_channel ?? document.metadata?.metadata_channel ?? {}
+function DocumentMetadataPanel({ document }: { document: Document }) {
+    // Metadados de canal (email/whatsapp) têm forma dinâmica conforme o provedor.
+    const meta: any = document.metadata_channel ?? document.metadata?.metadata_channel ?? {}
     const rows = [
         { label: 'Nome do documento', value: document.original_filename },
         { label: 'Código do processo', value: document.id },
@@ -1680,7 +1745,7 @@ function DocumentMetadataPanel({ document }) {
                         <div className="grid grid-cols-[160px_1fr] gap-2 px-3 py-2">
                             <div className="text-xs font-medium text-zinc-500">Anexos</div>
                             <div className="space-y-0.5">
-                                {attachments.map((a, i) => (
+                                {attachments.map((a: any, i: number) => (
                                     <div key={i} className="text-sm text-zinc-800">
                                         {typeof a === 'object' ? (a.filename || JSON.stringify(a)) : a}
                                     </div>
@@ -1694,31 +1759,7 @@ function DocumentMetadataPanel({ document }) {
     )
 }
 
-function ReadOnlyTranscription({ value }) {
-    const [open, setOpen] = useState(true)
-    return (
-        <div className="rounded-md border border-zinc-200">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-                <div className="text-sm font-semibold">Transcricao completa</div>
-                <button
-                    type="button"
-                    onClick={() => setOpen((o) => !o)}
-                    className="text-xs font-medium text-zinc-500 hover:text-zinc-800"
-                >
-                    {open ? 'Recolher' : 'Expandir'}
-                </button>
-            </div>
-            <textarea
-                value={value || ''}
-                readOnly
-                className={`min-h-[160px] w-full resize-y border-0 bg-zinc-50 px-3 py-3 text-sm leading-6 text-zinc-700 outline-none${open ? '' : ' hidden'}`}
-                placeholder="A transcricao aparecera aqui quando o OCR automatico concluir."
-            />
-        </div>
-    )
-}
-
-function ReadOnlyTranscriptionFormatted({ value }) {
+function ReadOnlyTranscriptionFormatted({ value }: { value?: string }) {
     const [open, setOpen] = useState(true)
     return (
         <div className="rounded-md border border-zinc-200">
@@ -1766,7 +1807,7 @@ const SETTINGS_AREAS = [
     { id: 'integrations', label: 'Integracoes' },
 ]
 
-const SETTINGS_TAB_HELP = {
+const SETTINGS_TAB_HELP: Record<string, { title: string; text: string }> = {
     setup: {
         title: 'Setup do modelo',
         text: 'Defina a identidade do template de extracao: nome, schema, tipo de documento, versao e status. Esses dados controlam qual configuracao sera aplicada apos OCR e classificacao.',
@@ -1812,10 +1853,77 @@ const PROMPT_HINTS = [
     'Priorizar campos proximos ao rotulo',
 ]
 
-function SettingsView({ schemas, layouts, documents, onChanged }) {
+// Formas dos formulários de configuração (estado local da SettingsView). Espelham
+// os payloads dos respectivos endpoints; campos numéricos podem receber strings
+// dos inputs antes do envio (comportamento preservado).
+interface OcrSettingsForm {
+    tenant_slug: string
+    digital_pdf_engine: string
+    scanned_image_engine: string
+    handwritten_engine: string
+    technical_fallback_engine: string
+    openrouter_model: string
+    openrouter_fallback_model: string
+    timeout_seconds: number | string
+    retry_empty_text_enabled: boolean
+    digital_pdf_min_text_blocks: number | string
+}
+
+interface EmailSettingsForm {
+    tenant_slug: string
+    provider: string
+    inbox_folder: string
+    imap_host: string
+    imap_port: number | string
+    username: string
+    webhook_url: string
+    accepted_content_types: string
+    max_attachment_mb: number | string
+    blocked_senders: string
+    is_active: boolean
+}
+
+interface IntegrationSettingsForm {
+    tenant_slug: string
+    approved_export_enabled: boolean
+    approved_export_dir: string
+    approved_export_format: string
+    superlogica_base_url: string
+    superlogica_mode: string
+}
+
+interface SchemaForm {
+    tenant_slug: string
+    schema_id: string
+    version: string
+    model_name: string
+    document_type: string
+    status: string
+}
+
+interface LayoutForm {
+    tenant_slug: string
+    layout: string
+    document_type: string
+    schema_config_id: string
+    confidence_threshold: string
+}
+
+interface ReferenceReview {
+    quality: string
+    action: string
+    notes: string
+}
+
+function SettingsView({ schemas, layouts, documents, onChanged }: {
+    schemas: SchemaConfig[]
+    layouts: LayoutConfig[]
+    documents: Document[]
+    onChanged: () => void | Promise<unknown>
+}) {
     const [activeSettingsArea, setActiveSettingsArea] = useState('extraction')
     const [activeTab, setActiveTab] = useState('setup')
-    const [schemaForm, setSchemaForm] = useState({
+    const [schemaForm, setSchemaForm] = useState<SchemaForm>({
         tenant_slug: 'tenant-demo',
         schema_id: 'recibo_servico',
         version: 'v1',
@@ -1823,7 +1931,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         document_type: 'scanned_image',
         status: 'draft',
     })
-    const [layoutForm, setLayoutForm] = useState({
+    const [layoutForm, setLayoutForm] = useState<LayoutForm>({
         tenant_slug: 'tenant-demo',
         layout: 'recibo',
         document_type: 'scanned_image',
@@ -1833,26 +1941,26 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
     const [fields, setFields] = useState(DEFAULT_LANGEXTRACT_FIELDS)
     const [prompt, setPrompt] = useState(DEFAULT_LANGEXTRACT_PROMPT)
     const [normalizationRules, setNormalizationRules] = useState('{\n  "valor_total": { "type": "decimal", "required": true, "min": 0 },\n  "fornecedor_cnpj": { "type": "cnpj", "validate_checksum": true }\n}')
-    const [examples, setExamples] = useState([
+    const [examples, setExamples] = useState<SchemaExample[]>([
         {
             field: 'valor_total',
             expected: '120.00',
             source: 'Valor: 120,00',
         },
     ])
-    const [referenceReview, setReferenceReview] = useState({
+    const [referenceReview, setReferenceReview] = useState<ReferenceReview>({
         quality: 'pending',
         action: 'review_before_examples',
         notes: '',
     })
     const [selectedDocumentId, setSelectedDocumentId] = useState('')
-    const [referenceDocument, setReferenceDocument] = useState(null)
+    const [referenceDocument, setReferenceDocument] = useState<Document | null>(null)
     const [testOutput, setTestOutput] = useState('{}')
     const [selectedSchemaId, setSelectedSchemaId] = useState('')
     // Track whether schema selection came from the user or auto-detection.
     const [schemaSelectionSource, setSchemaSelectionSource] = useState('auto')
     const [message, setMessage] = useState('')
-    const [integrationSettings, setIntegrationSettings] = useState({
+    const [integrationSettings, setIntegrationSettings] = useState<IntegrationSettingsForm>({
         tenant_slug: 'tenant-demo',
         approved_export_enabled: true,
         approved_export_dir: 'docuparse-project/exports/approved',
@@ -1860,7 +1968,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         superlogica_base_url: '',
         superlogica_mode: 'disabled',
     })
-    const [ocrSettings, setOcrSettings] = useState({
+    const [ocrSettings, setOcrSettings] = useState<OcrSettingsForm>({
         tenant_slug: 'tenant-demo',
         digital_pdf_engine: 'docling',
         scanned_image_engine: 'openrouter',
@@ -1872,7 +1980,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         retry_empty_text_enabled: true,
         digital_pdf_min_text_blocks: 5,
     })
-    const [emailSettings, setEmailSettings] = useState({
+    const [emailSettings, setEmailSettings] = useState<EmailSettingsForm>({
         tenant_slug: 'tenant-demo',
         provider: 'imap',
         inbox_folder: 'INBOX',
@@ -1914,7 +2022,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         // Reset to auto so new documents can trigger default selection.
         setSchemaSelectionSource('auto')
         let ignore = false
-        api.get(`/documents/${selectedDocumentId}`)
+        api.get<Document>(`/documents/${selectedDocumentId}`)
             .then((response) => {
                 if (!ignore) {
                     setReferenceDocument(response.data)
@@ -1944,7 +2052,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         const capturedSchemaId = schemaForm.schema_id
 
         let ignore = false
-        api.post('/classify-text', { text: rawText })
+        api.post<{ schema_id?: string }>('/classify-text', { text: rawText })
             .then((res) => {
                 if (ignore) return
                 const detectedType = res.data?.schema_id
@@ -2137,7 +2245,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         referenceDocument,
     }), [schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument])
 
-    const loadExistingSchema = (schemaId, { source = 'manual' } = {}) => {
+    const loadExistingSchema = (schemaId: string, { source = 'manual' }: { source?: string } = {}) => {
         // Preserve the selection source so auto-detection does not override manual choices.
         setSchemaSelectionSource(source)
         setSelectedSchemaId(schemaId)
@@ -2148,7 +2256,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
         const definition = schema.definition || {}
         setSchemaForm((current) => ({
             ...current,
-            schema_id: schema.schema_id,
+            schema_id: schema.schema_id ?? current.schema_id,
             version: schema.version,
             model_name: definition.model_name || schema.schema_id,
             document_type: definition.document_type || current.document_type,
@@ -2171,7 +2279,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
             }))
         }
         if (Array.isArray(definition.fields)) {
-            setFields(definition.fields.map((field) => ({
+            setFields(definition.fields.map((field: any) => ({
                 name: field.name || '',
                 type: field.type || 'string',
                 required: Boolean(field.required),
@@ -2645,7 +2753,7 @@ function SettingsView({ schemas, layouts, documents, onChanged }) {
     )
 }
 
-function TabHelp({ tab }) {
+function TabHelp({ tab }: { tab: string }) {
     const help = SETTINGS_TAB_HELP[tab]
     if (!help) {
         return null
@@ -2658,8 +2766,12 @@ function TabHelp({ tab }) {
     )
 }
 
-function OcrSettingsPanel({ settings, onChange, onSave }) {
-    const updateField = (field, value) => {
+function OcrSettingsPanel({ settings, onChange, onSave }: {
+    settings: OcrSettingsForm
+    onChange: React.Dispatch<React.SetStateAction<OcrSettingsForm>>
+    onSave: () => void | Promise<unknown>
+}) {
+    const updateField = (field: keyof OcrSettingsForm, value: any) => {
         onChange((current) => ({ ...current, [field]: value }))
     }
 
@@ -2793,7 +2905,7 @@ function OcrSettingsPanel({ settings, onChange, onSave }) {
     )
 }
 
-function EngineSelect({ value, onChange }) {
+function EngineSelect({ value, onChange }: { value?: string; onChange: (value: string) => void }) {
     return (
         <select className="input" value={value || 'docling'} onChange={(event) => onChange(event.target.value)}>
             <option value="docling">Docling</option>
@@ -2803,16 +2915,21 @@ function EngineSelect({ value, onChange }) {
     )
 }
 
-function engineLabel(value) {
-    return {
+function engineLabel(value?: string): string {
+    return ({
         docling: 'Docling',
         openrouter: 'OpenRouter',
         tesseract: 'Tesseract',
-    }[value] || value || '-'
+    } as Record<string, string>)[value ?? ''] || value || '-'
 }
 
-function EmailSettingsPanel({ settings, onChange, onSave, onPoll }) {
-    const updateField = (field, value) => {
+function EmailSettingsPanel({ settings, onChange, onSave, onPoll }: {
+    settings: EmailSettingsForm
+    onChange: React.Dispatch<React.SetStateAction<EmailSettingsForm>>
+    onSave: () => void | Promise<unknown>
+    onPoll: () => void | Promise<unknown>
+}) {
+    const updateField = (field: keyof EmailSettingsForm, value: any) => {
         onChange((current) => ({ ...current, [field]: value }))
     }
 
@@ -2888,7 +3005,7 @@ function EmailSettingsPanel({ settings, onChange, onSave, onPoll }) {
     )
 }
 
-function WhatsAppSettingsPanel({ onPoll }) {
+function WhatsAppSettingsPanel({ onPoll }: { onPoll: () => void | Promise<unknown> }) {
     return (
         <div className="space-y-4 p-4">
             <ConfigIntro
@@ -2947,8 +3064,12 @@ function WhatsAppSettingsPanel({ onPoll }) {
     )
 }
 
-function IntegrationSettingsPanel({ settings, onChange, onSave }) {
-    const updateField = (field, value) => {
+function IntegrationSettingsPanel({ settings, onChange, onSave }: {
+    settings: IntegrationSettingsForm
+    onChange: React.Dispatch<React.SetStateAction<IntegrationSettingsForm>>
+    onSave: () => void | Promise<unknown>
+}) {
+    const updateField = (field: keyof IntegrationSettingsForm, value: any) => {
         onChange((current) => ({ ...current, [field]: value }))
     }
 
@@ -3029,7 +3150,7 @@ function IntegrationSettingsPanel({ settings, onChange, onSave }) {
     )
 }
 
-function ConfigIntro({ title, text }) {
+function ConfigIntro({ title, text }: { title: React.ReactNode; text: React.ReactNode }) {
     return (
         <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3">
             <div className="text-sm font-semibold text-sky-950">{title}</div>
@@ -3038,7 +3159,12 @@ function ConfigIntro({ title, text }) {
     )
 }
 
-function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeModel }) {
+function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeModel }: {
+    schemaForm: SchemaForm
+    layoutForm: LayoutForm
+    activeLayout?: LayoutConfig
+    onChangeModel: () => void
+}) {
     return (
         <div className="mb-4 rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3062,7 +3188,11 @@ function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeMo
     )
 }
 
-function SettingsStepActions({ activeTab, onSaveDraft, onNext }) {
+function SettingsStepActions({ activeTab, onSaveDraft, onNext }: {
+    activeTab: string
+    onSaveDraft: () => void | Promise<unknown>
+    onNext: () => void | Promise<unknown>
+}) {
     const currentIndex = SETTINGS_TABS.findIndex((tab) => tab.id === activeTab)
     const nextTab = SETTINGS_TABS[currentIndex + 1]
     return (
@@ -3079,7 +3209,11 @@ function SettingsStepActions({ activeTab, onSaveDraft, onNext }) {
     )
 }
 
-function HintPanel({ title, items, onUse }) {
+function HintPanel({ title, items, onUse = undefined }: {
+    title: React.ReactNode
+    items: string[]
+    onUse?: (item: string) => void
+}) {
     return (
         <aside className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
             <div className="text-sm font-semibold">{title}</div>
@@ -3099,7 +3233,15 @@ function HintPanel({ title, items, onUse }) {
     )
 }
 
-function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocument, referenceDocument, fields, review, onReviewChange }) {
+function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocument, referenceDocument, fields, review, onReviewChange }: {
+    documents: Document[]
+    selectedDocumentId: string
+    onSelectDocument: (id: string) => void
+    referenceDocument: Document | null
+    fields: SchemaField[]
+    review: ReferenceReview
+    onReviewChange: (review: ReferenceReview) => void
+}) {
     const [search, setSearch] = useState('')
     const filteredDocs = filterDocuments(documents, search)
 
@@ -3162,7 +3304,7 @@ function ReferenceDocumentPanel({ documents, selectedDocumentId, onSelectDocumen
     )
 }
 
-function DocumentPreview({ document }) {
+function DocumentPreview({ document }: { document: Document | null }) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">Original</div>
@@ -3181,7 +3323,11 @@ function DocumentPreview({ document }) {
     )
 }
 
-function HighlightedOcrText({ text, fields, examples }) {
+function HighlightedOcrText({ text, fields, examples }: {
+    text?: string
+    fields: SchemaField[]
+    examples: SchemaExample[]
+}) {
     const highlights = [
         ...fields.map((field) => field.name).filter(Boolean),
         ...examples.map((example) => example.source).filter(Boolean),
@@ -3197,8 +3343,12 @@ function HighlightedOcrText({ text, fields, examples }) {
     )
 }
 
-function SchemaFieldsEditor({ fields, onChange, schemaForm }) {
-    const updateField = (index, patch) => {
+function SchemaFieldsEditor({ fields, onChange, schemaForm }: {
+    fields: SchemaField[]
+    onChange: (fields: SchemaField[]) => void
+    schemaForm: SchemaForm
+}) {
+    const updateField = (index: number, patch: Partial<SchemaField>) => {
         onChange(fields.map((field, fieldIndex) => (fieldIndex === index ? { ...field, ...patch } : field)))
     }
 
@@ -3249,8 +3399,12 @@ function SchemaFieldsEditor({ fields, onChange, schemaForm }) {
     )
 }
 
-function ExamplesEditor({ examples, onChange, referenceText }) {
-    const updateExample = (index, patch) => {
+function ExamplesEditor({ examples, onChange, referenceText }: {
+    examples: SchemaExample[]
+    onChange: (examples: SchemaExample[]) => void
+    referenceText?: string
+}) {
+    const updateExample = (index: number, patch: Partial<SchemaExample>) => {
         onChange(examples.map((example, exampleIndex) => (exampleIndex === index ? { ...example, ...patch } : example)))
     }
 
@@ -3283,10 +3437,18 @@ function ExamplesEditor({ examples, onChange, referenceText }) {
     )
 }
 
-function EmailMetadataModal({ data, onClose }) {
+interface EmailModalDoc {
+    id: string
+    filename: string
+    channel?: string
+    metadata_channel?: Record<string, unknown> | null
+}
+
+function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: () => void }) {
     const isEmail = data.channel === 'email'
     const isWhatsApp = data.channel === 'whatsapp'
-    const meta = data.metadata_channel || {}
+    // Metadados de canal têm forma dinâmica conforme o provedor.
+    const meta: any = data.metadata_channel || {}
 
     const channelRows = isEmail
         ? [
@@ -3360,7 +3522,7 @@ function EmailMetadataModal({ data, onClose }) {
                     <div className="border-t border-zinc-200 px-5 py-3">
                         <div className="mb-1.5 text-xs font-semibold uppercase text-zinc-500">Anexos</div>
                         <ul className="space-y-1">
-                            {meta.attachments.map((name, i) => (
+                            {meta.attachments.map((name: any, i: number) => (
                                 <li key={i} className="flex items-center gap-1.5 text-sm text-zinc-700">
                                     <span className="text-zinc-400">·</span>
                                     {name}
@@ -3399,13 +3561,21 @@ function DocumentTable({
     selectable = false,
     bulkSelectedIds = null,
     onBulkSelectionChange = null,
+}: {
+    documents: Document[]
+    selectedDocumentId?: string
+    onSelectDocument: (id: string) => void
+    compact?: boolean
+    selectable?: boolean
+    bulkSelectedIds?: Set<string> | null
+    onBulkSelectionChange?: ((ids: Set<string>) => void) | null
 }) {
-    const [sortKey, setSortKey] = useState(null)
-    const [sortDir, setSortDir] = useState('asc')
-    const [emailModalDoc, setEmailModalDoc] = useState(null)
-    const selectAllRef = useRef(null)
+    const [sortKey, setSortKey] = useState<string | null>(null)
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+    const [emailModalDoc, setEmailModalDoc] = useState<EmailModalDoc | null>(null)
+    const selectAllRef = useRef<HTMLInputElement | null>(null)
 
-    function handleSort(key) {
+    function handleSort(key: string) {
         if (sortKey === key) {
             setSortDir(d => d === 'asc' ? 'desc' : 'asc')
         } else {
@@ -3415,7 +3585,7 @@ function DocumentTable({
     }
 
     const sortedDocuments = sortKey ? [...documents].sort((a, b) => {
-        let aVal, bVal
+        let aVal = '', bVal = ''
         if (sortKey === 'arquivo') {
             aVal = (a.original_filename || a.id || '').toLowerCase()
             bVal = (b.original_filename || b.id || '').toLowerCase()
@@ -3446,7 +3616,7 @@ function DocumentTable({
         }
     }, [someSelected])
 
-    function toggleAll(e) {
+    function toggleAll(e: React.ChangeEvent<HTMLInputElement>) {
         e.stopPropagation()
         if (!onBulkSelectionChange) return
         const next = new Set(bulkSelectedIds)
@@ -3458,7 +3628,7 @@ function DocumentTable({
         onBulkSelectionChange(next)
     }
 
-    function toggleOne(e, id) {
+    function toggleOne(e: React.ChangeEvent<HTMLInputElement>, id: string) {
         e.stopPropagation()
         if (!onBulkSelectionChange) return
         const next = new Set(bulkSelectedIds)
@@ -3467,7 +3637,7 @@ function DocumentTable({
         onBulkSelectionChange(next)
     }
 
-    const indicator = (col) =>
+    const indicator = (col: string) =>
         sortKey !== col
             ? <span className="ml-1 opacity-30">↕</span>
             : <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
@@ -3561,7 +3731,7 @@ function DocumentTable({
     )
 }
 
-function Metric({ label, value }) {
+function Metric({ label, value }: { label: React.ReactNode; value: React.ReactNode }) {
     return (
         <div className="rounded-md border border-zinc-200 bg-white p-4">
             <div className="text-xs font-semibold uppercase text-zinc-500">{label}</div>
@@ -3570,7 +3740,12 @@ function Metric({ label, value }) {
     )
 }
 
-function ConfigList({ title, items, primaryKey, secondaryKey }) {
+function ConfigList({ title, items, primaryKey, secondaryKey }: {
+    title: React.ReactNode
+    items: Array<Record<string, any> & { id: React.Key }>
+    primaryKey: string
+    secondaryKey: string
+}) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">{title}</div>
@@ -3590,7 +3765,7 @@ function ConfigList({ title, items, primaryKey, secondaryKey }) {
     )
 }
 
-function Field({ label, children }) {
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
     return (
         <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase text-zinc-500">{label}</span>
@@ -3599,14 +3774,14 @@ function Field({ label, children }) {
     )
 }
 
-function Alert({ children, tone = 'neutral' }) {
+function Alert({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'error' | 'success' }) {
     const classes = tone === 'error'
         ? 'border-red-200 bg-red-50 text-red-700'
         : 'border-zinc-200 bg-white text-zinc-600'
     return <div className={`mb-4 rounded-md border px-3 py-2 text-sm ${classes}`}>{children}</div>
 }
 
-function EmptyState({ icon: Icon, text }) {
+function EmptyState({ icon: Icon, text }: { icon: LucideIcon; text: React.ReactNode }) {
     return (
         <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm text-zinc-500">
             <Icon size={24} aria-hidden="true" />
@@ -3615,7 +3790,11 @@ function EmptyState({ icon: Icon, text }) {
     )
 }
 
-function SearchInput({ value, onChange, placeholder = 'Buscar...' }) {
+function SearchInput({ value, onChange, placeholder = 'Buscar...' }: {
+    value: string
+    onChange: (value: string) => void
+    placeholder?: string
+}) {
     return (
         <input
             type="search"
@@ -3627,7 +3806,7 @@ function SearchInput({ value, onChange, placeholder = 'Buscar...' }) {
     )
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status }: { status?: string }) {
     const isGood = status === 'APPROVED'
     const isBad = status === 'REJECTED'
     const classes = isGood
@@ -3635,10 +3814,10 @@ function StatusBadge({ status }) {
         : isBad
             ? 'bg-red-50 text-red-700 ring-red-200'
             : 'bg-amber-50 text-amber-700 ring-amber-200'
-    return <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ring-1 ${classes}`}>{STATUS_LABELS[status] || status || '-'}</span>
+    return <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ring-1 ${classes}`}>{(status ? STATUS_LABELS[status] : '') || status || '-'}</span>
 }
 
-function KeyValueGrid({ values }) {
+function KeyValueGrid({ values }: { values: Record<string, unknown> }) {
     return (
         <dl className="grid gap-2 sm:grid-cols-3">
             {Object.entries(values).map(([key, value]) => (
@@ -3651,7 +3830,7 @@ function KeyValueGrid({ values }) {
     )
 }
 
-function buildMetrics(documents) {
+function buildMetrics(documents: Document[]): DashboardMetrics {
     return documents.reduce(
         (acc, document) => {
             acc.total += 1
@@ -3664,11 +3843,11 @@ function buildMetrics(documents) {
     )
 }
 
-function viewTitle(view) {
+function viewTitle(view: ActiveView): string {
     return NAV_ITEMS.find((item) => item.id === view)?.label ?? 'DocuParse'
 }
 
-function formatDate(value) {
+function formatDate(value?: string | number | Date | null): string {
     if (!value) {
         return '-'
     }
@@ -3678,17 +3857,7 @@ function formatDate(value) {
     }).format(new Date(value))
 }
 
-function formatEditableValue(value) {
-    if (value === null || value === undefined) {
-        return ''
-    }
-    if (typeof value === 'object') {
-        return JSON.stringify(value)
-    }
-    return String(value)
-}
-
-function parseFieldEntry(raw) {
+function parseFieldEntry(raw: any): { value: string; confidence: number | null } {
     if (raw === null || raw === undefined) return { value: '', confidence: null }
     if (typeof raw === 'object' && 'value' in raw) {
         return {
@@ -3710,7 +3879,15 @@ function parseFieldEntry(raw) {
     return { value: String(raw), confidence: null }
 }
 
-function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument }) {
+function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument }: {
+    schemaForm: SchemaForm
+    fields: SchemaField[]
+    prompt: string
+    examples: SchemaExample[]
+    normalizationRules: string
+    referenceReview: ReferenceReview
+    referenceDocument: Document | null
+}) {
     let parsedRules = {}
     try {
         parsedRules = JSON.parse(normalizationRules || '{}')
@@ -3749,8 +3926,8 @@ function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, norm
     }
 }
 
-function buildLangExtractPreview(text, fields) {
-    const output = {}
+function buildLangExtractPreview(text: string, fields: SchemaField[]): string {
+    const output: Record<string, unknown> = {}
     fields.forEach((field) => {
         if (!field.name) {
             return
@@ -3766,7 +3943,7 @@ function buildLangExtractPreview(text, fields) {
     return JSON.stringify(output, null, 2)
 }
 
-function findLikelySourceLine(text, fieldName) {
+function findLikelySourceLine(text: string, fieldName: string): string {
     if (!text || !fieldName) {
         return ''
     }
@@ -3774,7 +3951,7 @@ function findLikelySourceLine(text, fieldName) {
     return text.split(/\r?\n/).find((line) => normalizeSearchText(line).includes(normalizedField)) || ''
 }
 
-function renderHighlightedText(text, highlights) {
+function renderHighlightedText(text: string, highlights: string[]): React.ReactNode {
     const terms = [...new Set(highlights.map((term) => term.trim()).filter((term) => term.length > 2))]
     if (terms.length === 0) {
         return text
@@ -3791,23 +3968,37 @@ function renderHighlightedText(text, highlights) {
     })
 }
 
-function normalizeSearchText(value) {
+function normalizeSearchText(value: unknown): string {
     return String(value || '').trim().toLowerCase()
 }
 
-function escapeRegExp(value) {
+function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function readError(error, fallback) {
-    const backendMessage = error?.response?.data?.detail || error?.response?.data?.error
+// Forma defensiva de erros de axios/rede. As respostas de erro variam por
+// endpoint, então `data` permanece `any` — este é o único ponto documentado de
+// `any` para leitura de erros (FR-010); todos os catch passam por `asApiError`.
+interface ApiError {
+    response?: { status?: number; data?: any }
+    code?: string
+    message?: string
+}
+
+function asApiError(error: unknown): ApiError {
+    return (error ?? {}) as ApiError
+}
+
+function readError(error: unknown, fallback: string): string {
+    const e = asApiError(error)
+    const backendMessage = e.response?.data?.detail || e.response?.data?.error
     if (backendMessage) {
         return backendMessage
     }
-    if (error?.response?.status === 401) {
+    if (e.response?.status === 401) {
         return 'A API recusou a chamada por falta de token interno. Configure VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN no frontend ou remova DOCUPARSE_INTERNAL_SERVICE_TOKEN no backend local.'
     }
-    if (error?.code === 'ERR_NETWORK' || error?.message === 'Network Error') {
+    if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
         return `${fallback} Verifique se backend-core e backend-com estao rodando.`
     }
     return fallback
@@ -3815,17 +4006,46 @@ function readError(error, fallback) {
 
 // ─── User Management Screen ───────────────────────────────────────────────────
 
+interface AdminRoleRef {
+    id: string
+    name: string
+}
+
+interface AdminUser {
+    id: string
+    name: string
+    email: string
+    role?: AdminRoleRef | null
+    is_active?: boolean
+    [key: string]: unknown
+}
+
+interface AdminPermission {
+    code: string
+    name?: string
+    description?: string
+    [key: string]: unknown
+}
+
+interface AdminRole {
+    id: string
+    name: string
+    permissions?: Array<AdminPermission | string>
+    users_count?: number
+    [key: string]: unknown
+}
+
 function GerenciarUsuarios() {
-    const [users, setUsers] = useState([])
-    const [roles, setRoles] = useState([])
+    const [users, setUsers] = useState<AdminUser[]>([])
+    const [roles, setRoles] = useState<AdminRole[]>([])
     const [loading, setLoading] = useState(true)
-    const [modal, setModal] = useState(null) // null | { mode: 'create' | 'edit', user?: any }
+    const [modal, setModal] = useState<{ mode: 'create' | 'edit'; user?: AdminUser } | null>(null)
     const [form, setForm] = useState({ name: '', email: '', password: '', role_id: '' })
     const [error, setError] = useState('')
 
     const load = async () => {
         setLoading(true)
-        const [u, r] = await Promise.all([api.get('/users'), api.get('/roles')])
+        const [u, r] = await Promise.all([api.get<AdminUser[]>('/users'), api.get<AdminRole[]>('/roles')])
         setUsers(u.data)
         setRoles(r.data)
         setLoading(false)
@@ -3834,31 +4054,32 @@ function GerenciarUsuarios() {
     useEffect(() => { load() }, [])
 
     const openCreate = () => { setForm({ name: '', email: '', password: '', role_id: '' }); setModal({ mode: 'create' }); setError('') }
-    const openEdit = (u) => { setForm({ name: u.name, email: u.email, password: '', role_id: u.role?.id || '' }); setModal({ mode: 'edit', user: u }); setError('') }
+    const openEdit = (u: AdminUser) => { setForm({ name: u.name, email: u.email, password: '', role_id: u.role?.id || '' }); setModal({ mode: 'edit', user: u }); setError('') }
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
         try {
-            if (modal.mode === 'create') {
+            if (modal?.mode === 'create') {
                 await api.post('/users', form)
             } else {
                 const patch = { name: form.name, email: form.email, role_id: form.role_id || null }
-                await api.patch(`/users/${modal.user.id}`, patch)
+                await api.patch(`/users/${modal?.user?.id}`, patch)
             }
             setModal(null)
             load()
         } catch (err) {
-            setError(err?.response?.data?.detail || err?.response?.data?.email?.[0] || 'Erro ao salvar.')
+            const data = asApiError(err).response?.data
+            setError(data?.detail || data?.email?.[0] || 'Erro ao salvar.')
         }
     }
 
-    const toggleActive = async (user) => {
+    const toggleActive = async (user: AdminUser) => {
         try {
             await api.patch(`/users/${user.id}`, { is_active: !user.is_active })
             load()
         } catch (err) {
-            alert(err?.response?.data?.detail || 'Erro ao alterar status.')
+            alert(asApiError(err).response?.data?.detail || 'Erro ao alterar status.')
         }
     }
 
@@ -3917,16 +4138,16 @@ function GerenciarUsuarios() {
 // ─── Role Management Screen ───────────────────────────────────────────────────
 
 function GerenciarRoles() {
-    const [roles, setRoles] = useState([])
-    const [perms, setPerms] = useState([])
+    const [roles, setRoles] = useState<AdminRole[]>([])
+    const [perms, setPerms] = useState<AdminPermission[]>([])
     const [loading, setLoading] = useState(true)
-    const [modal, setModal] = useState(null)
-    const [form, setForm] = useState({ name: '', permission_codes: [] })
+    const [modal, setModal] = useState<{ mode: 'create' | 'edit'; role?: AdminRole } | null>(null)
+    const [form, setForm] = useState<{ name: string; permission_codes: string[] }>({ name: '', permission_codes: [] })
     const [error, setError] = useState('')
 
     const load = async () => {
         setLoading(true)
-        const [r, p] = await Promise.all([api.get('/roles'), api.get('/permissions')])
+        const [r, p] = await Promise.all([api.get<AdminRole[]>('/roles'), api.get<AdminPermission[]>('/permissions')])
         setRoles(r.data)
         setPerms(p.data)
         setLoading(false)
@@ -3935,38 +4156,39 @@ function GerenciarRoles() {
     useEffect(() => { load() }, [])
 
     const openCreate = () => { setForm({ name: '', permission_codes: [] }); setModal({ mode: 'create' }); setError('') }
-    const openEdit = (r) => { setForm({ name: r.name, permission_codes: (r.permissions || []).map(p => typeof p === 'string' ? p : p.code) }); setModal({ mode: 'edit', role: r }); setError('') }
+    const openEdit = (r: AdminRole) => { setForm({ name: r.name, permission_codes: (r.permissions || []).map(p => typeof p === 'string' ? p : p.code) }); setModal({ mode: 'edit', role: r }); setError('') }
 
-    const togglePerm = (code) => setForm(f => ({
+    const togglePerm = (code: string) => setForm(f => ({
         ...f,
         permission_codes: f.permission_codes.includes(code)
             ? f.permission_codes.filter(c => c !== code)
             : [...f.permission_codes, code],
     }))
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
         try {
-            if (modal.mode === 'create') {
+            if (modal?.mode === 'create') {
                 await api.post('/roles', form)
             } else {
-                await api.patch(`/roles/${modal.role.id}`, form)
+                await api.patch(`/roles/${modal?.role?.id}`, form)
             }
             setModal(null)
             load()
         } catch (err) {
-            setError(err?.response?.data?.detail || err?.response?.data?.permission_codes?.[0] || 'Erro ao salvar.')
+            const data = asApiError(err).response?.data
+            setError(data?.detail || data?.permission_codes?.[0] || 'Erro ao salvar.')
         }
     }
 
-    const handleDelete = async (role) => {
+    const handleDelete = async (role: AdminRole) => {
         if (!window.confirm(`Remover role "${role.name}"?`)) return
         try {
             await api.delete(`/roles/${role.id}`)
             load()
         } catch (err) {
-            alert(err?.response?.data?.detail || 'Erro ao remover.')
+            alert(asApiError(err).response?.data?.detail || 'Erro ao remover.')
         }
     }
 
@@ -3985,7 +4207,7 @@ function GerenciarRoles() {
                         {roles.map(r => (
                             <tr key={r.id} className="border-t border-zinc-100">
                                 <td className="px-3 py-2 font-medium">{r.name}</td>
-                                <td className="px-3 py-2 text-zinc-500 text-xs">{(r.permissions || []).map(p => p.description || p.code || p).join(', ')}</td>
+                                <td className="px-3 py-2 text-zinc-500 text-xs">{(r.permissions || []).map((p: any) => p.description || p.code || p).join(', ')}</td>
                                 <td className="px-3 py-2">{r.users_count}</td>
                                 <td className="px-3 py-2 flex gap-2">
                                     <button onClick={() => openEdit(r)} className="text-xs text-zinc-600 hover:underline">Editar</button>
@@ -4026,7 +4248,7 @@ function GerenciarRoles() {
     )
 }
 
-function Root() {
+export function Root() {
     const { user, loading } = useAuth()
     if (loading) {
         return (
@@ -4038,10 +4260,14 @@ function Root() {
     return user ? <App /> : <LoginPage />
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-    <React.StrictMode>
-        <AuthProvider>
-            <Root />
-        </AuthProvider>
-    </React.StrictMode>,
-)
+const rootElement = document.getElementById('root')
+if (rootElement) {
+    ReactDOM.createRoot(rootElement).render(
+        <React.StrictMode>
+            <AuthProvider>
+                <Root />
+            </AuthProvider>
+        </React.StrictMode>,
+    )
+}
+

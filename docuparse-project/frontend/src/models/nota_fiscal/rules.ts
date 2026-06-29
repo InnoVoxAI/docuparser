@@ -1,4 +1,6 @@
-export const NOTA_FISCAL_DEFAULT_RULES = {
+import type { SchemaRules } from '../../types'
+
+export const NOTA_FISCAL_DEFAULT_RULES: SchemaRules = {
     valor_nota: {
         type: 'decimal',
         required: true,

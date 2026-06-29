@@ -54,7 +54,7 @@ export const PROMPT_NOTA_FISCAL_SCANNED = [
     '- Use confianca alta apenas se o valor estiver claramente legivel',
 ].join('\n')
 
-export function notaFiscalPromptForDocumentType(documentType) {
+export function notaFiscalPromptForDocumentType(documentType: string): string {
     if (documentType === 'digital_pdf') {
         return PROMPT_NOTA_FISCAL_DIGITAL
     }

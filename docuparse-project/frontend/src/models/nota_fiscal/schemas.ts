@@ -1,3 +1,5 @@
+import type { SchemaField } from '../../types'
+
 export const NOTA_FISCAL_DEFAULT_SCHEMA_ID = 'nota_fiscal_default'
 export const NOTA_FISCAL_DEFAULT_MODEL_NAME = 'NOTA FISCAL DEFAULT'
 
@@ -12,7 +14,7 @@ export const NOTA_FISCAL_DEFAULT_MODEL_NAME = 'NOTA FISCAL DEFAULT'
 //     { name: 'cnpj_tomador', type: 'string', required: false, rule: 'CNPJ do tomador; normalizar numerico.' },
 // ]
 
-export const NOTA_FISCAL_DEFAULT_FIELDS = [
+export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
 
     // =========================================================
     // IDENTIFICACAO DO DOCUMENTO
@@ -558,7 +560,7 @@ export const NOTA_FISCAL_DEFAULT_FIELDS = [
 ]
 
 
-function scoreNotaFiscalText(rawText) {
+function scoreNotaFiscalText(rawText: string): number {
     if (!rawText) {
         return 0
     }
@@ -595,6 +597,6 @@ function scoreNotaFiscalText(rawText) {
     return score
 }
 
-export function isLikelyNotaFiscalText(rawText, threshold = 4) {
+export function isLikelyNotaFiscalText(rawText: string, threshold = 4): boolean {
     return scoreNotaFiscalText(rawText) >= threshold
 }

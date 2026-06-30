@@ -542,3 +542,55 @@ class DocumentsAPITests(TestCase):
         doc2_data = next((d for d in response2.json() if d["id"] == str(doc_no_rejection.id)), None)
         assert doc2_data is not None
         assert doc2_data["rejection_notes"] is None
+
+
+class InternalServiceTokenGateTests(TestCase):
+    """Valida o gate `_internal_token_error` do backend-core nos endpoints
+    internos (ex.: schema-configs), cobrindo o cenário que falhava em staging.
+
+    Regressão do bug "invalid internal service token": com o token configurado,
+    o usuário autenticado via JWT precisa ser aceito (antes era rejeitado), e o
+    caller serviço↔serviço com o token interno também. Só requisições sem
+    credencial válida devem receber 401.
+    """
+
+    TOKEN = "staging-token-123"
+
+    def setUp(self) -> None:
+        self.client = APIClient()
+        self.user = get_user_model().objects.create_user(username="op", password="x")
+
+    def test_token_configured_accepts_authenticated_user_jwt(self) -> None:
+        # Cenário staging: token configurado + usuário logado -> 200 (era 401).
+        with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
+            self.client.force_authenticate(user=self.user)
+            response = self.client.get(reverse("schema-configs"))
+        assert response.status_code == 200
+
+    def test_token_configured_accepts_internal_service_token(self) -> None:
+        # Caller serviço↔serviço (ex.: langextract) com o token interno -> 200.
+        with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
+            response = self.client.get(
+                reverse("schema-configs"), HTTP_AUTHORIZATION=f"Bearer {self.TOKEN}"
+            )
+        assert response.status_code == 200
+
+    def test_token_configured_rejects_request_without_credentials(self) -> None:
+        # Token configurado + sem credencial válida -> 401 (segurança mantida).
+        with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
+            response = self.client.get(reverse("schema-configs"))
+        assert response.status_code == 401
+
+    def test_token_configured_rejects_divergent_token(self) -> None:
+        # Tokens divergentes entre serviços -> 401 (causa do sync falhar).
+        with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
+            response = self.client.get(
+                reverse("schema-configs"), HTTP_AUTHORIZATION="Bearer outro-valor"
+            )
+        assert response.status_code == 401
+
+    def test_token_not_configured_keeps_access_open(self) -> None:
+        # Localhost/dev: sem token -> acesso aberto (comportamento histórico).
+        with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=""):
+            response = self.client.get(reverse("schema-configs"))
+        assert response.status_code == 200

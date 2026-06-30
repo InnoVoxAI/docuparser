@@ -92,6 +92,57 @@ def test_manual_upload_requires_internal_token_when_configured(monkeypatch, tmp_
     assert accepted.status_code == 200
 
 
+def test_manual_upload_accepts_user_jwt_and_rejects_invalid(monkeypatch, tmp_path) -> None:
+    # Dual-auth: com o token interno configurado, o backend-com aceita tanto o
+    # JWT do usuario (verificado pela SECRET_KEY compartilhada) quanto o token
+    # interno de servico; e rejeita JWT expirado / assinado com outra chave.
+    import jwt as pyjwt
+    from datetime import datetime, timedelta, timezone
+
+    _point_backend_com_to_tmp(monkeypatch, tmp_path)
+    from backend_com import config
+    from backend_com.api import app as app_module
+
+    SECRET = "shared-secret-key"
+    for s in (config.settings, app_module.settings):
+        s.internal_service_token = "service-token"
+        s.secret_key = SECRET
+        s.jwt_algorithm = "HS256"
+
+    def make_token(secret: str, *, token_type: str = "access", minutes: int = 5) -> str:
+        return pyjwt.encode(
+            {
+                "token_type": token_type,
+                "user_id": 1,
+                "exp": datetime.now(timezone.utc) + timedelta(minutes=minutes),
+            },
+            secret,
+            algorithm="HS256",
+        )
+
+    client = TestClient(app)
+    files = {"file": ("fixture.pdf", b"%PDF fake", "application/pdf")}
+
+    def upload(authorization: str | None):
+        headers = {"Authorization": authorization} if authorization else {}
+        return client.post("/api/v1/documents/manual", headers=headers, files=files)
+
+    valid_jwt = upload(f"Bearer {make_token(SECRET)}")
+    service = upload("Bearer service-token")
+    expired = upload(f"Bearer {make_token(SECRET, minutes=-5)}")
+    wrong_key = upload(f"Bearer {make_token('other-secret')}")
+    no_auth = upload(None)
+
+    for s in (config.settings, app_module.settings):
+        s.internal_service_token = ""
+
+    assert valid_jwt.status_code == 200   # JWT do usuario aceito
+    assert service.status_code == 200     # token interno ainda aceito (servico)
+    assert expired.status_code == 401     # JWT expirado rejeitado
+    assert wrong_key.status_code == 401   # JWT de outra SECRET_KEY rejeitado
+    assert no_auth.status_code == 401     # sem credencial rejeitado
+
+
 def test_manual_upload_reports_failed_core_sync_without_failing_upload(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
     from backend_com import config

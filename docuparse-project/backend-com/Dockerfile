@@ -3,7 +3,7 @@ FROM python:3.13-slim
 WORKDIR /app
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic pydantic-settings python-multipart structlog toml redis
+RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic pydantic-settings python-multipart pyjwt structlog toml redis
 
 COPY src ./src
 

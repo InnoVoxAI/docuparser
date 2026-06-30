@@ -59,14 +59,27 @@ def ready_view(request):
 
 
 def _internal_token_error(request):
+    """Autoriza chamadas internas aceitando o token de serviço OU um usuário
+    autenticado via JWT.
+
+    A identidade é resolvida pela ``DocuparseAuthentication`` (default do DRF):
+      - token interno  -> ``request.auth == "service_token"`` (caller serviço↔serviço)
+      - JWT do usuário -> ``request.user.is_authenticated``    (caller do frontend)
+
+    Quando ``DOCUPARSE_INTERNAL_SERVICE_TOKEN`` não está configurado (dev/local),
+    o acesso permanece aberto, preservando o comportamento histórico. Só retorna
+    401 quando o token está configurado e a requisição não traz nenhuma das duas
+    credenciais válidas.
+    """
     token = settings.DOCUPARSE_INTERNAL_SERVICE_TOKEN
     if not token:
         return None
-    if request.headers.get("Authorization") == f"Bearer {token}":
+    if getattr(request, "auth", None) == "service_token":
         return None
-    if getattr(request.user, "is_authenticated", False):
+    user = getattr(request, "user", None)
+    if user is not None and user.is_authenticated:
         return None
-    return Response({"detail": "invalid internal service token"}, status=status.HTTP_401_UNAUTHORIZED)
+    return Response({"detail": "invalid internal service token teste456"}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 @require_GET

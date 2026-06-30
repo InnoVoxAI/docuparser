@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Security, UploadFile
+import jwt
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -102,9 +103,9 @@ async def manual_document_upload(
     tenant_id: str = Form("tenant-demo"),
     sender: str | None = Form(None),
     metadata_json: str | None = Form(None),
-    skip_auto_process: bool = Form(False),
-    _: None = Depends(_auth),
+    authorization: str | None = Header(default=None),
 ):
+    _authenticate_caller(authorization)
     try:
         metadata = json.loads(metadata_json) if metadata_json else {}
         if not isinstance(metadata, dict):
@@ -117,7 +118,6 @@ async def manual_document_upload(
             content=content,
             sender=sender,
             metadata=metadata,
-            skip_auto_process=skip_auto_process,
         )
     except DuplicateDocumentError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -167,8 +167,9 @@ async def email_messages(
 @app.post("/api/v1/email/poll")
 async def poll_email_messages(
     tenant_id: str = "tenant-demo",
-    _: None = Depends(_auth),
+    authorization: str | None = Header(default=None),
 ):
+    _authenticate_caller(authorization)
     try:
         return poll_configured_imap_once(tenant_id=tenant_id)
     except ImapPollingError as exc:
@@ -225,6 +226,51 @@ def _validate_email_signature(signature: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid email webhook signature")
 
 
+def _bearer_token(authorization: str | None) -> str:
+    if authorization and authorization.startswith("Bearer "):
+        return authorization[len("Bearer "):].strip()
+    return ""
+
+
+def _is_valid_user_jwt(token: str) -> bool:
+    """Verifica o JWT do usuário emitido pelo backend-core.
+
+    Usa a mesma SECRET_KEY e algoritmo (HS256) do backend-core — por isso ambos
+    precisam compartilhar a SECRET_KEY. PyJWT já valida assinatura e expiração
+    (`exp`); exigimos também que seja um access token.
+    """
+    if not token:
+        return False
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError:
+        return False
+    return payload.get("token_type") == "access"
+
+
+def _authenticate_caller(authorization: str | None) -> None:
+    """Autoriza requisições de usuário aceitando o JWT do usuário OU o token
+    interno de serviço (mesmo modelo do backend-core).
+
+    - JWT do usuário (frontend)          -> verificado via SECRET_KEY compartilhada
+    - token interno (serviço↔serviço)    -> comparado com DOCUPARSE_INTERNAL_SERVICE_TOKEN
+    - token interno não configurado      -> acesso aberto (dev/local), preservando
+                                            o comportamento histórico
+
+    Só retorna 401 quando o token interno está configurado e a requisição não
+    traz nenhuma credencial válida.
+    """
+    if not settings.internal_service_token:
+        return
+
+    token = _bearer_token(authorization)
+    if token and hmac.compare_digest(token, settings.internal_service_token):
+        return
+    if _is_valid_user_jwt(token):
+        return
+    raise HTTPException(status_code=401, detail="invalid internal service token")
+
+
 @app.post("/api/v1/whatsapp/webhook")
 async def whatsapp_webhook(
     request: Request,
@@ -259,8 +305,9 @@ async def whatsapp_webhook(
 @app.post("/api/v1/whatsapp/poll")
 async def poll_whatsapp_messages(
     tenant_id: str = "tenant-demo",
-    _: None = Depends(_auth),
+    authorization: str | None = Header(default=None),
 ):
+    _authenticate_caller(authorization)
     try:
         return poll_configured_twilio_once(tenant_id=tenant_id)
     except TwilioPollingError as exc:

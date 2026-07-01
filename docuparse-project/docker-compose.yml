@@ -313,7 +313,9 @@ services:
         condition: service_healthy
 
   langextract-service:
-    build: ./langextract-service
+    build:
+      context: .
+      dockerfile: langextract-service/Dockerfile
     command: uvicorn api.app:app --host 0.0.0.0 --port 8091 --reload
     volumes:
       - ./langextract-service:/app
@@ -354,7 +356,9 @@ services:
         condition: service_healthy
 
   langextract-worker:
-    build: ./langextract-service
+    build:
+      context: .
+      dockerfile: langextract-service/Dockerfile
     command: python -m application.run_worker
     profiles:
       - async-workers
@@ -386,6 +390,119 @@ services:
       minio:
         condition: service_healthy
 
+  # ---------------------------------------------------------------------------
+  # Camunda 8 (profile: camunda)
+  # ---------------------------------------------------------------------------
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.0
+    profiles:
+      - camunda
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - cluster.routing.allocation.disk.threshold_enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -v '\"status\":\"red\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    networks:
+      - docuparse-network
+
+  zeebe:
+    image: camunda/zeebe:8.6.0
+    profiles:
+      - camunda
+    environment:
+      - ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_CLASSNAME=io.camunda.zeebe.exporter.ElasticsearchExporter
+      - ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_URL=http://elasticsearch:9200
+      - ZEEBE_BROKER_EXPORTERS_ELASTICSEARCH_ARGS_BULK_SIZE=1
+      - ZEEBE_BROKER_DATA_DISKUSAGECOMMANDWATERMARK=0.998
+      - ZEEBE_BROKER_DATA_DISKUSAGEREPLICATIONWATERMARK=0.999
+      - ZEEBE_BROKER_NETWORK_HOST=0.0.0.0
+    ports:
+      - "26500:26500"
+      - "8088:8080"
+    volumes:
+      - zeebe-data:/usr/local/zeebe/data
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/localhost/26500' && echo OK || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    networks:
+      - docuparse-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  operate:
+    image: camunda/operate:8.6.0
+    profiles:
+      - camunda
+    ports:
+      - "8081:8080"
+    environment:
+      - CAMUNDA_OPERATE_ZEEBE_GATEWAYADDRESS=zeebe:26500
+      - CAMUNDA_OPERATE_ELASTICSEARCH_URL=http://elasticsearch:9200
+      - CAMUNDA_OPERATE_ZEEBEELASTICSEARCH_URL=http://elasticsearch:9200
+      - SPRING_PROFILES_ACTIVE=dev
+    networks:
+      - docuparse-network
+    depends_on:
+      zeebe:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
+  tasklist:
+    image: camunda/tasklist:8.6.0
+    profiles:
+      - camunda
+    ports:
+      - "8082:8080"
+    environment:
+      - CAMUNDA_TASKLIST_ZEEBE_GATEWAYADDRESS=zeebe:26500
+      - CAMUNDA_TASKLIST_ELASTICSEARCH_URL=http://elasticsearch:9200
+      - CAMUNDA_TASKLIST_ZEEBEELASTICSEARCH_URL=http://elasticsearch:9200
+      - SPRING_PROFILES_ACTIVE=dev
+    networks:
+      - docuparse-network
+    depends_on:
+      zeebe:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
+  camunda-workers:
+    build:
+      context: ./camunda-workers
+    profiles:
+      - camunda
+    volumes:
+      - ./bpmn:/app/bpmn:ro
+      - ./camunda-workers/scripts:/app/scripts:ro
+    environment:
+      ZEEBE_ADDRESS: zeebe:26500
+      BACKEND_CORE_URL: http://backend-core:8000
+      BACKEND_OCR_URL: http://backend-ocr:8080
+      LAYOUT_SERVICE_URL: http://layout-service:8090
+      LANGEXTRACT_SERVICE_URL: http://langextract-service:8091
+      DOCUPARSE_INTERNAL_SERVICE_TOKEN: ${DOCUPARSE_INTERNAL_SERVICE_TOKEN:-docuparse-internal}
+    networks:
+      - docuparse-network
+    depends_on:
+      zeebe:
+        condition: service_healthy
+      backend-core:
+        condition: service_healthy
+
 networks:
   docuparse-network:
     driver: bridge
@@ -396,3 +513,5 @@ volumes:
   minio-data:
   docuparse-storage:
   docuparse-events:
+  elasticsearch-data:
+  zeebe-data:

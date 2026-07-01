@@ -5,7 +5,8 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from documents.models import Document, ExtractionResult, Tenant, ValidationDecision
+from documents.models import Document, ExtractionResult, Tenant, UserProfile, ValidationDecision
+from users.models import Permission, Role
 
 
 class DocumentsInboxViewApprovedFilterTests(TestCase):
@@ -13,6 +14,12 @@ class DocumentsInboxViewApprovedFilterTests(TestCase):
         self.client = APIClient()
         self.tenant = Tenant.objects.create(slug="tenant-inbox", name="Tenant Inbox")
         self.user = get_user_model().objects.create_user(username="inbox_op", password="test")
+        # feature 009: o endpoint exige JWT do usuário com permissão "inbox.view".
+        permission = Permission.objects.create(code="inbox.view", description="Inbox view")
+        role = Role.objects.create(name="Operador")
+        role.permissions.add(permission)
+        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
+        self.client.force_authenticate(user=self.user)
 
         self.approved_doc = Document.objects.create(
             tenant=self.tenant,
@@ -51,14 +58,14 @@ class DocumentsInboxViewApprovedFilterTests(TestCase):
 
         assert response.status_code == 200
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["id"] == str(self.approved_doc.id)
-        assert data[0]["status"] == "APPROVED"
+        assert data["count"] == 1
+        assert data["results"][0]["id"] == str(self.approved_doc.id)
+        assert data["results"][0]["status"] == "APPROVED"
 
     def test_approved_documents_have_non_null_decision_date(self) -> None:
         response = self.client.get(reverse("documents-inbox"), {"status": "APPROVED"})
 
         assert response.status_code == 200
-        doc_data = response.json()[0]
+        doc_data = response.json()["results"][0]
         assert doc_data["decision_date"] is not None
         assert doc_data["decision_date"] == self.decision.created_at.isoformat()

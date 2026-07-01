@@ -70,3 +70,22 @@ class Command(BaseCommand):
                 self.stdout.write(f"seed_data: created schema {schema_spec['schema_id']}")
             else:
                 self.stdout.write(f"seed_data: updated schema {schema_spec['schema_id']}")
+
+        from documents.models import LayoutConfig
+        DEFAULT_LAYOUT_CONFIGS = [
+            {"layout": "nota_fiscal", "schema_id": _nf_def.SCHEMA_ID},
+            {"layout": "fatura_condominio", "schema_id": _agua_def.SCHEMA_ID},
+            {"layout": "fatura_energia", "schema_id": _agua_def.SCHEMA_ID},
+        ]
+        for lc_spec in DEFAULT_LAYOUT_CONFIGS:
+            schema = SchemaConfig.objects.filter(tenant=tenant, schema_id=lc_spec["schema_id"], is_active=True).first()
+            if not schema:
+                continue
+            _, created = LayoutConfig.objects.get_or_create(
+                tenant=tenant,
+                layout=lc_spec["layout"],
+                document_type="",
+                defaults={"schema_config": schema, "is_active": True},
+            )
+            if created:
+                self.stdout.write(f"seed_data: created layout config {lc_spec['layout']} -> {lc_spec['schema_id']}")

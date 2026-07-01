@@ -31,6 +31,11 @@ class Settings:
     email_webhook_token = _env("DOCUPARSE_EMAIL_WEBHOOK_TOKEN")
     whatsapp_webhook_token = _env("DOCUPARSE_WHATSAPP_WEBHOOK_TOKEN")
     internal_service_token = _env("DOCUPARSE_INTERNAL_SERVICE_TOKEN")
+    # Mesma SECRET_KEY (e algoritmo) do backend-core: é com ela que o JWT do
+    # usuário é assinado lá e verificado aqui (HS256, simétrico). DEVE ter o
+    # mesmo valor nos dois serviços — o env é compartilhado entre os services.
+    secret_key = _env("SECRET_KEY", "django-insecure-test-key")
+    jwt_algorithm = _env("JWT_ALGORITHM", "HS256")
     backend_core_document_received_url = _env(
         "BACKEND_CORE_DOCUMENT_RECEIVED_URL",
         "http://127.0.0.1:8000/api/ocr/events/document-received",

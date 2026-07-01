@@ -1,5 +1,7 @@
+import json
 from django.contrib.auth import get_user_model
-from django.db.models import Prefetch, ProtectedError
+from django.db.models import Prefetch, Q, TextField, ProtectedError
+from django.db.models.functions import Cast
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -19,18 +21,22 @@ from users.permissions import require_permission
 from docuparse_events import event_bus_from_env
 from docuparse_storage import LocalStorage
 
-from .models import Document, EmailSettings, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, Tenant, ValidationDecision
+from .models import Document, EmailSettings, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, Tenant, ValidationDecision
+from .pagination import paginate_queryset
 from .serializers import (
     DocumentDetailSerializer,
     DocumentListSerializer,
     EmailSettingsSerializer,
+    ExtractionFieldVersionSerializer,
     IntegrationSettingsSerializer,
     LayoutConfigSerializer,
     OCRSettingsSerializer,
     SchemaConfigSerializer,
     ValidationDecisionSerializer,
 )
+from .services import field_versioning
 from .services.ocr_client import OCRClient
+from .services.langextract_client import LangExtractClient
 from .services.erp_publisher import publish_erp_integration_requested
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.dlq_inspector import DEFAULT_DLQ_STREAMS, requeue_dlq_entry, inspect_dlq_streams
@@ -91,12 +97,27 @@ def diagnostics_view(request):
 
 
 def _internal_token_error(request):
+    """Autoriza chamadas internas aceitando o token de serviço OU um usuário
+    autenticado via JWT.
+
+    A identidade é resolvida pela ``DocuparseAuthentication`` (default do DRF):
+      - token interno  -> ``request.auth == "service_token"`` (caller serviço↔serviço)
+      - JWT do usuário -> ``request.user.is_authenticated``    (caller do frontend)
+
+    Quando ``DOCUPARSE_INTERNAL_SERVICE_TOKEN`` não está configurado (dev/local),
+    o acesso permanece aberto, preservando o comportamento histórico. Só retorna
+    401 quando o token está configurado e a requisição não traz nenhuma das duas
+    credenciais válidas.
+    """
     token = settings.DOCUPARSE_INTERNAL_SERVICE_TOKEN
     if not token:
         return None
-    if request.headers.get("Authorization") == f"Bearer {token}":
+    if getattr(request, "auth", None) == "service_token":
         return None
-    return Response({"detail": "invalid internal service token"}, status=status.HTTP_401_UNAUTHORIZED)
+    user = getattr(request, "user", None)
+    if user is not None and user.is_authenticated:
+        return None
+    return Response({"detail": "invalid internal service token teste456"}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 @require_GET
@@ -152,6 +173,64 @@ def process_document_view(request):
         return JsonResponse({"error": str(exc)}, status=502)
 
 
+# Rótulos amigáveis de status mapeados para os valores reais (busca por texto).
+_STATUS_LABEL_MAP: dict[str, list[str]] = {
+    "aprovado": [Document.Status.APPROVED],
+    "aprovados": [Document.Status.APPROVED],
+    "rejeitado": [Document.Status.REJECTED],
+    "rejeitados": [Document.Status.REJECTED],
+    "pendente": [
+        Document.Status.RECEIVED,
+        Document.Status.OCR_COMPLETED,
+        Document.Status.EXTRACTION_COMPLETED,
+        Document.Status.VALIDATION_PENDING,
+    ],
+    "pendentes": [
+        Document.Status.RECEIVED,
+        Document.Status.OCR_COMPLETED,
+        Document.Status.EXTRACTION_COMPLETED,
+        Document.Status.VALIDATION_PENDING,
+    ],
+}
+
+
+def _apply_status_filter(queryset, status_filter: str | None):
+    """Filtra por `status` aceitando um único valor ou CSV (buckets por tela)."""
+    if not status_filter:
+        return queryset
+    statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+    if not statuses:
+        return queryset
+    if len(statuses) == 1:
+        return queryset.filter(status=statuses[0])
+    return queryset.filter(status__in=statuses)
+
+
+def _apply_search(queryset, term: str | None):
+    """Busca `icontains` em nome/status/tipo/canal e nos valores dos campos
+    extraídos (`extraction_result.fields`, via cast do JSON para texto), além de
+    mapear rótulos de status amigáveis (ex.: "aprovado" → APPROVED)."""
+    if not term:
+        return queryset
+    term = term.strip()
+    if not term:
+        return queryset
+    queryset = queryset.annotate(
+        _fields_text=Cast("extraction_result__fields", output_field=TextField()),
+    )
+    predicate = (
+        Q(original_filename__icontains=term)
+        | Q(status__icontains=term)
+        | Q(document_type__icontains=term)
+        | Q(channel__icontains=term)
+        | Q(_fields_text__icontains=term)
+    )
+    mapped = _STATUS_LABEL_MAP.get(term.lower())
+    if mapped:
+        predicate |= Q(status__in=mapped)
+    return queryset.filter(predicate)
+
+
 @api_view(["GET"])
 @authentication_classes([DocuparseAuthentication])
 @permission_classes([require_permission("inbox.view")])
@@ -168,13 +247,15 @@ def documents_inbox_view(request):
         )
         .order_by("-received_at")
     )
-    status_filter = request.query_params.get("status")
+    queryset = _apply_status_filter(queryset, request.query_params.get("status"))
     tenant_filter = request.query_params.get("tenant")
-    if status_filter:
-        queryset = queryset.filter(status=status_filter)
     if tenant_filter:
         queryset = queryset.filter(tenant__slug=tenant_filter)
-    return Response(DocumentListSerializer(queryset[:200], many=True).data)
+    queryset = _apply_search(queryset, request.query_params.get("search"))
+
+    page = paginate_queryset(queryset, request)
+    serialized = DocumentListSerializer(page.items, many=True).data
+    return Response(page.envelope(serialized))
 
 
 @api_view(["POST"])
@@ -186,7 +267,8 @@ def document_received_event_view(request):
         document = consume_document_received(request.data)
     except DuplicateDocumentError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-    if settings.DOCUPARSE_AUTO_PROCESS_OCR and not document.raw_text_uri:
+    skip_auto = request.query_params.get("skip_auto_process", "").lower() in ("1", "true", "yes")
+    if settings.DOCUPARSE_AUTO_PROCESS_OCR and not document.raw_text_uri and not skip_auto:
         submit_document_processing(document.id)
     return Response(DocumentDetailSerializer(document).data, status=status.HTTP_201_CREATED)
 
@@ -217,10 +299,13 @@ def document_delete_view(request, document_id):
 # Exempt only this file-serving endpoint so the original document can be framed.
 @xframe_options_exempt
 @api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("inbox.view")])
 def document_file_view(request, document_id):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
+    # Dual-auth (feature 009): aceita o token interno de serviço (via
+    # DocuparseAuthentication → request.auth == "service_token") OU o JWT do
+    # usuário com a permissão "inbox.view" (caso da pré-visualização na UI),
+    # respeitando as permissões existentes sem forçar download.
     document = get_object_or_404(Document, id=document_id)
     try:
         content = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(document.file_uri)
@@ -312,9 +397,18 @@ def document_validation_view(request, document_id):
 
     corrected_fields = request.data.get("corrected_fields") or {}
     if corrected_fields and hasattr(document, "extraction_result"):
-        document.extraction_result.fields = corrected_fields
         document.extraction_result.requires_human_validation = False
-        document.extraction_result.save(update_fields=["fields", "requires_human_validation", "updated_at"])
+        document.extraction_result.save(update_fields=["requires_human_validation", "updated_at"])
+        active = field_versioning.get_active_version(document)
+        try:
+            field_versioning.save_manual_edit(
+                document,
+                incoming_fields=[{"name": name, "value": value} for name, value in corrected_fields.items()],
+                base_version_number=active.version_number if active else None,
+                created_by=user,
+            )
+        except (field_versioning.NoChangesError, field_versioning.EmptyFieldListError):
+            pass  # sem alteração efetiva ou lista vazia: não cria versão
 
     if decision == ValidationDecision.Decision.APPROVED:
         document.transition_to(Document.Status.APPROVED)
@@ -326,16 +420,73 @@ def document_validation_view(request, document_id):
     return Response(ValidationDecisionSerializer(validation).data, status=status.HTTP_201_CREATED)
 
 
+def _resolve_request_user(request):
+    """Usuário autenticado, ou fallback por `edited_by_id` (chamadas service token)."""
+    if getattr(request.user, "is_authenticated", False):
+        return request.user
+    user_id = request.data.get("edited_by_id")
+    if user_id:
+        return get_object_or_404(get_user_model(), id=user_id)
+    return None
+
+
+@api_view(["PUT"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("documents.validate")])
+def document_save_fields_view(request, document_id):
+    """Salva edições/remoções/adições como nova versão ativa MANUAL_EDIT (US1/US2)."""
+    document = get_object_or_404(Document.objects.select_related("extraction_result"), id=document_id)
+
+    incoming_fields = request.data.get("fields")
+    if not isinstance(incoming_fields, list):
+        return Response({"detail": "O campo 'fields' deve ser uma lista."}, status=status.HTTP_400_BAD_REQUEST)
+
+    base_version_number = request.data.get("base_version_number")
+
+    try:
+        version = field_versioning.save_manual_edit(
+            document,
+            incoming_fields=incoming_fields,
+            base_version_number=base_version_number,
+            created_by=_resolve_request_user(request),
+        )
+    except field_versioning.VersionConflictError as exc:
+        return Response(
+            {
+                "detail": "A lista de campos foi atualizada por outro processo. Recarregue a versão ativa antes de salvar.",
+                "active_version_number": exc.active_version_number,
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    except field_versioning.EmptyFieldListError:
+        return Response({"detail": "Não é possível salvar uma lista de campos vazia."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+    except field_versioning.NoChangesError:
+        return Response({"detail": "Nenhuma alteração a salvar."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+    return Response(ExtractionFieldVersionSerializer(version).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("documents.validate")])
+def document_field_versions_view(request, document_id):
+    """Histórico somente leitura de versões da lista de campos (US3)."""
+    document = get_object_or_404(Document, id=document_id)
+    versions = document.field_versions.select_related("previous_version", "created_by").order_by("-version_number")
+    active = versions.filter(is_active=True).first()
+    data = ExtractionFieldVersionSerializer(versions, many=True).data
+    return Response(
+        {
+            "results": data,
+            "count": len(data),
+            "active_version_number": active.version_number if active else None,
+        }
+    )
+
+
 @api_view(["POST"])
 def document_langextract_view(request, document_id):
-    """Queue on-demand LLM field extraction for a document using a chosen SchemaConfig.
-
-    The LLM call is slow, so it runs in a background worker instead of being awaited
-    inline. Holding the HTTP connection open during the call makes the production gateway
-    return a 502 (without CORS headers, surfacing as a CORS error in the browser). The
-    client submits here, gets 202, and polls the document detail for the updated
-    extraction_result — mirroring how auto-extraction after OCR already works.
-    """
+    """Run on-demand LLM field extraction for a document using a chosen SchemaConfig."""
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
@@ -350,15 +501,64 @@ def document_langextract_view(request, document_id):
     if not document.raw_text_uri:
         return Response({"detail": "Documento sem texto bruto disponivel. Execute o OCR primeiro."}, status=status.HTTP_400_BAD_REQUEST)
 
+    storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+    try:
+        payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
+    except Exception as exc:
+        return Response({"detail": f"Erro ao ler texto bruto: {exc}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    raw_text = str(payload.get("raw_text") or "")
+    if not raw_text.strip():
+        return Response({"detail": "Texto bruto do documento esta vazio."}, status=status.HTTP_400_BAD_REQUEST)
+
     definition = schema_config.definition
     if not definition or not isinstance(definition, dict):
         return Response({"detail": "SchemaConfig nao possui definicao valida."}, status=status.HTTP_400_BAD_REQUEST)
 
-    submit_document_langextract(document.id, schema_config.id)
-    return Response(
-        {"status": "processing", "document_id": str(document.id)},
-        status=status.HTTP_202_ACCEPTED,
+    # Inject schema_id/version from the model so llm_extractor can identify the schema.
+    # The definition JSON (built by buildLangExtractDefinition in the frontend) does not
+    # include these — they live as top-level model fields, not inside definition.
+    definition = {
+        **definition,
+        "schema_id": schema_config.schema_id,
+        "version": schema_config.version,
+    }
+
+    try:
+        client = LangExtractClient()
+        result = client.extract_with_schema(
+            raw_text=raw_text,
+            schema_definition=definition,
+            layout=document.layout or "generic",
+            document_type=str(document.content_type or "unknown"),
+        )
+    except Exception as exc:
+        return Response({"detail": f"Falha na extracao LangExtract: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+    result_fields = result.get("fields") or {}
+    result_confidence = result.get("confidence") or 0.0
+    source_type = field_versioning.initial_or_reprocess_source(document)
+    ExtractionResult.objects.update_or_create(
+        document=document,
+        defaults={
+            "schema_id": result.get("schema_id") or schema_config.schema_id,
+            "schema_version": result.get("schema_version") or schema_config.version,
+            "fields": result_fields,
+            "confidence": result_confidence,
+            "requires_human_validation": result.get("requires_human_validation", True),
+        },
     )
+    field_versioning.create_version(
+        document,
+        fields=result_fields,
+        source_type=source_type,
+        confidence=result_confidence,
+    )
+    if document.status not in (Document.Status.VALIDATION_PENDING, Document.Status.APPROVED, Document.Status.REJECTED):
+        document.transition_to(Document.Status.EXTRACTION_COMPLETED)
+
+    return Response(result)
+    
 
 
 @api_view(["GET", "POST"])

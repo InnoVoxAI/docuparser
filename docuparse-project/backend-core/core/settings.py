@@ -33,7 +33,10 @@ INSTALLED_APPS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        # Resolve tanto o JWT do usuário quanto o token interno de serviço.
+        # Sem isso, chamadas com o token interno (Bearer <token>) seriam
+        # rejeitadas pela JWTAuthentication antes de qualquer verificação.
+        'users.authentication.DocuparseAuthentication',
     ],
 }
 

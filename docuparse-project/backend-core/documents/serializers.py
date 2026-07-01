@@ -6,7 +6,27 @@ import json
 from django.conf import settings
 from docuparse_storage import LocalStorage
 
-from documents.models import Document, EmailSettings, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, ValidationDecision
+from documents.models import Document, EmailSettings, ExtractionFieldVersion, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, ValidationDecision
+
+
+class ExtractionFieldVersionSerializer(serializers.ModelSerializer):
+    previous_version_number = serializers.IntegerField(
+        source="previous_version.version_number", read_only=True, default=None
+    )
+    created_by = serializers.CharField(source="created_by.username", read_only=True, default=None)
+
+    class Meta:
+        model = ExtractionFieldVersion
+        fields = [
+            "version_number",
+            "source_type",
+            "is_active",
+            "previous_version_number",
+            "created_at",
+            "created_by",
+            "fields",
+        ]
+        read_only_fields = fields
 
 
 class ExtractionResultSerializer(serializers.ModelSerializer):
@@ -104,11 +124,17 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
     full_transcription = serializers.SerializerMethodField()
     full_transcription_formatted = serializers.SerializerMethodField()
     ocr_metadata = serializers.SerializerMethodField()
+    active_field_version_number = serializers.SerializerMethodField()
+
+    def get_active_field_version_number(self, obj: Document) -> int | None:
+        active = obj.field_versions.filter(is_active=True).first()
+        return active.version_number if active else None
 
     class Meta:
         model = Document
         fields = [
             "id",
+            "active_field_version_number",
             "tenant_id",
             "status",
             "channel",

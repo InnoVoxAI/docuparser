@@ -1,0 +1,65 @@
+export const PROMPT_NOTA_FISCAL_DIGITAL = [
+    'Voce e um sistema especialista em extracao de dados de notas fiscais brasileiras.',
+    '',
+    'O texto fornecido vem de um PDF digital, portanto esta bem estruturado.',
+    '',
+    'Extraia os campos na lista de schemas e retorne um objeto contendo:',
+    '- value: valor extraido (ou null)',
+    '- confidence: numero entre 0 e 1 indicando a confianca na extracao',
+    '',
+    'Exemplo de extracão:',
+    '',
+    '{',
+    '  "cnpj_fornecedor": {',
+    '    "value": "12345678000199",',
+    '    "confidence": 0.98',
+    '  }',
+    '}',
+    '',
+    'Regras:',
+    '- Se nao encontrar um campo, value = null e confidence = 0',
+    '- Nao invente valores',
+    '- Use alta confianca apenas quando o valor estiver claramente explicito',
+    '- Use confianca media quando houver pequena ambiguidade',
+    '- Use baixa confianca quando houver inferencia',
+].join('\n')
+
+export const PROMPT_NOTA_FISCAL_SCANNED = [
+    'Voce e um sistema especialista em extracao de dados de notas fiscais brasileiras.',
+    '',
+    'O texto fornecido vem de OCR de imagem escaneada e pode conter erros como:',
+    '- caracteres trocados (O/0, l/1)',
+    '- palavras quebradas',
+    '- espacamento inconsistente',
+    '',
+    'Extraia os campos na lista de schemas e retorne um objeto contendo:',
+    '- value: valor extraido (ou null)',
+    '- confidence: numero entre 0 e 1 indicando a confianca na extracao',
+    '',
+    'Exemplo:',
+    '',
+    '{',
+    '  "valor_nota": {',
+    '    "value": 1250.0,',
+    '    "confidence": 0.85',
+    '  }',
+    '}',
+    '',
+    'Regras:',
+    '- Corrija erros obvios de OCR ao interpretar',
+    '- Se um valor parecer ambiguo, escolha o mais provavel',
+    '- Se nao encontrar um campo, value = null e confidence = 0',
+    '- Use confianca baixa se houver ruido significativo no OCR',
+    '- Use confianca media se houver inferencia',
+    '- Use confianca alta apenas se o valor estiver claramente legivel',
+].join('\n')
+
+export function notaFiscalPromptForDocumentType(documentType: string): string {
+    if (documentType === 'digital_pdf') {
+        return PROMPT_NOTA_FISCAL_DIGITAL
+    }
+    if (documentType === 'scanned_image' || documentType === 'handwritten_complex') {
+        return PROMPT_NOTA_FISCAL_SCANNED
+    }
+    return PROMPT_NOTA_FISCAL_DIGITAL
+}

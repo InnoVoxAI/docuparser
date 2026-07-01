@@ -5,7 +5,9 @@ WORKDIR /app
 COPY pyproject.toml .
 RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic pydantic-settings python-multipart pyjwt structlog toml redis
 
-COPY src ./src
+COPY backend-com/src ./src
+COPY shared/ /shared
+COPY contracts/ /contracts
 
 ENV PYTHONPATH=/app/src:/contracts:/shared
 

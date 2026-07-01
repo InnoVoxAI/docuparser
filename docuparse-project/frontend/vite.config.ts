@@ -2,6 +2,16 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// On Cloudflare Pages, CF_PAGES_BRANCH is available at build time.
+// Derive backend URLs from the branch so import.meta.env picks them up.
+const branch = process.env.CF_PAGES_BRANCH
+if (branch && !process.env.VITE_API_BASE_URL) {
+    // K8s environments: main → prod (no prefix), staging → hml
+    const k8sEnv = branch === 'main' ? '' : 'staging.'
+    process.env.VITE_API_BASE_URL = `https://${k8sEnv}docuparser-core.innovox.ai`
+    process.env.VITE_COM_BASE_URL = `https://${k8sEnv}docuparser-com.innovox.ai`
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [react()],
@@ -10,11 +20,15 @@ export default defineConfig({
             '/api': {
                 target: process.env.VITE_BACKEND_CORE_URL || 'http://127.0.0.1:8000',
                 changeOrigin: true,
+                proxyTimeout: 15000,
+                timeout: 15000,
             },
             '/com': {
                 target: process.env.VITE_BACKEND_COM_URL || 'http://127.0.0.1:8070',
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/com/, ''),
+                proxyTimeout: 15000,
+                timeout: 15000,
             },
         },
     },

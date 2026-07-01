@@ -15,6 +15,9 @@ on:
       BACKEND_DIR:
         type: string
         required: true
+      DOCKERFILE_PATH:
+        type: string
+        required: true
     secrets:
       ACCOUNT_MODIFY_TOKEN:
         required: true
@@ -29,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
           fetch-depth: 0
@@ -49,33 +52,44 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./${{ inputs.BACKEND_DIR }}
-          file: ./${{ inputs.BACKEND_DIR }}/Dockerfile
+          file: ./${{ inputs.DOCKERFILE_PATH }}
           platforms: linux/amd64
           push: true
           tags: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}
-
-      - name: Checkout GitOps Branch
-        run: |
-          git fetch origin
-          git checkout -f gitops
-
-      - name: Update Image Tag in Deployment
-        run: |
-          sed -i "s|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:.*|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}|" k8s/${{ inputs.ENVIRONMENT }}/deployment.yaml
-
-      - name: Check deployment.yaml after sed
-        run: cat k8s/${{ inputs.ENVIRONMENT }}/deployment.yaml
-
-      - name: Git Status
-        run: git status
 
       - name: Git Config
         run: |
           git config --global user.email "ci-bot@ci.com"
           git config --global user.name "CI Bot"
 
+      - name: Checkout Kubernetes Deployments Repository
+        uses: actions/checkout@v4
+        with:
+          repository: InnoVoxAI/innovox-kubernetes-deployments
+          token: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+          path: k8s-deployments
+
+      - name: Set Deploy Folder
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "DEPLOY_FOLDER=prod" >> $GITHUB_ENV
+          else
+            echo "DEPLOY_FOLDER=hml" >> $GITHUB_ENV
+          fi
+
+      - name: Update Image Tag in Deployment
+        run: |
+          sed -i "s|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:.*|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}|" k8s-deployments/apps/docuparser/${{ env.DEPLOY_FOLDER }}/${{ inputs.ENVIRONMENT }}/deployment.yaml
+
       - name: Commit and Push Changes
         run: |
-          git add k8s/${{ inputs.ENVIRONMENT }}/deployment.yaml
-          git commit -m "Updating the image tag: ${{ inputs.IMAGE_VERSION }}"
-          git push -u origin gitops
+          cd k8s-deployments
+          git add apps/docuparser/${{ env.DEPLOY_FOLDER }}/${{ inputs.ENVIRONMENT }}/deployment.yaml
+          if git diff --cached --quiet; then
+            echo "No changes to commit — image tag already up to date"
+          else
+            git commit -m "Updating the image tag: ${{ inputs.IMAGE_VERSION }}"
+            git push
+          fi
+
+

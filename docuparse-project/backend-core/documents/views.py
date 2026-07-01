@@ -1,12 +1,12 @@
 import json
-
 from django.contrib.auth import get_user_model
-from django.db.models import Prefetch, Q, TextField
+from django.db.models import Prefetch, Q, TextField, ProtectedError
 from django.db.models.functions import Cast
 from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.http import require_GET, require_POST
 from django.http import Http404
 from django.http import FileResponse
@@ -41,7 +41,7 @@ from .services.erp_publisher import publish_erp_integration_requested
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.dlq_inspector import DEFAULT_DLQ_STREAMS, requeue_dlq_entry, inspect_dlq_streams
 from .services.ocr_processor import process_document_ocr, start_document_ocr_thread
-from .services.processing_queue import submit_document_processing
+from .services.processing_queue import submit_document_processing, submit_document_langextract
 
 import models.nota_fiscal.schemas as _nf_classifier
 import models.boleto.schemas as _boleto_classifier
@@ -56,6 +56,44 @@ def health_view(request):
 @require_GET
 def ready_view(request):
     return JsonResponse({"status": "ready", "service": "docuparse-backend-core"})
+
+
+def _probe_http(url: str) -> dict:
+    """Best-effort dependency probe for the diagnostics endpoint."""
+    import requests
+
+    try:
+        resp = requests.get(url, timeout=3)
+        return {"ok": resp.ok, "url": url, "status": resp.status_code}
+    except Exception as exc:
+        return {"ok": False, "url": url, "error": f"{type(exc).__name__}: {exc}"}
+
+
+@require_GET
+def diagnostics_view(request):
+    """Dependency health for the extraction pipeline — makes silent failures visible.
+
+    Reports DB engine + reachability of backend-ocr and langextract-service (the service
+    that actually runs the LLM extraction). If langextract-service is unreachable here,
+    field extraction cannot complete no matter what the UI shows.
+    """
+    checks: dict = {}
+
+    from django.db import connection
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        checks["database"] = {"ok": True, "engine": connection.settings_dict.get("ENGINE")}
+    except Exception as exc:
+        checks["database"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    checks["langextract_service"] = _probe_http(f"{settings.LANGEXTRACT_SERVICE_URL}/health")
+    checks["backend_ocr"] = _probe_http(f"{settings.BACKEND_OCR_URL}/health")
+
+    overall_ok = all(check.get("ok") for check in checks.values())
+    return JsonResponse({"ok": overall_ok, "checks": checks}, status=200 if overall_ok else 503)
 
 
 def _internal_token_error(request):
@@ -256,6 +294,10 @@ def document_delete_view(request, document_id):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# Frontend (Cloudflare Pages) and backend live on different origins, so the
+# default X-Frame-Options: SAMEORIGIN would block the document <iframe> preview.
+# Exempt only this file-serving endpoint so the original document can be framed.
+@xframe_options_exempt
 @api_view(["GET"])
 @authentication_classes([DocuparseAuthentication])
 @permission_classes([require_permission("inbox.view")])
@@ -516,6 +558,7 @@ def document_langextract_view(request, document_id):
         document.transition_to(Document.Status.EXTRACTION_COMPLETED)
 
     return Response(result)
+    
 
 
 @api_view(["GET", "POST"])
@@ -543,7 +586,10 @@ def schema_configs_view(request):
     return Response(SchemaConfigSerializer(config).data, status=response_status)
 
 
-@api_view(["GET", "PATCH"])
+PROTECTED_SCHEMA_IDS = ["nota_fiscal_default", "conta_agua_default"]
+
+
+@api_view(["GET", "PATCH", "DELETE"])
 def schema_config_detail_view(request, schema_id):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
@@ -551,7 +597,20 @@ def schema_config_detail_view(request, schema_id):
     config = get_object_or_404(SchemaConfig.objects.select_related("tenant"), id=schema_id)
     if request.method == "GET":
         return Response(SchemaConfigSerializer(config).data)
-
+    if request.method == "DELETE":
+        if config.schema_id in PROTECTED_SCHEMA_IDS:
+            return Response(
+                {"detail": "Este modelo é padrão do sistema e não pode ser excluído."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            config.delete()
+        except ProtectedError:
+            return Response(
+                {"detail": "Este modelo possui layouts vinculados e não pode ser excluído."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
     serializer = SchemaConfigSerializer(config, data={**request.data, "tenant_id": str(config.tenant_id)}, partial=True)
     serializer.is_valid(raise_exception=True)
     for field in ("schema_id", "version", "definition", "is_active"):

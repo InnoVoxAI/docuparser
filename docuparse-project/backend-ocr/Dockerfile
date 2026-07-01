@@ -13,13 +13,17 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements-container.txt .
+COPY backend-ocr/requirements-container.txt .
 RUN pip install --no-cache-dir -r requirements-container.txt
 
 # The default container keeps only the engines used by the current routing:
 # docling/PyMuPDF for digital PDFs, OpenRouter for scanned files, and
 # Tesseract fallback. Paddle/EasyOCR/TrOCR remain optional for local profiles.
 
-COPY . .
+COPY backend-ocr/ .
+COPY shared/docuparse_events ./docuparse_events
+COPY shared/docuparse_observability ./docuparse_observability
+COPY shared/docuparse_storage ./docuparse_storage
+COPY contracts/events ./events
 
 CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8080"]

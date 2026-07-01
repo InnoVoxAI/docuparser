@@ -249,3 +249,4 @@ tasks/
 
 .taskmaster/
 .sixth/
+docuparse-project/frontend/node_modules

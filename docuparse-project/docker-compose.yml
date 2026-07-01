@@ -313,7 +313,9 @@ services:
         condition: service_healthy
 
   langextract-service:
-    build: ./langextract-service
+    build:
+      context: .
+      dockerfile: langextract-service/Dockerfile
     command: uvicorn api.app:app --host 0.0.0.0 --port 8091 --reload
     volumes:
       - ./langextract-service:/app
@@ -354,7 +356,9 @@ services:
         condition: service_healthy
 
   langextract-worker:
-    build: ./langextract-service
+    build:
+      context: .
+      dockerfile: langextract-service/Dockerfile
     command: python -m application.run_worker
     profiles:
       - async-workers

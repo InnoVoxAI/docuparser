@@ -62,6 +62,41 @@ const authApi = axios.create({ baseURL: '/api/auth' })
 // interceptor abaixo, igual ao `api`. Nenhum segredo é embutido no frontend.
 const comApi = axios.create({ baseURL: '/com/api/v1' })
 
+// Resultado do polling de uma extração assíncrona (ver pollDocumentExtraction).
+type ExtractionPollOutcome =
+    | { status: 'completed'; extraction: ExtractionResult }
+    | { status: 'failed'; error: string }
+    | { status: 'timeout' }
+
+// Poll do detalhe do documento até que seu extraction_result mude — i.e. uma
+// extração LLM em background terminou. O backend agora processa a extração de
+// forma assíncrona (a chamada inline estourava o timeout do gateway em produção,
+// aparecendo como 502/CORS). Retorna o novo extraction_result, uma falha
+// registrada em metadata.extraction, ou timeout.
+async function pollDocumentExtraction(
+    documentId: string,
+    baseline: { resultUpdatedAt: string | null; metaUpdatedAt: string | null },
+    { attempts = 40, intervalMs = 2500 }: { attempts?: number; intervalMs?: number } = {},
+): Promise<ExtractionPollOutcome> {
+    for (let i = 0; i < attempts; i++) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs))
+        try {
+            const { data } = await api.get<Document>(`/documents/${documentId}`)
+            const extraction = data?.extraction_result
+            if (extraction?.updated_at && extraction.updated_at !== baseline.resultUpdatedAt) {
+                return { status: 'completed', extraction }
+            }
+            // Surface a real backend failure (e.g. langextract-service unreachable) instead
+            // of polling forever — see document.metadata.extraction recorded by the backend.
+            const meta = (data?.metadata as { extraction?: { state?: string; updated_at?: string; error?: string } } | undefined)?.extraction
+            if (meta?.state === 'failed' && meta.updated_at !== baseline.metaUpdatedAt) {
+                return { status: 'failed', error: meta.error || 'Erro desconhecido na extracao.' }
+            }
+        } catch { /* transient error — keep polling */ }
+    }
+    return { status: 'timeout' }
+}
+
 interface NavItem {
     id: ActiveView
     label: string
@@ -80,7 +115,6 @@ const NAV_ITEMS: NavItem[] = [
     { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, permission: 'inbox.view' },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'inbox.view' },
-    { id: 'approved', label: 'Aprovados', icon: CheckCircle2, permission: 'inbox.view' },
     { id: 'validation', label: 'Validacao', icon: ClipboardCheck, permission: 'documents.validate' },
     { id: 'operations', label: 'Operacoes', icon: AlertTriangle, permission: 'operations.access' },
     { id: 'settings', label: 'Configuracoes', icon: Settings, permission: 'roles.manage' },
@@ -815,6 +849,7 @@ function InboxView({ refreshSignal, onNavigateToValidation, onNavigateToUpload }
 
 function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
     const { page, setPage, search, setSearch, data, loading, error } = useDocumentPage('APPROVED', { refreshSignal })
+    const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
@@ -833,6 +868,7 @@ function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
                                 <th className="px-4 py-3">Documento</th>
                                 <th className="px-4 py-3">Status</th>
                                 <th className="px-4 py-3">Data de aprovação</th>
+                                <th className="px-4 py-3">Campos extraídos</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100">
@@ -843,6 +879,20 @@ function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
                                     <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
                                         {formatDate(doc.approved_at ?? doc.decision_date ?? doc.updated_at)}
                                     </td>
+                                    <td className="px-4 py-3">
+                                        {doc.extraction_result?.fields && Object.keys(doc.extraction_result.fields).length > 0 ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedDoc(doc)}
+                                                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                                            >
+                                                <FileJson size={14} aria-hidden="true" />
+                                                Ver campos
+                                            </button>
+                                        ) : (
+                                            <span className="text-xs text-zinc-400">—</span>
+                                        )}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -850,7 +900,35 @@ function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
                 </div>
             )}
             <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
+            {selectedDoc && (
+                <ExtractedFieldsModal doc={selectedDoc} onClose={() => setSelectedDoc(null)} />
+            )}
         </section>
+    )
+}
+
+function ExtractedFieldsModal({ doc, onClose }: { doc: Document; onClose: () => void }) {
+    const fields = doc.extraction_result?.fields || {}
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+            <div
+                className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-white p-6 shadow-lg"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="mb-4 flex flex-shrink-0 items-center justify-between">
+                    <div>
+                        <h3 className="text-base font-semibold">Campos extraídos</h3>
+                        <div className="mt-0.5 text-xs text-zinc-500">{doc.original_filename || doc.id}</div>
+                    </div>
+                    <button type="button" onClick={onClose} className="text-zinc-400 hover:text-zinc-700">
+                        <X size={20} aria-hidden="true" />
+                    </button>
+                </div>
+                <pre className="flex-1 overflow-auto rounded-md bg-zinc-950 p-4 text-xs text-zinc-50">
+                    {JSON.stringify(fields, null, 2)}
+                </pre>
+            </div>
+        </div>
     )
 }
 
@@ -1350,23 +1428,41 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         return () => { ignore = true }
     }, [selectedDocument?.id])
 
+    const applyExtractionData = (data: ExtractionResult) => {
+        const fields = data.fields || {}
+        setFieldRows(
+            Object.entries(fields)
+                .filter(([, value]) => value !== '' && value !== null && value !== undefined)
+                .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
+                .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
+        )
+        const pct = data.confidence != null ? ` Confianca: ${(data.confidence * 100).toFixed(0)}%` : ''
+        setExtractMessage(`Extracao concluida.${pct}`)
+    }
+
     const runLangExtract = async () => {
         if (!selectedDocumentId || !selectedSchemaId || extracting) return
         setExtracting(true)
-        setExtractMessage('')
+        setExtractMessage('Extraindo... isso pode levar alguns segundos.')
+        const baseline = {
+            resultUpdatedAt: selectedDocument?.extraction_result?.updated_at ?? null,
+            metaUpdatedAt: (selectedDocument?.metadata as { extraction?: { updated_at?: string } } | undefined)?.extraction?.updated_at ?? null,
+        }
         try {
             const response = await api.post<ExtractionResult>(`/documents/${selectedDocumentId}/langextract`, {
                 schema_config_id: selectedSchemaId,
             })
-            const fields = response.data.fields || {}
-            setFieldRows(
-                Object.entries(fields)
-                    .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
-                    .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
-            )
-            const pct = response.data.confidence != null ? ` Confianca: ${(response.data.confidence * 100).toFixed(0)}%` : ''
-            setExtractMessage(`Extracao concluida.${pct}`)
+            if (response.status === 202) {
+                // Backend queued the LLM extraction (async). Poll the document detail
+                // until the new extraction_result lands — or a failure is recorded.
+                const outcome = await pollDocumentExtraction(selectedDocumentId, baseline)
+                if (outcome.status === 'completed') applyExtractionData(outcome.extraction)
+                else if (outcome.status === 'failed') setExtractMessage(`Falha na extracao: ${outcome.error}`)
+                else setExtractMessage('A extracao ainda esta em andamento. Clique em Atualizar em instantes para ver o resultado.')
+            } else {
+                // Synchronous response (e.g. local dev). Apply the result directly.
+                applyExtractionData(response.data)
+            }
         } catch (requestError) {
             setExtractMessage(readError(requestError, 'Falha na extracao LangExtract.'))
         } finally {
@@ -1490,7 +1586,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                     <div className="text-sm font-semibold">{selectedDocument?.original_filename || selectedDocument?.id || 'Documento'}</div>
                     {selectedDocument ? (
                         <a
-                            href={documentFileUrl(selectedDocument.id)}
+                            href={`/api/ocr/documents/${selectedDocument.id}/file`}
                             target="_blank"
                             rel="noreferrer"
                             className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100"
@@ -1499,11 +1595,17 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                         </a>
                     ) : null}
                 </div>
-                <DocumentFileFrame
-                    document={selectedDocument}
-                    frameClassName="h-[620px] w-full"
-                    imageWrapClassName="max-h-[620px] overflow-auto p-3"
-                />
+                {!selectedDocument ? (
+                    <EmptyState icon={FileText} text="Selecione um documento para visualizar." />
+                ) : (
+                    // Carrega o arquivo como blob autenticado (contorna X-Frame-Options em produção).
+                    <DocumentBlobPreview
+                        documentId={selectedDocument.id}
+                        contentType={selectedDocument.content_type}
+                        filename={selectedDocument.original_filename}
+                        frameClassName="h-[620px] w-full"
+                    />
+                )}
             </section>
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white p-4">
                 {!selectedDocument ? (
@@ -1884,8 +1986,8 @@ function ReadOnlyTranscriptionFormatted({ value }: { value?: string }) {
 }
 
 const SETTINGS_TABS = [
-    { id: 'ocr', label: 'Documento' },
     { id: 'setup', label: 'Modelo' },
+    { id: 'ocr', label: 'OCR referencia' },
     { id: 'schema', label: 'Schema' },
     { id: 'instructions', label: 'Instrucoes' },
     { id: 'examples', label: 'Exemplos' },
@@ -1908,7 +2010,7 @@ const SETTINGS_TAB_HELP: Record<string, { title: string; text: string }> = {
         text: 'Defina a identidade do template de extracao: nome, schema, tipo de documento, versao e status. Esses dados controlam qual configuracao sera aplicada apos OCR e classificacao.',
     },
     ocr: {
-        title: 'Documento',
+        title: 'OCR de referencia',
         text: 'Escolha um documento real ja processado para usar como base. Compare o original com a transcricao OCR e confirme se o texto tem qualidade suficiente para criar exemplos e regras.',
     },
     schema: {
@@ -2661,25 +2763,53 @@ function SettingsView({ schemas, layouts, onChanged }: {
                                     </button>
                                 </div>
                             </section>
-                            <div className="grid gap-3 md:grid-cols-2">
-                                <Field label="Nome do modelo">
-                                    <input value={schemaForm.model_name} onChange={(event) => setSchemaForm({ ...schemaForm, model_name: event.target.value })} className="input" placeholder="Recibo de servico" />
-                                </Field>
-                                <Field label="Schema (Campos)">
-                                    <input value={schemaForm.schema_id} onChange={(event) => setSchemaForm({ ...schemaForm, schema_id: event.target.value })} className="input" placeholder="recibo_servico" />
-                                </Field>
-                                <Field label="Tipo de documento">
-                                    <select value={schemaForm.document_type} onChange={(event) => {
-                                        setSchemaForm({ ...schemaForm, document_type: event.target.value })
-                                        setLayoutForm({ ...layoutForm, document_type: event.target.value })
-                                    }} className="input">
-                                        <option value="scanned_image">Imagem/PDF escaneado</option>
-                                        <option value="digital_pdf">PDF textual</option>
-                                        <option value="handwritten_complex">Manuscrito complexo</option>
-                                    </select>
-                                </Field>
+                            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <Field label="Nome do modelo">
+                                        <input value={schemaForm.model_name} onChange={(event) => setSchemaForm({ ...schemaForm, model_name: event.target.value })} className="input" placeholder="Recibo de servico" />
+                                    </Field>
+                                    <Field label="Schema">
+                                        <input value={schemaForm.schema_id} onChange={(event) => setSchemaForm({ ...schemaForm, schema_id: event.target.value })} className="input" placeholder="recibo_servico" />
+                                    </Field>
+                                    <Field label="Tenant">
+                                        <input value={schemaForm.tenant_slug} onChange={(event) => setSchemaForm({ ...schemaForm, tenant_slug: event.target.value, })} className="input" />
+                                    </Field>
+                                    <Field label="Versao">
+                                        <input value={schemaForm.version} onChange={(event) => setSchemaForm({ ...schemaForm, version: event.target.value })} className="input" />
+                                    </Field>
+                                    <Field label="Tipo de documento">
+                                        <select value={schemaForm.document_type} onChange={(event) => {
+                                            setSchemaForm({ ...schemaForm, document_type: event.target.value })
+                                            setLayoutForm({ ...layoutForm, document_type: event.target.value })
+                                        }} className="input">
+                                            <option value="scanned_image">Imagem/PDF escaneado</option>
+                                            <option value="digital_pdf">PDF textual</option>
+                                            <option value="handwritten_complex">Manuscrito complexo</option>
+                                        </select>
+                                    </Field>
+                                    <Field label="Status">
+                                        <select value={schemaForm.status} onChange={(event) => setSchemaForm({ ...schemaForm, status: event.target.value })} className="input">
+                                            <option value="draft">Rascunho</option>
+                                            <option value="testing">Em teste</option>
+                                            <option value="approved">Aprovado</option>
+                                            <option value="disabled">Desativado</option>
+                                        </select>
+                                    </Field>
+                                </div>
+                                <HintPanel
+                                    title="Checklist LangExtract"
+                                    items={[
+                                        'Defina o schema antes do prompt.',
+                                        'Use exemplos anotados para campos ambiguos.',
+                                        'Mantenha o trecho fonte para validacao visual.',
+                                        'Publique somente versoes testadas.',
+                                    ]}
+                                />
                             </div>
-                            <SchemaList schemas={schemas} onDeleted={onChanged} />
+                            <div className="grid gap-4 lg:grid-cols-2">
+                                <SchemaList schemas={schemas} onDeleted={onChanged} />
+                                <ConfigList title="Layouts existentes" items={layouts} primaryKey="layout" secondaryKey="document_type" />
+                            </div>
                         </div>
                     ) : null}
 
@@ -2743,12 +2873,39 @@ function SettingsView({ schemas, layouts, onChanged }: {
                     ) : null}
 
                     {activeTab === 'publish' ? (
-                        <div>
+                        <div className="grid gap-4 xl:grid-cols-2">
                             <section className="rounded-md border border-zinc-200 p-4">
                                 <div className="mb-3 text-sm font-semibold">Salvar modelo como schema</div>
                                 <pre className="max-h-[360px] overflow-auto rounded-md bg-zinc-950 p-3 text-xs text-zinc-50">{JSON.stringify(schemaDefinition, null, 2)}</pre>
                                 <button type="button" onClick={createSchema} disabled={!schemaForm.schema_id.trim()} className="primary-button mt-3">
                                     Salvar schema LangExtract
+                                </button>
+                            </section>
+                            <section className="rounded-md border border-zinc-200 p-4">
+                                <div className="mb-3 text-sm font-semibold">Vincular layout ao schema</div>
+                                <div className="grid gap-3 md:grid-cols-2">
+                                    <Field label="Layout">
+                                        <input value={layoutForm.layout} onChange={(event) => setLayoutForm({ ...layoutForm, layout: event.target.value })} className="input" />
+                                    </Field>
+                                    <Field label="Tipo documento">
+                                        <input value={layoutForm.document_type} onChange={(event) => setLayoutForm({ ...layoutForm, document_type: event.target.value })} className="input" />
+                                    </Field>
+                                    <Field label="Schema">
+                                        <select value={layoutForm.schema_config_id} onChange={(event) => setLayoutForm({ ...layoutForm, schema_config_id: event.target.value })} className="input">
+                                            <option value="">Selecionar</option>
+                                            {schemas.map((schema) => (
+                                                <option key={schema.id} value={schema.id}>
+                                                    {schema.schema_id} {schema.version}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </Field>
+                                    <Field label="Confianca minima">
+                                        <input value={layoutForm.confidence_threshold} onChange={(event) => setLayoutForm({ ...layoutForm, confidence_threshold: event.target.value })} className="input" />
+                                    </Field>
+                                </div>
+                                <button type="button" onClick={createLayout} disabled={!layoutForm.layout.trim() || !layoutForm.schema_config_id} className="primary-button mt-3">
+                                    Criar layout
                                 </button>
                             </section>
                         </div>
@@ -3212,7 +3369,10 @@ function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeMo
                         {schemaForm.model_name || schemaForm.schema_id || 'Modelo sem nome'}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-zinc-600">
+                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">schema: {schemaForm.schema_id || '-'} · {schemaForm.version || '-'}</span>
+                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">layout: {activeLayout?.layout || layoutForm.layout || '-'}</span>
                         <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">tipo: {schemaForm.document_type || '-'}</span>
+                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">status: {schemaForm.status || '-'}</span>
                     </div>
                 </div>
                 <button type="button" onClick={onChangeModel} className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium hover:bg-zinc-100">
@@ -3306,6 +3466,36 @@ function ReferenceDocumentPanel({ selectedDocumentId, onSelectDocument, referenc
                 <DocumentPreview document={referenceDocument} />
                 <HighlightedOcrText text={referenceDocument?.full_transcription || ''} fields={fields} examples={[]} />
             </div>
+            <section className="rounded-md border border-zinc-200 bg-white p-4">
+                <div className="mb-3 text-sm font-semibold">Revisao da qualidade do OCR</div>
+                <div className="grid gap-3 lg:grid-cols-[220px_260px_1fr]">
+                    <Field label="Texto confere?">
+                        <select value={review.quality} onChange={(event) => onReviewChange({ ...review, quality: event.target.value })} className="input">
+                            <option value="pending">Nao revisado</option>
+                            <option value="matches">Confere com o documento</option>
+                            <option value="minor_issues">Tem pequenas divergencias</option>
+                            <option value="major_issues">Nao confere</option>
+                        </select>
+                    </Field>
+                    <Field label="Acao recomendada">
+                        <select value={review.action} onChange={(event) => onReviewChange({ ...review, action: event.target.value })} className="input">
+                            <option value="review_before_examples">Revisar antes de criar exemplos</option>
+                            <option value="use_as_reference">Usar como referencia</option>
+                            <option value="reprocess_ocr">Reprocessar OCR</option>
+                            <option value="replace_document">Trocar documento</option>
+                            <option value="manual_transcription">Corrigir transcricao manualmente</option>
+                        </select>
+                    </Field>
+                    <Field label="Observacoes">
+                        <textarea
+                            value={review.notes}
+                            onChange={(event) => onReviewChange({ ...review, notes: event.target.value })}
+                            className="input min-h-[86px]"
+                            placeholder="Registre linhas faltantes, campos incorretos, leitura manuscrita ruim ou motivo para reprocessar."
+                        />
+                    </Field>
+                </div>
+            </section>
         </div>
     )
 }
@@ -3314,12 +3504,17 @@ function DocumentPreview({ document }: { document: Document | null }) {
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">Original</div>
-            <DocumentFileFrame
-                document={document}
-                frameClassName="h-[520px] w-full"
-                imageWrapClassName="max-h-[520px] overflow-auto p-3"
-                emptyText="Selecione um documento."
-            />
+            {!document ? (
+                <EmptyState icon={FileText} text="Selecione um documento." />
+            ) : (
+                // Carrega o arquivo como blob autenticado (contorna X-Frame-Options em produção).
+                <DocumentBlobPreview
+                    documentId={document.id}
+                    contentType={document.content_type}
+                    filename={document.original_filename}
+                    frameClassName="h-[520px] w-full"
+                />
+            )}
         </section>
     )
 }
@@ -3413,7 +3608,7 @@ function ExamplesEditor({ examples, onChange, referenceText }: {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <section className="rounded-md border border-zinc-200">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
-                    <div className="text-sm font-semibold">Exemplos (Few-shots anotados)</div>
+                    <div className="text-sm font-semibold">Few-shot anotados</div>
                     <button type="button" onClick={() => onChange([...examples, { field: '', expected: '', source: '' }])} className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100">
                         Adicionar
                     </button>
@@ -3452,10 +3647,11 @@ interface EmailModalDoc {
  * FR-015) e renderiza inline sem forçar download (FR-011): PDF via iframe,
  * imagem via <img>, fallback amigável para os demais formatos.
  */
-function DocumentBlobPreview({ documentId, contentType, filename }: {
+function DocumentBlobPreview({ documentId, contentType, filename, frameClassName = 'h-[420px] w-full rounded border border-zinc-200' }: {
     documentId: string
     contentType?: string
     filename?: string
+    frameClassName?: string
 }) {
     const [blobUrl, setBlobUrl] = useState('')
     const [loading, setLoading] = useState(true)
@@ -3494,7 +3690,7 @@ function DocumentBlobPreview({ documentId, contentType, filename }: {
     const isPdf = contentType === 'application/pdf' || (filename ?? '').toLowerCase().endsWith('.pdf')
     const isImage = (contentType ?? '').startsWith('image/')
     if (isPdf) {
-        return <iframe title={`Documento ${filename ?? documentId}`} src={blobUrl} className="h-[420px] w-full rounded border border-zinc-200" />
+        return <iframe title={`Documento ${filename ?? documentId}`} src={blobUrl} className={frameClassName} />
     }
     if (isImage) {
         return (
@@ -3815,11 +4011,15 @@ function Metric({ label, value }: { label: React.ReactNode; value: React.ReactNo
 
 const PROTECTED_SCHEMA_IDS = ['nota_fiscal_default', 'conta_agua_default']
 
-function DeleteSchemaModal({ schema, onClose, onDeleted }) {
+function DeleteSchemaModal({ schema, onClose, onDeleted }: {
+    schema: SchemaConfig
+    onClose: () => void
+    onDeleted: () => void | Promise<unknown>
+}) {
     const [loading, setLoading] = useState(false)
-    const [error, setError] = useState(null)
+    const [error, setError] = useState('')
 
-    if (PROTECTED_SCHEMA_IDS.includes(schema.schema_id)) {
+    if (schema.schema_id && PROTECTED_SCHEMA_IDS.includes(schema.schema_id)) {
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
                 <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-6 shadow-xl">
@@ -3839,13 +4039,12 @@ function DeleteSchemaModal({ schema, onClose, onDeleted }) {
 
     async function handleDelete() {
         setLoading(true)
-        setError(null)
+        setError('')
         try {
             await api.delete(`/schema-configs/${schema.id}`)
-            onDeleted()
+            await onDeleted()
         } catch (err) {
-            const detail = err.response?.data?.detail || 'Erro ao excluir o modelo. Tente novamente.'
-            setError(detail)
+            setError(readError(err, 'Erro ao excluir o modelo. Tente novamente.'))
             setLoading(false)
         }
     }
@@ -3871,12 +4070,15 @@ function DeleteSchemaModal({ schema, onClose, onDeleted }) {
     )
 }
 
-function SchemaList({ schemas, onDeleted }) {
-    const [targetSchema, setTargetSchema] = useState(null)
+function SchemaList({ schemas, onDeleted }: {
+    schemas: SchemaConfig[]
+    onDeleted: () => void | Promise<unknown>
+}) {
+    const [targetSchema, setTargetSchema] = useState<SchemaConfig | null>(null)
     return (
         <>
             <section className="rounded-md border border-zinc-200 bg-white">
-                <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Modelos existentes</div>
+                <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Schemas existentes</div>
                 {schemas.length === 0 ? (
                     <EmptyState icon={Settings} text="Nenhuma configuracao cadastrada." />
                 ) : (
@@ -3901,102 +4103,7 @@ function SchemaList({ schemas, onDeleted }) {
                 <DeleteSchemaModal
                     schema={targetSchema}
                     onClose={() => setTargetSchema(null)}
-                    onDeleted={() => { setTargetSchema(null); onDeleted() }}
-                />
-            )}
-        </>
-    )
-}
-
-const PROTECTED_SCHEMA_IDS = ['nota_fiscal_default', 'conta_agua_default']
-
-function DeleteSchemaModal({ schema, onClose, onDeleted }) {
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState(null)
-
-    if (PROTECTED_SCHEMA_IDS.includes(schema.schema_id)) {
-        return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-6 shadow-xl">
-                    <div className="text-sm font-semibold text-zinc-900">Modelo protegido</div>
-                    <p className="mt-2 text-sm text-zinc-600">
-                        O modelo <span className="font-medium">{schema.schema_id}</span> é padrão do sistema e não pode ser excluído.
-                    </p>
-                    <div className="mt-4 flex justify-end">
-                        <button type="button" onClick={onClose} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100">
-                            Fechar
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )
-    }
-
-    async function handleDelete() {
-        setLoading(true)
-        setError(null)
-        try {
-            await api.delete(`/schema-configs/${schema.id}`)
-            onDeleted()
-        } catch (err) {
-            const detail = err.response?.data?.detail || 'Erro ao excluir o modelo. Tente novamente.'
-            setError(detail)
-            setLoading(false)
-        }
-    }
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-6 shadow-xl">
-                <div className="text-sm font-semibold text-zinc-900">Excluir modelo</div>
-                <p className="mt-2 text-sm text-zinc-600">
-                    Tem certeza que deseja excluir o modelo <span className="font-medium">{schema.schema_id}</span>? Esta ação não pode ser desfeita.
-                </p>
-                {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-                <div className="mt-4 flex justify-end gap-2">
-                    <button type="button" onClick={onClose} disabled={loading} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50">
-                        Cancelar
-                    </button>
-                    <button type="button" onClick={handleDelete} disabled={loading} className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
-                        {loading ? 'Excluindo...' : 'Excluir'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    )
-}
-
-function SchemaList({ schemas, onDeleted }) {
-    const [targetSchema, setTargetSchema] = useState(null)
-    return (
-        <>
-            <section className="rounded-md border border-zinc-200 bg-white">
-                <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Modelos existentes</div>
-                {schemas.length === 0 ? (
-                    <EmptyState icon={Settings} text="Nenhuma configuracao cadastrada." />
-                ) : (
-                    <div className="divide-y divide-zinc-100">
-                        {schemas.map((schema) => (
-                            <div key={schema.id} className="flex items-center justify-between px-4 py-3">
-                                <div className="text-sm font-medium">{schema.schema_id}</div>
-                                <button
-                                    type="button"
-                                    onClick={() => setTargetSchema(schema)}
-                                    className="flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                                >
-                                    <Trash2 size={12} />
-                                    Excluir
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </section>
-            {targetSchema && (
-                <DeleteSchemaModal
-                    schema={targetSchema}
-                    onClose={() => setTargetSchema(null)}
-                    onDeleted={() => { setTargetSchema(null); onDeleted() }}
+                    onDeleted={async () => { setTargetSchema(null); await onDeleted() }}
                 />
             )}
         </>

@@ -40,6 +40,7 @@ from infrastructure.engines.tesseract_engine import TesseractEngine
 from infrastructure.engines.trocr_engine import TrOCREngine
 from infrastructure.fallback.fallback_handler import merge_fallback_result, should_trigger_fallback
 from shared.preprocessing import decode_image
+from shared.transcription_formatter import format_transcription
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,19 @@ def process_document(
     field_positions = {}
 
     # ──────────────────────────────────────────────────────────────────────────
+    # 5.5 GARANTIR TRANSCRIÇÃO FORMATADA (independente de engine)
+    # ──────────────────────────────────────────────────────────────────────────
+    # Apenas o DoclingEngine produz raw_text_formatted (layout espacial via
+    # coordenadas do PDF digital). Para os demais engines — OpenRouter/LLM em
+    # PDFs-imagem, imagens escaneadas, etc. — derivamos a transcrição formatada
+    # do raw_text consolidado (após eventuais fallbacks), preservando a ordem de
+    # leitura. Se o engine já preencheu o campo, o valor original é mantido.
+    raw_text_final = ocr_result.get("raw_text", "")
+    raw_text_formatted = ocr_result.get("raw_text_formatted", "")
+    if not str(raw_text_formatted).strip():
+        raw_text_formatted = format_transcription(raw_text_final)
+
+    # ──────────────────────────────────────────────────────────────────────────
     # 6. CONSTRUIR RESPONSE FINAL
     # ──────────────────────────────────────────────────────────────────────────
     processing_time = time.time() - start_time
@@ -207,9 +221,9 @@ def process_document(
         "field_confidence": {},
         "low_confidence_fields": [],
 
-        "raw_text": ocr_result.get("raw_text", ""),
+        "raw_text": raw_text_final,
         "raw_text_fallback": ocr_result.get("raw_text_fallback", ""),
-        "raw_text_formatted": ocr_result.get("raw_text_formatted", ""),
+        "raw_text_formatted": raw_text_formatted,
 
         "document_type": doc_type,
         "engine_used": engine_name,

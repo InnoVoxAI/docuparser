@@ -27,6 +27,9 @@ export interface ExtractionResult {
   fields: FieldsMap
   confidence: number
   requires_human_validation: boolean
+  // Preenchido quando a extração é processada de forma assíncrona pelo backend;
+  // usado pelo polling do frontend para detectar quando um novo resultado chegou.
+  updated_at?: string
 }
 
 // =========================================================

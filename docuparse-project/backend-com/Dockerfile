@@ -2,7 +2,7 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY backend-com/pyproject.toml .
 RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic pydantic-settings python-multipart pyjwt structlog toml redis
 
 COPY backend-com/src ./src

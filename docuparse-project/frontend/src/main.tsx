@@ -1623,7 +1623,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                                     : 'Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.'}
                             </Alert>
                         ) : null}
-                        <ReadOnlyTranscriptionFormatted value={selectedDocument.full_transcription_formatted} />
+                        <ReadOnlyTranscriptionFormatted value={selectedDocument.full_transcription_formatted} documentType={selectedDocument.document_type} />
                         <LangExtractPanel
                             documentId={selectedDocumentId}
                             schemas={schemas}
@@ -1956,8 +1956,11 @@ function DocumentMetadataPanel({ document }: { document: Document }) {
     )
 }
 
-function ReadOnlyTranscriptionFormatted({ value }: { value?: string }) {
+const IMAGE_BASED_DOCUMENT_TYPES = ['scanned_image', 'handwritten_complex']
+
+function ReadOnlyTranscriptionFormatted({ value, documentType }: { value?: string; documentType?: string }) {
     const [open, setOpen] = useState(true)
+    const isImageBased = !!documentType && IMAGE_BASED_DOCUMENT_TYPES.includes(documentType)
     return (
         <div className="rounded-md border border-zinc-200">
             <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
@@ -1976,9 +1979,14 @@ function ReadOnlyTranscriptionFormatted({ value }: { value?: string }) {
             <pre className={`min-h-[160px] max-h-[420px] w-full overflow-auto whitespace-pre bg-zinc-50 px-3 py-3 text-xs leading-5 text-zinc-700${open ? '' : ' hidden'}`}>
                 {value || ''}
             </pre>
+            {value && isImageBased ? (
+                <div className="px-3 pb-3 text-xs text-amber-600">
+                    Documento baseado em imagem: a transcricao formatada pode nao estar perfeitamente posicionada ou coerente.
+                </div>
+            ) : null}
             {!value ? (
                 <div className="px-3 pb-3 text-xs text-zinc-400">
-                    Disponivel apenas para PDFs digitais processados pelo engine Docling.
+                    Transcricao formatada indisponivel para este documento.
                 </div>
             ) : null}
         </div>

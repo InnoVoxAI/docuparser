@@ -44,6 +44,12 @@ def login_view(request: Request) -> Response:
 
     user = serializer.validated_data["user"]
     refresh = RefreshToken.for_user(user)
+    try:
+        from tenants.models import UserProfile
+        profile = UserProfile.objects.select_related("tenant").get(user=user)
+        refresh["tenant"] = profile.tenant.slug
+    except Exception:
+        pass
     return Response(
         {
             "access": str(refresh.access_token),
@@ -98,7 +104,7 @@ def register_view(request: Request) -> Response:
         first_name=data["name"],
         is_active=False,
     )
-    from documents.models import Tenant, UserProfile
+    from tenants.models import Tenant, UserProfile
     tenant = Tenant.objects.first()
     if tenant:
         UserProfile.objects.create(user=user, tenant=tenant, role_ref=None)

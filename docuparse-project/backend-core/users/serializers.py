@@ -109,7 +109,7 @@ class UserCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError("Role não encontrada.")
 
     def create(self, validated_data: dict) -> Any:
-        from documents.models import Tenant, UserProfile
+        from tenants.models import Tenant, UserProfile
         User = get_user_model()
         role: Role = validated_data["role_id"]
         user = User.objects.create_user(

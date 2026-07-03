@@ -5,7 +5,8 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from documents.models import Document, ExtractionFieldVersion, ExtractionResult, Tenant
+from documents.models import Document, ExtractionFieldVersion, ExtractionResult
+from tenants.models import Tenant
 from documents.services import field_versioning as fv
 
 

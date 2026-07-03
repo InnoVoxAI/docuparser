@@ -3,7 +3,8 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from documents.models import Document, ExtractionResult, Tenant, ValidationDecision
+from documents.models import Document, ExtractionResult, ValidationDecision
+from tenants.models import Tenant
 from documents.serializers import DocumentListSerializer
 
 

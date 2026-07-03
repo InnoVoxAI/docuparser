@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from documents.models import Tenant, UserProfile
+from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
 
 User = get_user_model()

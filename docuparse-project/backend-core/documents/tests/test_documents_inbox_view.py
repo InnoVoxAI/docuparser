@@ -5,7 +5,8 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from documents.models import Document, ExtractionResult, Tenant, UserProfile, ValidationDecision
+from documents.models import Document, ExtractionResult, ValidationDecision
+from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
 
 

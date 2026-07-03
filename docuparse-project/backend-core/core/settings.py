@@ -17,18 +17,30 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
-INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
+SHARED_APPS = [
+    'django_tenants',
     'django.contrib.contenttypes',
+    'django.contrib.auth',
+    'django.contrib.admin',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
-    'documents',
+    'tenants',
     'users',
 ]
+
+TENANT_APPS = [
+    'documents',
+]
+
+INSTALLED_APPS = list(SHARED_APPS) + list(TENANT_APPS)
+
+TENANT_MODEL = 'tenants.Tenant'
+TENANT_DOMAIN_MODEL = 'tenants.Domain'
+
+DATABASE_ROUTERS = ['django_tenants.routers.TenantSyncRouter']
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -48,6 +60,7 @@ SIMPLE_JWT = {
 }
 
 MIDDLEWARE = [
+    'tenants.middleware.JWTTenantMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',

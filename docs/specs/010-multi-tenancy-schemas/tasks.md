@@ -22,7 +22,8 @@ No user story work can begin until this phase is done.
 - [ ] T001 Add `django-tenants` to `docuparse-project/backend-core/requirements.txt` (latest stable, Django 5.x compatible)
 - [ ] T002 Create `docuparse-project/backend-core/tenants/` app with `apps.py`, `__init__.py`, `migrations/__init__.py`, empty `models.py`, `middleware.py`, `views.py`, `serializers.py`, `urls.py`
 - [ ] T003 [P] Update `core/settings.py`: replace `INSTALLED_APPS` with `SHARED_APPS` / `TENANT_APPS` split per data-model.md; add `TENANT_MODEL = "tenants.Tenant"`, `TENANT_DOMAIN_MODEL = "tenants.Domain"`, `DATABASE_ROUTERS = ["django_tenants.routers.TenantSyncRouter"]`
-- [ ] T004 [P] Configure `core/urls.py` for django-tenants URL routing: split into public URL conf and tenant URL conf per django-tenants documentation
+- [ ] T004 [P] Configure `core/urls.py` for django-tenants URL routing: split into public URL conf (`/api/admin/tenants/` and `/api/auth/login/`) and tenant URL conf (all other `/api/` routes)
+- [ ] T004b Configure `pytest` and `conftest.py` for tenant-aware testing: add `tenant_db` marker; skip schema-routing tests when `POSTGRES_HOST` env var is absent (SQLite cannot run schema-switching paths); install `pytest-django` PostgreSQL fixtures in `docuparse-project/backend-core/conftest.py`
 
 ---
 
@@ -63,7 +64,7 @@ API call and confirm it hits the `tenant_acme` schema (no 500 errors, no public-
 - [ ] T018 [US3] Add inactive tenant guard in `JWTTenantMiddleware`: when `Tenant.is_active = False`, raise `PermissionDenied` so Django returns 403 before any ORM query runs in the tenant schema
 - [ ] T019 [US3] Register `JWTTenantMiddleware` as the FIRST entry in `MIDDLEWARE` in `core/settings.py` (before `SecurityMiddleware`)
 - [ ] T020 [US3] Override `TokenObtainPairSerializer` in `users/auth_views.py` (or a new `tenants/serializers.py` JWT serializer): add `token["tenant"] = user.docuparse_profile.tenant.slug` in `get_token()` classmethod; update `TokenObtainPairView` to use this serializer
-- [ ] T021 [P] [US3] Write unit test `tests/unit/test_jwt_tenant_claim.py`: assert `tenant` claim appears in access token after successful login; assert missing `UserProfile` raises a clear error
+- [ ] T021 [US3] Write unit test `tests/unit/test_jwt_tenant_claim.py`: assert `tenant` claim appears in access token after successful login; assert missing `UserProfile` raises a clear error
 
 **Checkpoint**: `POST /api/auth/login/` returns JWT with `tenant` claim; subsequent requests hit the correct schema.
 

@@ -51,7 +51,8 @@ created, default data was seeded, and a superuser profile can authenticate again
    tenant-scoped tables.
 2. **Given** a duplicate slug, **When** the POST is attempted, **Then** the API returns 409 Conflict.
 3. **Given** a newly provisioned tenant, **When** the tenant schema is inspected, **Then** it
-   contains Role, Permission (seeded), and empty Document/Settings tables.
+   contains empty Document and Settings tables; Role and Permission records are accessible
+   via the shared public schema (not duplicated per tenant).
 
 ---
 
@@ -130,8 +131,10 @@ unchanged.
   correct per-tenant schemas.
 - **FR-009**: Deactivated tenants (`Tenant.is_active = False`) MUST receive 403 on all
   authenticated API calls.
-- **FR-010**: The system MUST seed default `Role` and `Permission` records into each newly
-  provisioned tenant schema.
+- **FR-010**: The system MUST ensure default `Role` and `Permission` records exist in the
+  `public` schema before any tenant can authenticate. A one-time seed command MUST
+  run as part of initial deployment; provisioning a new tenant MUST NOT require re-seeding
+  roles or permissions.
 
 ### Key Entities
 
@@ -168,3 +171,8 @@ unchanged.
 - The `auth.User` table remains in the public schema; a user may theoretically belong to
   multiple tenants via multiple `UserProfile` rows, but the JWT targets one tenant per session.
 - Django Admin is out of scope for multi-tenant routing in this feature.
+- `Role` and `Permission` definitions are **global and shared across all tenants** in the
+  `public` schema. Per-tenant role customization (e.g., tenant-specific role names or
+  custom permission sets) is out of scope for this feature. This is a consequence of
+  `UserProfile` living in the public schema: Django cannot express a cross-schema FK from
+  a public-schema model to a tenant-schema model.

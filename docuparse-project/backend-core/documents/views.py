@@ -21,7 +21,7 @@ from users.permissions import require_permission
 from docuparse_events import event_bus_from_env
 from docuparse_storage import LocalStorage
 
-from .models import Document, EmailSettings, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, Tenant, ValidationDecision
+from .models import Document, EmailSettings, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, SETTINGS_SINGLETON_ID, ValidationDecision
 from .pagination import paginate_queryset
 from .serializers import (
     DocumentDetailSerializer,
@@ -199,7 +199,7 @@ def _apply_search(queryset, term: str | None):
 def documents_inbox_view(request):
     queryset = (
         Document.objects
-        .select_related("tenant", "extraction_result")
+        .select_related("extraction_result")
         .prefetch_related(
             Prefetch(
                 "validation_decisions",
@@ -210,9 +210,6 @@ def documents_inbox_view(request):
         .order_by("-received_at")
     )
     queryset = _apply_status_filter(queryset, request.query_params.get("status"))
-    tenant_filter = request.query_params.get("tenant")
-    if tenant_filter:
-        queryset = queryset.filter(tenant__slug=tenant_filter)
     queryset = _apply_search(queryset, request.query_params.get("search"))
 
     page = paginate_queryset(queryset, request)
@@ -240,7 +237,7 @@ def document_received_event_view(request):
 @permission_classes([require_permission("inbox.view")])
 def document_detail_view(request, document_id):
     document = get_object_or_404(
-        Document.objects.select_related("tenant").prefetch_related("events"),
+        Document.objects.prefetch_related("events"),
         id=document_id,
     )
     return Response(DocumentDetailSerializer(document).data)
@@ -524,14 +521,12 @@ def schema_configs_view(request):
     if auth_error is not None:
         return auth_error
     if request.method == "GET":
-        queryset = SchemaConfig.objects.select_related("tenant").order_by("schema_id", "version")
+        queryset = SchemaConfig.objects.all().order_by("schema_id", "version")
         return Response(SchemaConfigSerializer(queryset, many=True).data)
 
-    tenant = _tenant_from_request(request)
-    serializer = SchemaConfigSerializer(data={**request.data, "tenant_id": str(tenant.id)})
+    serializer = SchemaConfigSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     config, created = SchemaConfig.objects.update_or_create(
-        tenant=tenant,
         schema_id=serializer.validated_data["schema_id"],
         version=serializer.validated_data["version"],
         defaults={
@@ -548,11 +543,11 @@ def schema_config_detail_view(request, schema_id):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
-    config = get_object_or_404(SchemaConfig.objects.select_related("tenant"), id=schema_id)
+    config = get_object_or_404(SchemaConfig, id=schema_id)
     if request.method == "GET":
         return Response(SchemaConfigSerializer(config).data)
 
-    serializer = SchemaConfigSerializer(config, data={**request.data, "tenant_id": str(config.tenant_id)}, partial=True)
+    serializer = SchemaConfigSerializer(config, data=request.data, partial=True)
     serializer.is_valid(raise_exception=True)
     for field in ("schema_id", "version", "definition", "is_active"):
         if field in serializer.validated_data:
@@ -567,14 +562,12 @@ def layout_configs_view(request):
     if auth_error is not None:
         return auth_error
     if request.method == "GET":
-        queryset = LayoutConfig.objects.select_related("tenant", "schema_config").order_by("layout")
+        queryset = LayoutConfig.objects.select_related("schema_config").order_by("layout")
         return Response(LayoutConfigSerializer(queryset, many=True).data)
 
-    tenant = _tenant_from_request(request)
-    serializer = LayoutConfigSerializer(data={**request.data, "tenant_id": str(tenant.id)})
+    serializer = LayoutConfigSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     config = LayoutConfig.objects.create(
-        tenant=tenant,
         layout=serializer.validated_data["layout"],
         document_type=serializer.validated_data["document_type"],
         schema_config=serializer.validated_data["schema_config"],
@@ -589,10 +582,8 @@ def integration_settings_view(request):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
-    tenant_slug = request.query_params.get("tenant") or request.data.get("tenant_slug") or "tenant-demo"
-    tenant, _ = Tenant.objects.get_or_create(slug=tenant_slug, defaults={"name": tenant_slug})
     config, _ = IntegrationSettings.objects.get_or_create(
-        tenant=tenant,
+        id=SETTINGS_SINGLETON_ID,
         defaults={
             "approved_export_dir": settings.DOCUPARSE_APPROVED_EXPORT_DIR,
         },
@@ -629,9 +620,7 @@ def ocr_settings_view(request):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
-    tenant_slug = request.query_params.get("tenant") or request.data.get("tenant_slug") or "tenant-demo"
-    tenant, _ = Tenant.objects.get_or_create(slug=tenant_slug, defaults={"name": tenant_slug})
-    config, _ = OCRSettings.objects.get_or_create(tenant=tenant)
+    config, _ = OCRSettings.objects.get_or_create(id=SETTINGS_SINGLETON_ID)
     if request.method == "GET":
         return Response(OCRSettingsSerializer(config).data)
 
@@ -672,9 +661,7 @@ def email_settings_view(request):
     auth_error = _internal_token_error(request)
     if auth_error is not None:
         return auth_error
-    tenant_slug = request.query_params.get("tenant") or request.data.get("tenant_slug") or "tenant-demo"
-    tenant, _ = Tenant.objects.get_or_create(slug=tenant_slug, defaults={"name": tenant_slug})
-    config, _ = EmailSettings.objects.get_or_create(tenant=tenant)
+    config, _ = EmailSettings.objects.get_or_create(id=SETTINGS_SINGLETON_ID)
     if request.method == "GET":
         return Response(EmailSettingsSerializer(config).data)
 
@@ -777,12 +764,6 @@ def dlq_requeue_view(request):
     except ValueError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     return Response(result, status=status.HTTP_202_ACCEPTED if result["execute"] else status.HTTP_200_OK)
-
-
-def _tenant_from_request(request) -> Tenant:
-    tenant_slug = request.data.get("tenant") or request.data.get("tenant_slug") or "tenant-demo"
-    tenant, _ = Tenant.objects.get_or_create(slug=tenant_slug, defaults={"name": tenant_slug})
-    return tenant
 
 
 def _positive_int(value, *, default: int, maximum: int) -> int:

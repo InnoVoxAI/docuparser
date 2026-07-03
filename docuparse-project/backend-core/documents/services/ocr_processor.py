@@ -141,7 +141,7 @@ def _resolve_schema_for_extraction(document: Document, raw_text: str) -> SchemaC
     """
     if document.layout:
         cfg = (
-            LayoutConfig.objects.filter(layout=document.layout, tenant=document.tenant, is_active=True)
+            LayoutConfig.objects.filter(layout=document.layout, is_active=True)
             .select_related("schema_config")
             .first()
         )
@@ -156,7 +156,7 @@ def _resolve_schema_for_extraction(document: Document, raw_text: str) -> SchemaC
 
     if document.document_type:
         cfg = (
-            LayoutConfig.objects.filter(document_type=document.document_type, tenant=document.tenant, is_active=True)
+            LayoutConfig.objects.filter(document_type=document.document_type, is_active=True)
             .select_related("schema_config")
             .first()
         )

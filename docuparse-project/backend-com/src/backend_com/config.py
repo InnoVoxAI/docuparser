@@ -26,6 +26,13 @@ def _env(key: str, default: str = "") -> str:
 class Settings:
     service_name = "docuparse-backend-com"
     local_storage_dir = Path(_env("DOCUPARSE_LOCAL_STORAGE_DIR", str(PROJECT_DIR / ".docuparse-storage")))
+    # Storage compartilhado de objetos (feature 011). Backend selecionado por
+    # DOCUPARSE_STORAGE_BACKEND (default "local"); consumido por
+    # docuparse_storage.get_storage(). Credenciais/endpoint sempre do ambiente.
+    storage_backend = _env("DOCUPARSE_STORAGE_BACKEND", "local").lower()
+    s3_endpoint_url = _env("S3_ENDPOINT_URL")
+    s3_bucket = _env("S3_BUCKET")
+    s3_region = _env("S3_REGION")
     local_event_dir = Path(_env("DOCUPARSE_LOCAL_EVENT_DIR", str(PROJECT_DIR / ".docuparse-events")))
     max_upload_bytes = int(_env("DOCUPARSE_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)))
     email_webhook_token = _env("DOCUPARSE_EMAIL_WEBHOOK_TOKEN")

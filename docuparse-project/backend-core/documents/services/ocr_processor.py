@@ -8,7 +8,7 @@ from io import BytesIO
 from django.conf import settings
 from django.utils import timezone
 
-from docuparse_storage import LocalStorage, document_ocr_raw_text_key
+from docuparse_storage import document_ocr_raw_text_key, get_storage
 
 from documents.models import Document, ExtractionResult, LayoutConfig, SchemaConfig
 from documents.services.ocr_client import OCRClient
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 def process_document_ocr(document_id) -> Document:
     document = Document.objects.select_related("tenant").get(id=document_id)
-    content = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(document.file_uri)
+    content = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(document.file_uri)
     result = OCRClient().process_document(
         BytesIO(content),
         document.original_filename or f"{document.id}.pdf",
@@ -49,7 +49,7 @@ def process_document_ocr(document_id) -> Document:
         },
         "processed_at": timezone.now().isoformat(),
     }
-    stored = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).put_bytes(
+    stored = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR).put_bytes(
         document_ocr_raw_text_key(document.tenant.slug, str(document.id)),
         json.dumps(raw_text_payload, ensure_ascii=False).encode("utf-8"),
     )
@@ -88,7 +88,7 @@ def auto_extract_after_ocr(document: Document) -> None:
         return
 
     try:
-        storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+        storage = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR)
         payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
         raw_text = str(payload.get("raw_text") or "")
     except Exception as exc:
@@ -175,7 +175,7 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
     _record_extraction(document, "running", schema_id=schema_config.schema_id, trigger="manual")
 
     try:
-        storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+        storage = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR)
         payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
         raw_text = str(payload.get("raw_text") or "")
         if not raw_text.strip():

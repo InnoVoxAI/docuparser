@@ -7,3 +7,4 @@ psycopg2-binary
 python-decouple
 pydantic
 redis==7.4.0
+boto3>=1.34.0

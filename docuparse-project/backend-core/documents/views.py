@@ -19,7 +19,7 @@ from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
 
 from docuparse_events import event_bus_from_env
-from docuparse_storage import LocalStorage
+from docuparse_storage import get_storage
 
 from .models import Document, EmailSettings, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, Tenant, ValidationDecision
 from .pagination import paginate_queryset
@@ -308,7 +308,7 @@ def document_file_view(request, document_id):
     # respeitando as permissões existentes sem forçar download.
     document = get_object_or_404(Document, id=document_id)
     try:
-        content = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(document.file_uri)
+        content = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(document.file_uri)
     except (FileNotFoundError, ValueError) as exc:
         raise Http404("Document file not found") from exc
     return FileResponse(
@@ -501,7 +501,7 @@ def document_langextract_view(request, document_id):
     if not document.raw_text_uri:
         return Response({"detail": "Documento sem texto bruto disponivel. Execute o OCR primeiro."}, status=status.HTTP_400_BAD_REQUEST)
 
-    storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+    storage = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR)
     try:
         payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
     except Exception as exc:

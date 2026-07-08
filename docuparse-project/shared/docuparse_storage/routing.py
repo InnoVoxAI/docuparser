@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Iterator
 
 from .keys import StoredObject
 from .local import LocalStorage
@@ -46,6 +46,14 @@ class RoutingStorage:
 
     def delete(self, uri_or_key: str) -> None:
         self._backend_for(uri_or_key).delete(uri_or_key)
+
+    def exists(self, uri_or_key: str) -> bool:
+        return self._backend_for(uri_or_key).exists(uri_or_key)
+
+    def iter_keys(self, prefix: str = "") -> Iterator[str]:
+        # Lista o backend de escrita (onde os objetos novos vivem). Objetos
+        # legados no outro esquema não são listados aqui (por design).
+        return self._write_backend().iter_keys(prefix)
 
     # -- Roteamento --------------------------------------------------------
 

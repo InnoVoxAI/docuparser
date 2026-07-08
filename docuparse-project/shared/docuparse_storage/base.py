@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Iterator, Protocol, runtime_checkable
 
 from .keys import StoredObject
 
@@ -19,6 +19,10 @@ class Storage(Protocol):
         ``FileNotFoundError`` quando o objeto não existe (inclui 404/NoSuchKey do
         S3). Falhas de conexão/credencial devem propagar como exceção distinta.
       - ``delete`` é idempotente (remover inexistente não é erro).
+      - ``exists`` devolve ``True``/``False`` sem baixar o objeto (HEAD no S3);
+        falhas de conexão/credencial propagam (não confundir com "não existe").
+      - ``iter_keys`` lista as keys do backend de escrita sob ``prefix`` (para
+        reconciliação banco ↔ storage). Não aceita URI com esquema — sempre keys.
     """
 
     def put_bytes(self, key: str, content: bytes) -> StoredObject: ...
@@ -26,3 +30,7 @@ class Storage(Protocol):
     def get_bytes(self, uri_or_key: str) -> bytes: ...
 
     def delete(self, uri_or_key: str) -> None: ...
+
+    def exists(self, uri_or_key: str) -> bool: ...
+
+    def iter_keys(self, prefix: str = "") -> Iterator[str]: ...

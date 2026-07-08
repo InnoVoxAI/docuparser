@@ -36,8 +36,8 @@ services:
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docuparse}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
     ports:
       # Portas do host remapeadas para evitar conflito com outros MinIO locais
       # (ex.: milvus-minio em 9000/9001). A porta interna do container (9000/9001)
@@ -62,8 +62,8 @@ services:
       minio:
         condition: service_started
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docuparse}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
     entrypoint: >
       /bin/sh -c "
@@ -125,8 +125,8 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
       S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-docuparse}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_APPROVED_EXPORT_DIR: /data/exports/approved
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -183,8 +183,8 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
       S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-docuparse}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_APPROVED_EXPORT_DIR: /data/exports/approved
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -225,8 +225,8 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
       S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-docuparse}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       BACKEND_CORE_DOCUMENT_RECEIVED_URL: http://backend-core:8000/api/ocr/events/document-received
       BACKEND_CORE_EMAIL_SETTINGS_URL: http://backend-core:8000/api/ocr/settings/email
     healthcheck:
@@ -270,8 +270,8 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
       S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-docuparse}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_OCR_WORKER_ENABLED: ${DOCUPARSE_OCR_WORKER_ENABLED:-false}
       OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-qwen/qwen2.5-vl-72b-instruct}
     healthcheck:
@@ -314,8 +314,8 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
       S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-docuparse}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-qwen/qwen2.5-vl-72b-instruct}
       DOCUPARSE_OCR_WORKER_ALLOW_MOCK: ${DOCUPARSE_OCR_WORKER_ALLOW_MOCK:-false}
     networks:
@@ -349,8 +349,8 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
       S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-docuparse}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_LAYOUT_WORKER_ENABLED: ${DOCUPARSE_LAYOUT_WORKER_ENABLED:-false}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2)"]
@@ -388,8 +388,8 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
       S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-docuparse}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
     networks:
       - docuparse-network
     depends_on:
@@ -423,8 +423,8 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
       S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-docuparse}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_EXTRACTION_WORKER_ENABLED: ${DOCUPARSE_EXTRACTION_WORKER_ENABLED:-false}
       # LLM extraction — same key used by backend-ocr
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -474,8 +474,8 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-docuparse}
       S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-docuparse}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       # LLM extraction — same key used by backend-ocr
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       LANGEXTRACT_MODEL: ${LANGEXTRACT_MODEL:-deepseek/deepseek-chat-v3-0324:free}

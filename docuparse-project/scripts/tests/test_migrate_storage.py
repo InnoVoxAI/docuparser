@@ -90,9 +90,12 @@ def test_already_migrated_doc_is_skipped(backends):
     assert doc.saved_fields is None
 
 
-def test_missing_local_object_recorded_as_error_not_crash(backends):
+def test_missing_local_object_recorded_as_missing_not_error(backends):
     local, s3 = backends
     doc = FakeDoc("d1", file_uri="local://documents/t/d/gone")
     stats = migrate_documents([doc], local, s3, dry_run=False)
-    assert stats.errors and "gone" in stats.errors[0]
+    # Arquivo ausente vira "missing" (ignorado), NÃO erro — não trava a migração.
+    assert stats.missing and "d1:file_uri" in stats.missing[0]
+    assert stats.errors == []
+    assert stats.skipped == 1 and stats.migrated == 0
     assert doc.file_uri == "local://documents/t/d/gone"  # inalterado (não perde acesso)

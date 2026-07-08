@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 from .keys import StoredObject
 
@@ -87,6 +87,24 @@ class S3Storage:
         bucket, key = self._resolve(uri_or_key)
         # delete_object é idempotente no S3 (não falha se a key não existir).
         self._client.delete_object(Bucket=bucket, Key=key)
+
+    def exists(self, uri_or_key: str) -> bool:
+        bucket, key = self._resolve(uri_or_key)
+        from botocore.exceptions import ClientError
+
+        try:
+            self._client.head_object(Bucket=bucket, Key=key)
+            return True
+        except ClientError as exc:  # 404/NoSuchKey → False; conexão/credencial propaga
+            if self._is_not_found(exc):
+                return False
+            raise
+
+    def iter_keys(self, prefix: str = "") -> Iterator[str]:
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                yield obj["Key"]
 
     # -- Helpers -----------------------------------------------------------
 

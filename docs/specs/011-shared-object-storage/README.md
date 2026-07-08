@@ -29,6 +29,11 @@ A partir de `docuparse-project/`:
 ```bash
 cd ~/repositories/docuparser/docuparse-project
 
+# 0) Na primeira vez, crie seu .env local a partir do exemplo.
+#    O compose EXIGE MINIO_ROOT_USER/MINIO_ROOT_PASSWORD (sem default) — sem
+#    .env ele falha com uma mensagem clara. O .env é gitignored (não versionado).
+cp -n .env.example .env
+
 # 1) Limpe containers/órfãos de execuções anteriores do stack
 sudo docker compose -f docker-compose.yml down --remove-orphans
 
@@ -125,7 +130,7 @@ curl -fsS http://localhost:8091/health        && echo   # langextract-service
 
 ## 5. Variáveis de ambiente
 
-As variáveis são lidas pelo `docker-compose.yml` (interpolação `${VAR:-default}`) e/ou pelo `docuparse-project/.env`. **Com os defaults, a aplicação sobe em modo `s3` contra o MinIO local sem precisar editar nada.** Configure no `.env` apenas se quiser sobrescrever.
+As variáveis são lidas pelo `docker-compose.yml` (interpolação `${VAR:-default}` para os valores não sensíveis) e pelo `docuparse-project/.env`. **As credenciais do MinIO (`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`) NÃO têm default no compose** — copie `.env.example` para `.env` (`cp .env.example .env`) antes de subir. Os demais valores (bucket, região, endpoint, portas) têm default e só precisam ir no `.env` se quiser sobrescrever.
 
 ### 5.1 Novas variáveis desta feature
 
@@ -135,15 +140,15 @@ As variáveis são lidas pelo `docker-compose.yml` (interpolação `${VAR:-defau
 | `S3_ENDPOINT_URL` | `http://minio:9000` (interno) | endpoint real do MinIO/S3 (**vazio** se AWS S3 nativo) |
 | `S3_BUCKET` | `docuparse` | bucket **provisionado pela infra** |
 | `S3_REGION` | `us-east-1` | região real (ex.: `us-east-1`, `sa-east-1`) |
-| `AWS_ACCESS_KEY_ID` | `docuparse` (= root do MinIO) | **via Secret** (k8s Secret / Vault) |
-| `AWS_SECRET_ACCESS_KEY` | `docuparse-local` (= senha root do MinIO) | **via Secret** (k8s Secret / Vault) |
+| `AWS_ACCESS_KEY_ID` | `= MINIO_ROOT_USER` do `.env` | **via Secret** (k8s Secret / Vault) |
+| `AWS_SECRET_ACCESS_KEY` | `= MINIO_ROOT_PASSWORD` do `.env` | **via Secret** (k8s Secret / Vault) |
 
 ### 5.2 Variáveis auxiliares do MinIO local (só dev)
 
 | Variável | Default | Papel |
 |---|---|---|
-| `MINIO_ROOT_USER` | `docuparse` | usuário root do MinIO local |
-| `MINIO_ROOT_PASSWORD` | `docuparse-local` | senha root do MinIO local |
+| `MINIO_ROOT_USER` | do `.env` (ex.: `.env.example` → `docuparse`) | usuário root do MinIO local (obrigatório) |
+| `MINIO_ROOT_PASSWORD` | do `.env` (ex.: `.env.example` → `docuparse-local`) | senha root do MinIO local (obrigatório) |
 | `MINIO_API_PORT` | `9002` | porta do host → API S3 do MinIO (só dev) |
 | `MINIO_CONSOLE_PORT` | `9003` | porta do host → console do MinIO (só dev) |
 
@@ -182,12 +187,22 @@ Notas:
 - No modo `local`, os serviços compartilham o volume Docker `docuparse-storage` (montado em `/data/storage`), que equivale a um volume compartilhado entre os pods.
 
 ### Migração de dados existentes (`local://` → `s3://`)
+
+Rode **dentro do container backend-core** (onde o banco, as credenciais S3 e o volume `/data/storage` com os objetos locais estão disponíveis). Use o **management command** (a pasta `scripts/` não é montada no container):
+
 ```bash
-# de dentro do container backend-core (ou com o ambiente S3 configurado)
-python scripts/migrate_storage_local_to_s3.py --dry-run
-python scripts/migrate_storage_local_to_s3.py --apply
+sudo docker compose exec backend-core python manage.py migrate_storage_local_to_s3 --dry-run
+sudo docker compose exec backend-core python manage.py migrate_storage_local_to_s3 --apply
 ```
-Idempotente e retomável: itens ainda não migrados permanecem acessíveis durante o processo (sem downtime).
+
+> O script `scripts/migrate_storage_local_to_s3.py` continua existindo para uso fora do container (precisa de `PYTHONPATH` incluindo `shared/` e do ambiente Django/S3). No fluxo Docker, prefira o command acima.
+
+**Um comando, sem cerimônia:** a migração é idempotente e retomável (itens não migrados seguem legíveis, sem downtime). Documentos cujo **binário já foi perdido no disco** são **ignorados automaticamente** (contados como *"sem arquivo no disco (ignorados)"*, não como erro) — o comando termina com sucesso. Só um erro **inesperado** (ex.: S3 fora do ar) faz a execução falhar. Para conferir/limpar inconsistências entre banco e MinIO depois:
+
+```bash
+sudo docker compose exec backend-core python manage.py reconcile_storage                       # relatório (dry-run)
+sudo docker compose exec backend-core python manage.py reconcile_storage --direction storage-to-db --delete-orphans
+```
 
 ---
 
@@ -195,7 +210,7 @@ Idempotente e retomável: itens ainda não migrados permanecem acessíveis duran
 
 | Sintoma | Causa provável | Ação |
 |---|---|---|
-| `Bind for 0.0.0.0:9000 failed: port is already allocated` | Outro MinIO (ex.: `milvus-minio`) no host | Já mitigado (9002/9003). Verifique `docker ps --filter publish=9002` com e sem `sudo`. |
+| `port is already allocated` / `bind ... address already in use` (9000, **9002 ou 9003**) | Porta do host ocupada por outro MinIO (`milvus-minio`) **ou por outro usuário/forward em servidor compartilhado** — inclusive processos em `127.0.0.1` (ex.: túnel SSH `-L`/PORTS do VS Code de outra pessoa). O Docker binda `0.0.0.0:PORTA` e colide com qualquer bind da mesma porta, mesmo em loopback. | As portas do host são configuráveis: no `.env`, ajuste `MINIO_API_PORT`/`MINIO_CONSOLE_PORT` para portas livres (ex.: `19002`/`19003`) e suba de novo. Descubra o que está livre com `ss -ltn \| grep -E ':900[0-9]\|:1900[0-9]'`. O interno (9000/9001) e a rede da app **não** mudam. Lembre de encaminhar as **novas** portas no VS Code/SSH. |
 | Serviços presos em *waiting for minio to be healthy* | Healthcheck do `minio` (`mc ready local`) | Pré-existente; pode exigir ajuste do healthcheck do serviço `minio`. |
 | URIs no banco continuam `local://` | Backend `s3` não ativo | Cheque `DOCUPARSE_STORAGE_BACKEND=s3` nos serviços. |
 | Erro de credencial/endpoint ao servir/enviar arquivo | `S3_*`/`AWS_*` incorretos ou bucket inexistente | Verifique env e se `minio-setup` criou o bucket (`mc ls local/docuparse`). |

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import shutil
 from pathlib import Path
+from typing import Iterator
 
 from .keys import StoredObject
 
@@ -32,6 +33,18 @@ class LocalStorage:
 
     def delete(self, uri_or_key: str) -> None:
         self._path_for(uri_or_key).unlink(missing_ok=True)
+
+    def exists(self, uri_or_key: str) -> bool:
+        return self._path_for(uri_or_key).is_file()
+
+    def iter_keys(self, prefix: str = "") -> Iterator[str]:
+        if not self.root.exists():
+            return
+        for path in sorted(self.root.rglob("*")):
+            if path.is_file():
+                key = path.relative_to(self.root).as_posix()
+                if key.startswith(prefix):
+                    yield key
 
     def clear(self) -> None:
         if self.root.exists():

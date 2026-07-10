@@ -6,12 +6,12 @@ import os
 import threading
 from datetime import datetime, timezone
 from typing import Any, Protocol
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from events import DocumentReceivedEvent, OCRCompletedEvent, OCRFailedEvent
 from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
 from docuparse_observability import log_event
-from docuparse_storage import LocalStorage
+from docuparse_storage import document_ocr_raw_text_key, get_storage
 
 from application.process_document import process_document
 
@@ -29,10 +29,6 @@ class Storage(Protocol):
 class EventPublisher(Protocol):
     def publish(self, stream: str, event: dict[str, Any]) -> int | str:
         ...
-
-
-def raw_text_key(tenant_id: str, document_id: UUID) -> str:
-    return f"documents/{tenant_id}/{document_id}/ocr/raw_text.json"
 
 
 def handle_document_received_event(
@@ -71,7 +67,7 @@ def handle_document_received_event(
             },
         }
         stored = storage.put_bytes(
-            raw_text_key(event.tenant_id, event.document_id),
+            document_ocr_raw_text_key(event.tenant_id, str(event.document_id)),
             json.dumps(raw_payload, ensure_ascii=False).encode("utf-8"),
         )
 
@@ -233,9 +229,8 @@ class OCRWorker:
 
 
 def worker_from_env() -> OCRWorker:
-    storage_root = os.environ.get("DOCUPARSE_LOCAL_STORAGE_DIR", "/data/storage")
     return OCRWorker(
-        storage=LocalStorage(storage_root),
+        storage=get_storage(),
         event_bus=event_bus_from_env(os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")),
         input_stream=os.environ.get("DOCUPARSE_OCR_INPUT_STREAM", "document.received"),
         poll_interval_seconds=float(os.environ.get("DOCUPARSE_OCR_WORKER_POLL_SECONDS", "2")),

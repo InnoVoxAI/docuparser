@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import statistics
 import sys
 import tempfile
@@ -135,6 +136,8 @@ def _event_counts(event_dir: Path) -> dict[str, int]:
 
 
 def _point_backend_com_to_tmp(storage_dir: Path, event_dir: Path) -> None:
+    # get_storage() resolve o diretório local exclusivamente do ambiente.
+    os.environ["DOCUPARSE_LOCAL_STORAGE_DIR"] = str(storage_dir)
     backend_com_config.settings.local_storage_dir = storage_dir
     backend_com_config.settings.local_event_dir = event_dir
     backend_com_config.settings.email_webhook_token = ""

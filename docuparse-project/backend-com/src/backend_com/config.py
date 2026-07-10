@@ -23,9 +23,23 @@ def _env(key: str, default: str = "") -> str:
     return value
 
 
+# Exporta o default local do serviço para o ambiente, de modo que
+# docuparse_storage.get_storage() (que lê a config exclusivamente de
+# DOCUPARSE_LOCAL_STORAGE_DIR no ambiente) preserve o caminho histórico deste
+# serviço sem precisar receber o diretório por argumento.
+os.environ.setdefault("DOCUPARSE_LOCAL_STORAGE_DIR", str(PROJECT_DIR / ".docuparse-storage"))
+
+
 class Settings:
     service_name = "docuparse-backend-com"
-    local_storage_dir = Path(_env("DOCUPARSE_LOCAL_STORAGE_DIR", str(PROJECT_DIR / ".docuparse-storage")))
+    local_storage_dir = Path(_env("DOCUPARSE_LOCAL_STORAGE_DIR"))
+    # Storage compartilhado de objetos (feature 011). Backend selecionado por
+    # DOCUPARSE_STORAGE_BACKEND (default "local"); consumido por
+    # docuparse_storage.get_storage(). Credenciais/endpoint sempre do ambiente.
+    storage_backend = _env("DOCUPARSE_STORAGE_BACKEND", "local").lower()
+    s3_endpoint_url = _env("S3_ENDPOINT_URL")
+    s3_bucket = _env("S3_BUCKET")
+    s3_region = _env("S3_REGION")
     local_event_dir = Path(_env("DOCUPARSE_LOCAL_EVENT_DIR", str(PROJECT_DIR / ".docuparse-events")))
     max_upload_bytes = int(_env("DOCUPARSE_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)))
     email_webhook_token = _env("DOCUPARSE_EMAIL_WEBHOOK_TOKEN")

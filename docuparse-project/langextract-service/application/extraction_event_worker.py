@@ -14,7 +14,7 @@ from domain.llm_extractor import extract_with_llm
 from events import ExtractionCompletedEvent, LayoutClassifiedEvent
 from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
 from docuparse_observability import log_event
-from docuparse_storage import LocalStorage
+from docuparse_storage import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -175,9 +175,8 @@ class ExtractionWorker:
 
 
 def worker_from_env() -> ExtractionWorker:
-    storage_root = os.environ.get("DOCUPARSE_LOCAL_STORAGE_DIR", "/data/storage")
     return ExtractionWorker(
-        storage=LocalStorage(storage_root),
+        storage=get_storage(),
         event_bus=event_bus_from_env(os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")),
         input_stream=os.environ.get("DOCUPARSE_EXTRACTION_INPUT_STREAM", "layout.classified"),
         poll_interval_seconds=float(os.environ.get("DOCUPARSE_EXTRACTION_WORKER_POLL_SECONDS", "2")),

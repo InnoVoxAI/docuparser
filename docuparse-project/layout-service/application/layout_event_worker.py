@@ -12,7 +12,7 @@ from domain.classifier import classify_layout
 from events import LayoutClassifiedEvent, OCRCompletedEvent
 from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
 from docuparse_observability import log_event
-from docuparse_storage import LocalStorage
+from docuparse_storage import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -136,9 +136,8 @@ class LayoutWorker:
 
 
 def worker_from_env() -> LayoutWorker:
-    storage_root = os.environ.get("DOCUPARSE_LOCAL_STORAGE_DIR", "/data/storage")
     return LayoutWorker(
-        storage=LocalStorage(storage_root),
+        storage=get_storage(),
         event_bus=event_bus_from_env(os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")),
         input_stream=os.environ.get("DOCUPARSE_LAYOUT_INPUT_STREAM", "ocr.completed"),
         poll_interval_seconds=float(os.environ.get("DOCUPARSE_LAYOUT_WORKER_POLL_SECONDS", "2")),

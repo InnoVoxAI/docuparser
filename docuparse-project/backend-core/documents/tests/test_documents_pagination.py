@@ -11,7 +11,9 @@ Cobrem:
 
 from __future__ import annotations
 
+import os
 import tempfile
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -207,7 +209,9 @@ class DocumentFileAuthTests(TestCase):
 
     def test_user_with_permission_gets_file(self) -> None:
         self.client.force_authenticate(user=self.user)
-        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with tempfile.TemporaryDirectory() as storage_dir, mock.patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
             self._store_file(storage_dir)
             response = self.client.get(reverse("document-file", args=[self.document.id]))
             assert response.status_code == 200
@@ -221,7 +225,9 @@ class DocumentFileAuthTests(TestCase):
 
     def test_internal_service_token_gets_file(self) -> None:
         token = "internal-secret"
-        with tempfile.TemporaryDirectory() as storage_dir, self.settings(
+        with tempfile.TemporaryDirectory() as storage_dir, mock.patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(
             DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir,
             DOCUPARSE_INTERNAL_SERVICE_TOKEN=token,
         ):
@@ -237,6 +243,8 @@ class DocumentFileAuthTests(TestCase):
 
     def test_missing_file_returns_404(self) -> None:
         self.client.force_authenticate(user=self.user)
-        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with tempfile.TemporaryDirectory() as storage_dir, mock.patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
             response = self.client.get(reverse("document-file", args=[self.document.id]))
             assert response.status_code == 404

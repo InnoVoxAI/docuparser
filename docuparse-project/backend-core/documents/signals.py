@@ -32,7 +32,7 @@ def delete_document_storage_objects(sender, instance: Document, **kwargs) -> Non
     document_id = str(instance.id)
 
     def _cleanup() -> None:
-        storage = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+        storage = get_storage()
         for uri in uris:
             try:
                 storage.delete(uri)

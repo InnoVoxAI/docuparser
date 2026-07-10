@@ -18,9 +18,13 @@ instead of building a backend directly:
 
 ```python
 from docuparse_storage import get_storage
-storage = get_storage()            # workers/services (reads env)
-storage = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR)  # preserva o default local do serviço
+storage = get_storage()            # toda a config (inclusive o diretório local) vem do ambiente
 ```
+
+O diretório local é lido de `DOCUPARSE_LOCAL_STORAGE_DIR`. Cada serviço exporta
+seu default histórico nessa variável na própria camada de config (ex.:
+`os.environ.setdefault(...)` em `settings.py`/`config.py`), então os chamadores
+nunca passam o caminho — assim como bucket/endpoint/credenciais do S3.
 
 `get_storage()` returns a `RoutingStorage` that **writes** to the configured
 backend and **reads** by dispatching on the URI scheme (`local://` vs `s3://`),

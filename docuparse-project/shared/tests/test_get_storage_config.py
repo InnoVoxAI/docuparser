@@ -41,10 +41,11 @@ def test_default_is_local_and_writes_local_uri(tmp_path):
         assert storage.get_bytes(stored.uri) == b"data"
 
 
-def test_local_dir_argument_overrides_env(tmp_path):
-    # Preserva o default histórico por serviço (evita regressão de caminho).
-    with _clean_env(DOCUPARSE_LOCAL_STORAGE_DIR="/should/not/be/used"):
-        storage = get_storage(local_dir=str(tmp_path))
+def test_local_dir_resolved_from_env(tmp_path):
+    # A raiz local vem exclusivamente do ambiente; cada serviço exporta seu
+    # default histórico via DOCUPARSE_LOCAL_STORAGE_DIR (evita regressão de caminho).
+    with _clean_env(DOCUPARSE_LOCAL_STORAGE_DIR=str(tmp_path)):
+        storage = get_storage()
         stored = storage.put_bytes(KEY, b"data")
         assert (tmp_path / KEY).read_bytes() == b"data"
         assert stored.uri == f"local://{KEY}"

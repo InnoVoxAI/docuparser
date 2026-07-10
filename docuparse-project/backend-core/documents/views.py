@@ -308,7 +308,7 @@ def document_file_view(request, document_id):
     # respeitando as permissões existentes sem forçar download.
     document = get_object_or_404(Document, id=document_id)
     try:
-        content = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(document.file_uri)
+        content = get_storage().get_bytes(document.file_uri)
     except (FileNotFoundError, ValueError) as exc:
         raise Http404("Document file not found") from exc
     return FileResponse(
@@ -501,7 +501,7 @@ def document_langextract_view(request, document_id):
     if not document.raw_text_uri:
         return Response({"detail": "Documento sem texto bruto disponivel. Execute o OCR primeiro."}, status=status.HTTP_400_BAD_REQUEST)
 
-    storage = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+    storage = get_storage()
     try:
         payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
     except Exception as exc:

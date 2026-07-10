@@ -162,7 +162,7 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             return {}
         try:
             return json.loads(
-                get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+                get_storage()
                 .get_bytes(obj.raw_text_uri)
                 .decode("utf-8")
             )

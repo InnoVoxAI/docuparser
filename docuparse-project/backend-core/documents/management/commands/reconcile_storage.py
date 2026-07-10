@@ -64,7 +64,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options) -> None:
-        storage = get_storage(local_dir=settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+        storage = get_storage()
         report = ReconcileReport()
         direction = options["direction"]
 

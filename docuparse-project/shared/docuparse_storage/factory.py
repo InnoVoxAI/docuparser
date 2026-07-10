@@ -34,7 +34,7 @@ def _build_s3_from_env() -> S3Storage:
     )
 
 
-def get_storage(local_dir: str | None = None) -> RoutingStorage:
+def get_storage() -> RoutingStorage:
     """Único ponto de instanciação de storage no código de aplicação.
 
     Seleciona o backend por ``DOCUPARSE_STORAGE_BACKEND`` (default ``local``) e
@@ -42,16 +42,17 @@ def get_storage(local_dir: str | None = None) -> RoutingStorage:
     despachando pelo esquema da URI. No default, o comportamento é idêntico ao
     histórico (LocalStorage), e ``boto3`` não é importado.
 
-    ``local_dir`` permite ao chamador passar o diretório local já configurado do
-    serviço, preservando exatamente o default histórico (evita regressão de
-    caminho quando ``DOCUPARSE_LOCAL_STORAGE_DIR`` não está no ambiente). Quando
-    omitido, resolve pela env com fallback de container.
+    Toda a configuração vem do ambiente (assim como bucket, endpoint e
+    credenciais do S3): o diretório local é resolvido de
+    ``DOCUPARSE_LOCAL_STORAGE_DIR`` (com fallback de container). Cada serviço
+    define seu default histórico exportando essa variável na sua camada de
+    config, de modo que os chamadores nunca precisam passar o caminho.
     """
     backend = _env("DOCUPARSE_STORAGE_BACKEND", "local").lower() or "local"
     if backend not in {"local", "s3"}:
         raise RuntimeError(f"DOCUPARSE_STORAGE_BACKEND inválido: {backend!r} (use 'local' ou 's3').")
 
-    root = local_dir if local_dir is not None else _env("DOCUPARSE_LOCAL_STORAGE_DIR", DEFAULT_LOCAL_STORAGE_DIR)
+    root = _env("DOCUPARSE_LOCAL_STORAGE_DIR", DEFAULT_LOCAL_STORAGE_DIR)
     local = LocalStorage(root)
 
     if backend == "s3":

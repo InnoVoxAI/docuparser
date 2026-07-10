@@ -152,7 +152,12 @@ X_FRAME_OPTIONS = 'SAMEORIGIN'
 BACKEND_OCR_URL = os.environ.get('BACKEND_OCR_URL', 'http://127.0.0.1:8080')
 LANGEXTRACT_SERVICE_URL = os.environ.get('LANGEXTRACT_SERVICE_URL', 'http://127.0.0.1:8091')
 DOCUPARSE_LOCAL_EVENT_DIR = os.environ.get('DOCUPARSE_LOCAL_EVENT_DIR', str(BASE_DIR / '.docuparse-events'))
-DOCUPARSE_LOCAL_STORAGE_DIR = os.environ.get('DOCUPARSE_LOCAL_STORAGE_DIR', str(PROJECT_DIR / '.docuparse-storage'))
+# Exporta o default local do serviço para o ambiente, de modo que
+# docuparse_storage.get_storage() (que lê a config exclusivamente de
+# DOCUPARSE_LOCAL_STORAGE_DIR no ambiente) preserve o caminho histórico deste
+# serviço sem precisar receber o diretório por argumento.
+os.environ.setdefault('DOCUPARSE_LOCAL_STORAGE_DIR', str(PROJECT_DIR / '.docuparse-storage'))
+DOCUPARSE_LOCAL_STORAGE_DIR = os.environ['DOCUPARSE_LOCAL_STORAGE_DIR']
 # Storage compartilhado de objetos (feature 011). O backend é selecionado por
 # DOCUPARSE_STORAGE_BACKEND (default 'local' preserva o comportamento atual) e
 # consumido por docuparse_storage.get_storage(). Endpoint/bucket/credenciais vêm

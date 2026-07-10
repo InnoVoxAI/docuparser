@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import json
 from unittest.mock import patch
@@ -123,7 +124,9 @@ class DocumentsAPITests(TestCase):
         UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
         self.client.force_authenticate(user=self.user)
 
-        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
             stored = LocalStorage(storage_dir).put_bytes(
                 document_original_key(self.tenant.slug, str(self.document.id)),
                 b"%PDF original",
@@ -137,7 +140,9 @@ class DocumentsAPITests(TestCase):
         assert b"".join(response.streaming_content) == b"%PDF original"
 
     def test_process_ocr_endpoint_updates_extraction_result(self) -> None:
-        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
             stored = LocalStorage(storage_dir).put_bytes(
                 document_original_key(self.tenant.slug, str(self.document.id)),
                 b"%PDF original",
@@ -178,7 +183,9 @@ class DocumentsAPITests(TestCase):
             confidence=0.1,
             requires_human_validation=True,
         )
-        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
             stored = LocalStorage(storage_dir).put_bytes(
                 document_original_key(self.tenant.slug, str(self.document.id)),
                 b"%PDF original",
@@ -203,7 +210,9 @@ class DocumentsAPITests(TestCase):
         assert response.json()["full_transcription"] == "valor novo"
 
     def test_delete_document_endpoint_removes_database_row_and_preserves_storage(self) -> None:
-        with tempfile.TemporaryDirectory() as storage_dir, self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
             storage = LocalStorage(storage_dir)
             stored = storage.put_bytes(
                 document_original_key(self.tenant.slug, str(self.document.id)),

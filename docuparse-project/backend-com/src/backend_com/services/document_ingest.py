@@ -55,7 +55,7 @@ def ingest_document(
         raise ValueError(f"unsupported content_type: {content_type}")
 
     document_id = uuid4()
-    storage = get_storage(local_dir=str(settings.local_storage_dir))
+    storage = get_storage()
     stored = storage.put_bytes(document_original_key(tenant_id, str(document_id)), content)
 
     event = DocumentReceivedEvent(

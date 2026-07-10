@@ -30,13 +30,18 @@ class DocumentFileContentTypeTests(TestCase):
         self.client.force_authenticate(user=self.user)
 
     def test_served_content_type_matches_document(self) -> None:
+        import os
+        import tempfile
+        from unittest import mock
+
         from django.test import override_settings
 
         document = _make_document(self.tenant, filename="orig.pdf")  # content_type application/pdf
-        import tempfile
 
-        with tempfile.TemporaryDirectory() as storage_dir, override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
-            stored = get_storage(local_dir=storage_dir).put_bytes(
+        with tempfile.TemporaryDirectory() as storage_dir, mock.patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+            stored = get_storage().put_bytes(
                 document_original_key(self.tenant.slug, str(document.id)), b"%PDF orig"
             )
             document.file_uri = stored.uri

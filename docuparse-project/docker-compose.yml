@@ -36,11 +36,14 @@ services:
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docuparse}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      # Portas do host remapeadas para evitar conflito com outros MinIO locais
+      # (ex.: milvus-minio em 9000/9001). A porta interna do container (9000/9001)
+      # não muda — os serviços acessam via http://minio:9000 na rede do compose.
+      - "${MINIO_API_PORT:-9002}:9000"
+      - "${MINIO_CONSOLE_PORT:-9003}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -48,6 +51,26 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - docuparse-network
+
+  # Cria o bucket do storage compartilhado (feature 011). A aplicação não cria
+  # bucket em runtime por design, então este one-shot garante que ele exista.
+  minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do echo 'aguardando minio...'; sleep 2; done &&
+      mc mb --ignore-existing local/$${S3_BUCKET} &&
+      echo 'bucket pronto: '$${S3_BUCKET}
+      "
     networks:
       - docuparse-network
 
@@ -96,6 +119,14 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docuparse}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
+      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
+      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_APPROVED_EXPORT_DIR: /data/exports/approved
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -114,6 +145,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
       backend-ocr:
         condition: service_started
       backend-com:
@@ -144,6 +177,14 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docuparse}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
+      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
+      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_APPROVED_EXPORT_DIR: /data/exports/approved
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -178,6 +219,14 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
+      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
+      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       BACKEND_CORE_DOCUMENT_RECEIVED_URL: http://backend-core:8000/api/ocr/events/document-received
       BACKEND_CORE_EMAIL_SETTINGS_URL: http://backend-core:8000/api/ocr/settings/email
     healthcheck:
@@ -192,6 +241,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
 
   backend-ocr:
     build:
@@ -213,6 +264,14 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
+      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
+      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_OCR_WORKER_ENABLED: ${DOCUPARSE_OCR_WORKER_ENABLED:-false}
       OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-qwen/qwen2.5-vl-72b-instruct}
     healthcheck:
@@ -249,6 +308,14 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
+      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
+      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-qwen/qwen2.5-vl-72b-instruct}
       DOCUPARSE_OCR_WORKER_ALLOW_MOCK: ${DOCUPARSE_OCR_WORKER_ALLOW_MOCK:-false}
     networks:
@@ -276,6 +343,14 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
+      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
+      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_LAYOUT_WORKER_ENABLED: ${DOCUPARSE_LAYOUT_WORKER_ENABLED:-false}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2)"]
@@ -307,6 +382,14 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
+      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
+      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
     networks:
       - docuparse-network
     depends_on:
@@ -334,6 +417,14 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
+      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
+      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       DOCUPARSE_EXTRACTION_WORKER_ENABLED: ${DOCUPARSE_EXTRACTION_WORKER_ENABLED:-false}
       # LLM extraction — same key used by backend-ocr
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -377,6 +468,14 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
       DOCUPARSE_LOCAL_EVENT_DIR: /data/events
+      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
+      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
+      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-docuparse}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       # LLM extraction — same key used by backend-ocr
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       LANGEXTRACT_MODEL: ${LANGEXTRACT_MODEL:-deepseek/deepseek-chat-v3-0324:free}

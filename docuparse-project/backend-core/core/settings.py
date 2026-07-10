@@ -152,7 +152,20 @@ X_FRAME_OPTIONS = 'SAMEORIGIN'
 BACKEND_OCR_URL = os.environ.get('BACKEND_OCR_URL', 'http://127.0.0.1:8080')
 LANGEXTRACT_SERVICE_URL = os.environ.get('LANGEXTRACT_SERVICE_URL', 'http://127.0.0.1:8091')
 DOCUPARSE_LOCAL_EVENT_DIR = os.environ.get('DOCUPARSE_LOCAL_EVENT_DIR', str(BASE_DIR / '.docuparse-events'))
-DOCUPARSE_LOCAL_STORAGE_DIR = os.environ.get('DOCUPARSE_LOCAL_STORAGE_DIR', str(PROJECT_DIR / '.docuparse-storage'))
+# Exporta o default local do serviço para o ambiente, de modo que
+# docuparse_storage.get_storage() (que lê a config exclusivamente de
+# DOCUPARSE_LOCAL_STORAGE_DIR no ambiente) preserve o caminho histórico deste
+# serviço sem precisar receber o diretório por argumento.
+os.environ.setdefault('DOCUPARSE_LOCAL_STORAGE_DIR', str(PROJECT_DIR / '.docuparse-storage'))
+DOCUPARSE_LOCAL_STORAGE_DIR = os.environ['DOCUPARSE_LOCAL_STORAGE_DIR']
+# Storage compartilhado de objetos (feature 011). O backend é selecionado por
+# DOCUPARSE_STORAGE_BACKEND (default 'local' preserva o comportamento atual) e
+# consumido por docuparse_storage.get_storage(). Endpoint/bucket/credenciais vêm
+# sempre do ambiente/secret. Ver docs/specs/011-shared-object-storage.
+DOCUPARSE_STORAGE_BACKEND = os.environ.get('DOCUPARSE_STORAGE_BACKEND', 'local').strip().lower()
+S3_ENDPOINT_URL = os.environ.get('S3_ENDPOINT_URL', '').strip()
+S3_BUCKET = os.environ.get('S3_BUCKET', '').strip()
+S3_REGION = os.environ.get('S3_REGION', '').strip()
 DOCUPARSE_APPROVED_EXPORT_DIR = os.environ.get('DOCUPARSE_APPROVED_EXPORT_DIR', str(BASE_DIR / 'exports' / 'approved'))
 DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TOKEN', '').strip()
 DOCUPARSE_AUTO_PROCESS_OCR = os.environ.get('DOCUPARSE_AUTO_PROCESS_OCR', 'true').strip().lower() not in {'0', 'false', 'no'}

@@ -4,7 +4,7 @@ from rest_framework import serializers
 import json
 
 from django.conf import settings
-from docuparse_storage import LocalStorage
+from docuparse_storage import get_storage
 
 from documents.models import Document, EmailSettings, ExtractionFieldVersion, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, ValidationDecision
 
@@ -162,7 +162,7 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             return {}
         try:
             return json.loads(
-                LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+                get_storage()
                 .get_bytes(obj.raw_text_uri)
                 .decode("utf-8")
             )

@@ -6,6 +6,9 @@ class DocumentsConfig(AppConfig):
     name = "documents"
 
     def ready(self) -> None:
+        # Registra os receivers de sinal (limpeza de objetos de storage no delete).
+        from documents import signals  # noqa: F401
+
         try:
             from documents.startup import ensure_default_schemas
             ensure_default_schemas()

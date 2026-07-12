@@ -141,6 +141,65 @@ read OCR settings as Tenant B; confirm Tenant B value is unchanged.
 
 ---
 
+## Phase 8: Multi-Tenancy Admin UI (P1)
+
+**Purpose**: Frontend and backend work to expose tenant management to admins and make
+tenant context visible throughout the UI. All tasks in this phase were completed as
+part of the implementation session and are marked done.
+
+- [X] T045 [P] Add `Tenant` interface and extend `AuthContextValue` with `currentTenant: string | null`; add `'tenants'` to `ActiveView` union in `docuparse-project/frontend/src/types.ts`
+- [X] T046 Create `adminApi` axios instance (baseURL `${CORE}/api/admin`) in `docuparse-project/frontend/src/main.tsx`; register JWT interceptor alongside existing `api`/`comApi` interceptors in `AuthProvider`
+- [X] T047 [P] Implement `decodeJwtTenant(token: string): string | null` in `docuparse-project/frontend/src/main.tsx` — base64-decodes the JWT middle segment without verification to extract `tenant` claim; used on page load and after login
+- [X] T048 Add `currentTenant` state to `AuthProvider` in `docuparse-project/frontend/src/main.tsx`: initialise from localStorage on mount, set on login, clear on logout; expose via context
+- [X] T049 [P] Add `Building2` nav item `{ id: 'tenants', label: 'Tenants', icon: Building2, permission: 'tenants.manage' }` to `NAV_ITEMS` in `docuparse-project/frontend/src/main.tsx`
+- [X] T050 [P] Add tenant badge to sidebar in `docuparse-project/frontend/src/main.tsx` — renders `currentTenant` slug with `Building2` icon (10 px) in a muted zinc chip below the user name; hidden when `currentTenant` is null
+- [X] T051 Implement `TenantsView` component in `docuparse-project/frontend/src/main.tsx`: `GET /api/admin/tenants/` table (slug · name · status · toggle button); create-tenant form (slug + name, pattern `[a-z0-9-]+`, max 50); inline 409 error display for both create and toggle; wire view-switcher and `PermissionGuard`
+- [X] T052 Add `tenant_slug` (SlugField, max 50) to `RegisterSerializer` in `docuparse-project/backend-core/users/serializers.py`; update `register_view` in `users/auth_views.py` to look up the active tenant by slug, delete the new user and return 400 if slug is invalid or inactive
+- [X] T053 [P] Add inactive-tenant guard in `login_view` in `docuparse-project/backend-core/users/auth_views.py`: after `LoginSerializer` validates credentials, check `profile.tenant.is_active`; return 403 with `"Tenant inativo."` if false; also add own-tenant deactivation guard in `tenant_detail_update_view` (`tenants/views.py`) returning 409 `OWN_TENANT` when the requester's tenant slug matches the target slug
+
+**Checkpoint**: Admin can see the Tenants view, create tenants, toggle active status; login correctly rejects inactive tenants; registration requires a valid tenant slug.
+
+---
+
+## Phase 9: Admin Cross-Tenant Access & Tenant Slug UX (P2)
+
+**Purpose**: Two gaps identified post-implementation. (1) Admins can only manage users in
+their own tenant — there is no way to create users or inspect data in other tenants from the
+UI. (2) The tenant slug must be easy to find and share so new users can self-register.
+
+### User Story 5 — Admin cross-tenant user management (P2)
+
+**Goal**: A user with `tenants.manage` can list and invite users into *any* tenant from the
+Tenants view, and can switch their active tenant context to impersonate/operate as that tenant.
+
+**Independent Test**: Logged in as `demo` admin, open Tenants view → `acme` row → expand
+Users panel → create user `foo@acme.com` → switch context to `acme` → verify new user appears
+in Users view under `acme` schema.
+
+- [X] T054 [US5] Add `GET/POST /api/admin/tenants/{slug}/users/` view in `docuparse-project/backend-core/tenants/views.py`: use `schema_context(tenant.schema_name)` to list `UserProfile` rows and create new users inside the target tenant's schema; `POST` body mirrors `UserCreateSerializer` (name, email, password, role_id); requires `tenants.manage` permission; return 404 if slug unknown
+- [X] T055 [P] [US5] Wire T054 URL in `docuparse-project/backend-core/tenants/urls.py` at path `<slug>/users/`
+- [X] T056 [P] [US5] Add `POST /api/admin/tenants/{slug}/switch/` view in `docuparse-project/backend-core/tenants/views.py`: requires `tenants.manage`; validates target tenant is active; issues a new `RefreshToken` with `tenant` claim set to `slug`; returns `{access, refresh}`; the caller's own UserProfile is unchanged — only the JWT changes
+- [X] T057 [US5] Add expandable "Usuários" panel per row in `TenantsView` in `docuparse-project/frontend/src/main.tsx`: clicking a row expands to show a user list (`GET /api/admin/tenants/{slug}/users/`) and an invite form (name + email + password + role_id) that posts to the same endpoint; collapse on second click; show inline error on 409/400
+- [X] T058 [P] [US5] Add tenant-switcher button per row in `TenantsView` in `docuparse-project/frontend/src/main.tsx`: a "Switch" button calls `POST /api/admin/tenants/{slug}/switch/`, stores the returned tokens in localStorage, updates `currentTenant` state, and reloads the active view; disabled for inactive tenants
+
+**Checkpoint**: Admin can expand any tenant row to see its users and add new ones without the shell; admin can switch tenant context and the sidebar badge updates immediately.
+
+### User Story 6 — Tenant slug discoverability (P2)
+
+**Goal**: The tenant slug is clearly visible and copyable in the admin UI; new users arriving
+at the registration page receive a clear hint about where to get their tenant code.
+
+**Independent Test**: Open Tenants view; click copy icon next to `acme` slug; paste into any
+text field and confirm value `acme`; open `/` with `?tenant=acme` in the URL; assert the
+tenant code field is pre-filled with `acme` and the helper text is visible.
+
+- [X] T059 [P] [US6] Add copy-to-clipboard button next to each slug cell in `TenantsView` table in `docuparse-project/frontend/src/main.tsx`: uses `navigator.clipboard.writeText(slug)`; shows a brief "Copiado!" tooltip for 1.5 s; falls back to `document.execCommand('copy')` if clipboard API unavailable
+- [X] T060 [P] [US6] Read `?tenant=<value>` URL query parameter on mount in `LoginPage` in `docuparse-project/frontend/src/main.tsx`: pre-fill the tenant code input state; add helper text beneath the field: _"Solicite o código ao administrador do sistema."_
+
+**Checkpoint**: Slug is one-click copyable; registration URL with `?tenant=demo` pre-fills the field.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

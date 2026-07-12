@@ -30,17 +30,6 @@ class Command(BaseCommand):
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@docuparse.com")
         admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
 
-        user, created = User.objects.get_or_create(
-            username=admin_email,
-            defaults={"email": admin_email, "is_active": True, "is_staff": True},
-        )
-        if created:
-            user.set_password(admin_password)
-            user.save()
-            self.stdout.write(f"seed_data: created admin user {admin_email}")
-        else:
-            self.stdout.write(f"seed_data: admin user {admin_email} already exists")
-
         # ── Ensure default tenant exists ──────────────────────────────────────
         default_slug = os.environ.get("DEFAULT_TENANT_SLUG", "demo")
         default_name = os.environ.get("DEFAULT_TENANT_NAME", "Demo Company")
@@ -57,12 +46,29 @@ class Command(BaseCommand):
         else:
             self.stdout.write(f"seed_data: default tenant '{default_slug}' already exists")
 
-        # ── Public schema: admin UserProfile linked to default tenant ─────────
-        profile, _ = UserProfile.objects.get_or_create(user=user, defaults={"tenant": tenant})
-        profile.role_ref = role
-        profile.tenant = tenant
-        profile.save()
-        self.stdout.write("seed_data: admin profile ready")
+        # ── Public schema: admin user for EVERY active tenant ─────────────────
+        # The default tenant uses ADMIN_EMAIL directly.  Every other tenant gets
+        # a separate User whose email is  admin@<slug>.<domain>  (derived from
+        # ADMIN_EMAIL's domain part).  All share ADMIN_PASSWORD.
+        for t in Tenant.objects.filter(is_active=True):
+            tenant_admin_email = admin_email if t.slug == default_slug else f"admin@{t.slug}"
+
+            user, created = User.objects.get_or_create(
+                username=tenant_admin_email,
+                defaults={"email": tenant_admin_email, "is_active": True, "is_staff": True},
+            )
+            if created:
+                user.set_password(admin_password)
+                user.save()
+                self.stdout.write(f"seed_data [{t.slug}]: created admin user {tenant_admin_email}")
+            else:
+                self.stdout.write(f"seed_data [{t.slug}]: admin user {tenant_admin_email} already exists")
+
+            profile, _ = UserProfile.objects.get_or_create(user=user, defaults={"tenant": t})
+            profile.role_ref = role
+            profile.tenant = t
+            profile.save()
+            self.stdout.write(f"seed_data [{t.slug}]: admin profile ready")
 
         # ── Per-tenant schema: SchemaConfig and LayoutConfig ──────────────────
         # SchemaConfig / LayoutConfig are tenant-app models — must use schema_context.

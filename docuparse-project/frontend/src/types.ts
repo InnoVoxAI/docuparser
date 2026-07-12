@@ -190,6 +190,7 @@ export interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   hasPermission: (code: string) => boolean
+  switchTenant: (slug: string) => Promise<void>
 }
 
 /** Resposta de `POST /login`. */

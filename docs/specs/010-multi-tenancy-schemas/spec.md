@@ -98,6 +98,52 @@ unchanged.
 
 ---
 
+### User Story 5 — Admin Cross-Tenant User Management (Priority: P2)
+
+A user with the `tenants.manage` permission can list and invite users into any tenant from
+the Tenants admin view, without needing shell access. The admin can also switch their active
+tenant context to operate as a given tenant.
+
+**Why this priority**: Without this, the only way to bootstrap users in a new tenant is via
+the management shell, which is a blocker for SaaS self-serve onboarding.
+
+**Independent Test**: Logged in as `demo` admin, expand the `acme` row in the Tenants view,
+create user `foo@acme.com`, switch context to `acme`, confirm the new user appears in the
+Users view.
+
+**Acceptance Scenarios**:
+
+1. **Given** a `tenants.manage` admin, **When** they expand a tenant row in the Tenants view
+   and submit the invite form, **Then** a `UserProfile` is created in that tenant's schema
+   with `is_active = False`.
+2. **Given** a `tenants.manage` admin, **When** they click "Switch" on a tenant row, **Then**
+   their JWT is re-issued with the new `tenant` claim and the sidebar badge updates.
+3. **Given** a user without `tenants.manage`, **When** they call either endpoint, **Then** 403
+   is returned.
+
+---
+
+### User Story 6 — Tenant Slug Discoverability (Priority: P2)
+
+The tenant slug is clearly visible and one-click copyable in the Tenants admin view.
+The registration page accepts a `?tenant=<slug>` URL parameter to pre-fill the tenant
+code field, enabling admins to share a direct registration link with new users.
+
+**Why this priority**: Without this, admins must verbally communicate the slug out-of-band and
+users must know to find it; this creates support friction.
+
+**Independent Test**: Copy slug from Tenants table → paste matches the tenant slug; open
+`/?tenant=acme` on the registration form → tenant code field is pre-filled with `acme`.
+
+**Acceptance Scenarios**:
+
+1. **Given** the Tenants view is open, **When** the admin clicks the copy icon next to a slug,
+   **Then** the slug is in the clipboard and a "Copiado!" tooltip appears for 1.5 s.
+2. **Given** the registration page URL includes `?tenant=acme`, **When** the page loads,
+   **Then** the tenant code input is pre-filled with `acme` and helper text is visible.
+
+---
+
 ### Edge Cases
 
 - What happens when a superuser (is_staff) JWT is issued without a tenant claim?
@@ -135,6 +181,15 @@ unchanged.
   `public` schema before any tenant can authenticate. A one-time seed command MUST
   run as part of initial deployment; provisioning a new tenant MUST NOT require re-seeding
   roles or permissions.
+- **FR-011**: A `tenants.manage` user MUST be able to list and create users inside any tenant's
+  schema via `GET/POST /api/admin/tenants/{slug}/users/` without changing their own schema
+  context.
+- **FR-012**: A `tenants.manage` user MUST be able to switch their active tenant context via
+  `POST /api/admin/tenants/{slug}/switch/`, which issues a new JWT with the requested tenant
+  claim; the requester's `UserProfile` row is unchanged.
+- **FR-013**: The registration page MUST accept a `?tenant=<slug>` URL parameter to pre-fill
+  the tenant code field; a helper text note MUST be displayed explaining how to obtain the
+  tenant code.
 
 ### Key Entities
 

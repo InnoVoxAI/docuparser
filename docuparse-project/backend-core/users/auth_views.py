@@ -110,9 +110,16 @@ def register_view(request: Request) -> Response:
         is_active=False,
     )
     from tenants.models import Tenant, UserProfile
-    tenant = Tenant.objects.first()
-    if tenant:
-        UserProfile.objects.create(user=user, tenant=tenant, role_ref=None)
+    tenant_slug = data.get("tenant_slug", "").strip()
+    try:
+        tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+    except Tenant.DoesNotExist:
+        user.delete()
+        return Response(
+            {"detail": f"Código de tenant '{tenant_slug}' inválido ou inativo."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    UserProfile.objects.create(user=user, tenant=tenant, role_ref=None)
 
     return Response(
         {

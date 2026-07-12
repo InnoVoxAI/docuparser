@@ -4,10 +4,13 @@ import axios, { type InternalAxiosRequestConfig } from 'axios'
 import {
     AlertTriangle,
     Building2,
+    Check,
     CheckCircle2,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
     ClipboardCheck,
+    Copy,
     Eye,
     FileJson,
     FileText,
@@ -19,6 +22,7 @@ import {
     Settings,
     Trash2,
     Upload,
+    Users,
     X,
     XCircle,
 } from 'lucide-react'
@@ -327,8 +331,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const hasPermission = (code: string): boolean => Array.isArray(user?.permissions) && user.permissions.includes(code)
 
+    const switchTenant = async (slug: string): Promise<void> => {
+        const r = await adminApi.post<{ data: { access: string; refresh: string } }>(`/tenants/${slug}/switch/`)
+        localStorage.setItem('access_token', r.data.data.access)
+        localStorage.setItem('refresh_token', r.data.data.refresh)
+        setCurrentTenant(decodeJwtTenant(r.data.data.access))
+    }
+
     return (
-        <AuthContext.Provider value={{ user, loading, currentTenant, login, logout, hasPermission }}>
+        <AuthContext.Provider value={{ user, loading, currentTenant, login, logout, hasPermission, switchTenant }}>
             {children}
         </AuthContext.Provider>
     )
@@ -361,10 +372,17 @@ function AcessoNaoAutorizado() {
 
 function LoginPage() {
     const { login } = useAuth()
-    const [mode, setMode] = useState<'login' | 'register'>('login')
+    const [mode, setMode] = useState<'login' | 'register'>(() => {
+        const params = new URLSearchParams(window.location.search)
+        return params.has('tenant') ? 'register' : 'login'
+    })
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [name, setName] = useState('')
+    const [tenantSlug, setTenantSlug] = useState(() => {
+        const params = new URLSearchParams(window.location.search)
+        return params.get('tenant') ?? ''
+    })
     const [confirmPassword, setConfirmPassword] = useState('')
     const [submitting, setSubmitting] = useState(false)
     const [error, setError] = useState('')
@@ -393,7 +411,7 @@ function LoginPage() {
         if (password !== confirmPassword) { setError('As senhas não coincidem.'); return }
         setSubmitting(true)
         try {
-            await authApi.post('/register', { name, email, password })
+            await authApi.post('/register', { name, email, password, tenant_slug: tenantSlug })
             setSuccess('Conta criada! Aguarde a ativação pelo administrador.')
             setMode('login')
             setEmail('')
@@ -445,6 +463,13 @@ function LoginPage() {
                                 className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="Seu nome" />
                         </div>
                         <div>
+                            <label className="mb-1 block text-sm font-medium text-zinc-700">Código do tenant</label>
+                            <input type="text" value={tenantSlug} onChange={(e) => setTenantSlug(e.target.value)} required
+                                pattern="[a-z0-9-]+" title="Apenas letras minúsculas, números e hífens"
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none font-mono" placeholder="ex: acme" />
+                            <p className="mt-1 text-xs text-zinc-400">Solicite o código ao administrador do sistema.</p>
+                        </div>
+                        <div>
                             <label className="mb-1 block text-sm font-medium text-zinc-700">E-mail</label>
                             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
                                 className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="voce@empresa.com" />
@@ -476,7 +501,138 @@ function LoginPage() {
 
 // ─── TenantsView ─────────────────────────────────────────────────────────────
 
+interface TenantUser { id: number; name: string; email: string; is_active: boolean; role: { id: string; name: string } | null }
+
+function CopySlugButton({ slug }: { slug: string }) {
+    const [copied, setCopied] = useState(false)
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(slug)
+        } catch {
+            const ta = document.createElement('textarea')
+            ta.value = slug
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+        }
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+    }
+    return (
+        <button type="button" onClick={handleCopy} title="Copiar slug"
+            className="ml-1.5 inline-flex items-center text-zinc-400 hover:text-zinc-700 transition-colors">
+            {copied ? <Check size={12} className="text-green-600" /> : <Copy size={12} />}
+        </button>
+    )
+}
+
+function TenantUsersPanel({ slug, currentTenant }: { slug: string; currentTenant: string | null }) {
+    const [users, setUsers] = useState<TenantUser[]>([])
+    const [roles, setRoles] = useState<AdminRole[]>([])
+    const [loadingUsers, setLoadingUsers] = useState(true)
+    const [form, setForm] = useState({ name: '', email: '', password: '', role_id: '' })
+    const [submitting, setSubmitting] = useState(false)
+    const [formError, setFormError] = useState('')
+
+    const fetchUsers = useCallback(async () => {
+        setLoadingUsers(true)
+        try {
+            const [ur, rr] = await Promise.all([
+                adminApi.get<{ data: TenantUser[] }>(`/tenants/${slug}/users/`),
+                api.get<AdminRole[]>('/roles'),
+            ])
+            setUsers(ur.data.data)
+            setRoles(rr.data)
+        } catch { /* ignore — panel shows empty */ }
+        finally { setLoadingUsers(false) }
+    }, [slug])
+
+    useEffect(() => { fetchUsers() }, [fetchUsers])
+
+    const handleCreate = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setFormError('')
+        setSubmitting(true)
+        try {
+            await adminApi.post(`/tenants/${slug}/users/`, form)
+            setForm({ name: '', email: '', password: '', role_id: '' })
+            await fetchUsers()
+        } catch (err: unknown) {
+            const s = (err as { response?: { status?: number; data?: { error?: { detail?: string } } } })?.response?.status
+            const d = (err as { response?: { data?: { error?: { detail?: string } } } })?.response?.data?.error?.detail
+            setFormError(s === 409 ? (d ?? `E-mail já em uso.`) : (d ?? 'Erro ao criar usuário.'))
+        } finally { setSubmitting(false) }
+    }
+
+    return (
+        <div className="border-t border-zinc-100 bg-zinc-50 px-4 py-4 space-y-4">
+            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-600 uppercase tracking-wide">
+                <Users size={12} />
+                Usuários do tenant {slug}
+                {currentTenant === slug ? <span className="ml-1 rounded bg-blue-100 px-1.5 py-0.5 text-blue-700 normal-case font-medium">contexto atual</span> : null}
+            </div>
+
+            {loadingUsers ? <p className="text-xs text-zinc-500">Carregando...</p> : (
+                users.length === 0
+                    ? <p className="text-xs text-zinc-400 italic">Nenhum usuário neste tenant.</p>
+                    : (
+                        <div className="overflow-x-auto rounded border border-zinc-200 bg-white">
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className="border-b border-zinc-100 text-zinc-400 text-left">
+                                        <th className="px-3 py-2">Nome</th>
+                                        <th className="px-3 py-2">E-mail</th>
+                                        <th className="px-3 py-2">Role</th>
+                                        <th className="px-3 py-2">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-zinc-50">
+                                    {users.map((u) => (
+                                        <tr key={u.id}>
+                                            <td className="px-3 py-2 text-zinc-800">{u.name}</td>
+                                            <td className="px-3 py-2 font-mono text-zinc-600">{u.email}</td>
+                                            <td className="px-3 py-2 text-zinc-500">{u.role?.name ?? '—'}</td>
+                                            <td className="px-3 py-2">
+                                                <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                                                    {u.is_active ? 'Ativo' : 'Inativo'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )
+            )}
+
+            <form onSubmit={handleCreate} className="rounded border border-zinc-200 bg-white p-3 space-y-2">
+                <p className="text-xs font-medium text-zinc-600">Convidar usuário</p>
+                <div className="flex flex-wrap gap-2">
+                    <input type="text" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                        required placeholder="Nome" className="h-8 flex-1 min-w-28 rounded border border-zinc-300 px-2 text-xs focus:outline-none focus:border-zinc-500" />
+                    <input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                        required placeholder="E-mail" className="h-8 flex-1 min-w-36 rounded border border-zinc-300 px-2 text-xs focus:outline-none focus:border-zinc-500" />
+                    <input type="password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                        required minLength={8} placeholder="Senha (mín. 8)" className="h-8 flex-1 min-w-32 rounded border border-zinc-300 px-2 text-xs focus:outline-none focus:border-zinc-500" />
+                    <select value={form.role_id} onChange={(e) => setForm((p) => ({ ...p, role_id: e.target.value }))}
+                        required className="h-8 flex-1 min-w-28 rounded border border-zinc-300 px-2 text-xs bg-white focus:outline-none focus:border-zinc-500">
+                        <option value="">Selecionar role</option>
+                        {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                    <button type="submit" disabled={submitting}
+                        className="h-8 rounded bg-zinc-900 px-3 text-xs font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
+                        {submitting ? '...' : 'Convidar'}
+                    </button>
+                </div>
+                {formError ? <p className="text-xs text-red-600">{formError}</p> : null}
+            </form>
+        </div>
+    )
+}
+
 function TenantsView() {
+    const { currentTenant, switchTenant } = useAuth()
     const [tenants, setTenants] = useState<Tenant[]>([])
     const [loadingList, setLoadingList] = useState(true)
     const [listError, setListError] = useState('')
@@ -485,6 +641,9 @@ function TenantsView() {
     const [submitting, setSubmitting] = useState(false)
     const [formError, setFormError] = useState('')
     const [toggleError, setToggleError] = useState<Record<string, string>>({})
+    const [expandedSlug, setExpandedSlug] = useState<string | null>(null)
+    const [switchingSlug, setSwitchingSlug] = useState<string | null>(null)
+    const [switchError, setSwitchError] = useState<Record<string, string>>({})
 
     const fetchTenants = useCallback(async () => {
         setLoadingList(true)
@@ -511,13 +670,9 @@ function TenantsView() {
             setFormName('')
             await fetchTenants()
         } catch (err: unknown) {
-            const status = (err as { response?: { status?: number; data?: { error?: { detail?: string } } } })?.response?.status
+            const s = (err as { response?: { status?: number; data?: { error?: { detail?: string } } } })?.response?.status
             const detail = (err as { response?: { data?: { error?: { detail?: string } } } })?.response?.data?.error?.detail
-            if (status === 409) {
-                setFormError(detail ?? `Tenant com slug "${formSlug}" já existe.`)
-            } else {
-                setFormError(detail ?? 'Erro ao criar tenant.')
-            }
+            setFormError(s === 409 ? (detail ?? `Tenant com slug "${formSlug}" já existe.`) : (detail ?? 'Erro ao criar tenant.'))
         } finally {
             setSubmitting(false)
         }
@@ -529,13 +684,25 @@ function TenantsView() {
             await adminApi.patch(`/tenants/${slug}/`, { is_active: !currentActive })
             await fetchTenants()
         } catch (err: unknown) {
-            const status = (err as { response?: { status?: number; data?: { error?: { detail?: string } } } })?.response?.status
+            const s = (err as { response?: { status?: number; data?: { error?: { detail?: string } } } })?.response?.status
             const detail = (err as { response?: { data?: { error?: { detail?: string } } } })?.response?.data?.error?.detail
-            if (status === 409) {
-                setToggleError((prev) => ({ ...prev, [slug]: detail ?? 'Não é possível desativar o único tenant ativo.' }))
-            } else {
-                setToggleError((prev) => ({ ...prev, [slug]: detail ?? 'Erro ao atualizar tenant.' }))
-            }
+            setToggleError((prev) => ({
+                ...prev,
+                [slug]: s === 409 ? (detail ?? 'Não é possível desativar o único tenant ativo.') : (detail ?? 'Erro ao atualizar tenant.'),
+            }))
+        }
+    }
+
+    const handleSwitch = async (slug: string) => {
+        setSwitchError((prev) => ({ ...prev, [slug]: '' }))
+        setSwitchingSlug(slug)
+        try {
+            await switchTenant(slug)
+        } catch (err: unknown) {
+            const detail = (err as { response?: { data?: { error?: { detail?: string } } } })?.response?.data?.error?.detail
+            setSwitchError((prev) => ({ ...prev, [slug]: detail ?? 'Erro ao alternar tenant.' }))
+        } finally {
+            setSwitchingSlug(null)
         }
     }
 
@@ -578,7 +745,7 @@ function TenantsView() {
             {loadingList ? <p className="text-sm text-zinc-500">Carregando...</p> : null}
 
             {!loadingList && tenants.length > 0 ? (
-                <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+                <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="border-b border-zinc-200 text-left text-xs font-medium text-zinc-500">
@@ -589,32 +756,56 @@ function TenantsView() {
                                 <th className="px-4 py-3"></th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-zinc-100">
+                        <tbody>
                             {tenants.map((t) => (
-                                <tr key={t.slug} className="hover:bg-zinc-50">
-                                    <td className="px-4 py-3 font-mono text-xs text-zinc-700">{t.slug}</td>
-                                    <td className="px-4 py-3 text-zinc-800">{t.name}</td>
-                                    <td className="px-4 py-3">
-                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
-                                            {t.is_active ? 'Ativo' : 'Inativo'}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-3 text-zinc-500">{new Date(t.created_at).toLocaleDateString('pt-BR')}</td>
-                                    <td className="px-4 py-3">
-                                        <div className="flex flex-col items-end gap-1">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleToggle(t.slug, t.is_active)}
-                                                className={`rounded px-2 py-1 text-xs font-medium ${t.is_active ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}
-                                            >
-                                                {t.is_active ? 'Desativar' : 'Ativar'}
-                                            </button>
-                                            {toggleError[t.slug] ? (
-                                                <span className="text-xs text-red-600">{toggleError[t.slug]}</span>
-                                            ) : null}
-                                        </div>
-                                    </td>
-                                </tr>
+                                <React.Fragment key={t.slug}>
+                                    <tr className={`border-b border-zinc-100 hover:bg-zinc-50 ${expandedSlug === t.slug ? 'bg-zinc-50' : ''}`}>
+                                        <td className="px-4 py-3 font-mono text-xs text-zinc-700">
+                                            <span className="inline-flex items-center gap-0.5">
+                                                {t.slug}
+                                                <CopySlugButton slug={t.slug} />
+                                                {currentTenant === t.slug ? <span className="ml-1.5 rounded bg-blue-100 px-1 py-0.5 text-blue-700 text-[10px] font-medium not-mono">atual</span> : null}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-zinc-800">{t.name}</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                                                {t.is_active ? 'Ativo' : 'Inativo'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-zinc-500">{new Date(t.created_at).toLocaleDateString('pt-BR')}</td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                                <button type="button" onClick={() => handleSwitch(t.slug)}
+                                                    disabled={switchingSlug === t.slug || !t.is_active}
+                                                    className="rounded px-2 py-1 text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40">
+                                                    {switchingSlug === t.slug ? '...' : 'Alternar'}
+                                                </button>
+                                                <button type="button"
+                                                    onClick={() => setExpandedSlug(expandedSlug === t.slug ? null : t.slug)}
+                                                    className="inline-flex items-center gap-0.5 rounded px-2 py-1 text-xs font-medium bg-zinc-100 text-zinc-700 hover:bg-zinc-200">
+                                                    <Users size={11} />
+                                                    Usuários
+                                                    <ChevronDown size={11} className={`transition-transform ${expandedSlug === t.slug ? 'rotate-180' : ''}`} />
+                                                </button>
+                                                <button type="button" onClick={() => handleToggle(t.slug, t.is_active)}
+                                                    className={`rounded px-2 py-1 text-xs font-medium ${t.is_active ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}>
+                                                    {t.is_active ? 'Desativar' : 'Ativar'}
+                                                </button>
+                                                {(toggleError[t.slug] || switchError[t.slug]) ? (
+                                                    <span className="w-full text-right text-xs text-red-600">{toggleError[t.slug] || switchError[t.slug]}</span>
+                                                ) : null}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {expandedSlug === t.slug ? (
+                                        <tr>
+                                            <td colSpan={5} className="p-0">
+                                                <TenantUsersPanel slug={t.slug} currentTenant={currentTenant} />
+                                            </td>
+                                        </tr>
+                                    ) : null}
+                                </React.Fragment>
                             ))}
                         </tbody>
                     </table>
@@ -1458,12 +1649,11 @@ function OperationsView() {
 function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> }) {
     const [file, setFile] = useState<File | null>(null)
     const [previewUrl, setPreviewUrl] = useState('')
-    const [tenantId, setTenantId] = useState('tenant-demo')
     const [sender, setSender] = useState('')
     const [submitting, setSubmitting] = useState(false)
     const [message, setMessage] = useState('')
 
-    const canSubmit = Boolean(file) && tenantId.trim() && !submitting
+    const canSubmit = Boolean(file) && !submitting
 
     useEffect(() => {
         if (!file) {
@@ -1483,7 +1673,6 @@ function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> 
         setMessage('')
         const formData = new FormData()
         if (file) formData.append('file', file)
-        formData.append('tenant_id', tenantId)
         if (sender.trim()) {
             formData.append('sender', sender)
         }
@@ -1504,9 +1693,6 @@ function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,760px)_minmax(320px,1fr)]">
             <section className="rounded-md border border-zinc-200 bg-white p-4">
                 <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Tenant">
-                        <input value={tenantId} onChange={(event) => setTenantId(event.target.value)} className="input" />
-                    </Field>
                     <Field label="Remetente">
                         <input value={sender} onChange={(event) => setSender(event.target.value)} className="input" />
                     </Field>
@@ -2239,7 +2425,6 @@ const PROMPT_HINTS = [
 // os payloads dos respectivos endpoints; campos numéricos podem receber strings
 // dos inputs antes do envio (comportamento preservado).
 interface OcrSettingsForm {
-    tenant_slug: string
     digital_pdf_engine: string
     scanned_image_engine: string
     handwritten_engine: string
@@ -2252,7 +2437,6 @@ interface OcrSettingsForm {
 }
 
 interface EmailSettingsForm {
-    tenant_slug: string
     provider: string
     inbox_folder: string
     imap_host: string
@@ -2266,7 +2450,6 @@ interface EmailSettingsForm {
 }
 
 interface IntegrationSettingsForm {
-    tenant_slug: string
     approved_export_enabled: boolean
     approved_export_dir: string
     approved_export_format: string
@@ -2275,7 +2458,6 @@ interface IntegrationSettingsForm {
 }
 
 interface SchemaForm {
-    tenant_slug: string
     schema_id: string
     version: string
     model_name: string
@@ -2284,7 +2466,6 @@ interface SchemaForm {
 }
 
 interface LayoutForm {
-    tenant_slug: string
     layout: string
     document_type: string
     schema_config_id: string
@@ -2302,10 +2483,10 @@ function SettingsView({ schemas, layouts, onChanged }: {
     layouts: LayoutConfig[]
     onChanged: () => void | Promise<unknown>
 }) {
+    const { currentTenant } = useAuth()
     const [activeSettingsArea, setActiveSettingsArea] = useState('extraction')
     const [activeTab, setActiveTab] = useState('setup')
     const [schemaForm, setSchemaForm] = useState<SchemaForm>({
-        tenant_slug: 'tenant-demo',
         schema_id: 'recibo_servico',
         version: 'v1',
         model_name: 'Recibo de servico',
@@ -2313,7 +2494,6 @@ function SettingsView({ schemas, layouts, onChanged }: {
         status: 'draft',
     })
     const [layoutForm, setLayoutForm] = useState<LayoutForm>({
-        tenant_slug: 'tenant-demo',
         layout: 'recibo',
         document_type: 'scanned_image',
         schema_config_id: '',
@@ -2342,7 +2522,6 @@ function SettingsView({ schemas, layouts, onChanged }: {
     const [schemaSelectionSource, setSchemaSelectionSource] = useState('auto')
     const [message, setMessage] = useState('')
     const [integrationSettings, setIntegrationSettings] = useState<IntegrationSettingsForm>({
-        tenant_slug: 'tenant-demo',
         approved_export_enabled: true,
         approved_export_dir: 'docuparse-project/exports/approved',
         approved_export_format: 'json',
@@ -2350,7 +2529,6 @@ function SettingsView({ schemas, layouts, onChanged }: {
         superlogica_mode: 'disabled',
     })
     const [ocrSettings, setOcrSettings] = useState<OcrSettingsForm>({
-        tenant_slug: 'tenant-demo',
         digital_pdf_engine: 'docling',
         scanned_image_engine: 'openrouter',
         handwritten_engine: 'openrouter',
@@ -2362,7 +2540,6 @@ function SettingsView({ schemas, layouts, onChanged }: {
         digital_pdf_min_text_blocks: 5,
     })
     const [emailSettings, setEmailSettings] = useState<EmailSettingsForm>({
-        tenant_slug: 'tenant-demo',
         provider: 'imap',
         inbox_folder: 'INBOX',
         imap_host: '',
@@ -2555,7 +2732,7 @@ function SettingsView({ schemas, layouts, onChanged }: {
 
     useEffect(() => {
         let ignore = false
-        api.get('/settings/integrations', { params: { tenant: integrationSettings.tenant_slug } })
+        api.get('/settings/integrations', { params: { tenant: currentTenant ?? '' } })
             .then((response) => {
                 if (!ignore) {
                     setIntegrationSettings((current) => ({
@@ -2576,7 +2753,7 @@ function SettingsView({ schemas, layouts, onChanged }: {
 
     useEffect(() => {
         let ignore = false
-        api.get('/settings/ocr', { params: { tenant: ocrSettings.tenant_slug } })
+        api.get('/settings/ocr', { params: { tenant: currentTenant ?? '' } })
             .then((response) => {
                 if (!ignore) {
                     setOcrSettings((current) => ({
@@ -2597,7 +2774,7 @@ function SettingsView({ schemas, layouts, onChanged }: {
 
     useEffect(() => {
         let ignore = false
-        api.get('/settings/email', { params: { tenant: emailSettings.tenant_slug } })
+        api.get('/settings/email', { params: { tenant: currentTenant ?? '' } })
             .then((response) => {
                 if (!ignore) {
                     setEmailSettings((current) => ({
@@ -2690,7 +2867,7 @@ function SettingsView({ schemas, layouts, onChanged }: {
         setMessage('')
         try {
             const payload = {
-                tenant_slug: schemaForm.tenant_slug,
+                tenant_slug: currentTenant ?? '',
                 schema_id: schemaForm.schema_id,
                 version: schemaForm.version,
                 definition: schemaDefinition,
@@ -2715,7 +2892,7 @@ function SettingsView({ schemas, layouts, onChanged }: {
                 status: 'draft',
             }
             const payload = {
-                tenant_slug: schemaForm.tenant_slug,
+                tenant_slug: currentTenant ?? '',
                 schema_id: schemaForm.schema_id,
                 version: schemaForm.version,
                 definition: draftDefinition,
@@ -2751,7 +2928,7 @@ function SettingsView({ schemas, layouts, onChanged }: {
         setMessage('')
         try {
             await api.post('/layout-configs', {
-                tenant_slug: layoutForm.tenant_slug,
+                tenant_slug: currentTenant ?? '',
                 layout: layoutForm.layout,
                 document_type: layoutForm.document_type,
                 schema_config_id: layoutForm.schema_config_id,
@@ -2831,7 +3008,7 @@ function SettingsView({ schemas, layouts, onChanged }: {
                 return
             }
             const response = await comApi.post('/email/poll', null, {
-                params: { tenant_id: emailSettings.tenant_slug || 'tenant-demo' },
+                params: { tenant_id: currentTenant ?? '' },
             })
             const imported = response.data.accepted_count || 0
             const duplicates = response.data.duplicate_count || 0
@@ -2850,7 +3027,7 @@ function SettingsView({ schemas, layouts, onChanged }: {
         setMessage('')
         try {
             const response = await comApi.post('/whatsapp/poll', null, {
-                params: { tenant_id: 'tenant-demo' },
+                params: { tenant_id: currentTenant ?? '' },
             })
             const imported = response.data.accepted_count || 0
             const duplicates = response.data.duplicate_count || 0
@@ -2923,7 +3100,6 @@ function SettingsView({ schemas, layouts, onChanged }: {
                                         onClick={() => {
                                             setSelectedSchemaId('')
                                             setSchemaForm({
-                                                tenant_slug: 'tenant-demo',
                                                 schema_id: 'novo_modelo',
                                                 version: 'v1',
                                                 model_name: 'Novo modelo',
@@ -2931,7 +3107,6 @@ function SettingsView({ schemas, layouts, onChanged }: {
                                                 status: 'draft',
                                             })
                                             setLayoutForm({
-                                                tenant_slug: 'tenant-demo',
                                                 layout: 'novo_layout',
                                                 document_type: 'scanned_image',
                                                 schema_config_id: '',
@@ -2955,9 +3130,6 @@ function SettingsView({ schemas, layouts, onChanged }: {
                                     </Field>
                                     <Field label="Schema">
                                         <input value={schemaForm.schema_id} onChange={(event) => setSchemaForm({ ...schemaForm, schema_id: event.target.value })} className="input" placeholder="recibo_servico" />
-                                    </Field>
-                                    <Field label="Tenant">
-                                        <input value={schemaForm.tenant_slug} onChange={(event) => setSchemaForm({ ...schemaForm, tenant_slug: event.target.value, })} className="input" />
                                     </Field>
                                     <Field label="Versao">
                                         <input value={schemaForm.version} onChange={(event) => setSchemaForm({ ...schemaForm, version: event.target.value })} className="input" />

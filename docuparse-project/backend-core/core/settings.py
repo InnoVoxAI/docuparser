@@ -28,6 +28,7 @@ SHARED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'tenants',
+    'corsheaders',
     'users',
 ]
 
@@ -52,16 +53,19 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', 'https://docuparser.innovox.ai').split(',') if o.strip()]
+
 MIDDLEWARE = [
     'tenants.middleware.JWTTenantMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -90,7 +94,35 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-if os.environ.get("POSTGRES_HOST"):
+# Database selection, in priority order: DATABASE_URL → POSTGRES_HOST → SQLite.
+#
+# The SQLite fallback writes to a file *inside the container* (BASE_DIR/db.sqlite3), which
+# is ephemeral: it is wiped on every deploy/restart, silently destroying all data. To stop
+# production from ever booting on it, set DOCUPARSE_REQUIRE_POSTGRES=true — the app will then
+# refuse to start unless a real PostgreSQL connection is configured. Defaults to off so local
+# and dev (SQLite) keep working unchanged.
+_database_url = os.environ.get("DATABASE_URL", "").strip()
+_require_postgres = os.environ.get("DOCUPARSE_REQUIRE_POSTGRES", "false").strip().lower() in {"1", "true", "yes"}
+
+if _database_url:
+    from urllib.parse import unquote, urlparse
+
+    _parsed = urlparse(_database_url)
+    if _parsed.scheme not in ("postgres", "postgresql"):
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(f"Unsupported DATABASE_URL scheme: {_parsed.scheme!r} (expected postgres://)")
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': (_parsed.path or '/docuparse').lstrip('/') or 'docuparse',
+            'USER': unquote(_parsed.username or ''),
+            'PASSWORD': unquote(_parsed.password or ''),
+            'HOST': _parsed.hostname or '',
+            'PORT': str(_parsed.port or '5432'),
+        }
+    }
+elif os.environ.get("POSTGRES_HOST"):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -101,6 +133,14 @@ if os.environ.get("POSTGRES_HOST"):
             'PORT': os.environ.get('POSTGRES_PORT', '5432'),
         }
     }
+elif _require_postgres:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "DOCUPARSE_REQUIRE_POSTGRES is set but no DATABASE_URL/POSTGRES_HOST was provided. "
+        "Refusing to start on the ephemeral in-container SQLite database to avoid data loss. "
+        "Configure a persistent PostgreSQL database for production."
+    )
 else:
     DATABASES = {
         'default': {
@@ -125,8 +165,21 @@ X_FRAME_OPTIONS = 'SAMEORIGIN'
 BACKEND_OCR_URL = os.environ.get('BACKEND_OCR_URL', 'http://127.0.0.1:8080')
 LANGEXTRACT_SERVICE_URL = os.environ.get('LANGEXTRACT_SERVICE_URL', 'http://127.0.0.1:8091')
 DOCUPARSE_LOCAL_EVENT_DIR = os.environ.get('DOCUPARSE_LOCAL_EVENT_DIR', str(BASE_DIR / '.docuparse-events'))
-DOCUPARSE_LOCAL_STORAGE_DIR = os.environ.get('DOCUPARSE_LOCAL_STORAGE_DIR', str(PROJECT_DIR / '.docuparse-storage'))
+# Exporta o default local do serviço para o ambiente, de modo que
+# docuparse_storage.get_storage() (que lê a config exclusivamente de
+# DOCUPARSE_LOCAL_STORAGE_DIR no ambiente) preserve o caminho histórico deste
+# serviço sem precisar receber o diretório por argumento.
+os.environ.setdefault('DOCUPARSE_LOCAL_STORAGE_DIR', str(PROJECT_DIR / '.docuparse-storage'))
+DOCUPARSE_LOCAL_STORAGE_DIR = os.environ['DOCUPARSE_LOCAL_STORAGE_DIR']
+# Storage compartilhado de objetos (feature 011). O backend é selecionado por
+# DOCUPARSE_STORAGE_BACKEND (default 'local' preserva o comportamento atual) e
+# consumido por docuparse_storage.get_storage(). Endpoint/bucket/credenciais vêm
+# sempre do ambiente/secret. Ver docs/specs/011-shared-object-storage.
+DOCUPARSE_STORAGE_BACKEND = os.environ.get('DOCUPARSE_STORAGE_BACKEND', 'local').strip().lower()
+S3_ENDPOINT_URL = os.environ.get('S3_ENDPOINT_URL', '').strip()
+S3_BUCKET = os.environ.get('S3_BUCKET', '').strip()
+S3_REGION = os.environ.get('S3_REGION', '').strip()
 DOCUPARSE_APPROVED_EXPORT_DIR = os.environ.get('DOCUPARSE_APPROVED_EXPORT_DIR', str(BASE_DIR / 'exports' / 'approved'))
-DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TOKEN', 'teste123').strip()
+DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TOKEN', '').strip()
 DOCUPARSE_AUTO_PROCESS_OCR = os.environ.get('DOCUPARSE_AUTO_PROCESS_OCR', 'true').strip().lower() not in {'0', 'false', 'no'}
 DOCUPARSE_AUTO_PROCESS_EXTRACTION = os.environ.get('DOCUPARSE_AUTO_PROCESS_EXTRACTION', 'true').strip().lower() not in {'0', 'false', 'no'}

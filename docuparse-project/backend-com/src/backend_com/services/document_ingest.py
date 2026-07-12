@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from docuparse_events import event_bus_from_env
 from docuparse_observability import log_event
-from docuparse_storage import LocalStorage, document_original_key
+from docuparse_storage import document_original_key, get_storage
 from events import DocumentReceivedEvent
 
 from backend_com.config import settings
@@ -55,7 +55,7 @@ def ingest_document(
         raise ValueError(f"unsupported content_type: {content_type}")
 
     document_id = uuid4()
-    storage = LocalStorage(settings.local_storage_dir)
+    storage = get_storage()
     stored = storage.put_bytes(document_original_key(tenant_id, str(document_id)), content)
 
     event = DocumentReceivedEvent(

@@ -2,10 +2,12 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic pydantic-settings python-multipart pyjwt structlog toml redis
+COPY backend-com/pyproject.toml .
+RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic pydantic-settings python-multipart pyjwt structlog toml redis boto3
 
-COPY src ./src
+COPY backend-com/src ./src
+COPY shared/ /shared
+COPY contracts/ /contracts
 
 ENV PYTHONPATH=/app/src:/contracts:/shared
 

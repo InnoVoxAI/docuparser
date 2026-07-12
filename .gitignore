@@ -136,6 +136,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/
@@ -231,7 +233,7 @@ yarn-debug.log*
 yarn-error.log*
 dev-debug.log
 # Dependency directories
-node_modules/
+/docuparse-project/frontend/node_modules/
 # Environment variables
 # Editor directories and files
 .idea
@@ -249,3 +251,4 @@ tasks/
 
 .taskmaster/
 .sixth/
+docuparse-project/frontend/node_modules

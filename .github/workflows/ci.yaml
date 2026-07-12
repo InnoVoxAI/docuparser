@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - staging
     paths:
       - "docuparse-project/**"
       - "pyproject.toml"
@@ -17,13 +18,13 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
           fetch-depth: 0
 
       - name: Install UV
-        run: pip install uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Install pyproject-parser
         run: uv tool install "pyproject-parser[cli]"
@@ -34,43 +35,58 @@ jobs:
           VERSION=$(pyproject-info project.version | tr -d '"')
           echo "IMAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Check if version is already deployed
-        id: check_version
-        run: |
-          VERSION=${{ steps.extract_version.outputs.IMAGE_VERSION }}
-          git fetch origin gitops
-          DEPLOYED=$(git show origin/gitops:k8s/docuparser-core/deployment.yaml | grep -oP 'docuparser-core:\K[^\s]+')
-          if [ "$VERSION" = "$DEPLOYED" ]; then
-            echo "SKIP=true" >> $GITHUB_OUTPUT
-            echo "Version $VERSION already deployed — skipping."
-          else
-            echo "SKIP=false" >> $GITHUB_OUTPUT
-          fi
-
   deploy-core:
     needs: pre-deploy
-    if: needs.pre-deploy.outputs.SKIP != 'true'
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-core
       IMAGE_VERSION: ${{ needs.pre-deploy.outputs.IMAGE_VERSION }}
       ENVIRONMENT: docuparser-core
-      BACKEND_DIR: docuparse-project/backend-core
+      BACKEND_DIR: docuparse-project
+      DOCKERFILE_PATH: docuparse-project/backend-core/Dockerfile
     secrets:
       ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
       INNOVOX_USERNAME: ${{ secrets.INNOVOX_USERNAME }}
       INNOVOX_PASSWORD: ${{ secrets.INNOVOX_PASSWORD }}
 
   # Runs after deploy-core to avoid concurrent pushes to the gitops branch
-  deploy-ocr:
+  deploy-com:
     needs: [pre-deploy, deploy-core]
-    if: needs.pre-deploy.outputs.SKIP != 'true'
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      IMAGE_NAME: docuparser-com
+      IMAGE_VERSION: ${{ needs.pre-deploy.outputs.IMAGE_VERSION }}
+      ENVIRONMENT: docuparser-com
+      BACKEND_DIR: docuparse-project
+      DOCKERFILE_PATH: docuparse-project/backend-com/Dockerfile
+    secrets:
+      ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+      INNOVOX_USERNAME: ${{ secrets.INNOVOX_USERNAME }}
+      INNOVOX_PASSWORD: ${{ secrets.INNOVOX_PASSWORD }}
+
+  deploy-ocr:
+    needs: [pre-deploy, deploy-com]
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-ocr
       IMAGE_VERSION: ${{ needs.pre-deploy.outputs.IMAGE_VERSION }}
       ENVIRONMENT: docuparser-ocr
-      BACKEND_DIR: docuparse-project/backend-ocr
+      BACKEND_DIR: docuparse-project
+      DOCKERFILE_PATH: docuparse-project/backend-ocr/Dockerfile
+    secrets:
+      ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
+      INNOVOX_USERNAME: ${{ secrets.INNOVOX_USERNAME }}
+      INNOVOX_PASSWORD: ${{ secrets.INNOVOX_PASSWORD }}
+
+  deploy-langextract:
+    needs: [pre-deploy, deploy-ocr]
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      IMAGE_NAME: docuparser-langextract
+      IMAGE_VERSION: ${{ needs.pre-deploy.outputs.IMAGE_VERSION }}
+      ENVIRONMENT: docuparser-langextract
+      BACKEND_DIR: docuparse-project
+      DOCKERFILE_PATH: docuparse-project/langextract-service/Dockerfile
     secrets:
       ACCOUNT_MODIFY_TOKEN: ${{ secrets.ACCOUNT_MODIFY_TOKEN }}
       INNOVOX_USERNAME: ${{ secrets.INNOVOX_USERNAME }}

@@ -8,3 +8,9 @@ npm-debug.log*
 .gitignore
 Dockerfile
 .dockerignore
+node_modules/
+dist/
+.vite/
+*.log
+.env.local
+.env.*.local

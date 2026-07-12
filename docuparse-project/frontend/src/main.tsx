@@ -8,6 +8,7 @@ import {
     ChevronRight,
     ClipboardCheck,
     Eye,
+    FileJson,
     FileText,
     History,
     Inbox,
@@ -55,11 +56,53 @@ import { CONTA_AGUA_DEFAULT_RULES } from './models/contadeagua/rules'
 import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } from './models/recibo/schemas'
 import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
-const api = axios.create({ baseURL: '/api/ocr' })
-const authApi = axios.create({ baseURL: '/api/auth' })
+// Base dos backends: URL absoluta no deploy (Cloudflare Pages, via
+// VITE_BACKEND_*_URL) e caminho relativo em dev/testes (fallback pelo proxy do
+// Vite / handlers MSW). Se a env estiver vazia, mantém o comportamento relativo.
+const CORE = import.meta.env.VITE_BACKEND_CORE_URL ?? ''
+const COM = import.meta.env.VITE_BACKEND_COM_URL ?? ''
+
+const api = axios.create({ baseURL: `${CORE}/api/ocr` })
+const authApi = axios.create({ baseURL: `${CORE}/api/auth` })
 // backend-com (upload/poll) autentica pelo JWT do usuário — anexado via
 // interceptor abaixo, igual ao `api`. Nenhum segredo é embutido no frontend.
-const comApi = axios.create({ baseURL: '/com/api/v1' })
+// Em dev, COM vazio → '/com/api/v1' (o proxy do Vite remove o '/com'); no deploy → absoluto.
+const comApi = axios.create({ baseURL: COM ? `${COM}/api/v1` : '/com/api/v1' })
+
+// Resultado do polling de uma extração assíncrona (ver pollDocumentExtraction).
+type ExtractionPollOutcome =
+    | { status: 'completed'; extraction: ExtractionResult }
+    | { status: 'failed'; error: string }
+    | { status: 'timeout' }
+
+// Poll do detalhe do documento até que seu extraction_result mude — i.e. uma
+// extração LLM em background terminou. O backend agora processa a extração de
+// forma assíncrona (a chamada inline estourava o timeout do gateway em produção,
+// aparecendo como 502/CORS). Retorna o novo extraction_result, uma falha
+// registrada em metadata.extraction, ou timeout.
+async function pollDocumentExtraction(
+    documentId: string,
+    baseline: { resultUpdatedAt: string | null; metaUpdatedAt: string | null },
+    { attempts = 40, intervalMs = 2500 }: { attempts?: number; intervalMs?: number } = {},
+): Promise<ExtractionPollOutcome> {
+    for (let i = 0; i < attempts; i++) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs))
+        try {
+            const { data } = await api.get<Document>(`/documents/${documentId}`)
+            const extraction = data?.extraction_result
+            if (extraction?.updated_at && extraction.updated_at !== baseline.resultUpdatedAt) {
+                return { status: 'completed', extraction }
+            }
+            // Surface a real backend failure (e.g. langextract-service unreachable) instead
+            // of polling forever — see document.metadata.extraction recorded by the backend.
+            const meta = (data?.metadata as { extraction?: { state?: string; updated_at?: string; error?: string } } | undefined)?.extraction
+            if (meta?.state === 'failed' && meta.updated_at !== baseline.metaUpdatedAt) {
+                return { status: 'failed', error: meta.error || 'Erro desconhecido na extracao.' }
+            }
+        } catch { /* transient error — keep polling */ }
+    }
+    return { status: 'timeout' }
+}
 
 interface NavItem {
     id: ActiveView
@@ -813,6 +856,7 @@ function InboxView({ refreshSignal, onNavigateToValidation, onNavigateToUpload }
 
 function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
     const { page, setPage, search, setSearch, data, loading, error } = useDocumentPage('APPROVED', { refreshSignal })
+    const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
     return (
         <section className="rounded-md border border-zinc-200 bg-white">
             <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
@@ -831,6 +875,7 @@ function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
                                 <th className="px-4 py-3">Documento</th>
                                 <th className="px-4 py-3">Status</th>
                                 <th className="px-4 py-3">Data de aprovação</th>
+                                <th className="px-4 py-3">Campos extraídos</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-100">
@@ -841,6 +886,20 @@ function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
                                     <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
                                         {formatDate(doc.approved_at ?? doc.decision_date ?? doc.updated_at)}
                                     </td>
+                                    <td className="px-4 py-3">
+                                        {doc.extraction_result?.fields && Object.keys(doc.extraction_result.fields).length > 0 ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedDoc(doc)}
+                                                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                                            >
+                                                <FileJson size={14} aria-hidden="true" />
+                                                Ver campos
+                                            </button>
+                                        ) : (
+                                            <span className="text-xs text-zinc-400">—</span>
+                                        )}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -848,7 +907,35 @@ function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
                 </div>
             )}
             <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
+            {selectedDoc && (
+                <ExtractedFieldsModal doc={selectedDoc} onClose={() => setSelectedDoc(null)} />
+            )}
         </section>
+    )
+}
+
+function ExtractedFieldsModal({ doc, onClose }: { doc: Document; onClose: () => void }) {
+    const fields = doc.extraction_result?.fields || {}
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+            <div
+                className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl bg-white p-6 shadow-lg"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="mb-4 flex flex-shrink-0 items-center justify-between">
+                    <div>
+                        <h3 className="text-base font-semibold">Campos extraídos</h3>
+                        <div className="mt-0.5 text-xs text-zinc-500">{doc.original_filename || doc.id}</div>
+                    </div>
+                    <button type="button" onClick={onClose} className="text-zinc-400 hover:text-zinc-700">
+                        <X size={20} aria-hidden="true" />
+                    </button>
+                </div>
+                <pre className="flex-1 overflow-auto rounded-md bg-zinc-950 p-4 text-xs text-zinc-50">
+                    {JSON.stringify(fields, null, 2)}
+                </pre>
+            </div>
+        </div>
     )
 }
 
@@ -1348,23 +1435,41 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         return () => { ignore = true }
     }, [selectedDocument?.id])
 
+    const applyExtractionData = (data: ExtractionResult) => {
+        const fields = data.fields || {}
+        setFieldRows(
+            Object.entries(fields)
+                .filter(([, value]) => value !== '' && value !== null && value !== undefined)
+                .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
+                .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
+        )
+        const pct = data.confidence != null ? ` Confianca: ${(data.confidence * 100).toFixed(0)}%` : ''
+        setExtractMessage(`Extracao concluida.${pct}`)
+    }
+
     const runLangExtract = async () => {
         if (!selectedDocumentId || !selectedSchemaId || extracting) return
         setExtracting(true)
-        setExtractMessage('')
+        setExtractMessage('Extraindo... isso pode levar alguns segundos.')
+        const baseline = {
+            resultUpdatedAt: selectedDocument?.extraction_result?.updated_at ?? null,
+            metaUpdatedAt: (selectedDocument?.metadata as { extraction?: { updated_at?: string } } | undefined)?.extraction?.updated_at ?? null,
+        }
         try {
             const response = await api.post<ExtractionResult>(`/documents/${selectedDocumentId}/langextract`, {
                 schema_config_id: selectedSchemaId,
             })
-            const fields = response.data.fields || {}
-            setFieldRows(
-                Object.entries(fields)
-                    .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
-                    .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
-            )
-            const pct = response.data.confidence != null ? ` Confianca: ${(response.data.confidence * 100).toFixed(0)}%` : ''
-            setExtractMessage(`Extracao concluida.${pct}`)
+            if (response.status === 202) {
+                // Backend queued the LLM extraction (async). Poll the document detail
+                // until the new extraction_result lands — or a failure is recorded.
+                const outcome = await pollDocumentExtraction(selectedDocumentId, baseline)
+                if (outcome.status === 'completed') applyExtractionData(outcome.extraction)
+                else if (outcome.status === 'failed') setExtractMessage(`Falha na extracao: ${outcome.error}`)
+                else setExtractMessage('A extracao ainda esta em andamento. Clique em Atualizar em instantes para ver o resultado.')
+            } else {
+                // Synchronous response (e.g. local dev). Apply the result directly.
+                applyExtractionData(response.data)
+            }
         } catch (requestError) {
             setExtractMessage(readError(requestError, 'Falha na extracao LangExtract.'))
         } finally {
@@ -1499,18 +1604,14 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                 </div>
                 {!selectedDocument ? (
                     <EmptyState icon={FileText} text="Selecione um documento para visualizar." />
-                ) : selectedDocument.content_type === 'application/pdf' ? (
-                    <iframe
-                        title="Documento selecionado"
-                        src={`/api/ocr/documents/${selectedDocument.id}/file`}
-                        className="h-[620px] w-full"
-                    />
-                ) : selectedDocument.content_type?.startsWith('image/') ? (
-                    <div className="max-h-[620px] overflow-auto p-3">
-                        <img src={`/api/ocr/documents/${selectedDocument.id}/file`} alt="Documento selecionado" className="max-w-full rounded border border-zinc-200" />
-                    </div>
                 ) : (
-                    <EmptyState icon={FileText} text="Formato sem preview disponivel." />
+                    // Carrega o arquivo como blob autenticado (contorna X-Frame-Options em produção).
+                    <DocumentBlobPreview
+                        documentId={selectedDocument.id}
+                        contentType={selectedDocument.content_type}
+                        filename={selectedDocument.original_filename}
+                        frameClassName="h-[620px] w-full"
+                    />
                 )}
             </section>
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white p-4">
@@ -2713,7 +2814,7 @@ function SettingsView({ schemas, layouts, onChanged }: {
                                 />
                             </div>
                             <div className="grid gap-4 lg:grid-cols-2">
-                                <ConfigList title="Schemas existentes" items={schemas} primaryKey="schema_id" secondaryKey="version" />
+                                <SchemaList schemas={schemas} onDeleted={onChanged} />
                                 <ConfigList title="Layouts existentes" items={layouts} primaryKey="layout" secondaryKey="document_type" />
                             </div>
                         </div>
@@ -3412,14 +3513,14 @@ function DocumentPreview({ document }: { document: Document | null }) {
             <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">Original</div>
             {!document ? (
                 <EmptyState icon={FileText} text="Selecione um documento." />
-            ) : document.content_type === 'application/pdf' ? (
-                <iframe title="Documento de referencia" src={`/api/ocr/documents/${document.id}/file`} className="h-[520px] w-full" />
-            ) : document.content_type?.startsWith('image/') ? (
-                <div className="max-h-[520px] overflow-auto p-3">
-                    <img src={`/api/ocr/documents/${document.id}/file`} alt="Documento de referencia" className="max-w-full rounded border border-zinc-200" />
-                </div>
             ) : (
-                <EmptyState icon={FileText} text="Formato sem preview disponivel." />
+                // Carrega o arquivo como blob autenticado (contorna X-Frame-Options em produção).
+                <DocumentBlobPreview
+                    documentId={document.id}
+                    contentType={document.content_type}
+                    filename={document.original_filename}
+                    frameClassName="h-[520px] w-full"
+                />
             )}
         </section>
     )
@@ -3553,10 +3654,11 @@ interface EmailModalDoc {
  * FR-015) e renderiza inline sem forçar download (FR-011): PDF via iframe,
  * imagem via <img>, fallback amigável para os demais formatos.
  */
-function DocumentBlobPreview({ documentId, contentType, filename }: {
+function DocumentBlobPreview({ documentId, contentType, filename, frameClassName = 'h-[420px] w-full rounded border border-zinc-200' }: {
     documentId: string
     contentType?: string
     filename?: string
+    frameClassName?: string
 }) {
     const [blobUrl, setBlobUrl] = useState('')
     const [loading, setLoading] = useState(true)
@@ -3595,7 +3697,7 @@ function DocumentBlobPreview({ documentId, contentType, filename }: {
     const isPdf = contentType === 'application/pdf' || (filename ?? '').toLowerCase().endsWith('.pdf')
     const isImage = (contentType ?? '').startsWith('image/')
     if (isPdf) {
-        return <iframe title={`Documento ${filename ?? documentId}`} src={blobUrl} className="h-[420px] w-full rounded border border-zinc-200" />
+        return <iframe title={`Documento ${filename ?? documentId}`} src={blobUrl} className={frameClassName} />
     }
     if (isImage) {
         return (
@@ -3911,6 +4013,107 @@ function Metric({ label, value }: { label: React.ReactNode; value: React.ReactNo
             <div className="text-xs font-semibold uppercase text-zinc-500">{label}</div>
             <div className="mt-2 text-2xl font-semibold">{value}</div>
         </div>
+    )
+}
+
+const PROTECTED_SCHEMA_IDS = ['nota_fiscal_default', 'conta_agua_default']
+
+function DeleteSchemaModal({ schema, onClose, onDeleted }: {
+    schema: SchemaConfig
+    onClose: () => void
+    onDeleted: () => void | Promise<unknown>
+}) {
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
+
+    if (schema.schema_id && PROTECTED_SCHEMA_IDS.includes(schema.schema_id)) {
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-6 shadow-xl">
+                    <div className="text-sm font-semibold text-zinc-900">Modelo protegido</div>
+                    <p className="mt-2 text-sm text-zinc-600">
+                        O modelo <span className="font-medium">{schema.schema_id}</span> é padrão do sistema e não pode ser excluído.
+                    </p>
+                    <div className="mt-4 flex justify-end">
+                        <button type="button" onClick={onClose} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100">
+                            Fechar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    async function handleDelete() {
+        setLoading(true)
+        setError('')
+        try {
+            await api.delete(`/schema-configs/${schema.id}`)
+            await onDeleted()
+        } catch (err) {
+            setError(readError(err, 'Erro ao excluir o modelo. Tente novamente.'))
+            setLoading(false)
+        }
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-6 shadow-xl">
+                <div className="text-sm font-semibold text-zinc-900">Excluir modelo</div>
+                <p className="mt-2 text-sm text-zinc-600">
+                    Tem certeza que deseja excluir o modelo <span className="font-medium">{schema.schema_id}</span>? Esta ação não pode ser desfeita.
+                </p>
+                {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+                <div className="mt-4 flex justify-end gap-2">
+                    <button type="button" onClick={onClose} disabled={loading} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50">
+                        Cancelar
+                    </button>
+                    <button type="button" onClick={handleDelete} disabled={loading} className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                        {loading ? 'Excluindo...' : 'Excluir'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function SchemaList({ schemas, onDeleted }: {
+    schemas: SchemaConfig[]
+    onDeleted: () => void | Promise<unknown>
+}) {
+    const [targetSchema, setTargetSchema] = useState<SchemaConfig | null>(null)
+    return (
+        <>
+            <section className="rounded-md border border-zinc-200 bg-white">
+                <div className="border-b border-zinc-200 px-4 py-3 text-sm font-semibold">Schemas existentes</div>
+                {schemas.length === 0 ? (
+                    <EmptyState icon={Settings} text="Nenhuma configuracao cadastrada." />
+                ) : (
+                    <div className="divide-y divide-zinc-100">
+                        {schemas.map((schema) => (
+                            <div key={schema.id} className="flex items-center justify-between px-4 py-3">
+                                <div className="text-sm font-medium">{schema.schema_id}</div>
+                                <button
+                                    type="button"
+                                    onClick={() => setTargetSchema(schema)}
+                                    className="flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                                >
+                                    <Trash2 size={12} />
+                                    Excluir
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </section>
+            {targetSchema && (
+                <DeleteSchemaModal
+                    schema={targetSchema}
+                    onClose={() => setTargetSchema(null)}
+                    onDeleted={async () => { setTargetSchema(null); await onDeleted() }}
+                />
+            )}
+        </>
     )
 }
 

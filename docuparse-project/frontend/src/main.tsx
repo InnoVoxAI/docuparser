@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import {
     AlertTriangle,
+    Building2,
     CheckCircle2,
     ChevronLeft,
     ChevronRight,
@@ -27,6 +28,7 @@ import type {
     AuthContextValue,
     User,
     LoginResponse,
+    Tenant,
     Document,
     ActiveView,
     ExtractionResult,
@@ -68,6 +70,7 @@ const authApi = axios.create({ baseURL: `${CORE}/api/auth` })
 // interceptor abaixo, igual ao `api`. Nenhum segredo é embutido no frontend.
 // Em dev, COM vazio → '/com/api/v1' (o proxy do Vite remove o '/com'); no deploy → absoluto.
 const comApi = axios.create({ baseURL: COM ? `${COM}/api/v1` : '/com/api/v1' })
+const adminApi = axios.create({ baseURL: `${CORE}/api/admin` })
 
 // Resultado do polling de uma extração assíncrona (ver pollDocumentExtraction).
 type ExtractionPollOutcome =
@@ -127,6 +130,7 @@ const NAV_ITEMS: NavItem[] = [
     { id: 'settings', label: 'Configuracoes', icon: Settings, permission: 'roles.manage' },
     { id: 'users', label: 'Usuários', icon: Settings, permission: 'users.manage' },
     { id: 'roles', label: 'Roles', icon: Settings, permission: 'roles.manage' },
+    { id: 'tenants', label: 'Tenants', icon: Building2, permission: 'tenants.manage' },
 ]
 
 const STATUS_LABELS: Record<string, string> = {
@@ -259,11 +263,24 @@ function Pagination({ page, totalPages, count, pageSize, onPageChange }: {
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
+function decodeJwtTenant(token: string): string | null {
+    try {
+        const payload = token.split('.')[1]
+        const padded = payload + '='.repeat((4 - payload.length % 4) % 4)
+        return (JSON.parse(atob(padded)) as Record<string, unknown>).tenant as string | null ?? null
+    } catch {
+        return null
+    }
+}
+
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [loading, setLoading] = useState(true)
+    const [currentTenant, setCurrentTenant] = useState<string | null>(() =>
+        decodeJwtTenant(localStorage.getItem('access_token') ?? '')
+    )
 
     useEffect(() => {
         const token = localStorage.getItem('access_token')
@@ -282,9 +299,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         const apiId = api.interceptors.request.use(attachToken)
         const comId = comApi.interceptors.request.use(attachToken)
+        const adminId = adminApi.interceptors.request.use(attachToken)
         return () => {
             api.interceptors.request.eject(apiId)
             comApi.interceptors.request.eject(comId)
+            adminApi.interceptors.request.eject(adminId)
         }
     }, [])
 
@@ -293,6 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('access_token', r.data.access)
         localStorage.setItem('refresh_token', r.data.refresh)
         setUser(r.data.user)
+        setCurrentTenant(decodeJwtTenant(r.data.access))
     }
 
     const logout = async (): Promise<void> => {
@@ -302,12 +322,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
         setUser(null)
+        setCurrentTenant(null)
     }
 
     const hasPermission = (code: string): boolean => Array.isArray(user?.permissions) && user.permissions.includes(code)
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>
+        <AuthContext.Provider value={{ user, loading, currentTenant, login, logout, hasPermission }}>
             {children}
         </AuthContext.Provider>
     )
@@ -453,10 +474,160 @@ function LoginPage() {
     )
 }
 
+// ─── TenantsView ─────────────────────────────────────────────────────────────
+
+function TenantsView() {
+    const [tenants, setTenants] = useState<Tenant[]>([])
+    const [loadingList, setLoadingList] = useState(true)
+    const [listError, setListError] = useState('')
+    const [formSlug, setFormSlug] = useState('')
+    const [formName, setFormName] = useState('')
+    const [submitting, setSubmitting] = useState(false)
+    const [formError, setFormError] = useState('')
+    const [toggleError, setToggleError] = useState<Record<string, string>>({})
+
+    const fetchTenants = useCallback(async () => {
+        setLoadingList(true)
+        setListError('')
+        try {
+            const r = await adminApi.get<{ data: Tenant[] }>('/tenants/')
+            setTenants(r.data.data)
+        } catch {
+            setListError('Falha ao carregar tenants.')
+        } finally {
+            setLoadingList(false)
+        }
+    }, [])
+
+    useEffect(() => { fetchTenants() }, [fetchTenants])
+
+    const handleCreate = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setSubmitting(true)
+        setFormError('')
+        try {
+            await adminApi.post('/tenants/', { slug: formSlug, name: formName })
+            setFormSlug('')
+            setFormName('')
+            await fetchTenants()
+        } catch (err: unknown) {
+            const status = (err as { response?: { status?: number; data?: { error?: { detail?: string } } } })?.response?.status
+            const detail = (err as { response?: { data?: { error?: { detail?: string } } } })?.response?.data?.error?.detail
+            if (status === 409) {
+                setFormError(detail ?? `Tenant com slug "${formSlug}" já existe.`)
+            } else {
+                setFormError(detail ?? 'Erro ao criar tenant.')
+            }
+        } finally {
+            setSubmitting(false)
+        }
+    }
+
+    const handleToggle = async (slug: string, currentActive: boolean) => {
+        setToggleError((prev) => ({ ...prev, [slug]: '' }))
+        try {
+            await adminApi.patch(`/tenants/${slug}/`, { is_active: !currentActive })
+            await fetchTenants()
+        } catch (err: unknown) {
+            const status = (err as { response?: { status?: number; data?: { error?: { detail?: string } } } })?.response?.status
+            const detail = (err as { response?: { data?: { error?: { detail?: string } } } })?.response?.data?.error?.detail
+            if (status === 409) {
+                setToggleError((prev) => ({ ...prev, [slug]: detail ?? 'Não é possível desativar o único tenant ativo.' }))
+            } else {
+                setToggleError((prev) => ({ ...prev, [slug]: detail ?? 'Erro ao atualizar tenant.' }))
+            }
+        }
+    }
+
+    return (
+        <div className="space-y-6">
+            <form onSubmit={handleCreate} className="rounded-lg border border-zinc-200 bg-white p-5">
+                <h2 className="mb-4 text-sm font-semibold text-zinc-800">Novo Tenant</h2>
+                <div className="flex flex-wrap gap-3">
+                    <input
+                        type="text"
+                        value={formSlug}
+                        onChange={(e) => setFormSlug(e.target.value)}
+                        required
+                        maxLength={50}
+                        pattern="[a-z0-9-]+"
+                        placeholder="slug (ex: empresa-abc)"
+                        title="Apenas letras minúsculas, números e hífens"
+                        className="h-9 flex-1 min-w-40 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-500 focus:outline-none"
+                    />
+                    <input
+                        type="text"
+                        value={formName}
+                        onChange={(e) => setFormName(e.target.value)}
+                        required
+                        placeholder="Nome da empresa"
+                        className="h-9 flex-1 min-w-40 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-500 focus:outline-none"
+                    />
+                    <button
+                        type="submit"
+                        disabled={submitting}
+                        className="h-9 rounded-md bg-zinc-900 px-4 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                    >
+                        {submitting ? 'Criando...' : 'Criar'}
+                    </button>
+                </div>
+                {formError ? <p className="mt-2 text-xs text-red-600">{formError}</p> : null}
+            </form>
+
+            {listError ? <p className="text-sm text-red-600">{listError}</p> : null}
+            {loadingList ? <p className="text-sm text-zinc-500">Carregando...</p> : null}
+
+            {!loadingList && tenants.length > 0 ? (
+                <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b border-zinc-200 text-left text-xs font-medium text-zinc-500">
+                                <th className="px-4 py-3">Slug</th>
+                                <th className="px-4 py-3">Nome</th>
+                                <th className="px-4 py-3">Status</th>
+                                <th className="px-4 py-3">Criado em</th>
+                                <th className="px-4 py-3"></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                            {tenants.map((t) => (
+                                <tr key={t.slug} className="hover:bg-zinc-50">
+                                    <td className="px-4 py-3 font-mono text-xs text-zinc-700">{t.slug}</td>
+                                    <td className="px-4 py-3 text-zinc-800">{t.name}</td>
+                                    <td className="px-4 py-3">
+                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${t.is_active ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>
+                                            {t.is_active ? 'Ativo' : 'Inativo'}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-zinc-500">{new Date(t.created_at).toLocaleDateString('pt-BR')}</td>
+                                    <td className="px-4 py-3">
+                                        <div className="flex flex-col items-end gap-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggle(t.slug, t.is_active)}
+                                                className={`rounded px-2 py-1 text-xs font-medium ${t.is_active ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}
+                                            >
+                                                {t.is_active ? 'Desativar' : 'Ativar'}
+                                            </button>
+                                            {toggleError[t.slug] ? (
+                                                <span className="text-xs text-red-600">{toggleError[t.slug]}</span>
+                                            ) : null}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : null}
+        </div>
+    )
+}
+
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 function App() {
-    const { user, logout, hasPermission } = useAuth()
+    const { user, logout, hasPermission, currentTenant } = useAuth()
     const [activeView, setActiveView] = useState(() =>
         NAV_ITEMS.find(item => hasPermission(item.permission))?.id ?? 'dashboard'
     )
@@ -571,6 +742,12 @@ function App() {
                     <div className="border-b border-zinc-200 px-5 py-5">
                         <div className="text-lg font-semibold">DocuParse</div>
                         <div className="mt-1 text-xs text-zinc-500">{user?.name || 'Operacao de documentos'}</div>
+                        {currentTenant ? (
+                            <div className="mt-1 inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">
+                                <Building2 size={10} aria-hidden="true" />
+                                {currentTenant}
+                            </div>
+                        ) : null}
                     </div>
                     <nav className="space-y-1 px-3 py-4">
                         {NAV_ITEMS.map((item) => (
@@ -672,6 +849,7 @@ function App() {
                         {activeView === 'settings' ? <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}><SettingsView schemas={schemas} layouts={layouts} onChanged={refreshData} /></PermissionGuard> : null}
                         {activeView === 'users' ? <PermissionGuard code="users.manage" fallback={<AcessoNaoAutorizado />}><GerenciarUsuarios /></PermissionGuard> : null}
                         {activeView === 'roles' ? <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}><GerenciarRoles /></PermissionGuard> : null}
+                        {activeView === 'tenants' ? <PermissionGuard code="tenants.manage" fallback={<AcessoNaoAutorizado />}><TenantsView /></PermissionGuard> : null}
                     </section>
                 </main>
             </div>

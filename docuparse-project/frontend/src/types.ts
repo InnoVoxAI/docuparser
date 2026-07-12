@@ -175,9 +175,18 @@ export interface User {
   permissions: string[]
 }
 
+export interface Tenant {
+  slug: string
+  name: string
+  is_active: boolean
+  created_at: string
+  updated_at?: string
+}
+
 export interface AuthContextValue {
   user: User | null
   loading: boolean
+  currentTenant: string | null
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   hasPermission: (code: string) => boolean
@@ -216,3 +225,4 @@ export type ActiveView =
   | 'settings'
   | 'users'
   | 'roles'
+  | 'tenants'

@@ -47,8 +47,13 @@ def login_view(request: Request) -> Response:
     try:
         from tenants.models import UserProfile
         profile = UserProfile.objects.select_related("tenant").get(user=user)
+        if not profile.tenant.is_active:
+            return Response(
+                {"detail": "Tenant inativo. Contate o administrador."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         refresh["tenant"] = profile.tenant.slug
-    except Exception:
+    except UserProfile.DoesNotExist:
         pass
     return Response(
         {

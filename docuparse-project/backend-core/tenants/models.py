@@ -54,7 +54,7 @@ class UserProfile(TimeStampedModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "user"],
-                name="unique_profile_per_tenant_user",
+                name="unique_tenant_profile_per_tenant_user",
             ),
         ]
 

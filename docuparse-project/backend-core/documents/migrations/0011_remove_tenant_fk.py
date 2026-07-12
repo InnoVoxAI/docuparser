@@ -11,21 +11,24 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("documents", "0010_backfill_field_versions"),
+        # Must run after the legacy Tenant/UserProfile rows have been copied
+        # into the tenants app models — this migration deletes those tables.
+        ("tenants", "0003_migrate_legacy_tenant_data"),
     ]
 
     operations = [
         # Drop indexes that included tenant field
         migrations.RemoveIndex(
             model_name="document",
-            name="documents_d_tenant__718ecf_idx",
-        ),
-        migrations.RemoveIndex(
-            model_name="document",
             name="documents_d_tenant__1461e3_idx",
         ),
         migrations.RemoveIndex(
+            model_name="document",
+            name="documents_d_tenant__35a2b9_idx",
+        ),
+        migrations.RemoveIndex(
             model_name="documentevent",
-            name="documents_d_tenant__7b6697_idx",
+            name="documents_d_tenant__3a4754_idx",
         ),
         # Remove tenant FK from Document
         migrations.RemoveField(

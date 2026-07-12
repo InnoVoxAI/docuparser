@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, SuspiciousOperation
+from django.db import connection
 from django_tenants.middleware.main import TenantMainMiddleware
+from django_tenants.utils import get_tenant_domain_model
 
 from tenants.models import Tenant
 
@@ -16,7 +18,35 @@ class JWTTenantMiddleware(TenantMainMiddleware):
 
     HEADER_NAME = "HTTP_X_TENANT"
 
-    def get_tenant(self, model: type, hostname: str, request: object) -> Tenant:
+    # Routes served straight out of the public schema (see core/urls.py's
+    # public_urlpatterns): login/register can't require a JWT tenant claim
+    # before a JWT exists, and tenant provisioning is itself public-schema
+    # administration, not a per-tenant operation.
+    PUBLIC_PATH_PREFIXES = ("/admin/", "/api/auth/", "/api/admin/tenants/")
+
+    # Exact-path exemptions: liveness probes that must work with no auth at
+    # all (e.g. the Docker healthcheck). Not a prefix — most of /api/ocr/ is
+    # genuinely tenant-scoped and must keep requiring tenant resolution.
+    PUBLIC_EXACT_PATHS = ("/api/ocr/health",)
+
+    def process_request(self, request: object) -> None:
+        # The base TenantMainMiddleware resolves tenants from the request's
+        # hostname and calls get_tenant(domain_model, hostname) with no
+        # `request` arg, so it's overridden wholesale here — tenant
+        # resolution is JWT/header-based, not hostname-based.
+        connection.set_schema_to_public()
+
+        if request.path.startswith(self.PUBLIC_PATH_PREFIXES) or request.path in self.PUBLIC_EXACT_PATHS:
+            request.tenant = None
+            return
+
+        domain_model = get_tenant_domain_model()
+        tenant = self.get_tenant(domain_model, None, request)
+        request.tenant = tenant
+        connection.set_tenant(request.tenant)
+        self.setup_url_routing(request)
+
+    def get_tenant(self, model: type, hostname: str | None, request: object) -> Tenant:
         slug = self._resolve_slug(request)
         try:
             tenant = Tenant.objects.get(slug=slug)

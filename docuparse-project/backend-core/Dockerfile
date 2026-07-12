@@ -16,4 +16,7 @@ COPY shared/docuparse_observability ./docuparse_observability
 COPY shared/docuparse_storage ./docuparse_storage
 COPY contracts/events ./events
 
-CMD ["sh", "-c", "python manage.py migrate && python manage.py seed_data && python manage.py runserver 0.0.0.0:8000"]
+COPY backend-core/entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+CMD ["sh", "entrypoint.sh"]

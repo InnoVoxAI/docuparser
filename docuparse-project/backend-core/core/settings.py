@@ -114,7 +114,7 @@ if _database_url:
         raise ImproperlyConfigured(f"Unsupported DATABASE_URL scheme: {_parsed.scheme!r} (expected postgres://)")
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.postgresql',
+            'ENGINE': 'django_tenants.postgresql_backend',
             'NAME': (_parsed.path or '/docuparse').lstrip('/') or 'docuparse',
             'USER': unquote(_parsed.username or ''),
             'PASSWORD': unquote(_parsed.password or ''),
@@ -125,7 +125,7 @@ if _database_url:
 elif os.environ.get("POSTGRES_HOST"):
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.postgresql',
+            'ENGINE': 'django_tenants.postgresql_backend',
             'NAME': os.environ.get('POSTGRES_DB', 'docuparse'),
             'USER': os.environ.get('POSTGRES_USER', 'docuparse'),
             'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'docuparse'),

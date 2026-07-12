@@ -98,7 +98,6 @@ services:
     build:
       context: .
       dockerfile: backend-core/Dockerfile
-    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./backend-core:/app
       - ./contracts:/contracts:ro
@@ -156,7 +155,7 @@ services:
     build:
       context: .
       dockerfile: backend-core/Dockerfile
-    command: sh -c "python manage.py migrate --noinput && python manage.py consume_events"
+    command: sh -c "python manage.py migrate_schemas --shared && python manage.py consume_events"
     profiles:
       - async-workers
     volumes:

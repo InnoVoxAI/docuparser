@@ -105,6 +105,105 @@ tests/
 models and provisioning logic, keeping `documents` app clean of tenant-management concerns.
 The `users` app retains `Role`/`Permission` as public-schema shared models.
 
+## Camunda Multi-Tenancy (Process Orchestration Layer)
+
+### Context
+
+DB-level isolation (this feature, above) does not reach the process-orchestration layer.
+Camunda 8 (Zeebe) drives the document pipeline as an optional execution path — gated behind
+the `camunda` profile in `docuparse-project/docker-compose.yml`, alongside the default
+in-process `ThreadPoolExecutor` path in `documents/services/processing_queue.py` (already
+tenant-safe: it captures `connection.tenant` from the request thread and re-applies it in the
+worker thread). The Zeebe path is a separate, standalone service —
+`docuparse-project/camunda-workers` — that receives jobs from Zeebe and calls back into
+`backend-core` over HTTP using the shared `DOCUPARSE_INTERNAL_SERVICE_TOKEN`.
+
+Two gaps exist today:
+
+1. `docuparse-project/bpmn/flow.bpmn` only maps `=tenantId → tenant_id` on `Task_Ingestion`
+   and `Task_ERP`. `Task_OCR`, `Task_Layout`, and `Task_Extraction` never receive it.
+2. `camunda-workers/src/workers/_http.py`'s `core_client()`/`ocr_client()`/etc. only set the
+   `Authorization: Bearer <token>` header (`_auth_headers()`). They never set `X-Tenant`, which
+   `JWTTenantMiddleware._resolve_slug` (`backend-core/tenants/middleware.py:59-73`) requires for
+   any request authenticated with the internal service token — it raises `SuspiciousOperation`
+   if the header is absent.
+
+Together, once tenant enforcement is strict, every Camunda-driven OCR/layout/extraction call
+fails. This section closes that gap so the Camunda path can be safely enabled in a
+multi-tenant deployment.
+
+### Decision: application-level tenant isolation, not Zeebe's native multi-tenancy
+
+Zeebe 8.6 (the version pinned in `docker-compose.yml`) ships engine-level multi-tenancy, but it
+requires Camunda Identity + OIDC — not part of this stack, which uses an insecure gRPC channel
+(`create_insecure_channel`) with no Identity/Keycloak service. Adopting it would mean standing
+up Identity, switching `pyzeebe` to an OAuth credentials provider, and provisioning a service
+account per tenant — a disproportionate lift for the current scale (tens of tenants, one
+self-managed cluster). Instead, tenant isolation at this layer is enforced the same way it
+already is at the HTTP layer: a trusted `tenant_id` carried as data (process variable / header),
+validated by the receiving service, not by the engine.
+
+**Revisit** native Zeebe multi-tenancy only if Identity is adopted for an unrelated reason
+(e.g., SSO).
+
+### Required changes
+
+1. **BPMN** (`docuparse-project/bpmn/flow.bpmn`): add `=tenantId → tenant_id` to the
+   `zeebe:ioMapping` of `Task_OCR`, `Task_Layout`, `Task_Extraction`, and `Task_HumanVal`.
+2. **`camunda-workers`**: every task handler in `src/workers/*.py` gains a `tenant_id: str`
+   parameter; the client factories in `src/workers/_http.py` accept `tenant_id` and set
+   `X-Tenant: <tenant_id>` alongside the bearer token on every request.
+3. **Fail closed**: a Zeebe job arriving with a missing/blank `tenant_id` MUST fail the job
+   (non-retryable BPMN error), never fall back to a default schema or omit the header.
+4. **Provenance**: `tenant_id` MUST be seeded into a process instance only by a trusted,
+   tenant-authenticated caller at process-start time, and MUST NOT be accepted as ad hoc input
+   further down the flow. Nothing in `backend-core` currently starts Zeebe process instances —
+   only the manual `camunda-workers/scripts/start_process.py` CLI does — so this is a dependency
+   flag for whichever future feature wires production channels (email/WhatsApp) into Zeebe.
+5. **Human task isolation (Tasklist)**: `Task_HumanVal`'s `candidateGroups="operators"` is a
+   single shared group today — any operator, of any tenant, can see and claim any tenant's
+   review task. Change to a tenant-derived FEEL expression, e.g.
+   `candidateGroups="=\"operators-\" + tenantId"`, and provision operator group membership per
+   tenant wherever Tasklist users are managed.
+6. **Operate/Tasklist admin UIs**: neither supports per-tenant filtering without Identity;
+   accept this as an operational risk and restrict access to internal ops staff only — do not
+   expose either UI to tenant end users.
+7. **Process definition stays single/shared**: do not deploy per-tenant copies of
+   `docuparse-pipeline` — only instance *data* needs isolation, not the process model.
+
+### Testing
+
+- Integration test: start two process instances (tenant A, tenant B) concurrently through the
+  full pipeline; assert every worker→`backend-core` call carries the correct `X-Tenant` header
+  and only ever touches its own tenant's schema.
+- Unit test: a job payload with missing/blank `tenant_id` is rejected by each worker before any
+  `backend-core` call is attempted.
+
+### Constitution Check (addendum)
+
+| Principle | Assessment |
+|-----------|------------|
+| **I. Security** | ✅ CRITICAL — `camunda-workers` currently calls `backend-core` without `X-Tenant`, which `JWTTenantMiddleware` will reject once tenant enforcement is strict; closing this is required before the Camunda path can run safely in a multi-tenant deployment |
+
+### Project Structure (addendum)
+
+```text
+docuparse-project/
+├── bpmn/
+│   └── flow.bpmn                     # add tenant_id io-mapping to OCR/Layout/Extraction/
+│                                      # HumanVal tasks; tenant-derived candidateGroups
+└── camunda-workers/
+    └── src/
+        ├── workers/
+        │   ├── _http.py              # client factories accept tenant_id, set X-Tenant
+        │   ├── ocr.py                # tenant_id param threaded through
+        │   ├── layout.py
+        │   ├── extraction.py
+        │   └── validation.py
+        └── tests/
+            └── test_tenant_propagation.py   # NEW
+```
+
 ## Complexity Tracking
 
 > No constitution violations require justification.

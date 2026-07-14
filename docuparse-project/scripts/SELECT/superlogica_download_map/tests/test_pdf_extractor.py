@@ -128,6 +128,36 @@ def test_linkless_neighbor_row_does_not_contaminate():
     assert "Construção" not in raw and "OBRA" not in raw  # sem vazamento da linha vizinha
 
 
+def _build_pdf_with_offset_category() -> bytes:
+    """Reproduz os PDFs 'CONTAS A PAGAR': os valores da Categoria começam à
+    ESQUERDA da palavra de cabeçalho 'Categoria'. Com faixas fixas, o começo do
+    valor ('Manut.') caía em Fornecedor e a categoria virava o fragmento
+    'de Bombas'. A atribuição por proximidade (nearest-anchor) corrige isso."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    for x, text in [(50, "Vencimento"), (150, "Fornecedor"), (300, "Categoria - Complemento"),
+                    (480, "Compet."), (560, "Valor")]:
+        page.insert_text((x, 100), text, fontsize=10)
+    # valor da categoria começa em x=270 — à ESQUERDA do cabeçalho 'Categoria'@300
+    page.insert_text((50, 130), "26/05/2026", fontsize=10)
+    page.insert_text((150, 130), "BOMBAS LTDA", fontsize=10)
+    page.insert_text((270, 130), "Manut. de Bombas - SUBSTITUIÇAO", fontsize=10)
+    page.insert_text((480, 130), "05/2026", fontsize=10)
+    page.insert_text((560, 130), "256,00", fontsize=10)
+    page.insert_link(
+        {"kind": pymupdf.LINK_URI, "from": pymupdf.Rect(150, 122, 260, 135), "uri": _URI}
+    )
+    return doc.tobytes()
+
+
+def test_offset_category_values_are_not_fragmented():
+    link = extract_links_from_pdf(_build_pdf_with_offset_category(), "contas.pdf")[0]
+    categoria, _complemento = split_categoria_complemento(link.categoria_complemento_raw)
+    assert categoria == "Manut. de Bombas"  # não vira o fragmento "de Bombas"
+    assert categorize(categoria) == "Manutenções"
+    assert "BOMBAS LTDA" in link.fornecedor  # fornecedor permanece intacto
+
+
 def test_corrupt_pdf_raises():
     with pytest.raises(pymupdf.FileDataError):
         extract_links_from_pdf(b"not a pdf", "broken.pdf")

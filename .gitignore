@@ -252,3 +252,7 @@ tasks/
 .taskmaster/
 .sixth/
 docuparse-project/frontend/node_modules
+
+# --- Fase A (spec 012) OAuth secrets/state (defense in depth; downloads/ already ignored) ---
+credentials.json
+token.json

@@ -27,8 +27,8 @@ from superlogica_download_map.sanitize import sanitize
 from superlogica_download_map.superlogica import (
     SuperlogicaError,
     fallback_filename,
-    fetch_page,
     parse_download_anchors,
+    resolve_hyperlink,
 )
 
 if TYPE_CHECKING:
@@ -96,15 +96,21 @@ def _process_link(link, config, session, writer, report, summary, verbose) -> No
         report.add("E-12", origem, "cruzamento de baixa confiança", "revisar cruzamento")
 
     try:
-        html = fetch_page(link.hyperlink_origem, config, session=session)
+        resolved = resolve_hyperlink(link.hyperlink_origem, config, session=session)
     except SuperlogicaError as exc:
         report.add("E-04", f"{origem} | {link.hyperlink_origem}", str(exc), "pulado")
         return
 
-    anchors = parse_download_anchors(html)
-    if not anchors:
-        report.add("E-05", f"{origem} | {link.hyperlink_origem}", "página sem âncoras", "pulado")
-        return
+    if resolved.kind == "file":
+        # Despesa de anexo único: a própria URL entrega o PDF direto (corrige E-05).
+        anchors = [(resolved.url, resolved.filename)]
+    else:
+        anchors = parse_download_anchors(resolved.text)
+        if not anchors:
+            report.add(
+                "E-05", f"{origem} | {link.hyperlink_origem}", "página sem âncoras", "pulado"
+            )
+            return
 
     _ensure_folder(config, pasta)
     for url_download, nome in anchors:

@@ -8,8 +8,8 @@ from superlogica_download_map.config import build_config
 from superlogica_download_map.superlogica import (
     SuperlogicaError,
     fallback_filename,
-    fetch_page,
     parse_download_anchors,
+    resolve_hyperlink,
 )
 
 _FIXTURE = pathlib.Path(__file__).parent / "fixtures" / "superlogica_page.html"
@@ -55,9 +55,18 @@ def test_fallback_filename_from_supplier_and_url_id():
 
 
 class _Resp:
-    def __init__(self, status_code: int, text: str = ""):
+    def __init__(self, status_code: int, text: str = "", content_type: str = "text/html",
+                 disposition: str = ""):
         self.status_code = status_code
         self.text = text
+        self.headers = {}
+        if content_type:
+            self.headers["Content-Type"] = content_type
+        if disposition:
+            self.headers["Content-Disposition"] = disposition
+
+    def close(self):
+        pass
 
 
 class _Session:
@@ -67,7 +76,7 @@ class _Session:
         self._responses = list(responses)
         self.calls = 0
 
-    def get(self, url, timeout=None):
+    def get(self, url, timeout=None, stream=False):
         item = self._responses[min(self.calls, len(self._responses) - 1)]
         self.calls += 1
         if isinstance(item, Exception):
@@ -81,27 +90,42 @@ def _cfg(tmp_path):
 
 def test_retries_then_succeeds(tmp_path):
     sess = _Session([_Resp(500), _Resp(200, "<html>ok</html>")])
-    out = fetch_page("http://x", _cfg(tmp_path), session=sess, sleep=lambda *_: None)
-    assert out == "<html>ok</html>"
+    out = resolve_hyperlink("http://x", _cfg(tmp_path), session=sess, sleep=lambda *_: None)
+    assert out.kind == "html"
+    assert out.text == "<html>ok</html>"
     assert sess.calls == 2
 
 
 def test_no_retry_on_404(tmp_path):
     sess = _Session([_Resp(404)])
     with pytest.raises(SuperlogicaError):
-        fetch_page("http://x", _cfg(tmp_path), session=sess, sleep=lambda *_: None)
+        resolve_hyperlink("http://x", _cfg(tmp_path), session=sess, sleep=lambda *_: None)
     assert sess.calls == 1  # 404 não é retentado
 
 
 def test_exhausts_retries_on_429(tmp_path):
     sess = _Session([_Resp(429), _Resp(429), _Resp(429)])
     with pytest.raises(SuperlogicaError):
-        fetch_page("http://x", _cfg(tmp_path), session=sess, sleep=lambda *_: None)
+        resolve_hyperlink("http://x", _cfg(tmp_path), session=sess, sleep=lambda *_: None)
     assert sess.calls == 3  # http_retries padrão
 
 
 def test_network_error_then_success(tmp_path):
     sess = _Session([RuntimeError("conexão caiu"), _Resp(200, "ok")])
-    out = fetch_page("http://x", _cfg(tmp_path), session=sess, sleep=lambda *_: None)
-    assert out == "ok"
+    out = resolve_hyperlink("http://x", _cfg(tmp_path), session=sess, sleep=lambda *_: None)
+    assert out.kind == "html"
+    assert out.text == "ok"
     assert sess.calls == 2
+
+
+def test_resolves_direct_pdf_with_real_filename(tmp_path):
+    # Despesa de anexo único: o endpoint devolve o PDF direto (antes era falso E-05).
+    sess = _Session(
+        [_Resp(200, content_type="application/pdf",
+               disposition='inline; filename="elevador avis.pdf"')]
+    )
+    out = resolve_hyperlink("http://x/arquivos?id=1", _cfg(tmp_path), session=sess,
+                            sleep=lambda *_: None)
+    assert out.kind == "file"
+    assert out.url == "http://x/arquivos?id=1"
+    assert out.filename == "elevador avis.pdf"

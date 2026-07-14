@@ -1,8 +1,8 @@
 """Integração do pipeline completo (Drive + HTTP mockados). Valida US1–US4.
 
-Não toca rede nem o Drive real: ``list_pdfs``/``download_pdf_bytes``/``fetch_page``
-são substituídos; a extração de PDF usa um PDF sintético e a raspagem usa a
-fixture HTML real.
+Não toca rede nem o Drive real: ``list_pdfs``/``download_pdf_bytes``/
+``resolve_hyperlink`` são substituídos; a extração de PDF usa um PDF sintético e a
+raspagem usa a fixture HTML real.
 """
 
 import csv
@@ -14,6 +14,7 @@ import pytest
 from superlogica_download_map import pipeline
 from superlogica_download_map.config import build_config
 from superlogica_download_map.drive_reader import DrivePdf
+from superlogica_download_map.superlogica import Resolved
 
 _FIXTURE_HTML = (pathlib.Path(__file__).parent / "fixtures" / "superlogica_page.html").read_text(
     encoding="utf-8"
@@ -41,7 +42,9 @@ def _synthetic_pdf() -> bytes:
 def patched(monkeypatch):
     monkeypatch.setattr(pipeline, "list_pdfs", lambda *a, **k: [DrivePdf("id1", "despesas.pdf")])
     monkeypatch.setattr(pipeline, "download_pdf_bytes", lambda *a, **k: _synthetic_pdf())
-    monkeypatch.setattr(pipeline, "fetch_page", lambda *a, **k: _FIXTURE_HTML)
+    monkeypatch.setattr(
+        pipeline, "resolve_hyperlink", lambda *a, **k: Resolved(kind="html", text=_FIXTURE_HTML)
+    )
 
 
 def _read_map(path):
@@ -111,7 +114,7 @@ def test_fail_soft_on_broken_superlogica_page(monkeypatch, tmp_path):
     def _boom(*a, **k):
         raise SuperlogicaError("HTTP 404")
 
-    monkeypatch.setattr(pipeline, "fetch_page", _boom)
+    monkeypatch.setattr(pipeline, "resolve_hyperlink", _boom)
     config = build_config(tmp_path)
     summary = pipeline.run_full(config, service=None, sleep=lambda *_: None)
 
@@ -123,12 +126,40 @@ def test_fail_soft_on_broken_superlogica_page(monkeypatch, tmp_path):
 def test_fail_soft_on_page_without_anchors(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "list_pdfs", lambda *a, **k: [DrivePdf("id1", "despesas.pdf")])
     monkeypatch.setattr(pipeline, "download_pdf_bytes", lambda *a, **k: _synthetic_pdf())
-    monkeypatch.setattr(pipeline, "fetch_page", lambda *a, **k: "<html><body>vazio</body></html>")
+    monkeypatch.setattr(
+        pipeline,
+        "resolve_hyperlink",
+        lambda *a, **k: Resolved(kind="html", text="<html><body>vazio</body></html>"),
+    )
     config = build_config(tmp_path)
     summary = pipeline.run_full(config, service=None, sleep=lambda *_: None)
 
     assert summary["arquivos"] == 0
     assert "E-05" in _report_types(config)
+
+
+def test_run_full_maps_direct_pdf_response(monkeypatch, tmp_path):
+    # Despesa de anexo único: resolve_hyperlink devolve um arquivo direto, não galeria.
+    monkeypatch.setattr(pipeline, "list_pdfs", lambda *a, **k: [DrivePdf("id1", "despesas.pdf")])
+    monkeypatch.setattr(pipeline, "download_pdf_bytes", lambda *a, **k: _synthetic_pdf())
+    monkeypatch.setattr(
+        pipeline,
+        "resolve_hyperlink",
+        lambda *a, **k: Resolved(
+            kind="file",
+            url="https://admin345902.superlogica.net/publico/arquivos?accesskey=xyz",
+            filename="elevador avis.pdf",
+        ),
+    )
+    config = build_config(tmp_path)
+    summary = pipeline.run_full(config, service=None, sleep=lambda *_: None)
+
+    assert summary["arquivos"] == 1  # 1 arquivo direto → 1 linha (não vira E-05)
+    rows = _read_map(config.map_path)
+    assert len(rows) == 1
+    assert rows[0]["nome_arquivo"] == "elevador avis.pdf"
+    assert "arquivos?accesskey=xyz" in rows[0]["url_download"]
+    assert "E-05" not in _report_types(config)
 
 
 def test_fail_soft_on_unreadable_pdf_continues(monkeypatch, tmp_path):

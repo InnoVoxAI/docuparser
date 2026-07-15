@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from users.models import Permission, Role
 from users.management.commands.seed_permissions import PERMISSIONS
@@ -28,11 +28,15 @@ class Command(BaseCommand):
         self.stdout.write("seed_data: admin role ready")
 
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@docuparse.com")
-        admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+        admin_password = os.environ.get("ADMIN_PASSWORD")
+        if not admin_password:
+            raise CommandError("ADMIN_PASSWORD must be set in the environment.")
 
         # ── Ensure default tenant exists ──────────────────────────────────────
-        default_slug = os.environ.get("DEFAULT_TENANT_SLUG", "demo")
-        default_name = os.environ.get("DEFAULT_TENANT_NAME", "Demo Company")
+        default_slug = os.environ.get("DEFAULT_TENANT_SLUG")
+        default_name = os.environ.get("DEFAULT_TENANT_NAME")
+        if not default_slug or not default_name:
+            raise CommandError("DEFAULT_TENANT_SLUG and DEFAULT_TENANT_NAME must be set in the environment.")
         tenant, tenant_created = Tenant.objects.get_or_create(
             slug=default_slug,
             defaults={

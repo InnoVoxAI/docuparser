@@ -22,6 +22,24 @@ def _provision_tenant(data: dict) -> tuple[Tenant | None, Response | None]:
     from tenants.models import UserProfile
 
     slug = data["slug"]
+
+    # ADMIN_PASSWORD has no fallback: seeding a new tenant admin with a hardcoded
+    # password would leave a known credential in place until someone remembers to
+    # change it. Fail loudly instead so the deploy is forced to configure it.
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    if not admin_password:
+        return None, Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "ADMIN_PASSWORD_NOT_CONFIGURED",
+                    "detail": "ADMIN_PASSWORD must be set in the environment to provision a tenant admin.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
     try:
         with transaction.atomic():
             tenant = Tenant(slug=slug, name=data["name"], schema_name=f"tenant_{slug}", is_active=True)
@@ -38,7 +56,6 @@ def _provision_tenant(data: dict) -> tuple[Tenant | None, Response | None]:
 
     # Seed a default admin user for the new tenant using the same credentials
     # convention as seed_data: admin@<slug>.<ADMIN_EMAIL domain>.
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     tenant_admin_email = f"admin@{slug}"
 
     User = get_user_model()

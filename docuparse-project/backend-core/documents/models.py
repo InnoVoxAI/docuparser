@@ -11,6 +11,14 @@ from django.utils import timezone
 SETTINGS_SINGLETON_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
+def default_openrouter_fallback_model() -> str:
+    return settings.OPENROUTER_FALLBACK_MODEL
+
+
+def default_email_webhook_url() -> str:
+    return settings.EMAIL_WEBHOOK_URL
+
+
 class TimeStampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -216,7 +224,7 @@ class OCRSettings(TimeStampedModel):
     )
     openrouter_model = models.CharField(max_length=255, blank=True)
     openrouter_fallback_model = models.CharField(
-        max_length=255, default="qwen/qwen2.5-vl-72b-instruct"
+        max_length=255, default=default_openrouter_fallback_model
     )
     timeout_seconds = models.PositiveIntegerField(default=120)
     retry_empty_text_enabled = models.BooleanField(default=True)
@@ -235,9 +243,7 @@ class EmailSettings(TimeStampedModel):
     imap_host = models.CharField(max_length=255, blank=True)
     imap_port = models.PositiveIntegerField(default=993)
     username = models.CharField(max_length=255, blank=True)
-    webhook_url = models.CharField(
-        max_length=1024, default="http://127.0.0.1:8070/api/v1/email/messages"
-    )
+    webhook_url = models.CharField(max_length=1024, default=default_email_webhook_url)
     accepted_content_types = models.CharField(
         max_length=1024,
         default="application/pdf,image/jpeg,image/png,image/tiff,image/webp",

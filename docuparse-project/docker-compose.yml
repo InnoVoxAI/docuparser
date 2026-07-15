@@ -130,6 +130,11 @@ services:
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_AUTO_PROCESS_OCR: ${DOCUPARSE_AUTO_PROCESS_OCR:-true}
+      OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-qwen/qwen2.5-vl-72b-instruct}
+      # Sem default: seed_data recusa a subir sem uma senha de admin explícita.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD no .env (copie de .env.example)}
+      DEFAULT_TENANT_SLUG: ${DEFAULT_TENANT_SLUG:?defina DEFAULT_TENANT_SLUG no .env (copie de .env.example)}
+      DEFAULT_TENANT_NAME: ${DEFAULT_TENANT_NAME:?defina DEFAULT_TENANT_NAME no .env (copie de .env.example)}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/ocr/health', timeout=2)"]
       interval: 10s

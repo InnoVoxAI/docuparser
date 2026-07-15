@@ -183,3 +183,8 @@ DOCUPARSE_APPROVED_EXPORT_DIR = os.environ.get('DOCUPARSE_APPROVED_EXPORT_DIR', 
 DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TOKEN', '').strip()
 DOCUPARSE_AUTO_PROCESS_OCR = os.environ.get('DOCUPARSE_AUTO_PROCESS_OCR', 'true').strip().lower() not in {'0', 'false', 'no'}
 DOCUPARSE_AUTO_PROCESS_EXTRACTION = os.environ.get('DOCUPARSE_AUTO_PROCESS_EXTRACTION', 'true').strip().lower() not in {'0', 'false', 'no'}
+
+# Defaults for the per-tenant OCRSettings/EmailSettings singletons (documents/models.py).
+# Configurable via env so a fallback model/URL isn't baked into the model definition itself.
+OPENROUTER_FALLBACK_MODEL = os.environ.get('OPENROUTER_FALLBACK_MODEL', 'qwen/qwen2.5-vl-72b-instruct')
+EMAIL_WEBHOOK_URL = os.environ.get('EMAIL_WEBHOOK_URL', 'http://127.0.0.1:8070/api/v1/email/messages')

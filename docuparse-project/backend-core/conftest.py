@@ -25,8 +25,16 @@ def pytest_collection_modifyitems(
             item.add_marker(skip_marker)
 
 
-def pytest_configure_markers(config: pytest.Config) -> None:
-    config.addinivalue_line(
-        "markers",
-        "tenant_db: marks tests that require a real PostgreSQL database with schema support",
-    )
+@pytest.fixture(autouse=True)
+def _reset_tenant_schema():
+    """JWTTenantMiddleware calls connection.set_tenant(...) to switch the
+    session's search_path for tenant-scoped requests. Django's test runner
+    reuses the same connection across every test method (only the
+    transaction/savepoint is rolled back), so without this the schema switch
+    from one authenticated test leaks into every test that runs after it.
+    """
+    from django.db import connection
+
+    connection.set_schema_to_public()
+    yield
+    connection.set_schema_to_public()

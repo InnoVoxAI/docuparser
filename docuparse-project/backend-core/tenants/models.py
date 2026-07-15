@@ -29,6 +29,14 @@ class Tenant(TenantMixin, TimeStampedModel):
     def __str__(self) -> str:
         return self.slug
 
+    def save(self, *args: object, **kwargs: object) -> None:
+        # Same tenant_<slug> convention used by the provisioning API and by
+        # migration 0002's backfill — default it here so every creation path
+        # (including ad-hoc ones, e.g. in tests) doesn't have to repeat it.
+        if not self.schema_name:
+            self.schema_name = f"tenant_{self.slug}"
+        super().save(*args, **kwargs)
+
 
 class Domain(DomainMixin):
     pass

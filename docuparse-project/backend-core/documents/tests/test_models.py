@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
 from django.test import TestCase
 from django.utils import timezone
 
@@ -14,23 +14,17 @@ from documents.models import (
     ExtractionResult,
     LayoutConfig,
     SchemaConfig,
-    Tenant,
-    UserProfile,
     ValidationDecision,
 )
+from tenants.models import Tenant
 
 
 class CoreDomainModelTests(TestCase):
     def setUp(self) -> None:
         self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
+        connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="operator", password="test")
-        self.profile = UserProfile.objects.create(
-            tenant=self.tenant,
-            user=self.user,
-            role=UserProfile.Role.OPERATOR,
-        )
         self.document = Document.objects.create(
-            tenant=self.tenant,
             channel="manual",
             file_uri="local://documents/tenant-demo/doc/original",
             original_filename="fixture.pdf",
@@ -49,7 +43,6 @@ class CoreDomainModelTests(TestCase):
         payload = {"event_type": "document.received"}
         DocumentEvent.objects.create(
             event_id=event_id,
-            tenant=self.tenant,
             document=self.document,
             event_type="document.received",
             correlation_id=self.document.correlation_id,
@@ -61,7 +54,6 @@ class CoreDomainModelTests(TestCase):
         with self.assertRaises(IntegrityError):
             DocumentEvent.objects.create(
                 event_id=event_id,
-                tenant=self.tenant,
                 document=self.document,
                 event_type="document.received",
                 correlation_id=self.document.correlation_id,
@@ -88,7 +80,7 @@ class CoreDomainModelTests(TestCase):
         attempt = ERPIntegrationAttempt.objects.create(
             document=self.document,
             connector="mock",
-            idempotency_key=f"{self.tenant.slug}:{self.document.id}:v1",
+            idempotency_key=f"{self.document.id}:v1",
             request_payload={"valor": "R$ 123,45"},
         )
 
@@ -96,15 +88,13 @@ class CoreDomainModelTests(TestCase):
         assert self.document.validation_decisions.get() == decision
         assert self.document.erp_attempts.get() == attempt
 
-    def test_schema_and_layout_config_are_unique_per_tenant(self) -> None:
+    def test_schema_and_layout_config_are_unique(self) -> None:
         schema = SchemaConfig.objects.create(
-            tenant=self.tenant,
             schema_id="boleto",
             version="v1",
             definition={"fields": ["valor"]},
         )
         LayoutConfig.objects.create(
-            tenant=self.tenant,
             layout="boleto_bb",
             document_type="scanned_image",
             schema_config=schema,
@@ -112,7 +102,6 @@ class CoreDomainModelTests(TestCase):
 
         with self.assertRaises(IntegrityError):
             LayoutConfig.objects.create(
-                tenant=self.tenant,
                 layout="boleto_bb",
                 document_type="scanned_image",
                 schema_config=schema,

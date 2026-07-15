@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from django.db import connection
 from django.test import TestCase
 
 from documents.models import Document, DocumentEvent, ERPIntegrationAttempt, ExtractionResult
@@ -18,6 +19,14 @@ from documents.services.event_consumers import (
 
 
 class CoreEventConsumerTests(TestCase):
+    def setUp(self) -> None:
+        # consume_document_received doesn't create a Tenant itself — the
+        # caller (JWTTenantMiddleware, in production) is expected to have
+        # already routed the connection to the right schema before any of
+        # these consumers run.
+        self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
+        connection.set_tenant(self.tenant)
+
     def _document_received_payload(self, document_id=None, event_id=None) -> dict:
         document_id = document_id or uuid4()
         return {
@@ -51,7 +60,6 @@ class CoreEventConsumerTests(TestCase):
         second = consume_document_received(payload)
 
         assert first.id == second.id
-        assert Tenant.objects.count() == 1
         assert Document.objects.count() == 1
         assert DocumentEvent.objects.count() == 1
         assert first.status == Document.Status.RECEIVED

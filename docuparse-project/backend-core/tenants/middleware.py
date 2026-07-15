@@ -43,11 +43,21 @@ class JWTTenantMiddleware(TenantMainMiddleware):
         domain_model = get_tenant_domain_model()
         tenant = self.get_tenant(domain_model, None, request)
         request.tenant = tenant
-        connection.set_tenant(request.tenant)
-        self.setup_url_routing(request)
+        # No resolvable tenant (no credentials, or credentials that don't
+        # name one) isn't necessarily fatal here: some endpoints have no
+        # per-tenant data and gate access themselves (e.g. _internal_token_error
+        # in documents/views.py), so leave the connection on the public schema
+        # and let DRF authentication/permissions or the view's own gate decide.
+        # Credentials that DO name a tenant but it's missing/inactive still
+        # raise below, in get_tenant — that's an actionable, specific error.
+        if tenant is not None:
+            connection.set_tenant(tenant)
+            self.setup_url_routing(request)
 
-    def get_tenant(self, model: type, hostname: str | None, request: object) -> Tenant:
+    def get_tenant(self, model: type, hostname: str | None, request: object) -> Tenant | None:
         slug = self._resolve_slug(request)
+        if slug is None:
+            return None
         try:
             tenant = Tenant.objects.get(slug=slug)
         except Tenant.DoesNotExist:
@@ -56,7 +66,7 @@ class JWTTenantMiddleware(TenantMainMiddleware):
             raise PermissionDenied(f"Tenant '{slug}' is inactive.")
         return tenant
 
-    def _resolve_slug(self, request: object) -> str:
+    def _resolve_slug(self, request: object) -> str | None:
         auth_header: str = getattr(request, "META", {}).get("HTTP_AUTHORIZATION", "")
         internal_token = getattr(settings, "DOCUPARSE_INTERNAL_SERVICE_TOKEN", "").strip()
 
@@ -79,7 +89,10 @@ class JWTTenantMiddleware(TenantMainMiddleware):
             if slug:
                 return slug
 
-        raise SuspiciousOperation("No tenant context: missing JWT tenant claim or X-Tenant header.")
+        # No Authorization header at all, or one that doesn't name a tenant
+        # (e.g. not a Bearer token, or a JWT without a 'tenant' claim): not
+        # fatal on its own, see the comment in process_request.
+        return None
 
     @staticmethod
     def _slug_from_jwt(token_str: str) -> str | None:

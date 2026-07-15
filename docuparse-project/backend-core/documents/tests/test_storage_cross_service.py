@@ -5,6 +5,7 @@ content_type preservado (FR-009, SC-002).
 
 from __future__ import annotations
 
+from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
 from moto import mock_aws
@@ -12,9 +13,9 @@ from rest_framework.test import APIClient
 
 from docuparse_storage import document_original_key, get_storage
 
-from documents.models import Document, Tenant
 from documents.tests._storage_env import create_test_bucket, s3_test_env, s3_uri
-from documents.tests.test_documents_pagination import _grant_inbox_view, _make_document
+from documents.tests.test_documents_pagination import _grant_inbox_view, _jwt_for, _make_document
+from tenants.models import Tenant
 
 
 class DocumentFileContentTypeTests(TestCase):
@@ -23,11 +24,12 @@ class DocumentFileContentTypeTests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
         self.tenant = Tenant.objects.create(slug="t-ct", name="Tenant CT")
+        connection.set_tenant(self.tenant)
         from django.contrib.auth import get_user_model
 
         self.user = get_user_model().objects.create_user(username="ctop", password="x")
         _grant_inbox_view(self.user, self.tenant)
-        self.client.force_authenticate(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {_jwt_for(self.user, self.tenant)}")
 
     def test_served_content_type_matches_document(self) -> None:
         import os
@@ -36,7 +38,7 @@ class DocumentFileContentTypeTests(TestCase):
 
         from django.test import override_settings
 
-        document = _make_document(self.tenant, filename="orig.pdf")  # content_type application/pdf
+        document = _make_document(filename="orig.pdf")  # content_type application/pdf
 
         with tempfile.TemporaryDirectory() as storage_dir, mock.patch.dict(
             os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
@@ -57,12 +59,13 @@ class DocumentFileCrossServiceS3Tests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
         self.tenant = Tenant.objects.create(slug="t-x", name="Tenant Cross")
+        connection.set_tenant(self.tenant)
         from django.contrib.auth import get_user_model
 
         self.user = get_user_model().objects.create_user(username="xop", password="x")
         _grant_inbox_view(self.user, self.tenant)
-        self.client.force_authenticate(user=self.user)
-        self.document = _make_document(self.tenant, filename="orig.pdf")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {_jwt_for(self.user, self.tenant)}")
+        self.document = _make_document(filename="orig.pdf")
 
     @mock_aws
     def test_serves_file_written_by_another_service_via_s3(self) -> None:

@@ -7,24 +7,26 @@ from __future__ import annotations
 
 import os
 import tempfile
+import uuid
 from io import StringIO
 from unittest import mock
 
 from django.core.management import call_command
+from django.db import connection
 from django.test import TestCase, override_settings
 
 from docuparse_storage import get_storage
 
-from documents.models import Document, Tenant
+from documents.models import Document
+from tenants.models import Tenant
 
 
-def _new_document(tenant, storage_dir):
+def _new_document(storage_dir):
     """Cria um Document com dois objetos reais gravados no storage local."""
     storage = get_storage()
     original = storage.put_bytes("documents/t/doc/original", b"%PDF fake")
     raw = storage.put_bytes("documents/t/doc/ocr/raw_text.json", b'{"raw_text": "x"}')
     document = Document.objects.create(
-        tenant=tenant,
         channel="manual",
         file_uri=original.uri,
         raw_text_uri=raw.uri,
@@ -37,13 +39,18 @@ def _new_document(tenant, storage_dir):
 
 class DocumentDeleteCleanupTests(TestCase):
     def setUp(self) -> None:
-        self.tenant = Tenant.objects.create(slug="t-del", name="Tenant Del")
+        # A unique slug per test method: Tenant.save()'s schema creation runs
+        # its own nested migrate, which commits independently of this test's
+        # transaction rollback — reusing a slug would resurrect a schema with
+        # data left over from a previous test method.
+        self.tenant = Tenant.objects.create(slug=f"t-del-{uuid.uuid4().hex[:8]}", name="Tenant Del")
+        connection.set_tenant(self.tenant)
 
     def test_delete_removes_storage_objects(self) -> None:
         with tempfile.TemporaryDirectory() as storage_dir, mock.patch.dict(
             os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
         ), override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
-            document, storage, original, raw = _new_document(self.tenant, storage_dir)
+            document, storage, original, raw = _new_document(storage_dir)
             assert storage.exists(original.uri) is True
             assert storage.exists(raw.uri) is True
 
@@ -58,16 +65,15 @@ class DocumentDeleteCleanupTests(TestCase):
         with tempfile.TemporaryDirectory() as storage_dir, mock.patch.dict(
             os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
         ), override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
-            document = Document.objects.create(
-                tenant=self.tenant, channel="manual", file_uri="", raw_text_uri=""
-            )
+            document = Document.objects.create(channel="manual", file_uri="", raw_text_uri="")
             with self.captureOnCommitCallbacks(execute=True):
                 document.delete()  # não deve levantar
 
 
 class ReconcileStorageCommandTests(TestCase):
     def setUp(self) -> None:
-        self.tenant = Tenant.objects.create(slug="t-rec", name="Tenant Rec")
+        self.tenant = Tenant.objects.create(slug=f"t-rec-{uuid.uuid4().hex[:8]}", name="Tenant Rec")
+        connection.set_tenant(self.tenant)
 
     def test_reports_dangling_reference(self) -> None:
         """Document aponta para um objeto que não existe no storage."""
@@ -75,7 +81,6 @@ class ReconcileStorageCommandTests(TestCase):
             os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
         ), override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
             Document.objects.create(
-                tenant=self.tenant,
                 channel="manual",
                 file_uri="local://documents/t/ghost/original",  # nunca gravado
             )

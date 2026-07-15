@@ -9,22 +9,40 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from django.db import connection
 
 from docuparse_storage import LocalStorage, document_original_key
 from docuparse_events import EventMessage, LocalJsonlEventBus, publish_dead_letter
 
 from documents.models import Document, EmailSettings, ERPIntegrationAttempt, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, SETTINGS_SINGLETON_ID, ValidationDecision
 from tenants.models import Tenant, UserProfile
+from users.models import Permission, Role
+
+
+def _jwt_for(user, tenant) -> str:
+    """Real access token carrying the 'tenant' claim JWTTenantMiddleware needs
+    to route the request to the tenant's schema — force_authenticate() bypasses
+    that middleware entirely since it doesn't set any Authorization header."""
+    token = RefreshToken.for_user(user)
+    token["tenant"] = tenant.slug
+    return str(token.access_token)
 
 
 class DocumentsAPITests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
-        with patch.object(Tenant, "auto_create_schema", new=False):
-            self.tenant = Tenant.objects.create(
-                slug="tenant-demo", name="Tenant Demo", schema_name="tenant_tenant_demo"
-            )
+        self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
+        connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="operator", password="test")
+        role = Role.objects.create(name="Operador")
+        role.permissions.set([
+            Permission.objects.create(code="inbox.view", description="Inbox view"),
+            Permission.objects.create(code="documents.validate", description="Validate"),
+        ])
+        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {_jwt_for(self.user, self.tenant)}")
         self.document = Document.objects.create(
             status=Document.Status.VALIDATION_PENDING,
             channel="manual",
@@ -39,7 +57,7 @@ class DocumentsAPITests(TestCase):
         detail = self.client.get(reverse("document-detail", args=[self.document.id]))
 
         assert inbox.status_code == 200
-        assert inbox.json()[0]["id"] == str(self.document.id)
+        assert inbox.json()["results"][0]["id"] == str(self.document.id)
         assert detail.status_code == 200
         assert detail.json()["file_uri"] == self.document.file_uri
 
@@ -117,16 +135,7 @@ class DocumentsAPITests(TestCase):
 
     def test_document_file_endpoint_serves_original_file(self) -> None:
         # feature 009: o endpoint passou a exigir JWT do usuário com permissão
-        # "inbox.view" (ou token interno). Autentica o usuário com a permissão.
-        from users.models import Permission, Role
-        # UserProfile already imported from tenants.models
-
-        permission = Permission.objects.create(code="inbox.view", description="Inbox view")
-        role = Role.objects.create(name="Operador")
-        role.permissions.add(permission)
-        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
-        self.client.force_authenticate(user=self.user)
-
+        # "inbox.view" (ou token interno) — self.user already has it via setUp.
         with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
             os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
         ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
@@ -232,8 +241,13 @@ class DocumentsAPITests(TestCase):
 
     def test_operational_api_requires_internal_token_when_configured(self) -> None:
         with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN="secret"):
+            self.client.credentials()  # clear the JWT set in setUp: genuinely no credentials
             rejected = self.client.get(reverse("documents-inbox"))
-            accepted = self.client.get(reverse("documents-inbox"), HTTP_AUTHORIZATION="Bearer secret")
+            accepted = self.client.get(
+                reverse("documents-inbox"),
+                HTTP_AUTHORIZATION="Bearer secret",
+                HTTP_X_TENANT=self.tenant.slug,
+            )
 
         assert rejected.status_code == 401
         assert accepted.status_code == 200
@@ -536,7 +550,7 @@ class DocumentsAPITests(TestCase):
         response = self.client.get(reverse("documents-inbox"))
 
         assert response.status_code == 200
-        doc_data = next((d for d in response.json() if d["id"] == str(self.document.id)), None)
+        doc_data = next((d for d in response.json()["results"] if d["id"] == str(self.document.id)), None)
         assert doc_data is not None
         assert doc_data["rejection_notes"] == "Valor total divergente."
 
@@ -549,7 +563,7 @@ class DocumentsAPITests(TestCase):
             size_bytes=512,
         )
         response2 = self.client.get(reverse("documents-inbox"))
-        doc2_data = next((d for d in response2.json() if d["id"] == str(doc_no_rejection.id)), None)
+        doc2_data = next((d for d in response2.json()["results"] if d["id"] == str(doc_no_rejection.id)), None)
         assert doc2_data is not None
         assert doc2_data["rejection_notes"] is None
 
@@ -568,12 +582,15 @@ class InternalServiceTokenGateTests(TestCase):
 
     def setUp(self) -> None:
         self.client = APIClient()
+        self.tenant = Tenant.objects.create(slug="tenant-gate", name="Tenant Gate")
+        connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="op", password="x")
+        self.jwt = _jwt_for(self.user, self.tenant)
 
     def test_token_configured_accepts_authenticated_user_jwt(self) -> None:
         # Cenário staging: token configurado + usuário logado -> 200 (era 401).
         with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
-            self.client.force_authenticate(user=self.user)
+            self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.jwt}")
             response = self.client.get(reverse("schema-configs"))
         assert response.status_code == 200
 
@@ -581,7 +598,9 @@ class InternalServiceTokenGateTests(TestCase):
         # Caller serviço↔serviço (ex.: langextract) com o token interno -> 200.
         with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
             response = self.client.get(
-                reverse("schema-configs"), HTTP_AUTHORIZATION=f"Bearer {self.TOKEN}"
+                reverse("schema-configs"),
+                HTTP_AUTHORIZATION=f"Bearer {self.TOKEN}",
+                HTTP_X_TENANT=self.tenant.slug,
             )
         assert response.status_code == 200
 
@@ -600,7 +619,10 @@ class InternalServiceTokenGateTests(TestCase):
         assert response.status_code == 401
 
     def test_token_not_configured_keeps_access_open(self) -> None:
-        # Localhost/dev: sem token -> acesso aberto (comportamento histórico).
+        # Localhost/dev: sem token interno configurado, qualquer JWT válido
+        # basta (não precisa bater com nenhum token de serviço) — o tenant
+        # ainda precisa ser identificado para rotear a query à schema certa.
         with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=""):
+            self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.jwt}")
             response = self.client.get(reverse("schema-configs"))
         assert response.status_code == 200

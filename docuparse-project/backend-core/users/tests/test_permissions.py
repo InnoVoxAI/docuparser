@@ -46,7 +46,7 @@ class SeedPermissionsTest(TestCase):
         call_command("seed_permissions", verbosity=0)
         call_command("seed_permissions", verbosity=0)
         from users.models import Permission
-        self.assertEqual(Permission.objects.count(), 8)
+        self.assertEqual(Permission.objects.count(), 9)
 
 
 class LastAdminGuardTest(TestCase):

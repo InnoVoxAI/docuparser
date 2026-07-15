@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from documents.models import (
-    Document,
-    ExtractionFieldVersion,
-    ExtractionResult,
-    Tenant,
-    UserProfile,
-)
+from documents.models import Document, ExtractionFieldVersion, ExtractionResult
 from documents.services import field_versioning as fv
+from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
 
 
@@ -25,16 +22,22 @@ def _grant_validation(user, tenant):
     UserProfile.objects.create(user=user, tenant=tenant, role_ref=role)
 
 
+def _jwt_for(user, tenant) -> str:
+    token = RefreshToken.for_user(user)
+    token["tenant"] = tenant.slug
+    return str(token.access_token)
+
+
 class FieldVersionsApiTests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
         self.tenant = Tenant.objects.create(slug="t-api", name="Tenant API")
+        connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="val", password="x")
         _grant_validation(self.user, self.tenant)
-        self.client.force_authenticate(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {_jwt_for(self.user, self.tenant)}")
 
         self.document = Document.objects.create(
-            tenant=self.tenant,
             status=Document.Status.EXTRACTION_COMPLETED,
             channel="manual",
             file_uri="local://doc",

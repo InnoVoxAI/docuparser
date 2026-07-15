@@ -7,13 +7,21 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 
+# This test exercises the full local pipeline across backend-core and
+# backend-com, so it needs backend-com/src on sys.path. That only exists when
+# running against a full monorepo checkout — the backend-core Docker image
+# only contains its own service code — so skip cleanly instead of failing
+# collection when the sibling service isn't available.
 PROJECT_DIR = Path(__file__).resolve().parents[3]
 BACKEND_COM_SRC = PROJECT_DIR / "backend-com" / "src"
+if not BACKEND_COM_SRC.is_dir():
+    pytest.skip(f"backend-com/src not found at {BACKEND_COM_SRC}; run from a full monorepo checkout", allow_module_level=True)
 if str(BACKEND_COM_SRC) not in sys.path:
     sys.path.insert(0, str(BACKEND_COM_SRC))
 

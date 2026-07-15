@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
 
 from documents.models import Document, ExtractionFieldVersion, ExtractionResult
@@ -13,9 +14,9 @@ from documents.services import field_versioning as fv
 class FieldVersioningServiceTests(TestCase):
     def setUp(self) -> None:
         self.tenant = Tenant.objects.create(slug="t-fv", name="Tenant FV")
+        connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="editor", password="x")
         self.document = Document.objects.create(
-            tenant=self.tenant,
             status=Document.Status.EXTRACTION_COMPLETED,
             channel="manual",
             file_uri="local://doc",

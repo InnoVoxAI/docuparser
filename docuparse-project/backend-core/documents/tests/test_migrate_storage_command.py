@@ -8,25 +8,27 @@ from io import StringIO
 
 import boto3
 from django.core.management import call_command
+from django.db import connection
 from django.test import TestCase, override_settings
 from moto import mock_aws
 
 from docuparse_storage import LocalStorage
 
-from documents.models import Document, Tenant
+from documents.models import Document
 from documents.tests._storage_env import create_test_bucket, s3_bucket, s3_region, s3_test_env, s3_uri
+from tenants.models import Tenant
 
 
 class MigrateStorageCommandTests(TestCase):
     def setUp(self) -> None:
         self.tenant = Tenant.objects.create(slug="t-mig", name="Tenant Mig")
+        connection.set_tenant(self.tenant)
 
     def _seed_local_document(self, storage_dir):
         local = LocalStorage(storage_dir)
         original = local.put_bytes("documents/t/doc/original", b"%PDF fake")
         raw = local.put_bytes("documents/t/doc/ocr/raw_text.json", b'{"raw_text": "x"}')
         doc = Document.objects.create(
-            tenant=self.tenant,
             channel="manual",
             file_uri=original.uri,
             raw_text_uri=raw.uri,
@@ -61,7 +63,6 @@ class MigrateStorageCommandTests(TestCase):
         ), mock_aws(), s3_test_env():
             create_test_bucket()
             doc = Document.objects.create(
-                tenant=self.tenant,
                 channel="manual",
                 file_uri="local://documents/t/ghost/original",  # arquivo nunca gravado
             )

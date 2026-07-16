@@ -44,6 +44,17 @@ def login_view(request: Request) -> Response:
 
     user = serializer.validated_data["user"]
     refresh = RefreshToken.for_user(user)
+    try:
+        from tenants.models import UserProfile
+        profile = UserProfile.objects.select_related("tenant").get(user=user)
+        if not profile.tenant.is_active:
+            return Response(
+                {"detail": "Tenant inativo. Contate o administrador."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        refresh["tenant"] = profile.tenant.slug
+    except UserProfile.DoesNotExist:
+        pass
     return Response(
         {
             "access": str(refresh.access_token),
@@ -98,10 +109,17 @@ def register_view(request: Request) -> Response:
         first_name=data["name"],
         is_active=False,
     )
-    from documents.models import Tenant, UserProfile
-    tenant = Tenant.objects.first()
-    if tenant:
-        UserProfile.objects.create(user=user, tenant=tenant, role_ref=None)
+    from tenants.models import Tenant, UserProfile
+    tenant_slug = data.get("tenant_slug", "").strip()
+    try:
+        tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+    except Tenant.DoesNotExist:
+        user.delete()
+        return Response(
+            {"detail": f"Código de tenant '{tenant_slug}' inválido ou inativo."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    UserProfile.objects.create(user=user, tenant=tenant, role_ref=None)
 
     return Response(
         {

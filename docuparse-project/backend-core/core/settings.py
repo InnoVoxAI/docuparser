@@ -17,19 +17,31 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
-INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
+SHARED_APPS = [
+    'django_tenants',
     'django.contrib.contenttypes',
+    'django.contrib.auth',
+    'django.contrib.admin',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
+    'tenants',
     'corsheaders',
-    'documents',
     'users',
 ]
+
+TENANT_APPS = [
+    'documents',
+]
+
+INSTALLED_APPS = list(SHARED_APPS) + list(TENANT_APPS)
+
+TENANT_MODEL = 'tenants.Tenant'
+TENANT_DOMAIN_MODEL = 'tenants.Domain'
+
+DATABASE_ROUTERS = ['django_tenants.routers.TenantSyncRouter']
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -51,6 +63,7 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', 'https://docuparser.innovox.ai').split(',') if o.strip()]
 
 MIDDLEWARE = [
+    'tenants.middleware.JWTTenantMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -101,7 +114,7 @@ if _database_url:
         raise ImproperlyConfigured(f"Unsupported DATABASE_URL scheme: {_parsed.scheme!r} (expected postgres://)")
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.postgresql',
+            'ENGINE': 'django_tenants.postgresql_backend',
             'NAME': (_parsed.path or '/docuparse').lstrip('/') or 'docuparse',
             'USER': unquote(_parsed.username or ''),
             'PASSWORD': unquote(_parsed.password or ''),
@@ -112,7 +125,7 @@ if _database_url:
 elif os.environ.get("POSTGRES_HOST"):
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.postgresql',
+            'ENGINE': 'django_tenants.postgresql_backend',
             'NAME': os.environ.get('POSTGRES_DB', 'docuparse'),
             'USER': os.environ.get('POSTGRES_USER', 'docuparse'),
             'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'docuparse'),
@@ -170,3 +183,8 @@ DOCUPARSE_APPROVED_EXPORT_DIR = os.environ.get('DOCUPARSE_APPROVED_EXPORT_DIR', 
 DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TOKEN', '').strip()
 DOCUPARSE_AUTO_PROCESS_OCR = os.environ.get('DOCUPARSE_AUTO_PROCESS_OCR', 'true').strip().lower() not in {'0', 'false', 'no'}
 DOCUPARSE_AUTO_PROCESS_EXTRACTION = os.environ.get('DOCUPARSE_AUTO_PROCESS_EXTRACTION', 'true').strip().lower() not in {'0', 'false', 'no'}
+
+# Defaults for the per-tenant OCRSettings/EmailSettings singletons (documents/models.py).
+# Configurable via env so a fallback model/URL isn't baked into the model definition itself.
+OPENROUTER_FALLBACK_MODEL = os.environ.get('OPENROUTER_FALLBACK_MODEL', 'qwen/qwen2.5-vl-72b-instruct')
+EMAIL_WEBHOOK_URL = os.environ.get('EMAIL_WEBHOOK_URL', 'http://127.0.0.1:8070/api/v1/email/messages')

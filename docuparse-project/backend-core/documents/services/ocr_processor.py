@@ -17,8 +17,13 @@ from documents.services.langextract_client import LangExtractClient
 logger = logging.getLogger(__name__)
 
 
-def process_document_ocr(document_id) -> Document:
-    document = Document.objects.select_related("tenant").get(id=document_id)
+def process_document_ocr(document_id, tenant_slug: str | None = None) -> Document:
+    from django.db import connection as _conn
+    document = Document.objects.get(id=document_id)
+    if not tenant_slug:
+        # Fallback: derive from schema name when called directly (e.g. tests, management commands)
+        schema_name = _conn.schema_name or "public"
+        tenant_slug = schema_name.removeprefix("tenant_") if schema_name != "public" else "public"
     content = get_storage().get_bytes(document.file_uri)
     result = OCRClient().process_document(
         BytesIO(content),
@@ -50,7 +55,7 @@ def process_document_ocr(document_id) -> Document:
         "processed_at": timezone.now().isoformat(),
     }
     stored = get_storage().put_bytes(
-        document_ocr_raw_text_key(document.tenant.slug, str(document.id)),
+        document_ocr_raw_text_key(tenant_slug, str(document.id)),
         json.dumps(raw_text_payload, ensure_ascii=False).encode("utf-8"),
     )
 
@@ -257,7 +262,7 @@ def _resolve_schema_for_extraction(document: Document, raw_text: str) -> SchemaC
     """
     if document.layout:
         cfg = (
-            LayoutConfig.objects.filter(layout=document.layout, tenant=document.tenant, is_active=True)
+            LayoutConfig.objects.filter(layout=document.layout, is_active=True)
             .select_related("schema_config")
             .first()
         )
@@ -272,7 +277,7 @@ def _resolve_schema_for_extraction(document: Document, raw_text: str) -> SchemaC
 
     if document.document_type:
         cfg = (
-            LayoutConfig.objects.filter(document_type=document.document_type, tenant=document.tenant, is_active=True)
+            LayoutConfig.objects.filter(document_type=document.document_type, is_active=True)
             .select_related("schema_config")
             .first()
         )

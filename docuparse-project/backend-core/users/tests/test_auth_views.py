@@ -4,14 +4,19 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from documents.models import Tenant, UserProfile
+from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
+from unittest.mock import patch
 
 User = get_user_model()
 
 
 def _make_tenant() -> Tenant:
-    return Tenant.objects.get_or_create(slug="test", defaults={"name": "Test"})[0]
+    with patch.object(Tenant, "auto_create_schema", new=False):
+        tenant, _ = Tenant.objects.get_or_create(
+            slug="test", defaults={"name": "Test", "schema_name": "tenant_test"}
+        )
+    return tenant
 
 
 def _make_role(name: str = "Admin", codes: list[str] | None = None) -> Role:

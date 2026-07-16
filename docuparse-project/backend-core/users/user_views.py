@@ -17,7 +17,7 @@ User = get_user_model()
 
 def last_admin_guard(user_id: int) -> bool:
     """Return True (guard triggered) if deactivating user_id leaves zero active admins."""
-    from documents.models import UserProfile
+    from tenants.models import UserProfile
     admins_after = (
         UserProfile.objects.filter(
             user__is_active=True,
@@ -36,14 +36,13 @@ def last_admin_guard(user_id: int) -> bool:
 @permission_classes([require_permission("users.manage")])
 def users_list_create_view(request: Request) -> Response:
     if request.method == "GET":
-        from documents.models import UserProfile
-        users = (
-            User.objects
-            .select_related("docuparse_profile__role_ref")
-            .prefetch_related("docuparse_profile__role_ref__permissions")
-            .order_by("first_name", "username")
+        tenant = getattr(request, "tenant", None)
+        qs = User.objects.select_related("docuparse_profile__role_ref").prefetch_related(
+            "docuparse_profile__role_ref__permissions"
         )
-        return Response(UserListSerializer(users, many=True).data)
+        if tenant is not None:
+            qs = qs.filter(docuparse_profile__tenant=tenant)
+        return Response(UserListSerializer(qs.order_by("first_name", "username"), many=True).data)
 
     serializer = UserCreateSerializer(data=request.data)
     if not serializer.is_valid():

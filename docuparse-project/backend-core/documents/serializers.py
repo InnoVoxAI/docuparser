@@ -135,7 +135,6 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "active_field_version_number",
-            "tenant_id",
             "status",
             "channel",
             "file_uri",
@@ -210,7 +209,6 @@ class IntegrationSettingsSerializer(serializers.ModelSerializer):
         model = IntegrationSettings
         fields = [
             "id",
-            "tenant_id",
             "approved_export_enabled",
             "approved_export_dir",
             "approved_export_format",
@@ -219,7 +217,7 @@ class IntegrationSettingsSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "tenant_id", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class OCRSettingsSerializer(serializers.ModelSerializer):
@@ -227,7 +225,6 @@ class OCRSettingsSerializer(serializers.ModelSerializer):
         model = OCRSettings
         fields = [
             "id",
-            "tenant_id",
             "digital_pdf_engine",
             "scanned_image_engine",
             "handwritten_engine",
@@ -240,7 +237,7 @@ class OCRSettingsSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "tenant_id", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class EmailSettingsSerializer(serializers.ModelSerializer):
@@ -248,7 +245,6 @@ class EmailSettingsSerializer(serializers.ModelSerializer):
         model = EmailSettings
         fields = [
             "id",
-            "tenant_id",
             "provider",
             "inbox_folder",
             "imap_host",
@@ -262,7 +258,7 @@ class EmailSettingsSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "tenant_id", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class SchemaConfigSerializer(serializers.ModelSerializer):
@@ -270,7 +266,6 @@ class SchemaConfigSerializer(serializers.ModelSerializer):
         model = SchemaConfig
         fields = [
             "id",
-            "tenant_id",
             "schema_id",
             "version",
             "definition",
@@ -291,7 +286,6 @@ class LayoutConfigSerializer(serializers.ModelSerializer):
         model = LayoutConfig
         fields = [
             "id",
-            "tenant_id",
             "layout",
             "document_type",
             "schema_config_id",

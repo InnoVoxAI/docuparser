@@ -2,25 +2,22 @@ from __future__ import annotations
 
 import os
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from users.models import Permission, Role
 from users.management.commands.seed_permissions import PERMISSIONS
 
 
 class Command(BaseCommand):
-    help = "Seed default tenant, permissions, admin role, and admin user (idempotent)"
+    help = "Seed permissions, admin role, admin user, and per-tenant defaults (idempotent)"
 
     def handle(self, *args: object, **options: object) -> None:
-        from documents.models import Tenant, UserProfile
+        from tenants.models import Tenant, UserProfile
         from django.contrib.auth import get_user_model
 
         User = get_user_model()
 
-        tenant, created = Tenant.objects.get_or_create(name="default")
-        if created:
-            self.stdout.write("seed_data: created default tenant")
-
+        # ── Public schema: permissions, role, admin user ──────────────────────
         for code, description in PERMISSIONS:
             Permission.objects.get_or_create(code=code, defaults={"description": description})
         self.stdout.write("seed_data: permissions ready")
@@ -31,26 +28,56 @@ class Command(BaseCommand):
         self.stdout.write("seed_data: admin role ready")
 
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@docuparse.com")
-        admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+        admin_password = os.environ.get("ADMIN_PASSWORD")
+        if not admin_password:
+            raise CommandError("ADMIN_PASSWORD must be set in the environment.")
 
-        user, created = User.objects.get_or_create(
-            username=admin_email,
-            defaults={"email": admin_email, "is_active": True, "is_staff": True},
+        # ── Ensure default tenant exists ──────────────────────────────────────
+        default_slug = os.environ.get("DEFAULT_TENANT_SLUG")
+        default_name = os.environ.get("DEFAULT_TENANT_NAME")
+        if not default_slug or not default_name:
+            raise CommandError("DEFAULT_TENANT_SLUG and DEFAULT_TENANT_NAME must be set in the environment.")
+        tenant, tenant_created = Tenant.objects.get_or_create(
+            slug=default_slug,
+            defaults={
+                "name": default_name,
+                "schema_name": f"tenant_{default_slug}",
+                "is_active": True,
+            },
         )
-        if created:
-            user.set_password(admin_password)
-            user.save()
-            self.stdout.write(f"seed_data: created admin user {admin_email}")
+        if tenant_created:
+            self.stdout.write(f"seed_data: created default tenant '{default_slug}'")
         else:
-            self.stdout.write(f"seed_data: admin user {admin_email} already exists")
+            self.stdout.write(f"seed_data: default tenant '{default_slug}' already exists")
 
-        profile, _ = UserProfile.objects.get_or_create(user=user, defaults={"tenant": tenant})
-        profile.role_ref = role
-        profile.tenant = tenant
-        profile.save()
-        self.stdout.write("seed_data: admin profile ready")
+        # ── Public schema: admin user for EVERY active tenant ─────────────────
+        # The default tenant uses ADMIN_EMAIL directly.  Every other tenant gets
+        # a separate User whose email is  admin@<slug>.<domain>  (derived from
+        # ADMIN_EMAIL's domain part).  All share ADMIN_PASSWORD.
+        for t in Tenant.objects.filter(is_active=True):
+            tenant_admin_email = admin_email if t.slug == default_slug else f"admin@{t.slug}"
 
-        from documents.models import SchemaConfig
+            user, created = User.objects.get_or_create(
+                username=tenant_admin_email,
+                defaults={"email": tenant_admin_email, "is_active": True, "is_staff": True},
+            )
+            if created:
+                user.set_password(admin_password)
+                user.save()
+                self.stdout.write(f"seed_data [{t.slug}]: created admin user {tenant_admin_email}")
+            else:
+                self.stdout.write(f"seed_data [{t.slug}]: admin user {tenant_admin_email} already exists")
+
+            profile, _ = UserProfile.objects.get_or_create(user=user, defaults={"tenant": t})
+            profile.role_ref = role
+            profile.tenant = t
+            profile.save()
+            self.stdout.write(f"seed_data [{t.slug}]: admin profile ready")
+
+        # ── Per-tenant schema: SchemaConfig and LayoutConfig ──────────────────
+        # SchemaConfig / LayoutConfig are tenant-app models — must use schema_context.
+        from django_tenants.utils import schema_context
+        from documents.models import SchemaConfig, LayoutConfig
         import models.nota_fiscal.definition as _nf_def
         import models.contadeagua.definition as _agua_def
 
@@ -58,34 +85,30 @@ class Command(BaseCommand):
             {"schema_id": _nf_def.SCHEMA_ID, "version": _nf_def.VERSION, "definition": _nf_def.EXTRACTION_DEFINITION},
             {"schema_id": _agua_def.SCHEMA_ID, "version": _agua_def.VERSION, "definition": _agua_def.EXTRACTION_DEFINITION},
         ]
-
-        for schema_spec in DEFAULT_SCHEMAS:
-            _, created = SchemaConfig.objects.update_or_create(
-                tenant=tenant,
-                schema_id=schema_spec["schema_id"],
-                version=schema_spec["version"],
-                defaults={"definition": schema_spec["definition"], "is_active": True},
-            )
-            if created:
-                self.stdout.write(f"seed_data: created schema {schema_spec['schema_id']}")
-            else:
-                self.stdout.write(f"seed_data: updated schema {schema_spec['schema_id']}")
-
-        from documents.models import LayoutConfig
         DEFAULT_LAYOUT_CONFIGS = [
             {"layout": "nota_fiscal", "schema_id": _nf_def.SCHEMA_ID},
             {"layout": "fatura_condominio", "schema_id": _agua_def.SCHEMA_ID},
             {"layout": "fatura_energia", "schema_id": _agua_def.SCHEMA_ID},
         ]
-        for lc_spec in DEFAULT_LAYOUT_CONFIGS:
-            schema = SchemaConfig.objects.filter(tenant=tenant, schema_id=lc_spec["schema_id"], is_active=True).first()
-            if not schema:
-                continue
-            _, created = LayoutConfig.objects.get_or_create(
-                tenant=tenant,
-                layout=lc_spec["layout"],
-                document_type="",
-                defaults={"schema_config": schema, "is_active": True},
-            )
-            if created:
-                self.stdout.write(f"seed_data: created layout config {lc_spec['layout']} -> {lc_spec['schema_id']}")
+
+        for t in Tenant.objects.filter(is_active=True):
+            with schema_context(t.schema_name):
+                for spec in DEFAULT_SCHEMAS:
+                    _, c = SchemaConfig.objects.update_or_create(
+                        schema_id=spec["schema_id"],
+                        version=spec["version"],
+                        defaults={"definition": spec["definition"], "is_active": True},
+                    )
+                    self.stdout.write(f"seed_data [{t.slug}]: {'created' if c else 'updated'} schema {spec['schema_id']}")
+
+                for lc_spec in DEFAULT_LAYOUT_CONFIGS:
+                    schema = SchemaConfig.objects.filter(schema_id=lc_spec["schema_id"], is_active=True).first()
+                    if not schema:
+                        continue
+                    _, c = LayoutConfig.objects.get_or_create(
+                        layout=lc_spec["layout"],
+                        document_type="",
+                        defaults={"schema_config": schema, "is_active": True},
+                    )
+                    if c:
+                        self.stdout.write(f"seed_data [{t.slug}]: created layout config {lc_spec['layout']}")

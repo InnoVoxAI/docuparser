@@ -184,6 +184,25 @@ DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get('DOCUPARSE_INTERNAL_SERVICE_TO
 DOCUPARSE_AUTO_PROCESS_OCR = os.environ.get('DOCUPARSE_AUTO_PROCESS_OCR', 'true').strip().lower() not in {'0', 'false', 'no'}
 DOCUPARSE_AUTO_PROCESS_EXTRACTION = os.environ.get('DOCUPARSE_AUTO_PROCESS_EXTRACTION', 'true').strip().lower() not in {'0', 'false', 'no'}
 
+# Sem uma config explícita, loggers fora da árvore 'django' (documents.*) não têm
+# handler e caem no lastResort do Python, que descarta INFO e emite só WARNING+.
+# Era por isso que uma falha de pipeline aparecia como uma única linha sem causa.
+DOCUPARSE_LOG_LEVEL = os.environ.get('DOCUPARSE_LOG_LEVEL', 'INFO').strip().upper()
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {'format': '%(levelname)s %(asctime)s %(name)s: %(message)s'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'standard'},
+    },
+    'root': {'handlers': ['console'], 'level': DOCUPARSE_LOG_LEVEL},
+    # propagate=False: senão as mensagens do Django sairiam duplicadas (handler
+    # próprio do DEFAULT_LOGGING + o handler do root definido acima).
+    'loggers': {'django': {'handlers': ['console'], 'level': 'INFO', 'propagate': False}},
+}
+
 # Defaults for the per-tenant OCRSettings/EmailSettings singletons (documents/models.py).
 # Configurable via env so a fallback model/URL isn't baked into the model definition itself.
 OPENROUTER_FALLBACK_MODEL = os.environ.get('OPENROUTER_FALLBACK_MODEL', 'qwen/qwen2.5-vl-72b-instruct')

@@ -31,10 +31,15 @@ def _run_processing_safely(document_id: int, tenant: object) -> None:
         connection.set_tenant(tenant)
         process_document_ocr(document_id, tenant_slug=tenant.slug)
     except Exception as exc:
+        # Causa no corpo da mensagem, não em `extra`: o formatter padrão não
+        # renderiza campos de `extra`, então isto emitia só o próprio nome.
         logger.warning(
-            "processing_queue_failed",
+            "processing_queue_failed | document_id=%s | tenant=%s | error_type=%s | error=%s",
+            document_id,
+            getattr(tenant, "slug", "?"),
+            type(exc).__name__,
+            exc,
             exc_info=True,
-            extra={"document_id": str(document_id), "tenant": getattr(tenant, "slug", "?"), "error": str(exc)},
         )
 
 
@@ -50,7 +55,10 @@ def _run_langextract_safely(document_id, schema_config_id, tenant: object) -> No
         run_langextract_for_document(document_id, schema_config_id)
     except Exception as exc:
         logger.warning(
-            "langextract_queue_failed",
+            "langextract_queue_failed | document_id=%s | tenant=%s | error_type=%s | error=%s",
+            document_id,
+            getattr(tenant, "slug", "?"),
+            type(exc).__name__,
+            exc,
             exc_info=True,
-            extra={"document_id": str(document_id), "tenant": getattr(tenant, "slug", "?"), "error": str(exc)},
         )

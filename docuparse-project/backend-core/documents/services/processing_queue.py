@@ -31,10 +31,23 @@ def _run_processing_safely(document_id: int, tenant: object) -> None:
         connection.set_tenant(tenant)
         process_document_ocr(document_id, tenant_slug=tenant.slug)
     except Exception as exc:
+        # `last_step` aponta qual dependência caiu (storage_read/ocr_request/
+        # storage_write) sem precisar correlacionar com as linhas `step=` acima.
+        # Causa no corpo da mensagem, não em `extra`: o formatter padrão não
+        # renderiza campos de `extra`, então isto emitia só o próprio nome.
+        try:
+            from documents.services.ocr_processor import current_step
+            last_step = current_step()
+        except Exception:
+            last_step = "unknown"
         logger.warning(
-            "processing_queue_failed",
+            "processing_queue_failed | document_id=%s | tenant=%s | last_step=%s | error_type=%s | error=%s",
+            document_id,
+            getattr(tenant, "slug", "?"),
+            last_step,
+            type(exc).__name__,
+            exc,
             exc_info=True,
-            extra={"document_id": str(document_id), "tenant": getattr(tenant, "slug", "?"), "error": str(exc)},
         )
 
 
@@ -50,7 +63,10 @@ def _run_langextract_safely(document_id, schema_config_id, tenant: object) -> No
         run_langextract_for_document(document_id, schema_config_id)
     except Exception as exc:
         logger.warning(
-            "langextract_queue_failed",
+            "langextract_queue_failed | document_id=%s | tenant=%s | error_type=%s | error=%s",
+            document_id,
+            getattr(tenant, "slug", "?"),
+            type(exc).__name__,
+            exc,
             exc_info=True,
-            extra={"document_id": str(document_id), "tenant": getattr(tenant, "slug", "?"), "error": str(exc)},
         )

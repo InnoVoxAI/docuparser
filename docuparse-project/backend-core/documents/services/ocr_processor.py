@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from io import BytesIO
 
@@ -16,15 +17,53 @@ from documents.services.langextract_client import LangExtractClient
 
 logger = logging.getLogger(__name__)
 
+# Etapa corrente por thread. process_document_ocr roda numa thread do
+# ThreadPoolExecutor e toda exceção vira um único `processing_queue_failed`;
+# guardar a etapa aqui deixa o chamador anexar `last_step=` à linha do erro sem
+# precisar correlacionar com as linhas `step=` acima. threading.local isola cada
+# thread; process_document_ocr reseta no início (as threads do pool são reusadas).
+_progress = threading.local()
+
+
+def current_step() -> str:
+    """Última etapa alcançada por process_document_ocr nesta thread."""
+    return getattr(_progress, "step", "not_started")
+
+
+def _log_step(step: str, document_id, tenant_slug: str, schema: str, **fields) -> None:
+    """Marca uma etapa do pipeline de OCR.
+
+    A última etapa logada antes de um `processing_queue_failed` diz qual
+    dependência caiu (storage de leitura, backend-ocr, storage de escrita). Os
+    valores saem com ``repr()`` porque é o que expõe aspas/espaços vindos de env.
+    """
+    _progress.step = step
+    detail = " | ".join(f"{key}={value!r}" for key, value in fields.items())
+    logger.info(
+        "ocr_processor: step=%s | document_id=%s | tenant=%s | schema=%s | %s",
+        step, document_id, tenant_slug, schema, detail,
+    )
+
 
 def process_document_ocr(document_id, tenant_slug: str | None = None) -> Document:
     from django.db import connection as _conn
+    # Reset antes de qualquer trabalho: se a exceção vier daqui (ex.: documento
+    # inexistente, tenant/schema errado) o last_step reflete esta execução, não a
+    # anterior desta thread reusada do pool.
+    _progress.step = "load_document"
     document = Document.objects.get(id=document_id)
     if not tenant_slug:
         # Fallback: derive from schema name when called directly (e.g. tests, management commands)
         schema_name = _conn.schema_name or "public"
         tenant_slug = schema_name.removeprefix("tenant_") if schema_name != "public" else "public"
+
+    _log_step("storage_read", document_id, tenant_slug, _conn.schema_name, file_uri=document.file_uri)
     content = get_storage().get_bytes(document.file_uri)
+
+    _log_step(
+        "ocr_request", document_id, tenant_slug, _conn.schema_name,
+        url=settings.BACKEND_OCR_URL, size_bytes=len(content),
+    )
     result = OCRClient().process_document(
         BytesIO(content),
         document.original_filename or f"{document.id}.pdf",
@@ -34,11 +73,11 @@ def process_document_ocr(document_id, tenant_slug: str | None = None) -> Documen
     raw_text = result.get("raw_text") or result.get("raw_text_fallback") or ""
     raw_text_formatted = result.get("raw_text_formatted", "")
 
-    logger.info(
-        "ocr_processor: raw_text_formatted storing | document_id=%s | chars=%d | preview=%r",
-        document_id,
-        len(raw_text_formatted),
-        raw_text_formatted[:300],
+    _log_step(
+        "storage_write", document_id, tenant_slug, _conn.schema_name,
+        engine=result.get("engine_used", "unknown"),
+        raw_text_chars=len(raw_text), formatted_chars=len(raw_text_formatted),
+        formatted_preview=raw_text_formatted[:200],
     )
 
     raw_text_payload = {
@@ -63,6 +102,7 @@ def process_document_ocr(document_id, tenant_slug: str | None = None) -> Documen
     document.document_type = result.get("document_type", "") or document.document_type
     document.status = Document.Status.OCR_COMPLETED
     document.save(update_fields=["raw_text_uri", "document_type", "status", "updated_at"])
+    _log_step("ocr_completed", document_id, tenant_slug, _conn.schema_name, raw_text_uri=stored.uri)
     auto_extract_after_ocr(document)
     return document
 

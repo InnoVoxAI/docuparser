@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from io import BytesIO
 
@@ -16,15 +17,27 @@ from documents.services.langextract_client import LangExtractClient
 
 logger = logging.getLogger(__name__)
 
+# Etapa corrente por thread. process_document_ocr roda numa thread do
+# ThreadPoolExecutor e toda exceção vira um único `processing_queue_failed`;
+# guardar a etapa aqui deixa o chamador anexar `last_step=` à linha do erro sem
+# precisar correlacionar com as linhas `step=` acima. threading.local isola cada
+# thread; process_document_ocr reseta no início (as threads do pool são reusadas).
+_progress = threading.local()
+
+
+def current_step() -> str:
+    """Última etapa alcançada por process_document_ocr nesta thread."""
+    return getattr(_progress, "step", "not_started")
+
 
 def _log_step(step: str, document_id, tenant_slug: str, schema: str, **fields) -> None:
     """Marca uma etapa do pipeline de OCR.
 
-    Esta função roda numa thread do ThreadPoolExecutor e toda exceção vira um
-    único ``processing_queue_failed``. A última etapa logada antes dele diz qual
+    A última etapa logada antes de um `processing_queue_failed` diz qual
     dependência caiu (storage de leitura, backend-ocr, storage de escrita). Os
     valores saem com ``repr()`` porque é o que expõe aspas/espaços vindos de env.
     """
+    _progress.step = step
     detail = " | ".join(f"{key}={value!r}" for key, value in fields.items())
     logger.info(
         "ocr_processor: step=%s | document_id=%s | tenant=%s | schema=%s | %s",
@@ -34,6 +47,10 @@ def _log_step(step: str, document_id, tenant_slug: str, schema: str, **fields) -
 
 def process_document_ocr(document_id, tenant_slug: str | None = None) -> Document:
     from django.db import connection as _conn
+    # Reset antes de qualquer trabalho: se a exceção vier daqui (ex.: documento
+    # inexistente, tenant/schema errado) o last_step reflete esta execução, não a
+    # anterior desta thread reusada do pool.
+    _progress.step = "load_document"
     document = Document.objects.get(id=document_id)
     if not tenant_slug:
         # Fallback: derive from schema name when called directly (e.g. tests, management commands)

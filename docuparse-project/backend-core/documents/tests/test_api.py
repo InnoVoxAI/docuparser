@@ -13,16 +13,19 @@ from rest_framework.test import APIClient
 from docuparse_storage import LocalStorage, document_original_key
 from docuparse_events import EventMessage, LocalJsonlEventBus, publish_dead_letter
 
-from documents.models import Document, EmailSettings, ERPIntegrationAttempt, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, Tenant, ValidationDecision
+from documents.models import Document, EmailSettings, ERPIntegrationAttempt, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, SETTINGS_SINGLETON_ID, ValidationDecision
+from tenants.models import Tenant, UserProfile
 
 
 class DocumentsAPITests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
-        self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
+        with patch.object(Tenant, "auto_create_schema", new=False):
+            self.tenant = Tenant.objects.create(
+                slug="tenant-demo", name="Tenant Demo", schema_name="tenant_tenant_demo"
+            )
         self.user = get_user_model().objects.create_user(username="operator", password="test")
         self.document = Document.objects.create(
-            tenant=self.tenant,
             status=Document.Status.VALIDATION_PENDING,
             channel="manual",
             file_uri="local://documents/tenant-demo/doc/original",
@@ -116,7 +119,7 @@ class DocumentsAPITests(TestCase):
         # feature 009: o endpoint passou a exigir JWT do usuário com permissão
         # "inbox.view" (ou token interno). Autentica o usuário com a permissão.
         from users.models import Permission, Role
-        from documents.models import UserProfile
+        # UserProfile already imported from tenants.models
 
         permission = Permission.objects.create(code="inbox.view", description="Inbox view")
         role = Role.objects.create(name="Operador")
@@ -336,7 +339,7 @@ class DocumentsAPITests(TestCase):
             format="json",
         )
 
-        config = IntegrationSettings.objects.get(tenant=self.tenant)
+        config = IntegrationSettings.objects.get(id=SETTINGS_SINGLETON_ID)
         assert response.status_code == 200
         assert response.json()["approved_export_enabled"] is True
         assert update.status_code == 200
@@ -346,7 +349,6 @@ class DocumentsAPITests(TestCase):
 
     def test_approval_respects_disabled_json_export_setting(self) -> None:
         IntegrationSettings.objects.create(
-            tenant=self.tenant,
             approved_export_enabled=False,
             approved_export_dir="/tmp/ignored",
             approved_export_format=IntegrationSettings.ExportFormat.JSON,
@@ -397,7 +399,7 @@ class DocumentsAPITests(TestCase):
             format="json",
         )
 
-        config = OCRSettings.objects.get(tenant=self.tenant)
+        config = OCRSettings.objects.get(id=SETTINGS_SINGLETON_ID)
         assert response.status_code == 200
         assert response.json()["digital_pdf_engine"] == "docling"
         assert update.status_code == 200
@@ -425,7 +427,7 @@ class DocumentsAPITests(TestCase):
             format="json",
         )
 
-        config = EmailSettings.objects.get(tenant=self.tenant)
+        config = EmailSettings.objects.get(id=SETTINGS_SINGLETON_ID)
         assert response.status_code == 200
         assert response.json()["provider"] == "imap"
         assert update.status_code == 200
@@ -539,7 +541,6 @@ class DocumentsAPITests(TestCase):
         assert doc_data["rejection_notes"] == "Valor total divergente."
 
         doc_no_rejection = Document.objects.create(
-            tenant=self.tenant,
             status=Document.Status.VALIDATION_PENDING,
             channel="manual",
             file_uri="local://documents/tenant-demo/doc-no-rejection/original",

@@ -25,7 +25,8 @@ from backend_com.services.whatsapp_capture import process_whatsapp_media
 from docuparse_events import LocalJsonlEventBus
 from events import ExtractionCompletedEvent
 
-from documents.models import Document, ERPIntegrationAttempt, Tenant, ValidationDecision
+from documents.models import Document, ERPIntegrationAttempt, ValidationDecision
+from tenants.models import Tenant
 from documents.services.erp_mock import handle_erp_integration_requested_event
 from documents.services.event_consumers import (
     consume_document_received,

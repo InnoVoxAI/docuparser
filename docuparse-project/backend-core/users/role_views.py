@@ -47,7 +47,7 @@ def role_detail_update_delete_view(request: Request, role_id: str) -> Response:
         return Response(RoleListSerializer(role).data)
 
     if request.method == "DELETE":
-        from documents.models import UserProfile
+        from tenants.models import UserProfile
         users_count = UserProfile.objects.filter(role_ref=role).count()
         if users_count > 0:
             return Response(

@@ -5,7 +5,8 @@ from uuid import uuid4
 
 from django.test import TestCase
 
-from documents.models import Document, DocumentEvent, ERPIntegrationAttempt, ExtractionResult, Tenant
+from documents.models import Document, DocumentEvent, ERPIntegrationAttempt, ExtractionResult
+from tenants.models import Tenant
 from documents.services.event_consumers import (
     consume_document_received,
     consume_erp_failed,

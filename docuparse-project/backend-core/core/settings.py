@@ -63,9 +63,9 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('CORS_ALLOWED_ORIGINS', 'https://docuparser.innovox.ai').split(',') if o.strip()]
 
 MIDDLEWARE = [
-    'tenants.middleware.JWTTenantMiddleware',
-    'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
+    'tenants.middleware.JWTTenantMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

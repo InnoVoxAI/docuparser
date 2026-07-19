@@ -50,7 +50,7 @@ docker compose exec camunda-workers python scripts/start_process.py \
 | Unconfigured document type (US3) | Classify a `layout`/`document_type` combo with no active `LayoutConfig` | Process reaches `Activity_1hafvqe` in Tasklist for an `operators` candidate to complete |
 | High-confidence auto-approve (US4) | Use a document/schema combo known to extract >0.95 confidence | Process reaches `Event_15yo9c3` without ever creating a Tasklist item |
 | Low-confidence → operator review (US5) | Use a document/schema combo below 0.95 confidence | `Task_HumanVal` appears in Tasklist (`operators` group); completing it with `approved=false` and `reprocessChoice="delete"` ends at `Event_07z8dpg` with `Document.status == ARCHIVED` |
-| Observability (US6) | Any invalid-file or unreadable-after-retries run | Structured `docuparse-log-failure` log entry appears in the configured observability sink with `document_id`, `failure_reason`, `failure_step` |
+| Observability (US6) | Any invalid-file or unreadable-after-retries run | A structured `docuparse-log-failure` log line (via `structlog`, basic logging only — no observability platform integration exists yet) appears in `camunda-workers`' container logs with `document_id`, `failure_reason`, `failure_step` |
 
 ## 5. Watch it in Operate
 

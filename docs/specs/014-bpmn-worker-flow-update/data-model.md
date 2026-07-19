@@ -63,10 +63,14 @@ fields and require no migration.
 | `correctedFields` | JSON object | `Task_HumanVal` Tasklist form output | `docuparse-validate-document` input on the rejected/approved paths |
 | `reprocessChoice` | string (`"reprocess"` \| `"delete"`) | Tasklist form or upstream decision variable | `Gateway_1qmnvbm` condition |
 
-## Structured log schema (observability platform — not a database entity)
+## Structured log schema (basic logging only — not a database entity, no observability platform integration)
 
-`docuparse-log-failure` writes a structured event (via `structlog`, already the project's
-logging convention in every worker) rather than a new persisted model:
+No observability platform (Grafana or otherwise) is actually wired up yet — the flow
+diagram's annotation naming one is aspirational. `docuparse-log-failure` therefore does
+**basic structured logging only**: it writes a structured event via `structlog` (already
+the project's logging convention in every worker) to the process's normal log output. That
+output can be picked up by whatever log aggregation/observability tooling is stood up later
+— this feature does not add any HTTP call, SDK, or integration to a specific platform:
 
 | Field | Description |
 |---|---|

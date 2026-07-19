@@ -32,6 +32,18 @@ def migrate_legacy_tenant_data(apps, schema_editor):
     Domain = apps.get_model("tenants", "Domain")
     UserProfile = apps.get_model("tenants", "UserProfile")
 
+    # This runs in the shared (public) phase, but documents is a TENANT app: on a
+    # fresh install its tables never exist in public, so querying them would raise
+    # ProgrammingError. Their absence is precisely the fresh-install case — nothing
+    # to consolidate. (Legacy deployments predating the split still have these
+    # tables in public and fall through to the copy logic below.)
+    existing_tables = set(schema_editor.connection.introspection.table_names())
+    if (
+        LegacyTenant._meta.db_table not in existing_tables
+        and LegacyUserProfile._meta.db_table not in existing_tables
+    ):
+        return
+
     if not LegacyTenant.objects.exists() and not LegacyUserProfile.objects.exists():
         return  # Legacy tables exist but are empty, nothing to consolidate.
 

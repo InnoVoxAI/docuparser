@@ -15,11 +15,11 @@ reprocess_ocr = ZeebeTaskRouter()
     timeout_ms=200_000,
     max_jobs_to_activate=3,
 )
-async def _process_ocr(document_id: str, **kwargs) -> dict:
+async def _process_ocr(document_id: str, tenant_id: str, **kwargs) -> dict:
     """Run OCR on a document. Returns updated document state."""
     log.info("ocr_starting", document_id=document_id)
 
-    async with core_client(timeout=195.0) as client:
+    async with core_client(tenant_id, timeout=195.0) as client:
         resp = await client.post(f"/api/ocr/documents/{document_id}/process-ocr")
         resp.raise_for_status()
         data = resp.json()
@@ -30,6 +30,7 @@ async def _process_ocr(document_id: str, **kwargs) -> dict:
         "document_type": data.get("document_type"),
         "raw_text_uri": data.get("raw_text_uri"),
         "ocr_engine": data.get("metadata", {}).get("ocr", {}).get("engine_used"),
+        "ocr_readable": data.get("ocr_readable"),
     }
 
 
@@ -38,11 +39,11 @@ async def _process_ocr(document_id: str, **kwargs) -> dict:
     timeout_ms=200_000,
     max_jobs_to_activate=3,
 )
-async def _reprocess_ocr(document_id: str, **kwargs) -> dict:
+async def _reprocess_ocr(document_id: str, tenant_id: str, **kwargs) -> dict:
     """Re-run OCR on a document (e.g. after rejection)."""
     log.info("ocr_reprocess_starting", document_id=document_id)
 
-    async with core_client(timeout=195.0) as client:
+    async with core_client(tenant_id, timeout=195.0) as client:
         resp = await client.post(f"/api/ocr/documents/{document_id}/reprocess-ocr")
         resp.raise_for_status()
         data = resp.json()
@@ -53,4 +54,5 @@ async def _reprocess_ocr(document_id: str, **kwargs) -> dict:
         "document_type": data.get("document_type"),
         "raw_text_uri": data.get("raw_text_uri"),
         "ocr_engine": data.get("metadata", {}).get("ocr", {}).get("engine_used"),
+        "ocr_readable": data.get("ocr_readable"),
     }

@@ -20,6 +20,7 @@ validate_document = ZeebeTaskRouter()
 )
 async def _validate_document(
     document_id: str,
+    tenant_id: str,
     decision: str,
     notes: str = "",
     corrected_fields: dict | None = None,
@@ -44,7 +45,7 @@ async def _validate_document(
     if decided_by_id:
         body["decided_by_id"] = decided_by_id
 
-    async with core_client(timeout=12.0) as client:
+    async with core_client(tenant_id, timeout=12.0) as client:
         resp = await client.post(
             f"/api/ocr/documents/{document_id}/validate",
             json=body,

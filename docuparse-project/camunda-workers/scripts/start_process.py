@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Start a DocuParse Camunda process instance from the command line.
 
+docuparse-pipeline (feature 014) has only message start events (one per intake
+channel) — it has no "none" start event, so it cannot be started via
+CreateProcessInstance. This script publishes the channel's start message
+instead; Zeebe creates a new process instance for each published message.
+
 Usage (after uploading a document via existing flow):
 
     python scripts/start_process.py \\
-        --process-id docuparse-pipeline \\
         --document-id <uuid> \\
         --tenant-id default \\
+        --channel email \\
         --file-uri documents/default/<uuid>/original/<filename>
 
 Or with explicit Zeebe address:
@@ -23,9 +28,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from pyzeebe import ZeebeClient, create_insecure_channel  # noqa: E402
 
+CHANNEL_MESSAGE_NAMES = {
+    "email": "docuparse-file-received-email",
+    "whatsapp": "docuparse-file-received-whatsapp",
+}
+
 
 async def start(
-    process_id: str,
     document_id: str,
     tenant_id: str,
     file_uri: str,
@@ -37,6 +46,8 @@ async def start(
     correlation_id: str,
     zeebe_address: str,
 ) -> None:
+    message_name = CHANNEL_MESSAGE_NAMES[channel]
+
     grpc_channel = create_insecure_channel(grpc_address=zeebe_address)
     client = ZeebeClient(grpc_channel)
 
@@ -52,22 +63,24 @@ async def start(
         "correlationId": correlation_id or document_id,
     }
 
-    print(f"Starting process '{process_id}' with variables:")
+    print(f"Publishing message '{message_name}' with variables:")
     for k, v in variables.items():
         print(f"  {k}: {v}")
 
-    instance = await client.run_process(
-        bpmn_process_id=process_id,
+    # No process-instance correlation needed for these start events (each
+    # message starts a fresh instance), so correlation_key is left empty.
+    response = await client.publish_message(
+        name=message_name,
+        correlation_key="",
         variables=variables,
     )
 
-    print(f"\nProcess instance started: {instance}")
+    print(f"\nMessage published: {response}")
     await grpc_channel.close()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Start a DocuParse Camunda process")
-    parser.add_argument("--process-id", default="docuparse-pipeline")
     parser.add_argument("--document-id", required=True)
     parser.add_argument("--tenant-id", required=True)
     parser.add_argument("--file-uri", default="")
@@ -75,7 +88,7 @@ def main() -> None:
     parser.add_argument("--content-type", default="application/pdf")
     parser.add_argument("--size-bytes", type=int, default=0)
     parser.add_argument("--sha256", default="")
-    parser.add_argument("--channel", default="manual")
+    parser.add_argument("--channel", choices=sorted(CHANNEL_MESSAGE_NAMES), default="email")
     parser.add_argument("--correlation-id", default="")
     parser.add_argument(
         "--zeebe-address",
@@ -85,7 +98,6 @@ def main() -> None:
 
     asyncio.run(
         start(
-            process_id=args.process_id,
             document_id=args.document_id,
             tenant_id=args.tenant_id,
             file_uri=args.file_uri,

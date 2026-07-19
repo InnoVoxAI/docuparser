@@ -3,6 +3,7 @@ import structlog
 from pyzeebe import ZeebeTaskRouter
 
 from workers._http import layout_client
+from workers._schema import resolve_schema_config_id
 
 log = structlog.get_logger()
 
@@ -16,6 +17,7 @@ classify_layout = ZeebeTaskRouter()
 )
 async def _classify_layout(
     document_id: str,
+    tenant_id: str,
     raw_text_uri: str = "",
     document_type: str = "unknown",
     **kwargs,
@@ -34,14 +36,19 @@ async def _classify_layout(
         resp.raise_for_status()
         data = resp.json()
 
+    layout = data.get("layout") or ""
+    schema_config_id = await resolve_schema_config_id(layout, document_type, tenant_id)
+
     log.info(
         "layout_classified",
         document_id=document_id,
-        layout=data.get("layout"),
+        layout=layout,
         confidence=data.get("confidence"),
+        document_configured=bool(schema_config_id),
     )
     return {
-        "layout": data.get("layout"),
+        "layout": layout,
         "layout_confidence": data.get("confidence"),
         "layout_requires_human_validation": data.get("requires_human_validation", False),
+        "document_configured": bool(schema_config_id),
     }

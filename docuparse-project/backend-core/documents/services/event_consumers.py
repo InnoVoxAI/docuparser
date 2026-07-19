@@ -24,11 +24,30 @@ from documents.models import (
 
 logger = logging.getLogger(__name__)
 
+# Metadata-level validity check only (Decision 3, feature 014): catches unsupported
+# formats and empty uploads without opening the file. Corruption/password-protection
+# detection requires opening the file and is a backend-core fast-follow.
+ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/tiff",
+}
+
 
 class DuplicateDocumentError(Exception):
     def __init__(self, filename: str) -> None:
         self.filename = filename
         super().__init__(f"O Documento '{filename}' já existe!")
+
+
+def _check_file_validity(content_type: str, size_bytes: int) -> tuple[bool, str]:
+    if size_bytes <= 0:
+        return False, "Arquivo vazio"
+    if content_type not in ALLOWED_CONTENT_TYPES:
+        return False, f"Formato de arquivo não suportado: {content_type or 'desconhecido'}"
+    return True, ""
 
 
 def consume_document_received(payload: dict[str, Any]) -> Document:
@@ -43,10 +62,14 @@ def consume_document_received(payload: dict[str, Any]) -> Document:
         if filename and Document.objects.filter(original_filename=filename).exists():
             raise DuplicateDocumentError(filename)
 
+        file_valid, rejection_reason = _check_file_validity(
+            event.data.file.content_type, event.data.file.size_bytes
+        )
+
         document, _ = Document.objects.get_or_create(
             id=event.document_id,
             defaults={
-                "status": Document.Status.RECEIVED,
+                "status": Document.Status.RECEIVED if file_valid else Document.Status.REJECTED,
                 "channel": event.data.channel,
                 "file_uri": event.data.file.uri,
                 "original_filename": event.data.file.filename,
@@ -56,6 +79,8 @@ def consume_document_received(payload: dict[str, Any]) -> Document:
                 "correlation_id": event.correlation_id,
                 "received_at": event.data.received_at,
                 "metadata": event.data.metadata,
+                "file_valid": file_valid,
+                "rejection_reason": rejection_reason,
             },
         )
         existing_event.document = document
@@ -67,6 +92,7 @@ def consume_document_received(payload: dict[str, Any]) -> Document:
             document_id=str(event.document_id),
             correlation_id=str(event.correlation_id),
             event_type=event.event_type,
+            file_valid=file_valid,
         )
         return document
 

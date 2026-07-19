@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     classify_text_view,
+    document_archive_view,
     document_detail_view,
     document_delete_view,
     document_field_versions_view,
@@ -11,6 +12,7 @@ from .views import (
     document_process_ocr_view,
     document_received_event_view,
     document_reprocess_ocr_view,
+    document_reset_for_reprocessing_view,
     document_validation_view,
     documents_inbox_view,
     dlq_events_view,
@@ -40,6 +42,12 @@ urlpatterns = [
     path("events/document-received", document_received_event_view, name="document-received-event"),
     path("documents/<uuid:document_id>", document_detail_view, name="document-detail"),
     path("documents/<uuid:document_id>/delete", document_delete_view, name="document-delete"),
+    path("documents/<uuid:document_id>/archive", document_archive_view, name="document-archive"),
+    path(
+        "documents/<uuid:document_id>/reset-for-reprocessing",
+        document_reset_for_reprocessing_view,
+        name="document-reset-for-reprocessing",
+    ),
     path("documents/<uuid:document_id>/file", document_file_view, name="document-file"),
     path("documents/<uuid:document_id>/process-ocr", document_process_ocr_view, name="document-process-ocr"),
     path("documents/<uuid:document_id>/reprocess-ocr", document_reprocess_ocr_view, name="document-reprocess-ocr"),

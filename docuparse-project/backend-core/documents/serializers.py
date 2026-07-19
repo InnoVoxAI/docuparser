@@ -151,6 +151,9 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             "full_transcription",
             "full_transcription_formatted",
             "ocr_metadata",
+            "file_valid",
+            "rejection_reason",
+            "ocr_readable",
             "created_at",
             "updated_at",
         ]

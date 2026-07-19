@@ -291,6 +291,33 @@ def document_delete_view(request, document_id):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(["POST"])
+def document_archive_view(request, document_id):
+    """Soft-delete: mark the document ARCHIVED without deleting its row or file
+    (feature 014 Decision 7 — the operator "delete" choice on a rejected document
+    is a soft-delete/archive, record and file retained)."""
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    document = get_object_or_404(Document, id=document_id)
+    document.transition_to(Document.Status.ARCHIVED)
+    return Response(DocumentDetailSerializer(document).data)
+
+
+@api_view(["POST"])
+def document_reset_for_reprocessing_view(request, document_id):
+    """Clear the prior extraction result and return the document to a state
+    from which field extraction can safely re-run (feature 014, operator chose
+    "reprocess" after rejecting a document)."""
+    auth_error = _internal_token_error(request)
+    if auth_error is not None:
+        return auth_error
+    document = get_object_or_404(Document, id=document_id)
+    ExtractionResult.objects.filter(document=document).delete()
+    document.transition_to(Document.Status.LAYOUT_CLASSIFIED)
+    return Response(DocumentDetailSerializer(document).data)
+
+
 # Frontend (Cloudflare Pages) and backend live on different origins, so the
 # default X-Frame-Options: SAMEORIGIN would block the document <iframe> preview.
 # Exempt only this file-serving endpoint so the original document can be framed.

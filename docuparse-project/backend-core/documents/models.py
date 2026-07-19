@@ -40,6 +40,7 @@ class Document(TimeStampedModel):
         ERP_INTEGRATION_REQUESTED = "ERP_INTEGRATION_REQUESTED", "ERP integration requested"
         ERP_SENT = "ERP_SENT", "ERP sent"
         ERP_FAILED = "ERP_FAILED", "ERP failed"
+        ARCHIVED = "ARCHIVED", "Archived"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     status = models.CharField(max_length=64, choices=Status.choices, default=Status.RECEIVED)
@@ -55,6 +56,9 @@ class Document(TimeStampedModel):
     correlation_id = models.UUIDField(default=uuid.uuid4, db_index=True)
     received_at = models.DateTimeField(default=timezone.now)
     metadata = models.JSONField(default=dict, blank=True)
+    file_valid = models.BooleanField(null=True, blank=True)
+    rejection_reason = models.CharField(max_length=255, blank=True)
+    ocr_readable = models.BooleanField(null=True, blank=True)
 
     class Meta:
         indexes = [

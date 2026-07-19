@@ -17,6 +17,15 @@ from documents.services.langextract_client import LangExtractClient
 
 logger = logging.getLogger(__name__)
 
+# Minimum non-whitespace characters for OCR output to be considered legible
+# (Decision 2, feature 014). No observability-platform-grade OCR confidence
+# score exists yet — this is a simple length heuristic on the extracted text.
+MIN_READABLE_CHARS = 20
+
+
+def _is_ocr_readable(raw_text: str) -> bool:
+    return len(raw_text.strip()) >= MIN_READABLE_CHARS
+
 # Etapa corrente por thread. process_document_ocr roda numa thread do
 # ThreadPoolExecutor e toda exceção vira um único `processing_queue_failed`;
 # guardar a etapa aqui deixa o chamador anexar `last_step=` à linha do erro sem
@@ -100,8 +109,9 @@ def process_document_ocr(document_id, tenant_slug: str | None = None) -> Documen
 
     document.raw_text_uri = stored.uri
     document.document_type = result.get("document_type", "") or document.document_type
+    document.ocr_readable = _is_ocr_readable(raw_text)
     document.status = Document.Status.OCR_COMPLETED
-    document.save(update_fields=["raw_text_uri", "document_type", "status", "updated_at"])
+    document.save(update_fields=["raw_text_uri", "document_type", "ocr_readable", "status", "updated_at"])
     _log_step("ocr_completed", document_id, tenant_slug, _conn.schema_name, raw_text_uri=stored.uri)
     auto_extract_after_ocr(document)
     return document

@@ -13,6 +13,7 @@ from docuparse_storage import document_original_key, get_storage
 from events import DocumentReceivedEvent
 
 from backend_com.config import settings
+from backend_com.services.camunda_trigger import start_docuparse_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ def ingest_document(
     sender: str | None = None,
     metadata: dict | None = None,
     skip_auto_process: bool = False,
+    trigger_camunda: bool = False,
 ) -> dict:
     if tenant_slug:
         tenant_id = tenant_slug
@@ -83,6 +85,21 @@ def ingest_document(
     event_payload = event.model_dump(mode="json")
     event_bus_from_env(settings.local_event_dir).publish("document.received", event_payload)
     core_sync_status = _sync_document_received_to_core(event_payload, tenant_slug=tenant_slug, skip_auto_process=skip_auto_process)
+
+    camunda_status = "not_requested"
+    if trigger_camunda:
+        camunda_status = start_docuparse_pipeline(
+            tenant_id=tenant_id,
+            document_id=str(document_id),
+            file_uri=stored.uri,
+            original_filename=filename,
+            content_type=content_type,
+            size_bytes=stored.size_bytes,
+            sha256=stored.sha256,
+            channel=channel,
+            correlation_id=str(event.correlation_id),
+        )
+
     log_event(
         logger,
         "document.received published",
@@ -93,6 +110,7 @@ def ingest_document(
         channel=channel,
         file_uri=stored.uri,
         core_sync_status=core_sync_status,
+        camunda_status=camunda_status,
     )
 
     return {
@@ -104,6 +122,7 @@ def ingest_document(
         "event_type": event.event_type,
         "channel": channel,
         "core_sync_status": core_sync_status,
+        "camunda_status": camunda_status,
     }
 
 

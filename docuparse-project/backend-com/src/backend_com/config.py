@@ -58,6 +58,9 @@ class Settings:
         "BACKEND_CORE_EMAIL_SETTINGS_URL",
         "http://127.0.0.1:8000/api/ocr/settings/email",
     )
+    # Zeebe broker address, so uploads can optionally publish a start message
+    # for docuparse-pipeline directly (feature 014 — process_with_camunda).
+    zeebe_address = _env("ZEEBE_ADDRESS", "localhost:26500")
     imap_password = _env("DOCUPARSE_IMAP_PASSWORD") or _env("imap_reader_password")
     imap_poll_limit = int(_env("DOCUPARSE_IMAP_POLL_LIMIT", "10"))
     imap_mark_as_read = _env("DOCUPARSE_IMAP_MARK_AS_READ", "false").lower() in {"1", "true", "yes"}

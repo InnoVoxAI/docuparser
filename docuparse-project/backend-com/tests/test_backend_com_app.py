@@ -163,6 +163,123 @@ def test_manual_upload_reports_failed_core_sync_without_failing_upload(monkeypat
     assert response.json()["core_sync_status"] == "failed"
 
 
+def test_manual_upload_camunda_flag_appends_skip_auto_process_to_core_sync_url(monkeypatch, tmp_path) -> None:
+    _point_backend_com_to_tmp(monkeypatch, tmp_path)
+    from backend_com import config
+    from backend_com.services import document_ingest
+
+    config.settings.backend_core_document_received_url = "http://backend-core/api/ocr/events/document-received"
+    document_ingest.settings.backend_core_document_received_url = "http://backend-core/api/ocr/events/document-received"
+    monkeypatch.setattr(document_ingest, "start_docuparse_pipeline", lambda **kwargs: "published")
+
+    requested_urls: list[str] = []
+
+    class _FakeResponse:
+        status = 201
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def _fake_urlopen(request, timeout=2):
+        requested_urls.append(request.full_url)
+        return _FakeResponse()
+
+    monkeypatch.setattr(document_ingest.urllib.request, "urlopen", _fake_urlopen)
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/documents/manual",
+        data={"process_with_camunda": "true"},
+        files={"file": ("fixture.pdf", b"%PDF fake", "application/pdf")},
+    )
+    client.post(
+        "/api/v1/documents/manual",
+        files={"file": ("fixture2.pdf", b"%PDF fake 2", "application/pdf")},
+    )
+
+    config.settings.backend_core_document_received_url = ""
+    document_ingest.settings.backend_core_document_received_url = ""
+
+    assert len(requested_urls) == 2
+    assert requested_urls[0].endswith("?skip_auto_process=true")
+    assert "skip_auto_process" not in requested_urls[1]
+
+
+def test_manual_upload_camunda_flag_publishes_whatsapp_start_message(monkeypatch, tmp_path) -> None:
+    _point_backend_com_to_tmp(monkeypatch, tmp_path)
+    from backend_com.services import document_ingest
+
+    captured: dict = {}
+
+    def _fake_start_docuparse_pipeline(**kwargs):
+        captured.update(kwargs)
+        return "published"
+
+    monkeypatch.setattr(document_ingest, "start_docuparse_pipeline", _fake_start_docuparse_pipeline)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/documents/manual",
+        data={"tenant_id": "tenant-demo", "process_with_camunda": "true"},
+        files={"file": ("fixture.pdf", b"%PDF fake", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["camunda_status"] == "published"
+    assert captured["tenant_id"] == "tenant-demo"
+    assert captured["channel"] == "manual"
+    assert set(captured.keys()) == {
+        "tenant_id", "document_id", "file_uri", "original_filename",
+        "content_type", "size_bytes", "sha256", "channel", "correlation_id",
+    }
+
+
+def test_manual_upload_without_camunda_flag_does_not_trigger_pipeline(monkeypatch, tmp_path) -> None:
+    _point_backend_com_to_tmp(monkeypatch, tmp_path)
+    from backend_com.services import document_ingest
+
+    called = False
+
+    def _fake_start_docuparse_pipeline(**kwargs):
+        nonlocal called
+        called = True
+        return "published"
+
+    monkeypatch.setattr(document_ingest, "start_docuparse_pipeline", _fake_start_docuparse_pipeline)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/documents/manual",
+        files={"file": ("fixture.pdf", b"%PDF fake", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["camunda_status"] == "not_requested"
+    assert called is False
+
+
+def test_manual_upload_camunda_publish_failure_still_succeeds(monkeypatch, tmp_path) -> None:
+    _point_backend_com_to_tmp(monkeypatch, tmp_path)
+    from backend_com.services import document_ingest
+
+    monkeypatch.setattr(
+        document_ingest, "start_docuparse_pipeline", lambda **kwargs: "failed"
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/documents/manual",
+        data={"process_with_camunda": "true"},
+        files={"file": ("fixture.pdf", b"%PDF fake", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["camunda_status"] == "failed"
+
+
 def test_email_webhook_with_zero_attachments_generates_no_events(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
     client = TestClient(app)

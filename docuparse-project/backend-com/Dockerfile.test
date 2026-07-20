@@ -1,0 +1,2 @@
+FROM docuparse-backend-com:dev
+RUN pip install --no-cache-dir pytest pytest-asyncio "moto[s3]>=5.0" httpx

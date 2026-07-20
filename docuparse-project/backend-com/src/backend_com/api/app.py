@@ -68,9 +68,8 @@ app.add_middleware(
 _bearer = HTTPBearer(auto_error=False)
 
 
-def _auth(credentials: HTTPAuthorizationCredentials | None = Security(_bearer)) -> None:
-    authorization = f"Bearer {credentials.credentials}" if credentials else None
-    _validate_internal_service_token(authorization)
+def _authorization_header(credentials: HTTPAuthorizationCredentials | None) -> str | None:
+    return f"Bearer {credentials.credentials}" if credentials else None
 
 
 def _validate_internal_service_token(authorization: str | None) -> None:
@@ -103,8 +102,21 @@ async def manual_document_upload(
     tenant_id: str = Form("tenant-demo"),
     sender: str | None = Form(None),
     metadata_json: str | None = Form(None),
-    authorization: str | None = Header(default=None),
+    process_with_camunda: bool = Form(False),
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
 ):
+    """Upload a document, optionally routing it straight into the BPMN pipeline.
+
+    By default, uploading here kicks off backend-core's own (non-BPMN) OCR
+    pipeline immediately. Pass `process_with_camunda=true` to skip that
+    legacy auto-processing and instead automatically publish the Zeebe start
+    message for `docuparse-pipeline` (feature 014) for the tenant resolved
+    from this request's `Authorization` header — no separate
+    `scripts/start_process.py` call needed. Publishing is best-effort: if
+    Zeebe/the `camunda` compose profile isn't reachable, the upload still
+    succeeds (see the response's `camunda_status`).
+    """
+    authorization = _authorization_header(credentials)
     _authenticate_caller(authorization)
     tenant_slug = _tenant_slug_from_jwt(_bearer_token(authorization))
     try:
@@ -120,6 +132,7 @@ async def manual_document_upload(
             content=content,
             sender=sender,
             metadata=metadata,
+            process_with_camunda=process_with_camunda,
         )
     except DuplicateDocumentError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -169,9 +182,9 @@ async def email_messages(
 @app.post("/api/v1/email/poll")
 async def poll_email_messages(
     tenant_id: str = "tenant-demo",
-    authorization: str | None = Header(default=None),
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
 ):
-    _authenticate_caller(authorization)
+    _authenticate_caller(_authorization_header(credentials))
     try:
         return poll_configured_imap_once(tenant_id=tenant_id)
     except ImapPollingError as exc:
@@ -313,9 +326,9 @@ async def whatsapp_webhook(
 @app.post("/api/v1/whatsapp/poll")
 async def poll_whatsapp_messages(
     tenant_id: str = "tenant-demo",
-    authorization: str | None = Header(default=None),
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
 ):
-    _authenticate_caller(authorization)
+    _authenticate_caller(_authorization_header(credentials))
     try:
         return poll_configured_twilio_once(tenant_id=tenant_id)
     except TwilioPollingError as exc:

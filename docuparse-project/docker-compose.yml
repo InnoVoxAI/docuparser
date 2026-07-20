@@ -233,6 +233,9 @@ services:
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
       BACKEND_CORE_DOCUMENT_RECEIVED_URL: http://backend-core:8000/api/ocr/events/document-received
       BACKEND_CORE_EMAIL_SETTINGS_URL: http://backend-core:8000/api/ocr/settings/email
+      # Only reachable when the `camunda` profile is also up; process_with_camunda
+      # publishes degrade to a logged "failed" status otherwise (feature 014).
+      ZEEBE_ADDRESS: zeebe:26500
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8070/health', timeout=2)"]
       interval: 10s

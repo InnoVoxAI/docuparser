@@ -12,7 +12,7 @@ def process_manual_upload(
     content: bytes,
     sender: str | None = None,
     metadata: dict | None = None,
-    skip_auto_process: bool = False,
+    process_with_camunda: bool = False,
 ) -> dict:
     return ingest_document(
         tenant_id=tenant_id,
@@ -23,5 +23,6 @@ def process_manual_upload(
         content=content,
         sender=sender,
         metadata=metadata,
-        skip_auto_process=skip_auto_process,
+        skip_auto_process=process_with_camunda,
+        trigger_camunda=process_with_camunda,
     )

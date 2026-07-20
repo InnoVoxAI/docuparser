@@ -12,6 +12,17 @@ Variable names below use **process variable (camelCase)** on the BPMN side and
 **Python parameter (snake_case)** on the worker side, matching the `ioMapping`
 `source=`/`target=` convention already used in `flow_updated.bpmn`.
 
+**`tenantId`/`tenant_id` is now a required input on every job type that calls
+backend-core** (all except `docuparse-notify-user`, `docuparse-preprocess-image`, which
+don't). `core_client()` (`workers/_http.py`) sends it as an `X-Tenant` header —
+backend-core's tenant-resolution middleware (`tenants/middleware.py::_resolve_slug`)
+requires it when authenticating with the internal service token, which every worker call
+uses. Discovered as a live blocking bug during manual testing (job failures at
+`Task_Ingestion` and beyond, `400 SuspiciousOperation: X-Tenant header is required`) —
+`tenant_id` was already threaded through `docuparse-register-document` and
+`docuparse-log-failure` from earlier in this feature, but no other job type had it, and
+`core_client()` never attached the header regardless.
+
 ## Existing job types — extended
 
 ### `docuparse-register-document`
@@ -37,17 +48,19 @@ Variable names below use **process variable (camelCase)** on the BPMN side and
 | | BPMN variable | Worker param/field | Type | Notes |
 |---|---|---|---|---|
 | in | `documentId` | `document_id` | string | unchanged |
+| in | `tenantId` | `tenant_id` | string | **new** — X-Tenant fix |
 | out | `docStatus` | `doc_status` | string | unchanged |
 | out | `documentType` | `document_type` | string | unchanged |
 | out | `rawTextUri` | `raw_text_uri` | string | unchanged |
 | out | `ocrEngine` | `ocr_engine` | string | unchanged |
-| out | **`ocrReadable`** | **`ocr_readable`** | bool | **new** — from Decision 2 |
+| out | **`ocrReadable`** | **`ocr_readable`** | bool | **new** — from Decision 2. **T052 fix**: this output was defined in the worker return dict from the start but never mapped out of `Activity_0xc6pti`'s `ioMapping` in `flow.bpmn` — `ocrReadable` was silently `null` for every run, always taking `Gateway_0lylr3v`'s default ("Não") branch regardless of actual readability. Added the missing `<zeebe:output source="=ocr_readable" target="ocrReadable" />`. |
 
 ### `docuparse-classify-layout`
 
 | | BPMN variable | Worker param/field | Type | Notes |
 |---|---|---|---|---|
 | in | `documentId` | `document_id` | string | unchanged |
+| in | `tenantId` | `tenant_id` | string | **new** — X-Tenant fix (also forwarded into `resolve_schema_config_id`) |
 | in | `rawTextUri` | `raw_text_uri` | string | unchanged |
 | in | `documentType` | `document_type` | string | unchanged |
 | out | `layout` | `layout` | string | unchanged |
@@ -56,17 +69,31 @@ Variable names below use **process variable (camelCase)** on the BPMN side and
 
 ### `docuparse-extract-fields`
 
-No contract change. Kept exactly as today (including its own internal schema-resolution
-fallback) as defense-in-depth for process instances started outside the normal
-`Task_Layout → Gateway_01v609m` path.
+Contract change: gained `tenantId` → `tenant_id` (**new** — X-Tenant fix, also forwarded
+into `resolve_schema_config_id`'s fallback lookup). Otherwise kept exactly as today
+(including its own internal schema-resolution fallback) as defense-in-depth for process
+instances started outside the normal `Task_Layout → Gateway_01v609m` path.
+
+**T052 fix**: the "no schema resolvable" early-return path omitted `extraction_confidence`
+(and `schema_id`/`schema_version`) entirely from its return dict, leaving
+`extractionConfidence` `null` — `Gateway_0kaeakc`'s `extractionConfidence > 0.95` condition
+throws a `NOT_COMPARABLE` incident on `null > number`, not a graceful default-branch
+fallback. Fixed by always returning `extraction_confidence: 0.0` (and empty
+`schema_id`/`schema_version`) on that path, plus `or 0.0` on the success path in case
+backend-core ever omits `confidence`. `Gateway_0kaeakc`'s condition is also now guarded
+with `if is defined(extractionConfidence) then ... else false`, defense-in-depth. The same
+incident class was hit and fixed for `Gateway_19gkipo`'s `ocrRetryCount >= 3` condition,
+guarded the same way — any `>`/`>=` gateway condition needs this guard unless the variable
+is *guaranteed* set on every path (equality checks like `= true` are null-safe and don't
+need it).
 
 ### `docuparse-validate-document`
 
-No signature change — this worker already accepts `decision`, `notes`,
-`corrected_fields`, `decided_by_id` and returns `doc_status`. What changes is **who calls
-it**: it becomes wired into three new/changed BPMN elements (`Activity_0ho24el`, and the two
-new "Aprovar documento" service tasks) instead of being unreferenced by the process (Decision
-6).
+Gained `tenantId` → `tenant_id` (**new** — X-Tenant fix); otherwise no signature change —
+this worker already accepts `decision`, `notes`, `corrected_fields`, `decided_by_id` and
+returns `doc_status`. What changes is **who calls it**: it becomes wired into three
+new/changed BPMN elements (`Activity_0ho24el`, and the two new "Aprovar documento" service
+tasks) instead of being unreferenced by the process (Decision 6).
 
 Call sites and their expected input values:
 
@@ -116,6 +143,7 @@ defined in `data-model.md`.
 | | BPMN variable | Worker param | Type |
 |---|---|---|---|
 | in | `documentId` | `document_id` | string |
+| in | `tenantId` | `tenant_id` | string (**new** — X-Tenant fix) |
 | out | `docStatus` | `doc_status` | string (reset to `EXTRACTION_COMPLETED`-eligible state) |
 
 ### `docuparse-archive-document`
@@ -123,6 +151,7 @@ defined in `data-model.md`.
 | | BPMN variable | Worker param | Type |
 |---|---|---|---|
 | in | `documentId` | `document_id` | string |
+| in | `tenantId` | `tenant_id` | string (**new** — X-Tenant fix) |
 | out | `docStatus` | `doc_status` | string (`"ARCHIVED"`) |
 
 ## Removed job types

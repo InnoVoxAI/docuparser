@@ -1,0 +1,24 @@
+{
+  "components": [
+    {
+      "text": "## Apagar documento\n\nO documento será arquivado — registro e arquivo original são mantidos, apenas marcados como excluídos.",
+      "type": "text"
+    },
+    {
+      "id": "Field_ConfirmDelete",
+      "key": "confirmDelete",
+      "label": "Confirmo o arquivamento deste documento",
+      "type": "checkbox",
+      "validate": {
+        "required": true
+      }
+    }
+  ],
+  "schemaVersion": 17,
+  "exporter": {
+    "name": "docuparse-pipeline (feature 014)",
+    "version": "1.0.0"
+  },
+  "id": "Form_Activity142wpxf",
+  "type": "default"
+}

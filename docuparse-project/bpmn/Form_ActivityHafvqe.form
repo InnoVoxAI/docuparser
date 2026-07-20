@@ -1,0 +1,25 @@
+{
+  "components": [
+    {
+      "text": "## Criar modelo / usar modelo existente",
+      "type": "text"
+    },
+    {
+      "id": "Field_SchemaId",
+      "key": "schemaId",
+      "label": "ID do schema/modelo de extração a usar",
+      "type": "textfield",
+      "description": "Crie ou selecione o modelo de extração para este tipo de documento na tela de administração de schemas, depois cole o ID aqui.",
+      "validate": {
+        "required": true
+      }
+    }
+  ],
+  "schemaVersion": 17,
+  "exporter": {
+    "name": "docuparse-pipeline (feature 014)",
+    "version": "1.0.0"
+  },
+  "id": "Form_ActivityHafvqe",
+  "type": "default"
+}

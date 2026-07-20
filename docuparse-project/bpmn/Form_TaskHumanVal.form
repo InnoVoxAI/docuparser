@@ -1,0 +1,42 @@
+{
+  "components": [
+    {
+      "text": "## Validar dados extraídos",
+      "type": "text"
+    },
+    {
+      "id": "Field_Approved",
+      "key": "approved",
+      "label": "Aprovar os dados extraídos?",
+      "type": "checkbox",
+      "description": "Marcado = aprovado. Desmarcado = rejeitado."
+    },
+    {
+      "id": "Field_ValidationNotes",
+      "key": "validationNotes",
+      "label": "Observações",
+      "type": "textarea",
+      "description": "Obrigatório ao rejeitar — explique o motivo."
+    },
+    {
+      "id": "Field_ReprocessChoice",
+      "key": "reprocessChoice",
+      "label": "Se rejeitado, o que fazer com o documento?",
+      "type": "radio",
+      "values": [
+        { "label": "Reprocessar (voltar para extração)", "value": "reprocess" },
+        { "label": "Apagar (arquivar documento)", "value": "delete" }
+      ],
+      "conditional": {
+        "hide": "=approved = true"
+      }
+    }
+  ],
+  "schemaVersion": 17,
+  "exporter": {
+    "name": "docuparse-pipeline (feature 014)",
+    "version": "1.0.0"
+  },
+  "id": "Form_TaskHumanVal",
+  "type": "default"
+}

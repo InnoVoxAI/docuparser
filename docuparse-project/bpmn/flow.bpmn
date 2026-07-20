@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.44.0">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.44.0">
   <bpmn:collaboration id="Collaboration_1yl717d">
     <bpmn:participant id="Participant_18krikj" processRef="docuparse-pipeline" />
     <bpmn:participant id="Participant_0pv7mwf" name="Analista" processRef="Process_06qdycv" />
@@ -62,9 +62,13 @@ Ex: (Grafana)</bpmn:text>
   </bpmn:collaboration>
   <bpmn:process id="docuparse-pipeline" name="DocuParse - Document Processing" isExecutable="true">
     <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Ingestion" targetRef="Gateway_1hajqec" />
-    <bpmn:sequenceFlow id="Flow_171awgt" name="Sim" sourceRef="Gateway_1hajqec" targetRef="Activity_0xc6pti" />
+    <bpmn:sequenceFlow id="Flow_171awgt" name="Sim" sourceRef="Gateway_1hajqec" targetRef="Activity_0xc6pti">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=fileValid = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_1r61p02" name="Não" sourceRef="Gateway_1hajqec" targetRef="Activity_0vx7jlw" />
-    <bpmn:sequenceFlow id="Flow_0jd71mf" name="Sim" sourceRef="Gateway_0lylr3v" targetRef="Task_Layout" />
+    <bpmn:sequenceFlow id="Flow_0jd71mf" name="Sim" sourceRef="Gateway_0lylr3v" targetRef="Task_Layout">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=ocrReadable = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_1ue6to2" name="Não" sourceRef="Gateway_0lylr3v" targetRef="Gateway_19gkipo" />
     <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_Layout" targetRef="Gateway_01v609m" />
     <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_Extraction" targetRef="Gateway_0kaeakc" />
@@ -75,20 +79,30 @@ Ex: (Grafana)</bpmn:text>
     <bpmn:sequenceFlow id="Flow_1jl9gnh" sourceRef="Activity_0xc6pti" targetRef="Gateway_0lylr3v" />
     <bpmn:sequenceFlow id="Flow_1qjry7k" name="Não" sourceRef="Gateway_19gkipo" targetRef="Activity_0dgit79" />
     <bpmn:sequenceFlow id="Flow_1jw1u3c" sourceRef="Activity_0dgit79" targetRef="Activity_0xc6pti" />
-    <bpmn:sequenceFlow id="Flow_0l3firy" name="Sim" sourceRef="Gateway_19gkipo" targetRef="Activity_12mxc87" />
+    <bpmn:sequenceFlow id="Flow_0l3firy" name="Sim" sourceRef="Gateway_19gkipo" targetRef="Activity_12mxc87">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=if is defined(ocrRetryCount) then ocrRetryCount &#62;= 3 else false</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_1vq12vg" sourceRef="Activity_12mxc87" targetRef="Activity_07jkc9p" />
     <bpmn:sequenceFlow id="Flow_0qe94kn" sourceRef="Activity_07jkc9p" targetRef="Event_1w6k9fs" />
-    <bpmn:exclusiveGateway id="Gateway_19gkipo" name="A imagem já foi processada 3x?">
+    <bpmn:exclusiveGateway id="Gateway_19gkipo" name="A imagem já foi processada 3x?" default="Flow_1qjry7k">
       <bpmn:incoming>Flow_1ue6to2</bpmn:incoming>
       <bpmn:outgoing>Flow_1qjry7k</bpmn:outgoing>
       <bpmn:outgoing>Flow_0l3firy</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:exclusiveGateway id="Gateway_0lylr3v" name="Documento legível?">
+    <bpmn:exclusiveGateway id="Gateway_0lylr3v" name="Documento legível?" default="Flow_1ue6to2">
       <bpmn:incoming>Flow_1jl9gnh</bpmn:incoming>
       <bpmn:outgoing>Flow_0jd71mf</bpmn:outgoing>
       <bpmn:outgoing>Flow_1ue6to2</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:serviceTask id="Activity_0dgit79" name="Pré processar/ tratar imagem">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-preprocess-image" retries="2" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=if is defined(ocrRetryCount) then ocrRetryCount else 0" target="ocr_retry_count" />
+          <zeebe:output source="=ocr_retry_count" target="ocrRetryCount" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_1qjry7k</bpmn:incoming>
       <bpmn:outgoing>Flow_1jw1u3c</bpmn:outgoing>
     </bpmn:serviceTask>
@@ -100,10 +114,12 @@ Ex: (Grafana)</bpmn:text>
         </zeebe:taskHeaders>
         <zeebe:ioMapping>
           <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=tenantId" target="tenant_id" />
           <zeebe:output source="=doc_status" target="docStatus" />
           <zeebe:output source="=document_type" target="documentType" />
           <zeebe:output source="=raw_text_uri" target="rawTextUri" />
           <zeebe:output source="=ocr_engine" target="ocrEngine" />
+          <zeebe:output source="=ocr_readable" target="ocrReadable" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_171awgt</bpmn:incoming>
@@ -113,16 +129,35 @@ Ex: (Grafana)</bpmn:text>
     <bpmn:endEvent id="Event_1x9edwy" name="Fim do processamento">
       <bpmn:incoming>Flow_0bxhafk</bpmn:incoming>
     </bpmn:endEvent>
-    <bpmn:exclusiveGateway id="Gateway_1hajqec" name="Arquivo válido para processamento?">
+    <bpmn:exclusiveGateway id="Gateway_1hajqec" name="Arquivo válido para processamento?" default="Flow_1r61p02">
       <bpmn:incoming>Flow_2</bpmn:incoming>
       <bpmn:outgoing>Flow_171awgt</bpmn:outgoing>
       <bpmn:outgoing>Flow_1r61p02</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:serviceTask id="Activity_10ryy35" name="Salvar erro plataforma de observabilidade">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-log-failure" retries="2" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=tenantId" target="tenant_id" />
+          <zeebe:input source="=rejectionReason" target="failure_reason" />
+          <zeebe:input source="=&#34;Task_Ingestion&#34;" target="failure_step" />
+          <zeebe:output source="=logged_at" target="loggedAt" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_19suztw</bpmn:incoming>
       <bpmn:outgoing>Flow_0bxhafk</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:serviceTask id="Activity_0vx7jlw" name="Notificar usuário">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-notify-user" retries="2" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=rejectionReason" target="rejection_reason" />
+          <zeebe:input source="=channel" target="channel" />
+          <zeebe:output source="=notified" target="notified" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_1r61p02</bpmn:incoming>
       <bpmn:outgoing>Flow_19suztw</bpmn:outgoing>
     </bpmn:serviceTask>
@@ -141,6 +176,8 @@ Ex: (Grafana)</bpmn:text>
           <zeebe:input source="=correlationId" target="correlation_id" />
           <zeebe:output source="=doc_status" target="docStatus" />
           <zeebe:output source="=duplicate" target="isDuplicate" />
+          <zeebe:output source="=file_valid" target="fileValid" />
+          <zeebe:output source="=rejection_reason" target="rejectionReason" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_0xcka0q</bpmn:incoming>
@@ -149,42 +186,85 @@ Ex: (Grafana)</bpmn:text>
     </bpmn:serviceTask>
     <bpmn:startEvent id="Event_0b3b71w" name="Arquivo enviado por E-mail">
       <bpmn:outgoing>Flow_0xcka0q</bpmn:outgoing>
-      <bpmn:messageEventDefinition id="MessageEventDefinition_14zuqny" />
+      <bpmn:messageEventDefinition id="MessageEventDefinition_14zuqny" messageRef="Message_FileReceivedEmail" />
     </bpmn:startEvent>
     <bpmn:serviceTask id="Activity_12mxc87" name="Notificar usuário">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-notify-user" retries="2" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=&#34;Documento ilegível após 3 tentativas de processamento&#34;" target="rejection_reason" />
+          <zeebe:input source="=channel" target="channel" />
+          <zeebe:output source="=notified" target="notified" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_0l3firy</bpmn:incoming>
       <bpmn:outgoing>Flow_1vq12vg</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:exclusiveGateway id="Gateway_01v609m" name="Documento configurado docuparser?">
+    <bpmn:exclusiveGateway id="Gateway_01v609m" name="Documento configurado docuparser?" default="Flow_1597b5e">
       <bpmn:incoming>Flow_4</bpmn:incoming>
       <bpmn:outgoing>Flow_0qi77rt</bpmn:outgoing>
       <bpmn:outgoing>Flow_1597b5e</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:sequenceFlow id="Flow_0qi77rt" name="Sim" sourceRef="Gateway_01v609m" targetRef="Gateway_0xe8zt4" />
+    <bpmn:sequenceFlow id="Flow_0qi77rt" name="Sim" sourceRef="Gateway_01v609m" targetRef="Gateway_0xe8zt4">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=documentConfigured = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="Flow_1597b5e" name="Não" sourceRef="Gateway_01v609m" targetRef="Activity_1hafvqe" />
     <bpmn:sequenceFlow id="Flow_03y6nch" sourceRef="Activity_1hafvqe" targetRef="Gateway_0xe8zt4" />
-    <bpmn:exclusiveGateway id="Gateway_0kaeakc" name="Confiança &#62; 95%?">
+    <bpmn:exclusiveGateway id="Gateway_0kaeakc" name="Confiança &#62; 95%?" default="Flow_1g56dbe">
       <bpmn:incoming>Flow_5</bpmn:incoming>
       <bpmn:outgoing>Flow_1g56dbe</bpmn:outgoing>
       <bpmn:outgoing>Flow_1tw1rhb</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:sequenceFlow id="Flow_1g56dbe" name="Não" sourceRef="Gateway_0kaeakc" targetRef="Task_HumanVal" />
-    <bpmn:sequenceFlow id="Flow_1tw1rhb" name="Sim" sourceRef="Gateway_0kaeakc" targetRef="Event_15yo9c3" />
+    <bpmn:sequenceFlow id="Flow_1tw1rhb" name="Sim" sourceRef="Gateway_0kaeakc" targetRef="Activity_ApproveDoc">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=if is defined(extractionConfidence) then extractionConfidence &#62; 0.95 else false</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ApproveDocToEnd" sourceRef="Activity_ApproveDoc" targetRef="Event_15yo9c3" />
+    <bpmn:serviceTask id="Activity_ApproveDoc" name="Aprovar documento">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-validate-document" retries="2" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=tenantId" target="tenant_id" />
+          <zeebe:input source="=&#34;approved&#34;" target="decision" />
+          <zeebe:input source="=if is defined(validationNotes) then validationNotes else &#34;auto-approved: confidence&#62;95%&#34;" target="notes" />
+          <zeebe:input source="=if is defined(correctedFields) then correctedFields else null" target="corrected_fields" />
+          <zeebe:output source="=doc_status" target="docStatus" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1tw1rhb</bpmn:incoming>
+      <bpmn:incoming>Flow_1n0hpsg</bpmn:incoming>
+      <bpmn:outgoing>Flow_ApproveDocToEnd</bpmn:outgoing>
+    </bpmn:serviceTask>
     <bpmn:userTask id="Task_HumanVal" name="Validar dados">
       <bpmn:extensionElements>
         <zeebe:assignmentDefinition candidateGroups="operators" />
+        <zeebe:formDefinition formId="Form_TaskHumanVal" />
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_1g56dbe</bpmn:incoming>
       <bpmn:outgoing>Flow_0dyhv6w</bpmn:outgoing>
     </bpmn:userTask>
     <bpmn:sequenceFlow id="Flow_0dyhv6w" sourceRef="Task_HumanVal" targetRef="Gateway_0vi5mc1" />
-    <bpmn:exclusiveGateway id="Gateway_0vi5mc1" name="Dados corrigidos e aprovados">
+    <bpmn:exclusiveGateway id="Gateway_0vi5mc1" name="Dados corrigidos e aprovados" default="Flow_1w5ymsj">
       <bpmn:incoming>Flow_0dyhv6w</bpmn:incoming>
       <bpmn:outgoing>Flow_1n0hpsg</bpmn:outgoing>
       <bpmn:outgoing>Flow_1w5ymsj</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:sequenceFlow id="Flow_1n0hpsg" name="Sim (Aprovado)" sourceRef="Gateway_0vi5mc1" targetRef="Event_15yo9c3" />
+    <bpmn:sequenceFlow id="Flow_1n0hpsg" name="Sim (Aprovado)" sourceRef="Gateway_0vi5mc1" targetRef="Activity_ApproveDoc">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=approved = true</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:serviceTask id="Activity_0ho24el" name="Status do documento = Rejeitado">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-validate-document" retries="2" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=tenantId" target="tenant_id" />
+          <zeebe:input source="=&#34;rejected&#34;" target="decision" />
+          <zeebe:input source="=if is defined(validationNotes) then validationNotes else &#34;&#34;" target="notes" />
+          <zeebe:output source="=doc_status" target="docStatus" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_1w5ymsj</bpmn:incoming>
       <bpmn:outgoing>Flow_1l4ighh</bpmn:outgoing>
     </bpmn:serviceTask>
@@ -192,65 +272,96 @@ Ex: (Grafana)</bpmn:text>
     <bpmn:sequenceFlow id="Flow_1l4ighh" sourceRef="Activity_0ho24el" targetRef="Gateway_1qmnvbm" />
     <bpmn:startEvent id="Event_11ti25w" name="Arquivo enviado por Whatsapp">
       <bpmn:outgoing>Flow_0tiwio9</bpmn:outgoing>
-      <bpmn:messageEventDefinition id="MessageEventDefinition_1ms9b0w" />
+      <bpmn:messageEventDefinition id="MessageEventDefinition_1ms9b0w" messageRef="Message_FileReceivedWhatsapp" />
     </bpmn:startEvent>
     <bpmn:userTask id="Activity_1hafvqe" name="Criar modelo/ Usar modelo existente">
       <bpmn:extensionElements>
-        <zeebe:taskHeaders>
-          <zeebe:header key="retryBackoff" value="PT30S" />
-        </zeebe:taskHeaders>
         <zeebe:ioMapping>
           <zeebe:input source="=documentId" target="document_id" />
-          <zeebe:output source="=doc_status" target="docStatus" />
           <zeebe:output source="=schema_id" target="schemaId" />
-          <zeebe:output source="=extraction_confidence" target="extractionConfidence" />
-          <zeebe:output source="=extraction_requires_human_validation" target="extractionNeedsReview" />
-          <zeebe:output source="=extraction_skipped" target="extractionSkipped" />
         </zeebe:ioMapping>
         <zeebe:userTask />
+        <zeebe:formDefinition formId="Form_ActivityHafvqe" />
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_1597b5e</bpmn:incoming>
       <bpmn:outgoing>Flow_03y6nch</bpmn:outgoing>
     </bpmn:userTask>
-    <bpmn:exclusiveGateway id="Gateway_1qmnvbm" name="Apagar ou reprocessar documento?">
+    <bpmn:exclusiveGateway id="Gateway_1qmnvbm" name="Apagar ou reprocessar documento?" default="Flow_18bua8t">
       <bpmn:incoming>Flow_1l4ighh</bpmn:incoming>
       <bpmn:outgoing>Flow_18bua8t</bpmn:outgoing>
       <bpmn:outgoing>Flow_1cioit5</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:sequenceFlow id="Flow_18bua8t" sourceRef="Gateway_1qmnvbm" targetRef="Activity_142wpxf" />
     <bpmn:serviceTask id="Activity_00oy1fz" name="Reprocessar documento">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-reset-for-reprocessing" retries="2" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=tenantId" target="tenant_id" />
+          <zeebe:output source="=doc_status" target="docStatus" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_1cioit5</bpmn:incoming>
       <bpmn:outgoing>Flow_0fpuovt</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:sequenceFlow id="Flow_1cioit5" sourceRef="Gateway_1qmnvbm" targetRef="Activity_00oy1fz" />
+    <bpmn:sequenceFlow id="Flow_1cioit5" sourceRef="Gateway_1qmnvbm" targetRef="Activity_00oy1fz">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=reprocessChoice = "reprocess"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
     <bpmn:userTask id="Activity_142wpxf" name="Apagar documento">
       <bpmn:extensionElements>
         <zeebe:userTask />
+        <zeebe:formDefinition formId="Form_Activity142wpxf" />
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_18bua8t</bpmn:incoming>
       <bpmn:outgoing>Flow_1394e3y</bpmn:outgoing>
     </bpmn:userTask>
+    <bpmn:serviceTask id="Activity_ArchiveDoc" name="Arquivar documento">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-archive-document" retries="2" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=tenantId" target="tenant_id" />
+          <zeebe:output source="=doc_status" target="docStatus" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1394e3y</bpmn:incoming>
+      <bpmn:outgoing>Flow_ArchiveDocToEnd</bpmn:outgoing>
+    </bpmn:serviceTask>
     <bpmn:serviceTask id="Task_Layout" name="Identificar tipo de documento">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="docuparse-classify-layout" retries="2" />
         <zeebe:ioMapping>
           <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=tenantId" target="tenant_id" />
           <zeebe:input source="=rawTextUri" target="raw_text_uri" />
           <zeebe:input source="=documentType" target="document_type" />
           <zeebe:output source="=layout" target="layout" />
           <zeebe:output source="=layout_confidence" target="layoutConfidence" />
           <zeebe:output source="=layout_requires_human_validation" target="extractionNeedsReview" />
+          <zeebe:output source="=document_configured" target="documentConfigured" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
       <bpmn:incoming>Flow_0jd71mf</bpmn:incoming>
       <bpmn:outgoing>Flow_4</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:sequenceFlow id="Flow_0fpuovt" sourceRef="Activity_00oy1fz" targetRef="Gateway_0xe8zt4" />
-    <bpmn:sequenceFlow id="Flow_1394e3y" sourceRef="Activity_142wpxf" targetRef="Event_07z8dpg" />
+    <bpmn:sequenceFlow id="Flow_1394e3y" sourceRef="Activity_142wpxf" targetRef="Activity_ArchiveDoc" />
+    <bpmn:sequenceFlow id="Flow_ArchiveDocToEnd" sourceRef="Activity_ArchiveDoc" targetRef="Event_07z8dpg" />
     <bpmn:endEvent id="Event_07z8dpg" name="Processo encerrado">
-      <bpmn:incoming>Flow_1394e3y</bpmn:incoming>
+      <bpmn:incoming>Flow_ArchiveDocToEnd</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:serviceTask id="Activity_07jkc9p" name="Salvar erro plataforma de observabilidade">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="docuparse-log-failure" retries="2" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=tenantId" target="tenant_id" />
+          <zeebe:input source="=&#34;Documento ilegível após 3 tentativas de processamento&#34;" target="failure_reason" />
+          <zeebe:input source="=ocrRetryCount" target="ocr_retry_count" />
+          <zeebe:input source="=&#34;Task_OCR&#34;" target="failure_step" />
+          <zeebe:output source="=logged_at" target="loggedAt" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_1vq12vg</bpmn:incoming>
       <bpmn:outgoing>Flow_0qe94kn</bpmn:outgoing>
     </bpmn:serviceTask>
@@ -258,9 +369,7 @@ Ex: (Grafana)</bpmn:text>
       <bpmn:incoming>Flow_0qe94kn</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:endEvent id="Event_15yo9c3" name="Documento enviado">
-      <bpmn:incoming>Flow_1tw1rhb</bpmn:incoming>
-      <bpmn:incoming>Flow_1n0hpsg</bpmn:incoming>
-      <bpmn:messageEventDefinition id="MessageEventDefinition_17k7ab2" />
+      <bpmn:incoming>Flow_ApproveDocToEnd</bpmn:incoming>
     </bpmn:endEvent>
     <bpmn:serviceTask id="Task_Extraction" name="Extrair dados do documento (LLM)">
       <bpmn:extensionElements>
@@ -270,6 +379,10 @@ Ex: (Grafana)</bpmn:text>
         </zeebe:taskHeaders>
         <zeebe:ioMapping>
           <zeebe:input source="=documentId" target="document_id" />
+          <zeebe:input source="=tenantId" target="tenant_id" />
+          <zeebe:input source="=if is defined(layout) then layout else &#34;&#34;" target="layout" />
+          <zeebe:input source="=if is defined(documentType) then documentType else &#34;unknown&#34;" target="document_type" />
+          <zeebe:input source="=if is defined(schemaId) then schemaId else &#34;&#34;" target="schema_config_id" />
           <zeebe:output source="=doc_status" target="docStatus" />
           <zeebe:output source="=schema_id" target="schemaId" />
           <zeebe:output source="=extraction_confidence" target="extractionConfidence" />
@@ -292,6 +405,8 @@ Ex: (Grafana)</bpmn:text>
     <bpmn:association id="Association_1ku1vix" associationDirection="None" sourceRef="Task_Extraction" targetRef="TextAnnotation_0u5bna1" />
   </bpmn:process>
   <bpmn:process id="Process_06qdycv" isExecutable="false" />
+  <bpmn:message id="Message_FileReceivedEmail" name="docuparse-file-received-email" />
+  <bpmn:message id="Message_FileReceivedWhatsapp" name="docuparse-file-received-whatsapp" />
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
     <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_1yl717d">
       <bpmndi:BPMNShape id="Participant_18krikj_di" bpmnElement="Participant_18krikj" isHorizontal="true">
@@ -554,19 +669,27 @@ Ex: (Grafana)</bpmn:text>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1tw1rhb_di" bpmnElement="Flow_1tw1rhb">
         <di:waypoint x="2125" y="450" />
-        <di:waypoint x="2402" y="450" />
+        <di:waypoint x="2220" y="450" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2254" y="432" width="19" height="14" />
+          <dc:Bounds x="2160" y="432" width="19" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ApproveDocToEnd_di" bpmnElement="Flow_ApproveDocToEnd">
+        <di:waypoint x="2320" y="450" />
+        <di:waypoint x="2402" y="450" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Activity_ApproveDoc_di" bpmnElement="Activity_ApproveDoc">
+        <dc:Bounds x="2220" y="410" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_0dyhv6w_di" bpmnElement="Flow_0dyhv6w">
         <di:waypoint x="2150" y="635" />
         <di:waypoint x="2235" y="635" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1n0hpsg_di" bpmnElement="Flow_1n0hpsg">
         <di:waypoint x="2285" y="635" />
-        <di:waypoint x="2420" y="635" />
-        <di:waypoint x="2420" y="468" />
+        <di:waypoint x="2270" y="635" />
+        <di:waypoint x="2270" y="490" />
         <bpmndi:BPMNLabel>
           <dc:Bounds x="2291" y="617" width="77" height="14" />
         </bpmndi:BPMNLabel>
@@ -598,9 +721,18 @@ Ex: (Grafana)</bpmn:text>
         <di:waypoint x="1840" y="475" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_1394e3y_di" bpmnElement="Flow_1394e3y">
-        <di:waypoint x="2360" y="1060" />
-        <di:waypoint x="2360" y="1152" />
+        <di:waypoint x="2410" y="1020" />
+        <di:waypoint x="2450" y="1020" />
       </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ArchiveDocToEnd_di" bpmnElement="Flow_ArchiveDocToEnd">
+        <di:waypoint x="2500" y="1060" />
+        <di:waypoint x="2500" y="1170" />
+        <di:waypoint x="2378" y="1170" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Activity_ArchiveDoc_di" bpmnElement="Activity_ArchiveDoc">
+        <dc:Bounds x="2450" y="980" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_1vdwiwp_di" bpmnElement="Flow_1vdwiwp">
         <di:waypoint x="1865" y="450" />
         <di:waypoint x="1910" y="450" />

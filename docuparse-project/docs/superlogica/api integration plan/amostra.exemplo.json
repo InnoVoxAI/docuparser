@@ -1,0 +1,5 @@
+[
+  {"doc_id": "nf-0001",  "tipo": "nota_fiscal",   "cnpj_papel_condominio": "11.222.333/0001-81", "condominio_esperado_id": "42"},
+  {"doc_id": "bol-0002", "tipo": "boleto",        "cnpj_papel_condominio": "45623178000127",     "condominio_esperado_id": "57"},
+  {"doc_id": "agua-0003","tipo": "conta_consumo", "cnpj_papel_condominio": "",                   "condominio_esperado_id": "57"}
+]

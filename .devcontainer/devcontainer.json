@@ -1,0 +1,46 @@
+{
+  "name": "docuparser",
+
+  "dockerComposeFile": "docker-compose.yml",
+
+  "service": "docuparser",
+
+  "workspaceFolder": "/docuparser",
+
+  "shutdownAction": "stopCompose",
+
+  "remoteUser": "vscode",
+
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached"
+  ],
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-azuretools.vscode-docker",
+        "ms-vscode-remote.remote-containers",
+        "ms-vscode.remote-explorer",
+        "esbenp.prettier-vscode",
+        "tamasfe.even-better-toml",
+        "charliermarsh.ruff",
+        "github.copilot",
+        "anthropic.claude-code"
+      ]
+    }
+  },
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh"
+}

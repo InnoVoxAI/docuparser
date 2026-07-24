@@ -1266,8 +1266,11 @@ def _apply_noisy_field_enrichment(
             current_value
         ):
             should_replace = bool(noisy_value and _validate_cnpj(noisy_value))
-        elif field_name == "retencao" and len(current_value) > 240 or field_name == "descricao_servico" and _is_low_quality_ocr_text(
-            current_value
+        elif (
+            field_name == "retencao"
+            and len(current_value) > 240
+            or field_name == "descricao_servico"
+            and _is_low_quality_ocr_text(current_value)
         ):
             should_replace = bool(noisy_value)
         elif field_name == "valor_nf":

@@ -1,6 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import axios, { type InternalAxiosRequestConfig } from 'axios'
 import {
     AlertTriangle,
     Building2,
@@ -37,10 +36,11 @@ import {
     Pagination,
     ConfirmDialog,
 } from './shared/components'
+import { asApiError, readError, formatDate } from './shared/utils'
+import { api, comApi, adminApi } from './shared/lib/http'
+import { AuthProvider, useAuth, PermissionGuard, AcessoNaoAutorizado, LoginPage } from './modules/auth'
+export { AuthProvider }
 import type {
-    AuthContextValue,
-    User,
-    LoginResponse,
     Tenant,
     Document,
     ActiveView,
@@ -78,20 +78,6 @@ import { CONTA_AGUA_DEFAULT_EXAMPLES } from './models/contadeagua/examples'
 import { CONTA_AGUA_DEFAULT_RULES } from './models/contadeagua/rules'
 import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } from './models/recibo/schemas'
 import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
-
-// Base dos backends: URL absoluta no deploy (Cloudflare Pages, via
-// VITE_BACKEND_*_URL) e caminho relativo em dev/testes (fallback pelo proxy do
-// Vite / handlers MSW). Se a env estiver vazia, mantém o comportamento relativo.
-const CORE = import.meta.env.VITE_BACKEND_CORE_URL ?? ''
-const COM = import.meta.env.VITE_BACKEND_COM_URL ?? ''
-
-const api = axios.create({ baseURL: `${CORE}/api/ocr` })
-const authApi = axios.create({ baseURL: `${CORE}/api/auth` })
-// backend-com (upload/poll) autentica pelo JWT do usuário — anexado via
-// interceptor abaixo, igual ao `api`. Nenhum segredo é embutido no frontend.
-// Em dev, COM vazio → '/com/api/v1' (o proxy do Vite remove o '/com'); no deploy → absoluto.
-const comApi = axios.create({ baseURL: COM ? `${COM}/api/v1` : '/com/api/v1' })
-const adminApi = axios.create({ baseURL: `${CORE}/api/admin` })
 
 // Resultado do polling de uma extração assíncrona (ver pollDocumentExtraction).
 type ExtractionPollOutcome =
@@ -223,357 +209,6 @@ function useDocumentPage(statusCsv?: string, options: { autoRefresh?: boolean; r
     }
 
     return { page, setPage, search, setSearch, data, loading, error, refresh: fetchPage }
-}
-
-// ─── Auth ────────────────────────────────────────────────────────────────────
-
-function decodeJwtTenant(token: string): string | null {
-    try {
-        const payload = token.split('.')[1]
-        const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4)
-        return ((JSON.parse(atob(padded)) as Record<string, unknown>).tenant as string | null) ?? null
-    } catch {
-        return null
-    }
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null)
-
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<User | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [currentTenant, setCurrentTenant] = useState<string | null>(() =>
-        decodeJwtTenant(localStorage.getItem('access_token') ?? ''),
-    )
-
-    useEffect(() => {
-        const token = localStorage.getItem('access_token')
-        if (!token) {
-            setLoading(false)
-            return
-        }
-        authApi
-            .get<User>('/me', { headers: { Authorization: `Bearer ${token}` } })
-            .then((r) => setUser(r.data))
-            .catch(() => {
-                localStorage.removeItem('access_token')
-                localStorage.removeItem('refresh_token')
-            })
-            .finally(() => setLoading(false))
-    }, [])
-
-    useEffect(() => {
-        const attachToken = (config: InternalAxiosRequestConfig) => {
-            const token = localStorage.getItem('access_token')
-            if (token) config.headers.Authorization = `Bearer ${token}`
-            return config
-        }
-        const apiId = api.interceptors.request.use(attachToken)
-        const comId = comApi.interceptors.request.use(attachToken)
-        const adminId = adminApi.interceptors.request.use(attachToken)
-        return () => {
-            api.interceptors.request.eject(apiId)
-            comApi.interceptors.request.eject(comId)
-            adminApi.interceptors.request.eject(adminId)
-        }
-    }, [])
-
-    const login = async (email: string, password: string): Promise<void> => {
-        const r = await authApi.post<LoginResponse>('/login', { email, password })
-        localStorage.setItem('access_token', r.data.access)
-        localStorage.setItem('refresh_token', r.data.refresh)
-        setUser(r.data.user)
-        setCurrentTenant(decodeJwtTenant(r.data.access))
-    }
-
-    const logout = async (): Promise<void> => {
-        const refresh = localStorage.getItem('refresh_token')
-        try {
-            if (refresh)
-                await authApi.post(
-                    '/logout',
-                    { refresh },
-                    { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } },
-                )
-        } catch {
-            /* ignore */
-        }
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        setUser(null)
-        setCurrentTenant(null)
-    }
-
-    const hasPermission = (code: string): boolean => Array.isArray(user?.permissions) && user.permissions.includes(code)
-
-    const switchTenant = async (slug: string): Promise<void> => {
-        const r = await adminApi.post<{ data: { access: string; refresh: string } }>(`/tenants/${slug}/switch/`)
-        localStorage.setItem('access_token', r.data.data.access)
-        localStorage.setItem('refresh_token', r.data.data.refresh)
-        setCurrentTenant(decodeJwtTenant(r.data.data.access))
-    }
-
-    return (
-        <AuthContext.Provider value={{ user, loading, currentTenant, login, logout, hasPermission, switchTenant }}>
-            {children}
-        </AuthContext.Provider>
-    )
-}
-
-function useAuth(): AuthContextValue {
-    const ctx = useContext(AuthContext)
-    if (!ctx) throw new Error('useAuth deve ser usado dentro de AuthProvider')
-    return ctx
-}
-
-function PermissionGuard({
-    code,
-    children,
-    fallback = null,
-}: {
-    code: string
-    children: React.ReactNode
-    fallback?: React.ReactNode
-}) {
-    const { hasPermission } = useAuth()
-    return hasPermission(code) ? children : fallback
-}
-
-function AcessoNaoAutorizado() {
-    return (
-        <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
-            <AlertTriangle size={40} className="mb-4" />
-            <p className="text-lg font-medium">Acesso não autorizado</p>
-            <p className="mt-1 text-sm">Você não tem permissão para acessar esta área.</p>
-        </div>
-    )
-}
-
-function LoginPage() {
-    const { login } = useAuth()
-    const [mode, setMode] = useState<'login' | 'register'>(() => {
-        const params = new URLSearchParams(window.location.search)
-        return params.has('tenant') ? 'register' : 'login'
-    })
-    const [email, setEmail] = useState('')
-    const [password, setPassword] = useState('')
-    const [name, setName] = useState('')
-    const [tenantSlug, setTenantSlug] = useState(() => {
-        const params = new URLSearchParams(window.location.search)
-        return params.get('tenant') ?? ''
-    })
-    const [confirmPassword, setConfirmPassword] = useState('')
-    const [submitting, setSubmitting] = useState(false)
-    const [error, setError] = useState('')
-    const [success, setSuccess] = useState('')
-
-    const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault()
-        setError('')
-        setSubmitting(true)
-        try {
-            await login(email, password)
-        } catch (err) {
-            const e = asApiError(err)
-            const detail = e.response?.data?.detail
-            setError(
-                e.response?.status === 403
-                    ? detail || 'Conta inativa. Aguarde ativação pelo administrador.'
-                    : detail || 'Credenciais inválidas.',
-            )
-        } finally {
-            setSubmitting(false)
-        }
-    }
-
-    const handleRegister = async (e: React.FormEvent) => {
-        e.preventDefault()
-        setError('')
-        if (password !== confirmPassword) {
-            setError('As senhas não coincidem.')
-            return
-        }
-        setSubmitting(true)
-        try {
-            await authApi.post('/register', { name, email, password, tenant_slug: tenantSlug })
-            setSuccess('Conta criada! Aguarde a ativação pelo administrador.')
-            setMode('login')
-            setEmail('')
-            setPassword('')
-        } catch (err) {
-            const data = asApiError(err).response?.data
-            setError(data?.detail || data?.email?.[0] || data?.password?.[0] || 'Erro ao criar conta.')
-        } finally {
-            setSubmitting(false)
-        }
-    }
-
-    return (
-        <div className="flex min-h-screen items-center justify-center bg-zinc-50">
-            <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
-                <div className="mb-6 text-center">
-                    <div className="text-2xl font-semibold">DocuParse</div>
-                    <div className="mt-1 text-sm text-zinc-500">
-                        {mode === 'login' ? 'Entre com sua conta para continuar' : 'Criar nova conta'}
-                    </div>
-                </div>
-                {success && (
-                    <div className="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</div>
-                )}
-                {error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-
-                {mode === 'login' ? (
-                    <form onSubmit={handleLogin} className="space-y-4">
-                        <div>
-                            <label htmlFor="login-email" className="mb-1 block text-sm font-medium text-zinc-700">
-                                E-mail
-                            </label>
-                            <input
-                                id="login-email"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                                placeholder="voce@empresa.com"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-zinc-700">
-                                Senha
-                            </label>
-                            <input
-                                id="login-password"
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                                placeholder="••••••••"
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={submitting}
-                            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-                        >
-                            {submitting ? 'Entrando...' : 'Entrar'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setMode('register')
-                                setError('')
-                            }}
-                            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-800"
-                        >
-                            Criar conta
-                        </button>
-                    </form>
-                ) : (
-                    <form onSubmit={handleRegister} className="space-y-4">
-                        <div>
-                            <label htmlFor="register-name" className="mb-1 block text-sm font-medium text-zinc-700">
-                                Nome
-                            </label>
-                            <input
-                                id="register-name"
-                                type="text"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                                placeholder="Seu nome"
-                            />
-                        </div>
-                        <div>
-                            <label
-                                htmlFor="register-tenant-slug"
-                                className="mb-1 block text-sm font-medium text-zinc-700"
-                            >
-                                Código do tenant
-                            </label>
-                            <input
-                                id="register-tenant-slug"
-                                type="text"
-                                value={tenantSlug}
-                                onChange={(e) => setTenantSlug(e.target.value)}
-                                required
-                                pattern="[a-z0-9-]+"
-                                title="Apenas letras minúsculas, números e hífens"
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none font-mono"
-                                placeholder="ex: acme"
-                            />
-                            <p className="mt-1 text-xs text-zinc-400">Solicite o código ao administrador do sistema.</p>
-                        </div>
-                        <div>
-                            <label htmlFor="register-email" className="mb-1 block text-sm font-medium text-zinc-700">
-                                E-mail
-                            </label>
-                            <input
-                                id="register-email"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                                placeholder="voce@empresa.com"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="register-password" className="mb-1 block text-sm font-medium text-zinc-700">
-                                Senha
-                            </label>
-                            <input
-                                id="register-password"
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                minLength={8}
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                                placeholder="Mín. 8 caracteres"
-                            />
-                        </div>
-                        <div>
-                            <label
-                                htmlFor="register-confirm-password"
-                                className="mb-1 block text-sm font-medium text-zinc-700"
-                            >
-                                Confirmar senha
-                            </label>
-                            <input
-                                id="register-confirm-password"
-                                type="password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
-                                placeholder="••••••••"
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={submitting}
-                            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-                        >
-                            {submitting ? 'Criando conta...' : 'Criar conta'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setMode('login')
-                                setError('')
-                            }}
-                            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-800"
-                        >
-                            Já tenho conta
-                        </button>
-                    </form>
-                )}
-            </div>
-        </div>
-    )
 }
 
 // ─── TenantsView ─────────────────────────────────────────────────────────────
@@ -5341,16 +4976,6 @@ function viewTitle(view: ActiveView): string {
     return NAV_ITEMS.find((item) => item.id === view)?.label ?? 'DocuParse'
 }
 
-function formatDate(value?: string | number | Date | null): string {
-    if (!value) {
-        return '-'
-    }
-    return new Intl.DateTimeFormat('pt-BR', {
-        dateStyle: 'short',
-        timeStyle: 'short',
-    }).format(new Date(value))
-}
-
 function parseFieldEntry(raw: unknown): { value: string; confidence: number | null } {
     if (raw === null || raw === undefined) return { value: '', confidence: null }
     if (typeof raw === 'object' && 'value' in raw) {
@@ -5487,35 +5112,6 @@ function normalizeSearchText(value: unknown): string {
 
 function escapeRegExp(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-// Forma defensiva de erros de axios/rede. As respostas de erro variam por
-// endpoint, então `data` permanece `any` — este é o único ponto documentado de
-// `any` para leitura de erros (FR-010); todos os catch passam por `asApiError`.
-interface ApiError {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- FR-010: único `any` documentado do arquivo.
-    response?: { status?: number; data?: any }
-    code?: string
-    message?: string
-}
-
-function asApiError(error: unknown): ApiError {
-    return (error ?? {}) as ApiError
-}
-
-function readError(error: unknown, fallback: string): string {
-    const e = asApiError(error)
-    const backendMessage = e.response?.data?.detail || e.response?.data?.error
-    if (backendMessage) {
-        return backendMessage
-    }
-    if (e.response?.status === 401) {
-        return 'Sessao expirada ou nao autenticada. Faca login novamente.'
-    }
-    if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
-        return `${fallback} Verifique se backend-core e backend-com estao rodando.`
-    }
-    return fallback
 }
 
 // ─── User Management Screen ───────────────────────────────────────────────────

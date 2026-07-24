@@ -5,6 +5,7 @@
 - Carregar apenas os arquivos necessários para a tarefa atual.
 - Antes de editar, checar o `git status` atual e preservar mudanças não relacionadas do usuário.
 - Quando a tarefa envolver comportamento de API, rodar primeiro o teste mais específico, depois a suíte mais ampla se necessário.
+- Sempre que finalizar uma tarefa lembre-se de documentar.
 
 ## Projetos
 Existem 4 backends nas seguintes pastas:

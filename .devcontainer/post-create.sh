@@ -28,6 +28,9 @@ export UV_PYTHON_PREFERENCE=only-managed
 uv python install 3.12
 uv tool install --python 3.12 basic-memory
 
+echo "Installing pre-commit (required by .git/hooks/pre-commit)..."
+uv tool install pre-commit
+
 echo "Ensuring basic-memory 'docuparser' project points to /docuparser/memories..."
 mkdir -p /docuparser/memories
 

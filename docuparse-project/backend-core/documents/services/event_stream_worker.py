@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
-from collections.abc import Callable
 
 from docuparse_events import EventBus, publish_dead_letter, sleep_interval
 from docuparse_observability import log_event

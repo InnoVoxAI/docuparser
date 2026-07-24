@@ -5,7 +5,6 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from django.test import TestCase
-
 from docuparse_events import LocalJsonlEventBus
 
 from documents.models import Document, DocumentEvent

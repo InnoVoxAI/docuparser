@@ -5,7 +5,6 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-
 DOCUMENT_ORIGINAL_KEY = "documents/{tenant_id}/{document_id}/original"
 DOCUMENT_OCR_RAW_TEXT_KEY = "documents/{tenant_id}/{document_id}/ocr/raw_text.json"
 

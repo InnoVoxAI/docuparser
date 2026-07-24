@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
-from events import DocumentReceivedEvent, OCRCompletedEvent, OCRFailedEvent
 from docuparse_events import (
     EventBus,
     event_bus_from_env,
@@ -17,6 +16,7 @@ from docuparse_events import (
 )
 from docuparse_observability import log_event
 from docuparse_storage import LocalStorage
+from events import DocumentReceivedEvent, OCRCompletedEvent, OCRFailedEvent
 
 from application.process_document import process_document
 

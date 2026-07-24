@@ -20,9 +20,9 @@ from typing import Any
 
 import cv2
 import numpy as np
+from shared.preprocessing import decode_image, preprocess_for_paddle_engine
 
 from infrastructure.engines.base_engine import BaseOCREngine
-from shared.preprocessing import decode_image, preprocess_for_paddle_engine
 
 
 class PaddleOCREngine(BaseOCREngine):
@@ -39,7 +39,7 @@ class PaddleOCREngine(BaseOCREngine):
 
             # PASSO CRÍTICO: habilitar classificador de ângulo e linguagem PT.
             self.ocr = PaddleOCR(lang="pt", use_angle_cls=True)
-        except Exception as exc:
+        except (ImportError, RuntimeError) as exc:
             # Mantemos modo resiliente para não derrubar o fluxo inteiro.
             self._init_error = str(exc)
 

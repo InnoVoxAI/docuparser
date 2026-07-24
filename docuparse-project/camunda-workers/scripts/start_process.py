@@ -21,7 +21,7 @@ import sys
 # Allow running from project root or scripts/ directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from pyzeebe import ZeebeClient, create_insecure_channel  # noqa: E402
+from pyzeebe import ZeebeClient, create_insecure_channel
 
 
 async def start(

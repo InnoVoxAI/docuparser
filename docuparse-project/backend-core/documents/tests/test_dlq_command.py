@@ -6,7 +6,6 @@ from tempfile import TemporaryDirectory
 
 from django.core.management import call_command
 from django.test import TestCase
-
 from docuparse_events import EventMessage, LocalJsonlEventBus, publish_dead_letter
 
 

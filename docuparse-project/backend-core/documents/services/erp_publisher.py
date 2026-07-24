@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from django.conf import settings
-
 from docuparse_events import event_bus_from_env
 from docuparse_observability import log_event
 from events import ERPIntegrationRequestedEvent

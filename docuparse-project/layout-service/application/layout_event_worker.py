@@ -8,8 +8,6 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 from uuid import uuid4
 
-from domain.classifier import classify_layout
-from events import LayoutClassifiedEvent, OCRCompletedEvent
 from docuparse_events import (
     EventBus,
     event_bus_from_env,
@@ -18,6 +16,8 @@ from docuparse_events import (
 )
 from docuparse_observability import log_event
 from docuparse_storage import LocalStorage
+from domain.classifier import classify_layout
+from events import LayoutClassifiedEvent, OCRCompletedEvent
 
 logger = logging.getLogger(__name__)
 

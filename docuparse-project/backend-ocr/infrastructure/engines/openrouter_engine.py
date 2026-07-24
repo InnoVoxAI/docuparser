@@ -200,8 +200,8 @@ def _parse_llm_json(text: str) -> dict[str, Any]:
         parsed = json.loads(stripped)
         if isinstance(parsed, dict):
             return parsed
-    except Exception:
-        pass
+    except json.JSONDecodeError as e:
+        logger.debug("Failed to parse JSON: %s", e)
     extracted = _extract_text_from_partial_json(stripped)
     if extracted:
         logger.warning(
@@ -457,7 +457,7 @@ class OpenRouterOCREngine(BaseOCREngine):
                 )
             return self._process_image(content, timeout_s=timeout_s)
 
-        except Exception as exc:
+        except (ValueError, requests.RequestException, OSError) as exc:
             logger.error("OpenRouterOCREngine error: %s", exc)
             return {
                 "raw_text": "",
@@ -513,7 +513,18 @@ class OpenRouterOCREngine(BaseOCREngine):
         try:
             text = _extract_text_with_docling(content)
             engine_used = "docling"
-        except Exception as exc:
+        except (
+            AttributeError,
+            ImportError,
+            KeyError,
+            LookupError,
+            ModuleNotFoundError,
+            OSError,
+            requests.RequestException,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as exc:
             logger.warning("Docling failed (%s). Falling back to PyMuPDF.", exc)
             text = _extract_text_with_pymupdf(content)
             engine_used = "pymupdf"

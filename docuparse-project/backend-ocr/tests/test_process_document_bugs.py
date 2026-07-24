@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from api.app import app
 from api.routes import document as document_route
 from application import process_document as process_module
+from fastapi.testclient import TestClient
 from infrastructure.engines import openrouter_engine
 
 

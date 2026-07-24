@@ -1,29 +1,29 @@
 import json
-from django.contrib.auth import get_user_model
-from django.db.models import Prefetch, Q, TextField, ProtectedError
-from django.db.models.functions import Cast
-from django.conf import settings
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.clickjacking import xframe_options_exempt
-from django.views.decorators.http import require_GET, require_POST
-from django.http import Http404
-from django.http import FileResponse
 from io import BytesIO
+
+import models.boleto.schemas as _boleto_classifier
+import models.contadeagua.schemas as _agua_classifier
+import models.nota_fiscal.schemas as _nf_classifier
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.db.models import Prefetch, ProtectedError, Q, TextField
+from django.db.models.functions import Cast
+from django.http import FileResponse, Http404, JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
+from docuparse_events import event_bus_from_env
+from docuparse_storage import LocalStorage
+from rest_framework import status
 from rest_framework.decorators import (
     api_view,
     authentication_classes,
     permission_classes,
 )
 from rest_framework.response import Response
-from rest_framework import status
-
 from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
-
-from docuparse_events import event_bus_from_env
-from docuparse_storage import LocalStorage
 
 from .models import (
     Document,
@@ -49,20 +49,16 @@ from .serializers import (
     ValidationDecisionSerializer,
 )
 from .services import field_versioning
-from .services.ocr_client import OCRClient
-from .services.langextract_client import LangExtractClient
-from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.dlq_inspector import (
     DEFAULT_DLQ_STREAMS,
-    requeue_dlq_entry,
     inspect_dlq_streams,
+    requeue_dlq_entry,
 )
+from .services.event_consumers import DuplicateDocumentError, consume_document_received
+from .services.langextract_client import LangExtractClient
+from .services.ocr_client import OCRClient
 from .services.ocr_processor import process_document_ocr
 from .services.processing_queue import submit_document_processing
-
-import models.nota_fiscal.schemas as _nf_classifier
-import models.boleto.schemas as _boleto_classifier
-import models.contadeagua.schemas as _agua_classifier
 
 
 @require_GET

@@ -10,7 +10,6 @@ from ..agent.classifier import classify_document
 from ..engines.tesseract_engine import TesseractEngine
 from ..main import app
 
-
 client = TestClient(app)
 
 

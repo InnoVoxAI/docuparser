@@ -20,9 +20,9 @@ from typing import Any
 
 import cv2
 import numpy as np
+from shared.preprocessing import decode_image, preprocess_for_easyocr_engine
 
 from infrastructure.engines.base_engine import BaseOCREngine
-from shared.preprocessing import decode_image, preprocess_for_easyocr_engine
 
 
 class EasyOCREngine(BaseOCREngine):

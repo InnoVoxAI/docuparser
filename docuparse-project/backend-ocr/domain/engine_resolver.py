@@ -18,7 +18,6 @@
 
 from __future__ import annotations
 
-
 # Mapeamento padrão: doc_type classificado → engine OCR
 ENGINE_DEFAULTS: dict[str, str] = {
     "digital_pdf": "docling",

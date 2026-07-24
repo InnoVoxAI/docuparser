@@ -23,9 +23,9 @@ import fitz
 import numpy as np
 import pytesseract
 from pytesseract import Output
+from shared.preprocessing import preprocess_image
 
 from infrastructure.engines.base_engine import BaseOCREngine
-from shared.preprocessing import preprocess_image
 
 
 class TesseractEngine(BaseOCREngine):

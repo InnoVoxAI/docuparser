@@ -5,11 +5,11 @@ import os
 import pathlib
 from contextlib import asynccontextmanager
 
+from application.layout_event_worker import start_worker_thread_from_env
+from domain.classifier import classify_layout
 from fastapi import FastAPI
 
 from api.schemas import ClassifyLayoutRequest, ClassifyLayoutResponse
-from application.layout_event_worker import start_worker_thread_from_env
-from domain.classifier import classify_layout
 
 
 def _resolve_raw_text(request: ClassifyLayoutRequest) -> str:

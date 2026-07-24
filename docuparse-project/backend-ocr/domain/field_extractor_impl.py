@@ -1,8 +1,7 @@
-from typing import Any
+import logging
 import re
 import unicodedata
-import logging
-
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -1261,17 +1260,13 @@ def _apply_noisy_field_enrichment(
         noisy_value = str(noisy_fields.get(field_name) or "").strip()
 
         should_replace = False
-        if not current_value:
-            should_replace = bool(noisy_value)
-        elif _is_header_like_value(current_value):
+        if not current_value or _is_header_like_value(current_value):
             should_replace = bool(noisy_value)
         elif field_name in {"cnpj_fornecedor", "cnpj_tomador"} and not _validate_cnpj(
             current_value
         ):
             should_replace = bool(noisy_value and _validate_cnpj(noisy_value))
-        elif field_name == "retencao" and len(current_value) > 240:
-            should_replace = bool(noisy_value)
-        elif field_name == "descricao_servico" and _is_low_quality_ocr_text(
+        elif field_name == "retencao" and len(current_value) > 240 or field_name == "descricao_servico" and _is_low_quality_ocr_text(
             current_value
         ):
             should_replace = bool(noisy_value)
@@ -1300,7 +1295,7 @@ def _apply_noisy_field_enrichment(
     return fields, field_confidence
 
 
-def _parse_currency(value: str | float | int | None) -> float | None:
+def _parse_currency(value: str | float | None) -> float | None:
     if value is None:
         return None
 
@@ -1907,7 +1902,7 @@ def extract_avg_confidence(data: dict[str, Any]) -> float | None:
     return None
 
 
-def _normalize_confidence_ratio(confidence: float | int | str | None) -> float:
+def _normalize_confidence_ratio(confidence: float | str | None) -> float:
     try:
         value = float(confidence or 0.0)
     except (TypeError, ValueError):

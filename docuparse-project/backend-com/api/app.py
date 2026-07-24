@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import json
 import hmac
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any
 
+import jwt
+from config import settings
 from fastapi import (
     FastAPI,
     File,
@@ -17,21 +19,18 @@ from fastapi import (
     Security,
     UploadFile,
 )
-import jwt
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-
-from config import settings
+from services.document_ingest import DuplicateDocumentError
 from services.email_capture import process_email_attachments
 from services.imap_polling import ImapPollingError, poll_configured_imap_once
-from services.document_ingest import DuplicateDocumentError
 from services.manual_upload import process_manual_upload
-from services.whatsapp_capture import process_whatsapp_media
 from services.twilio_polling import (
     TwilioPollingError,
     download_twilio_media,
     poll_configured_twilio_once,
 )
+from services.whatsapp_capture import process_whatsapp_media
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ def _log_startup_config() -> None:
         else "[EMPTY — adicione DOCUPARSE_IMAP_PASSWORD no .env raiz do projeto]"
     )
 
-    print("", flush=True)
+    print(flush=True)
     print("=== backend-com startup config ===", flush=True)
     print(f"  imap_password          : {password_status}", flush=True)
     print(
@@ -72,7 +71,7 @@ def _log_startup_config() -> None:
         flush=True,
     )
     print("==================================", flush=True)
-    print("", flush=True)
+    print(flush=True)
 
 
 app = FastAPI(

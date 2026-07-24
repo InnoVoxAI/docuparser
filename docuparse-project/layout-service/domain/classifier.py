@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-
 LAYOUTS = {
     "nota_fiscal",
     "boleto_caixa",

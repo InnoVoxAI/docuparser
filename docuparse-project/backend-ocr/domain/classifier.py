@@ -19,10 +19,10 @@
 
 from __future__ import annotations
 
+import logging
 
 import cv2
 import numpy as np
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

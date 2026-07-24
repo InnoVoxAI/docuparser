@@ -6,7 +6,6 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 EVENT_VERSION = "v1"
 
 

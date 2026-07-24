@@ -43,7 +43,7 @@ class DoclingEngine(BaseOCREngine):
             page_texts = self._read_pdf_text_by_page_pdfium(pdf_bytes)
             self._text_reader = "pypdfium2"
             return page_texts
-        except Exception:
+        except (ImportError, OSError, RuntimeError):
             page_texts = self._read_pdf_text_by_page_pymupdf(pdf_bytes)
             self._text_reader = "pymupdf"
             return page_texts
@@ -110,7 +110,7 @@ class DoclingEngine(BaseOCREngine):
                 line_buckets: dict[int, list[tuple]] = {}
                 for word_info in words:
                     x0, y0, _x1, _y1, word_str, *_ = word_info
-                    bucket_key = int(round(float(y0) / LINE_TOLERANCE)) * LINE_TOLERANCE
+                    bucket_key = round(float(y0) / LINE_TOLERANCE) * LINE_TOLERANCE
                     line_buckets.setdefault(bucket_key, []).append(
                         (float(x0), word_str)
                     )
@@ -245,7 +245,8 @@ class DoclingEngine(BaseOCREngine):
         try:
             formatted_pages = self._extract_formatted_text_by_page(pdf_bytes)
             raw_text_formatted = "\n\n".join(p for p in formatted_pages if p).strip()
-        except Exception as exc:
+        except (ImportError, RuntimeError, OSError, ValueError) as exc:
+            # Capture only expected failures from the formatted extraction
             logger.warning(
                 "DoclingEngine: falha na extração formatada; raw_text_formatted ficará vazio. "
                 "Erro: %s",

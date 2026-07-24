@@ -16,9 +16,9 @@ import tempfile
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
-from rest_framework.test import APIClient
-
 from docuparse_storage import LocalStorage, document_original_key
+from rest_framework.test import APIClient
+from users.models import Permission, Role
 
 from documents.models import (
     Document,
@@ -26,7 +26,6 @@ from documents.models import (
     Tenant,
     UserProfile,
 )
-from users.models import Permission, Role
 
 
 def _grant_inbox_view(user, tenant):

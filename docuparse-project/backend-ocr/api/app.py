@@ -43,9 +43,10 @@ def _load_project_env() -> None:
 
 _load_project_env()
 
-from api.routes.document import router as document_router
 from application.ocr_event_worker import start_worker_thread_from_env
 from domain.engine_resolver import ENGINE_DEFAULTS
+
+from api.routes.document import router as document_router
 
 # Configurar logging
 logging.basicConfig(

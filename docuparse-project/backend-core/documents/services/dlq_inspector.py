@@ -5,7 +5,6 @@ from typing import Any
 
 from docuparse_events import EventBus
 
-
 DEFAULT_DLQ_STREAMS = [
     "document.received.dlq",
     "ocr.completed.dlq",

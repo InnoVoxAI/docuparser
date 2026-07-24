@@ -14,9 +14,10 @@
 # Regra: nenhum import de api/, application/, domain/ ou infrastructure/ aqui.
 # =============================================================================
 
+from typing import Any
+
 import cv2
 import numpy as np
-from typing import Any
 
 
 def decode_image(image_bytes: Any) -> np.ndarray:

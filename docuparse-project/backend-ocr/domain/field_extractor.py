@@ -30,9 +30,9 @@ from shared.validators import (
 # O shim utils/validate_fields.py ainda existe para compatibilidade externa.
 from domain.field_extractor_impl import (
     compute_field_pipeline_quality,
-    extract_fields_candidates,
-    extract_dynamic_document_fields,
     extract_avg_confidence,
+    extract_dynamic_document_fields,
+    extract_fields_candidates,
     merge_field_confidence,
     merge_fields_by_validation,
     resolve_field_fallback_engine,

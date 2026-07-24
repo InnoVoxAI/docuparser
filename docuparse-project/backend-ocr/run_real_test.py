@@ -1,7 +1,9 @@
-from fastapi.testclient import TestClient
-from api.app import app
-import os
+clear
 import json
+import os
+
+from api.app import app
+from fastapi.testclient import TestClient
 
 # Set env var for local test (Mac host) instead of docker internal
 os.environ["OLLAMA_HOST"] = "http://localhost:11434/v1"

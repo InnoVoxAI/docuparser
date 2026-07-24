@@ -3,12 +3,11 @@ from __future__ import annotations
 import base64
 from email.message import EmailMessage
 
-from fastapi.testclient import TestClient
-
 from api.app import app
 from docuparse_events import LocalJsonlEventBus
 from docuparse_storage import LocalStorage
 from events import validate_event
+from fastapi.testclient import TestClient
 
 
 def test_health_and_ready() -> None:
@@ -110,8 +109,9 @@ def test_manual_upload_accepts_user_jwt_and_rejects_invalid(
     # Dual-auth: com o token interno configurado, o backend-com aceita tanto o
     # JWT do usuario (verificado pela SECRET_KEY compartilhada) quanto o token
     # interno de servico; e rejeita JWT expirado / assinado com outra chave.
-    import jwt as pyjwt
     from datetime import datetime, timedelta, timezone
+
+    import jwt as pyjwt
 
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
     from backend_com import config

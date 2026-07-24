@@ -7,12 +7,11 @@ from io import BytesIO
 
 from django.conf import settings
 from django.utils import timezone
-
 from docuparse_storage import LocalStorage, document_ocr_raw_text_key
 
 from documents.models import Document, ExtractionResult, LayoutConfig, SchemaConfig
-from documents.services.ocr_client import OCRClient
 from documents.services.langextract_client import LangExtractClient
+from documents.services.ocr_client import OCRClient
 
 logger = logging.getLogger(__name__)
 
@@ -269,9 +268,9 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
 
 def _classify_raw_text(raw_text: str) -> str | None:
     """Returns the schema_id that best matches the document text, or None."""
-    import models.nota_fiscal.schemas as _nf
-    import models.contadeagua.schemas as _agua
     import models.boleto.schemas as _boleto
+    import models.contadeagua.schemas as _agua
+    import models.nota_fiscal.schemas as _nf
 
     if _nf.is_likely(raw_text):
         return _nf.SCHEMA_ID

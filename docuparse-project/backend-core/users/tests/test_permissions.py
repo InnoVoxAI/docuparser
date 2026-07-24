@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from documents.models import Tenant, UserProfile
 from rest_framework.test import APIClient
 
-from documents.models import Tenant, UserProfile
 from users.models import Permission, Role
 
 User = get_user_model()
@@ -66,6 +66,7 @@ class SeedPermissionsTest(TestCase):
 class LastAdminGuardTest(TestCase):
     def setUp(self) -> None:
         from documents.models import Tenant, UserProfile
+
         from users.models import Permission, Role
 
         tenant, _ = Tenant.objects.get_or_create(
@@ -93,8 +94,9 @@ class LastAdminGuardTest(TestCase):
         self.assertTrue(last_admin_guard(self.admin.pk))
 
     def test_guard_returns_false_when_other_admin_exists(self) -> None:
-        from users.user_views import last_admin_guard
         from documents.models import Tenant, UserProfile
+
+        from users.user_views import last_admin_guard
 
         tenant = Tenant.objects.get(slug="guard-test")
         other = get_user_model().objects.create_user(

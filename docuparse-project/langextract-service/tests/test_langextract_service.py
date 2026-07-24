@@ -4,8 +4,6 @@ import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-
 from api.app import app
 from application.extraction_event_worker import (
     ExtractionWorker,
@@ -15,7 +13,7 @@ from docuparse_events import LocalJsonlEventBus
 from docuparse_storage import LocalStorage
 from domain.extractor import extract_fields
 from events import validate_event
-
+from fastapi.testclient import TestClient
 
 BOLETO_TEXT = (
     "Beneficiario: ACME LTDA Vencimento 10/05/2026 Valor R$ 123,45 "

@@ -7,10 +7,10 @@ import statistics
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
 from uuid import uuid4
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
@@ -29,15 +29,14 @@ from backend_com.services import document_ingest
 from backend_com.services.email_capture import process_email_attachments
 from backend_com.services.manual_upload import process_manual_upload
 from backend_com.services.whatsapp_capture import process_whatsapp_media
-from docuparse_events import LocalJsonlEventBus
 from documents.services.erp_mock import handle_erp_integration_requested_event
+from docuparse_events import LocalJsonlEventBus
 from events import (
     ERPIntegrationRequestedEvent,
     ExtractionCompletedEvent,
     LayoutClassifiedEvent,
     OCRCompletedEvent,
 )
-
 
 Scenario = Callable[[int], None]
 

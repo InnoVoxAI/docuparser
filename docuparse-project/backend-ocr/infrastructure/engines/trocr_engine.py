@@ -21,13 +21,13 @@ from typing import Any
 
 import cv2
 import numpy as np
-
-from infrastructure.engines.base_engine import BaseOCREngine
 from shared.preprocessing import (
     decode_image,
     preprocess_for_trocr_engine,
     preprocess_for_trocr_region,
 )
+
+from infrastructure.engines.base_engine import BaseOCREngine
 
 
 class TrOCREngine(BaseOCREngine):

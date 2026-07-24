@@ -6,9 +6,10 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_default_schemas() -> None:
-    from documents.models import SchemaConfig, Tenant
-    import models.nota_fiscal.definition as _nf_def
     import models.contadeagua.definition as _agua_def
+    import models.nota_fiscal.definition as _nf_def
+
+    from documents.models import SchemaConfig, Tenant
 
     tenant = Tenant.objects.filter(name="default").first()
     if tenant is None:

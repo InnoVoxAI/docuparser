@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from rest_framework import serializers
 import json
 
 from django.conf import settings
 from docuparse_storage import LocalStorage
+from rest_framework import serializers
 
 from documents.models import (
     Document,

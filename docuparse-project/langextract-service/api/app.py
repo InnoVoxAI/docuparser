@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-
-from api.schemas import ExtractRequest, ExtractResponse
 from application.extraction_event_worker import start_worker_thread_from_env
 from domain.extractor import extract_fields
 from domain.llm_extractor import extract_with_llm
+from fastapi import FastAPI
+
+from api.schemas import ExtractRequest, ExtractResponse
 
 
 @asynccontextmanager

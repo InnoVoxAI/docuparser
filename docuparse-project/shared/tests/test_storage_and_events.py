@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from uuid import uuid4
 import json
 import logging
+from uuid import uuid4
 
 from docuparse_events import (
     EventMessage,

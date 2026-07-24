@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import tempfile
 import json
+import tempfile
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
-from rest_framework.test import APIClient
-
-from docuparse_storage import LocalStorage, document_original_key
 from docuparse_events import EventMessage, LocalJsonlEventBus, publish_dead_letter
+from docuparse_storage import LocalStorage, document_original_key
+from rest_framework.test import APIClient
 
 from documents.models import (
     Document,
@@ -130,6 +129,7 @@ class DocumentsAPITests(TestCase):
         # feature 009: o endpoint passou a exigir JWT do usuário com permissão
         # "inbox.view" (ou token interno). Autentica o usuário com a permissão.
         from users.models import Permission, Role
+
         from documents.models import UserProfile
 
         permission = Permission.objects.create(

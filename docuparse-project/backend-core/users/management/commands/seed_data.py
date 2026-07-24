@@ -4,16 +4,16 @@ import os
 
 from django.core.management.base import BaseCommand
 
-from users.models import Permission, Role
 from users.management.commands.seed_permissions import PERMISSIONS
+from users.models import Permission, Role
 
 
 class Command(BaseCommand):
     help = "Seed default tenant, permissions, admin role, and admin user (idempotent)"
 
     def handle(self, *args: object, **options: object) -> None:
-        from documents.models import Tenant, UserProfile
         from django.contrib.auth import get_user_model
+        from documents.models import Tenant, UserProfile
 
         User = get_user_model()
 
@@ -54,9 +54,9 @@ class Command(BaseCommand):
         profile.save()
         self.stdout.write("seed_data: admin profile ready")
 
-        from documents.models import SchemaConfig
-        import models.nota_fiscal.definition as _nf_def
         import models.contadeagua.definition as _agua_def
+        import models.nota_fiscal.definition as _nf_def
+        from documents.models import SchemaConfig
 
         DEFAULT_SCHEMAS = [
             {

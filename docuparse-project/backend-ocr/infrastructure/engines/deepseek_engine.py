@@ -22,9 +22,9 @@ import os
 import time
 from typing import Any
 
-from infrastructure.engines.base_engine import BaseOCREngine
 from shared.preprocessing import preprocess_for_deepseek_engine
 
+from infrastructure.engines.base_engine import BaseOCREngine
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +44,8 @@ class DeepSeekEngine(BaseOCREngine):
         self._http_client = None
         self.client = None
         try:
-            from openai import OpenAI
             import httpx
+            from openai import OpenAI
 
             self._http_client = httpx.Client(
                 timeout=httpx.Timeout(60.0, connect=10.0),
@@ -56,7 +56,7 @@ class DeepSeekEngine(BaseOCREngine):
                 api_key=self.api_key,
                 http_client=self._http_client,
             )
-        except Exception as exc:
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
             self._init_error = str(exc)
             logger.warning("DeepSeek client init failed: %s", self._init_error)
 
@@ -201,7 +201,7 @@ class DeepSeekEngine(BaseOCREngine):
                 "totals": extracted.get("totals", {}),
                 "_meta": meta,
             }
-        except Exception as exc:
+        except (ValueError, RuntimeError, OSError, TypeError) as exc:
             elapsed = time.perf_counter() - process_start
             return {
                 "raw_text": "",

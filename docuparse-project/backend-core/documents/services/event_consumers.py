@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from django.db import transaction
-
+from docuparse_observability import log_event
 from events import (
     DocumentReceivedEvent,
     ERPFailedEvent,
@@ -13,7 +13,6 @@ from events import (
     OCRCompletedEvent,
     OCRFailedEvent,
 )
-from docuparse_observability import log_event
 
 from documents.models import (
     Document,

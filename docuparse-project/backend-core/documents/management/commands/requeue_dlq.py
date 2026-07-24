@@ -4,8 +4,8 @@ import json
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-
 from docuparse_events import event_bus_from_env
+
 from documents.services.dlq_inspector import requeue_dlq_entry
 
 

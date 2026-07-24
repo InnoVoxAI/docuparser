@@ -8,10 +8,6 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 from uuid import uuid4
 
-from domain.backend_core_client import fetch_schema_for_layout
-from domain.extractor import extract_fields
-from domain.llm_extractor import extract_with_llm
-from events import ExtractionCompletedEvent, LayoutClassifiedEvent
 from docuparse_events import (
     EventBus,
     event_bus_from_env,
@@ -20,6 +16,10 @@ from docuparse_events import (
 )
 from docuparse_observability import log_event
 from docuparse_storage import LocalStorage
+from domain.backend_core_client import fetch_schema_for_layout
+from domain.extractor import extract_fields
+from domain.llm_extractor import extract_with_llm
+from events import ExtractionCompletedEvent, LayoutClassifiedEvent
 
 logger = logging.getLogger(__name__)
 

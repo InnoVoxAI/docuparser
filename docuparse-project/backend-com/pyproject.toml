@@ -1,7 +1,7 @@
 [project]
-name = "atoms"
-version = "0.1.0"
-description = "Mini tools for building big things"
+name = "backend-com"
+version = "0.0.1"
+description = "Docuparser Com (for communication system)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [

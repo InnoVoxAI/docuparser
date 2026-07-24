@@ -19,15 +19,15 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-
-from api.schemas.ocr_schema import (
-    OCRResponse,
-    EngineInfo,
-    EnginesListResponse,
-)
 from application.process_document import ENGINE_REGISTRY, process_document
 from domain.engine_resolver import resolver as engine_resolver
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+
+from api.schemas.ocr_schema import (
+    EngineInfo,
+    EnginesListResponse,
+    OCRResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ async def process_document_endpoint(
         raise
     except Exception as e:
         logger.error(f"Erro no processamento: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {e!s}")
 
 
 @router.get("/engines", response_model=EnginesListResponse)
@@ -169,4 +169,4 @@ async def list_engines_endpoint() -> EnginesListResponse:
 
     except Exception as e:
         logger.error(f"Erro ao listar engines: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {e!s}")

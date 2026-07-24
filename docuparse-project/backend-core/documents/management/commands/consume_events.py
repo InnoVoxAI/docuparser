@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
-
 from docuparse_events import event_bus_from_env
 
 from documents.services.event_stream_worker import CoreEventStreamWorker

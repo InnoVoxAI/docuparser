@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from './mocks/server'
 import { paginatedDocuments } from './mocks/handlers'
-import { RejectedView } from '../main'
+import { RejectedView } from '../modules/documents'
+import { renderWithQueryClient } from './utils'
 
 // US1 / T012-T013 — tela "Rejeitados" (listagem completa, distinta do modal de
 // documento rejeitado já coberto em flows.test.tsx) não tinha teste de fumaça
@@ -18,7 +19,7 @@ function mockRejectedDocuments(documents: Record<string, unknown>[]) {
 }
 
 function renderRejected() {
-    return render(<RejectedView onReprocess={vi.fn()} onDelete={vi.fn()} onRefresh={vi.fn()} />)
+    return renderWithQueryClient(<RejectedView onReprocess={vi.fn()} onDelete={vi.fn()} onRefresh={vi.fn()} />)
 }
 
 describe('Rejeitados', () => {

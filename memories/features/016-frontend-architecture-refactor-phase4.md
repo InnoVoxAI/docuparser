@@ -12,26 +12,88 @@ outro agente para evitar drift"). Full detail lives in
 `docs/specs/016-frontend-architecture-refactor/tasks.md` (per-task `Resultado`
 notes) — this note is a pointer + the non-obvious things worth remembering.
 
-## State (updated 2026-07-24, after Phase 4c)
+## State (updated 2026-07-24, after Phase 4d)
 
-- Branch: `016-frontend-architecture-refactor`. Working tree clean (after this
-  session's commit).
-- Sub-phases done and committed: **4a** (`86585ae`, shared UI primitives),
-  **4b** (`8322754`, `modules/auth`), **4c** (`156ff46`, routing — T022-T025).
-  All gates green (typecheck/lint/test/build).
-- **4c implemented the plan from the handoff note below almost exactly**:
-  `App()` → `AppLayout` (exported from `main.tsx`, same state/handlers,
-  `<Outlet context={... satisfies AppOutletContext}/>` instead of the
-  `activeView` switch); `src/app/router.tsx` (`createBrowserRouter`, one route
-  per `NAV_ITEMS` id via `navPath(id) = '/' + id`, thin per-route wrapper
-  components doing `useOutletContext` + `PermissionGuard`); `src/app/main.tsx`
-  as the new bootstrap (`QueryClientProvider` + `AuthProvider` +
-  `RouterProvider`); `index.html` repointed to it. `main.tsx` still exists,
-  still exports the not-yet-extracted view components (documents/operations/
-  settings/admin/upload land in 4d-4h).
-- Remaining: 4d through 4i (T026-T046) — `modules/documents` (+ TanStack
-  Query), `modules/operations`, `modules/settings` (+ RHF/Zod), `modules/admin`,
-  `modules/upload`, Zustand/cleanup, remove `main.tsx`.
+- Branch: `016-frontend-architecture-refactor`.
+- Sub-phases done: **4a** (`86585ae`, shared UI primitives), **4b**
+  (`8322754`, `modules/auth`), **4c** (`156ff46`, routing — T022-T025), **4d**
+  (T026-T033, `modules/documents` + TanStack Query — see per-task `Resultado`
+  notes in tasks.md for full detail; not yet committed as of this note, see
+  commit step still pending in that session). All gates green
+  (typecheck/lint/test/build) at each step.
+- **4d** extracted `Dashboard`/`InboxView`/`ApprovedView`/`RejectedView`/
+  `ValidationView`/`DocumentTable`/`ExtractedFieldsModal`/
+  `RejectedDocumentModal`/`LangExtractPanel`/`DocumentMetadataPanel`/
+  `FieldVersionHistoryModal` into `modules/documents`, converted
+  `useDocumentPage`→`useDocumentsQuery` + `fetchDocumentCount`→
+  `useDocumentCount` + reprocess/delete/validate→`useDocumentMutations`
+  (TanStack Query v5), and wired `router.tsx` to consume `DocumentsRoutes`
+  instead of inline route components. `main.tsx` shrank from ~5456 to ~3600
+  lines but **`useDocumentPage`/`PAGE_SIZE`/`EMPTY_PAGE` are intentionally
+  still there** — `ReferenceDocumentPanel` (Configurações) still uses the old
+  hook and isn't extracted until Phase 4f (T036-040). Don't delete them before
+  then.
+- Remaining: 4e through 4i (T034-T046) — `modules/operations`,
+  `modules/settings` (+ RHF/Zod), `modules/admin`, `modules/upload`,
+  Zustand/cleanup, remove `main.tsx`.
+
+## Things that will bite you (4d-specific)
+
+1. **`data-model.md`'s module→origin table is incomplete**: `DocumentBlobPreview`
+   and `EmailMetadataModal` are listed under `shared`, but no task in Phase
+   2/4a-4c actually moved them — they were still living in `main.tsx`'s
+   "settings" section, and `ValidationView`/`DocumentTable` (moved in 4d) both
+   depend on them. Had to extract them to `shared/components/` as an
+   unlisted prerequisite (same pattern as the T008→T019 handoff). If you're
+   doing 4e-4h and find another shared-per-data-model.md component still
+   stuck in `main.tsx`, that's the same gap repeating — check before assuming
+   a component doesn't need moving just because no task named it.
+2. **`eslint.config.js`'s `max-lines: 150` applies to every file, not just
+   components** (only `types.ts`/`shared/types/**`/`models/**`/test files are
+   exempted) — a fat *hook* file trips it exactly like a fat component.
+   `ValidationView` (367 lines in the monolith) needed 3 extra local-state
+   hooks (`useFieldExtraction`, `useFieldVersioning`, `useDocumentDecision`,
+   deliberately NOT exported from the module barrel — implementation detail of
+   one screen) plus 4 sub-components before every file cleared 150 lines.
+   `data-model.md` already documents `hooks/` as covering "hooks de estado
+   local", not just query/mutation hooks, so this split matches the intended
+   module shape, not an improvisation.
+3. **Tests that `render()` a `modules/documents` component directly (not
+   through `renderApp()`) now need a `QueryClientProvider`** — those
+   components call `useQuery`/`useMutation`. Added `renderWithQueryClient`
+   (fresh `QueryClient` per call, `retry: false`) to `src/__tests__/utils.tsx`;
+   `approved.test.tsx`/`rejected.test.tsx`/`validation.test.tsx` (and the new
+   `DocumentTable`/`ValidationView` a11y tests) use it. If 4e-4h add more
+   directly-rendered component tests for query-backed components, use the
+   same helper, not a bare `render()`.
+4. **The shared `queryClient` singleton (used by `renderApp()`) had no cache
+   reset between tests** — harmless while nothing used real `useQuery` caching,
+   a real cross-test pollution risk now. Fixed with `queryClient.clear()` in
+   `afterEach` in `src/__tests__/setup.ts`. Don't remove this.
+5. **`shared/lib/queryClient.ts` now sets `defaultOptions.queries.retry:
+   false`** — deliberate: the pre-migration hooks never retried a failed
+   fetch, they showed the error immediately. TanStack Query's default (3
+   retries with backoff) would have delayed error display by several seconds,
+   a real UX regression. Don't remove this default when touching other
+   modules' queries.
+6. **The a11y tests found real, pre-existing WCAG gaps in code that was moved
+   verbatim** (not introduced by the extraction): unlabeled bulk-select
+   checkboxes in `DocumentTable`, an unlabeled schema `<select>` in
+   `LangExtractPanel`, an empty `<th>` (actions column). Fixed with
+   `aria-label`/`sr-only` span since FR-013/SC-006 requires WCAG AA on
+   *migrated* code and the test exists specifically to catch this. Worth
+   scanning for the same unlabeled-input pattern in the modules still to come
+   (settings has several bare `<select>`s already, per T004's original lint
+   baseline).
+7. **Caught and fixed a transcription error against itself**: while copying
+   `ReadOnlyTranscriptionFormatted`'s empty-state text from memory, the first
+   draft used invented text ("Nenhuma transcricao formatada disponivel...").
+   A line-by-line `diff` against `git show HEAD:.../main.tsx` (the
+   pre-session committed version) caught it before commit — the real text is
+   "Disponivel apenas para PDFs digitais processados pelo engine Docling."
+   **Lesson for any future large copy/move task**: diff the extracted file
+   against the last-committed original before trusting it, don't rely on
+   having read it correctly earlier in the same session.
 
 ## New finding from 4c: router singleton + jsdom test bleed
 

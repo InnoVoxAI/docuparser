@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from './mocks/server'
-import { ValidationView } from '../main'
+import { ValidationView } from '../modules/documents'
 import type { Document } from '../types'
+import { renderWithQueryClient } from './utils'
 
 // US1 / T018 — fluxo de Validação (feature 007: salvar campos / conflito 409 / histórico).
 const docId = 'doc-1'
@@ -25,7 +26,7 @@ const baseDoc: Document = {
 }
 
 function renderValidation() {
-    return render(
+    return renderWithQueryClient(
         <ValidationView
             schemas={[]}
             selectedDocument={baseDoc}
@@ -74,7 +75,7 @@ describe('Validação — salvar campos e histórico', () => {
         const user = userEvent.setup()
         const onValidated = vi.fn()
         const onBackToInbox = vi.fn()
-        render(
+        renderWithQueryClient(
             <ValidationView
                 schemas={[]}
                 selectedDocument={baseDoc}
@@ -93,7 +94,7 @@ describe('Validação — salvar campos e histórico', () => {
     it('exige motivo ao rejeitar e bloqueia o envio', async () => {
         const user = userEvent.setup()
         const onBackToInbox = vi.fn()
-        render(
+        renderWithQueryClient(
             <ValidationView
                 schemas={[]}
                 selectedDocument={baseDoc}
@@ -112,7 +113,7 @@ describe('Validação — salvar campos e histórico', () => {
     it('rejeita com motivo informado', async () => {
         const user = userEvent.setup()
         const onBackToInbox = vi.fn()
-        render(
+        renderWithQueryClient(
             <ValidationView
                 schemas={[]}
                 selectedDocument={baseDoc}
@@ -130,7 +131,7 @@ describe('Validação — salvar campos e histórico', () => {
 
     it('permite adicionar e remover um campo editável', async () => {
         const user = userEvent.setup()
-        render(
+        renderWithQueryClient(
             <ValidationView
                 schemas={[]}
                 selectedDocument={baseDoc}

@@ -1,14 +1,12 @@
-import { Navigate, createBrowserRouter, useNavigate, useOutletContext } from 'react-router'
+import { Navigate, createBrowserRouter, useOutletContext } from 'react-router'
 import { useAuth, PermissionGuard, AcessoNaoAutorizado } from '../modules/auth'
+import { DocumentsRoutes } from '../modules/documents'
 import { ErrorBoundary } from '../shared/components'
 import {
     AppLayout,
     NAV_ITEMS,
     navPath,
-    Dashboard,
-    InboxView,
     UploadView,
-    ValidationView,
     OperationsView,
     SettingsView,
     GerenciarUsuarios,
@@ -28,50 +26,11 @@ function IndexRedirect() {
     return <Navigate to={navPath(target)} replace />
 }
 
-function DashboardRoute() {
-    const { refreshSignal, onSelectRejected } = useAppContext()
-    return (
-        <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
-            <Dashboard refreshSignal={refreshSignal} onSelectRejected={onSelectRejected} />
-        </PermissionGuard>
-    )
-}
-
-function InboxRoute() {
-    const { refreshSignal, navigateToValidation } = useAppContext()
-    const navigate = useNavigate()
-    return (
-        <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
-            <InboxView
-                refreshSignal={refreshSignal}
-                onNavigateToValidation={navigateToValidation}
-                onNavigateToUpload={() => navigate(navPath('upload'))}
-            />
-        </PermissionGuard>
-    )
-}
-
 function UploadRoute() {
     const { refreshData } = useAppContext()
     return (
         <PermissionGuard code="documents.send" fallback={<AcessoNaoAutorizado />}>
             <UploadView onUploaded={refreshData} />
-        </PermissionGuard>
-    )
-}
-
-function ValidationRoute() {
-    const { schemas, selectedDocument, selectedDocumentId, refreshData } = useAppContext()
-    const navigate = useNavigate()
-    return (
-        <PermissionGuard code="documents.validate" fallback={<AcessoNaoAutorizado />}>
-            <ValidationView
-                schemas={schemas}
-                selectedDocument={selectedDocument}
-                selectedDocumentId={selectedDocumentId}
-                onValidated={refreshData}
-                onBackToInbox={() => navigate(navPath('inbox'))}
-            />
         </PermissionGuard>
     )
 }
@@ -131,10 +90,8 @@ export function createAppRouter() {
             errorElement: <ErrorBoundary />,
             children: [
                 { index: true, element: <IndexRedirect /> },
-                { path: 'dashboard', element: <DashboardRoute />, errorElement: <ErrorBoundary /> },
-                { path: 'inbox', element: <InboxRoute />, errorElement: <ErrorBoundary /> },
+                ...DocumentsRoutes,
                 { path: 'upload', element: <UploadRoute />, errorElement: <ErrorBoundary /> },
-                { path: 'validation', element: <ValidationRoute />, errorElement: <ErrorBoundary /> },
                 { path: 'operations', element: <OperationsRoute />, errorElement: <ErrorBoundary /> },
                 { path: 'settings', element: <SettingsRoute />, errorElement: <ErrorBoundary /> },
                 { path: 'users', element: <UsersRoute />, errorElement: <ErrorBoundary /> },

@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, expect } from 'vitest'
 import axios from 'axios'
 import * as axeMatchers from 'vitest-axe/matchers'
 import { server } from './mocks/server'
+import { queryClient } from '../shared/lib/queryClient'
 
 // Matcher `toHaveNoViolations` (vitest-axe) disponível em todos os testes de
 // acessibilidade (SC-006), sem precisar de `expect.extend` por arquivo.
@@ -17,4 +18,8 @@ axios.defaults.adapter = 'http'
 // Inicia o MSW antes da suíte, reseta handlers entre testes e encerra ao final.
 beforeAll(() => server.listen({ onUnhandledRequest: 'warn' }))
 afterEach(() => server.resetHandlers())
+// `renderApp()` reutiliza o `queryClient` singleton de produção entre testes
+// do mesmo arquivo — sem isso, o cache de um teste (mesma queryKey, dados
+// diferentes) vazaria como estado inicial do próximo.
+afterEach(() => queryClient.clear())
 afterAll(() => server.close())

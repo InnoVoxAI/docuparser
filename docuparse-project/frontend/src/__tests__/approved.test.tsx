@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { server } from './mocks/server'
 import { paginatedDocuments } from './mocks/handlers'
-import { ApprovedView } from '../main'
+import { ApprovedView } from '../modules/documents'
+import { renderWithQueryClient } from './utils'
 
 // US1 / T012-T013 — tela "Aprovados" não tinha nenhum teste de fumaça. Hoje ela
 // não é alcançável por navegação real (não está em NAV_ITEMS, nenhum handler
@@ -27,7 +28,7 @@ describe('Aprovados', () => {
                 extraction_result: null,
             },
         ])
-        render(<ApprovedView />)
+        renderWithQueryClient(<ApprovedView />)
 
         expect(await screen.findByText('Documentos aprovados')).toBeInTheDocument()
         expect(await screen.findByText('nota-fiscal-aprovada.pdf')).toBeInTheDocument()
@@ -35,7 +36,7 @@ describe('Aprovados', () => {
 
     it('mostra o estado vazio quando não há documentos aprovados', async () => {
         mockApprovedDocuments([])
-        render(<ApprovedView />)
+        renderWithQueryClient(<ApprovedView />)
 
         expect(await screen.findByText('Nenhum documento aprovado.')).toBeInTheDocument()
     })

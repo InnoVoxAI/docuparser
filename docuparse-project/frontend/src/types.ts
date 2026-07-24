@@ -198,6 +198,31 @@ export interface User {
     permissions: string[]
 }
 
+// Metadados de canal (email/whatsapp) têm forma dinâmica conforme o provedor.
+export interface ChannelMetadata {
+    sender?: string
+    to?: string
+    cc?: string
+    subject?: string
+    date?: string
+    message_id?: string
+    provider?: string
+    body?: string
+    body_text?: string
+    to_number?: string
+    message_sid?: string
+    attachments?: unknown[]
+}
+
+/** Forma reduzida de um `Document` usada pelo modal de metadados (ação de olho). */
+export interface EmailModalDoc {
+    id: string
+    filename: string
+    channel?: string
+    content_type?: string
+    metadata_channel?: Record<string, unknown> | null
+}
+
 export interface Tenant {
     slug: string
     name: string

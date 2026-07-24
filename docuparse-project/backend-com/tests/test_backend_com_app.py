@@ -28,8 +28,8 @@ def test_manual_upload_stores_document_and_publishes_document_received(
 ) -> None:
     monkeypatch.setenv("DOCUPARSE_LOCAL_STORAGE_DIR", str(tmp_path / "objects"))
     monkeypatch.setenv("DOCUPARSE_LOCAL_EVENT_DIR", str(tmp_path / "events"))
-    from backend_com import config
-    from backend_com.services import document_ingest
+    import config
+    from services import document_ingest
 
     config.settings.local_storage_dir = tmp_path / "objects"
     config.settings.local_event_dir = tmp_path / "events"
@@ -80,8 +80,8 @@ def test_manual_upload_requires_internal_token_when_configured(
     monkeypatch, tmp_path
 ) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.api import app as app_module
+    import config
+    from api import app as app_module
 
     config.settings.internal_service_token = "secret"
     app_module.settings.internal_service_token = "secret"
@@ -114,8 +114,8 @@ def test_manual_upload_accepts_user_jwt_and_rejects_invalid(
     import jwt as pyjwt
 
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.api import app as app_module
+    import config
+    from api import app as app_module
 
     SECRET = "shared-secret-key"
     for s in (config.settings, app_module.settings):
@@ -161,8 +161,8 @@ def test_manual_upload_reports_failed_core_sync_without_failing_upload(
     monkeypatch, tmp_path
 ) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.services import document_ingest
+    import config
+    from services import document_ingest
 
     config.settings.backend_core_document_received_url = (
         "http://127.0.0.1:1/api/ocr/events/document-received"
@@ -246,8 +246,8 @@ def test_email_messages_rejects_invalid_attachment(monkeypatch, tmp_path) -> Non
 
 def test_email_webhook_signature_when_configured(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.api import app as app_module
+    import config
+    from api import app as app_module
 
     config.settings.email_webhook_token = "secret"
     app_module.settings.email_webhook_token = "secret"
@@ -271,7 +271,7 @@ def test_email_webhook_signature_when_configured(monkeypatch, tmp_path) -> None:
 
 def test_imap_poll_ingests_accepted_attachments(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com.services.imap_polling import (
+    from services.imap_polling import (
         email_settings_from_payload,
         poll_imap_once,
     )
@@ -316,7 +316,7 @@ def test_imap_poll_ingests_accepted_attachments(monkeypatch, tmp_path) -> None:
 
 def test_imap_poll_skips_blocked_sender_and_invalid_mime(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com.services.imap_polling import (
+    from services.imap_polling import (
         email_settings_from_payload,
         poll_imap_once,
     )
@@ -364,7 +364,7 @@ def test_imap_poll_skips_blocked_sender_and_invalid_mime(monkeypatch, tmp_path) 
 
 
 def test_imap_poll_requires_password() -> None:
-    from backend_com.services.imap_polling import (
+    from services.imap_polling import (
         email_settings_from_payload,
         poll_imap_once,
     )
@@ -464,8 +464,8 @@ def test_whatsapp_webhook_rejects_invalid_mime(monkeypatch, tmp_path) -> None:
 
 def test_whatsapp_webhook_signature_when_configured(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.api import app as app_module
+    import config
+    from api import app as app_module
 
     config.settings.whatsapp_webhook_token = "secret"
     app_module.settings.whatsapp_webhook_token = "secret"
@@ -490,8 +490,8 @@ def test_whatsapp_webhook_signature_when_configured(monkeypatch, tmp_path) -> No
 def _point_backend_com_to_tmp(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("DOCUPARSE_LOCAL_STORAGE_DIR", str(tmp_path / "objects"))
     monkeypatch.setenv("DOCUPARSE_LOCAL_EVENT_DIR", str(tmp_path / "events"))
-    from backend_com import config
-    from backend_com.services import document_ingest
+    import config
+    from services import document_ingest
 
     config.settings.local_storage_dir = tmp_path / "objects"
     config.settings.local_event_dir = tmp_path / "events"

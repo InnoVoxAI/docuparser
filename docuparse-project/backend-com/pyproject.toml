@@ -30,6 +30,7 @@ debounce = [
 
 test = [
     "moto[s3]>=5.0",
+    "httpx>=0.28.1",
 ]
 
 email-reader = [

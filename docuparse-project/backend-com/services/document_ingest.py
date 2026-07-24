@@ -7,7 +7,7 @@ import urllib.request
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from backend_com.config import settings
+from config import settings
 from docuparse_events import event_bus_from_env
 from docuparse_observability import log_event
 from docuparse_storage import document_original_key, get_storage

@@ -8,8 +8,8 @@ import pytest
 
 def test_storage_write_failure_aborts_without_publishing(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("DOCUPARSE_LOCAL_EVENT_DIR", str(tmp_path / "events"))
-    from backend_com.services import document_ingest
     from docuparse_events import LocalJsonlEventBus
+    from services import document_ingest
 
     document_ingest.settings.local_event_dir = tmp_path / "events"
     document_ingest.settings.backend_core_document_received_url = ""

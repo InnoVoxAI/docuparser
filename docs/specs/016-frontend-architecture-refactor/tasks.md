@@ -33,9 +33,13 @@ Structure).
 
 **Purpose**: Preparar dependências e baseline antes de qualquer mudança estrutural.
 
-- [ ] T001 Rodar o gate completo sobre o estado atual (`npm run typecheck && npm run test:run && npm run build` em `docuparse-project/frontend`) e registrar como baseline "verde" pré-migração
-- [ ] T002 [P] Adicionar dependências de produção ao `docuparse-project/frontend/package.json`: `react-router`, `@tanstack/react-query`, `@tanstack/react-query-devtools`, `zustand`, `react-hook-form`, `zod`, `@hookform/resolvers`
-- [ ] T003 [P] Adicionar dependências de desenvolvimento ao `docuparse-project/frontend/package.json`: `eslint`, `@typescript-eslint/parser`, `@typescript-eslint/eslint-plugin`, `eslint-plugin-react-hooks`, `eslint-plugin-jsx-a11y`, `eslint-plugin-boundaries`, `prettier`, `vitest-axe`
+- [X] T001 Rodar o gate completo sobre o estado atual (`npm run typecheck && npm run test:run && npm run build` em `docuparse-project/frontend`) e registrar como baseline "verde" pré-migração
+  - **Resultado (2026-07-24)**: `typecheck` PASS · `build` PASS · `test:run` **NÃO** verde — 27/28 passam, 1 falha pré-existente e reproduzível de forma consistente (3/3 execuções), não causada por nenhuma mudança desta feature (nenhum código-fonte foi tocado antes deste gate, apenas `npm install`).
+    - Teste: `src/__tests__/flows.test.tsx > Upload > envia um documento manual e mostra a confirmação`.
+    - Causa raiz identificada por depuração isolada (script standalone fora da suíte): o `axios.post` com corpo `FormData` contra uma instância com `baseURL` relativo, interceptado pelo MSW (`XMLHttpRequestInterceptor`) sob jsdom + Node 22, **nunca resolve nem rejeita** — trava indefinidamente (reproduzido também fora do componente `UploadView`, isolando `axios`+`FormData`+MSW+jsdom como a combinação problemática, não a lógica de `UploadView`). Não é flakiness de timing; é um hang determinístico.
+    - **Decisão (usuário, 2026-07-24)**: investigação/correção adiada para depois — apenas documentar. Baseline pré-migração aceito como 27/28 verde, com esta falha conhecida registrada como débito pré-existente. Ao rodar o "gate completo" em qualquer etapa futura da Fase 4+ (T018, T020, T025, T032, T035, T039, T041, T042, T046) e na Fase 5/7, este teste específico deve continuar sendo a única falha esperada — qualquer falha adicional é regressão real introduzida pela migração. Se ao mexer em `modules/upload` (T042) o comportamento de upload for tocado, esta falha deve ser revisitada/corrigida naquele ponto, não ignorada.
+- [X] T002 [P] Adicionar dependências de produção ao `docuparse-project/frontend/package.json`: `react-router`, `@tanstack/react-query`, `@tanstack/react-query-devtools`, `zustand`, `react-hook-form`, `zod`, `@hookform/resolvers`
+- [X] T003 [P] Adicionar dependências de desenvolvimento ao `docuparse-project/frontend/package.json`: `eslint`, `@typescript-eslint/parser`, `@typescript-eslint/eslint-plugin`, `eslint-plugin-react-hooks`, `eslint-plugin-jsx-a11y`, `eslint-plugin-boundaries`, `prettier`, `vitest-axe`
 
 ---
 

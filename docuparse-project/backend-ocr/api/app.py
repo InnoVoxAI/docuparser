@@ -43,10 +43,10 @@ def _load_project_env() -> None:
 
 _load_project_env()
 
-from application.ocr_event_worker import start_worker_thread_from_env
-from domain.engine_resolver import ENGINE_DEFAULTS
+from application.ocr_event_worker import start_worker_thread_from_env  # noqa: E402
+from domain.engine_resolver import ENGINE_DEFAULTS  # noqa: E402
 
-from api.routes.document import router as document_router
+from api.routes.document import router as document_router  # noqa: E402
 
 # Configurar logging
 logging.basicConfig(

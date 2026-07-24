@@ -1,4 +1,3 @@
-clear
 import json
 import os
 

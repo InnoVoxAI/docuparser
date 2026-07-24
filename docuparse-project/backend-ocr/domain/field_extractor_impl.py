@@ -1661,13 +1661,6 @@ def extract_critical_fields_with_confidence(
         data.get("document_info") if isinstance(data.get("document_info"), dict) else {}
     )
     totals = data.get("totals") if isinstance(data.get("totals"), dict) else {}
-    meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
-    resolved_classification = (
-        str(meta.get("document_type") or meta.get("classification") or "")
-        .strip()
-        .lower()
-    )
-    resolved_engine_name = str(meta.get("engine") or "").strip().lower()
 
     # Ajuste por contexto: em NFS-e usamos blocos semânticos para priorizar valor real do campo.
     structured = _extract_nfse_structured_context(raw_text)
@@ -1970,20 +1963,6 @@ def compute_field_pipeline_quality(
     override_ocr_confidence: float | None = None,
     override_field_confidence: dict[str, float] | None = None,
 ) -> dict[str, Any]:
-    meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
-    resolved_classification = (
-        str(meta.get("document_type") or meta.get("classification") or "")
-        .strip()
-        .lower()
-    )
-    resolved_engine_name = str(meta.get("engine") or "").strip().lower()
-    raw_text = _get_raw_text(data)
-    entities = data.get("entities") if isinstance(data.get("entities"), dict) else {}
-    document_info = (
-        data.get("document_info") if isinstance(data.get("document_info"), dict) else {}
-    )
-    totals = data.get("totals") if isinstance(data.get("totals"), dict) else {}
-
     if override_fields:
         fields = override_fields
         field_confidence = dict(override_field_confidence or {})

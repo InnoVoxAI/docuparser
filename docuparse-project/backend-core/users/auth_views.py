@@ -24,7 +24,6 @@ def login_view(request: Request) -> Response:
     from django.contrib.auth import get_user_model
 
     email = request.data.get("email", "")
-    password = request.data.get("password", "")
 
     # Check if account exists but is inactive before authenticate() swallows it
     User = get_user_model()

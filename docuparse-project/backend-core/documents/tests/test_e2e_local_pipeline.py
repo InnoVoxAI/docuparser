@@ -17,17 +17,24 @@ BACKEND_COM_SRC = PROJECT_DIR / "backend-com" / "src"
 if str(BACKEND_COM_SRC) not in sys.path:
     sys.path.insert(0, str(BACKEND_COM_SRC))
 
-from backend_com import config as backend_com_config
-from backend_com.services import document_ingest
-from backend_com.services.email_capture import process_email_attachments
-from backend_com.services.manual_upload import process_manual_upload
-from backend_com.services.whatsapp_capture import process_whatsapp_media
-from docuparse_events import LocalJsonlEventBus
-from events import ExtractionCompletedEvent
+from backend_com import config as backend_com_config  # noqa: E402
+from backend_com.services import document_ingest  # noqa: E402
+from backend_com.services.email_capture import process_email_attachments  # noqa: E402
+from backend_com.services.manual_upload import process_manual_upload  # noqa: E402
+from backend_com.services.whatsapp_capture import process_whatsapp_media  # noqa: E402
+from docuparse_events import LocalJsonlEventBus  # noqa: E402
+from events import ExtractionCompletedEvent  # noqa: E402
 
-from documents.models import Document, ERPIntegrationAttempt, Tenant, ValidationDecision
-from documents.services.erp_mock import handle_erp_integration_requested_event
-from documents.services.event_consumers import (
+from documents.models import (  # noqa: E402
+    Document,
+    ERPIntegrationAttempt,
+    Tenant,
+    ValidationDecision,
+)
+from documents.services.erp_mock import (  # noqa: E402
+    handle_erp_integration_requested_event,
+)
+from documents.services.event_consumers import (  # noqa: E402
     consume_document_received,
     consume_erp_sent,
     consume_extraction_completed,
@@ -43,50 +50,53 @@ class LocalChannelToERPMockE2ETests(TestCase):
         )
 
     def test_manual_upload_reaches_erp_sent_with_exported_json(self) -> None:
-        capture = lambda: process_manual_upload(
-            tenant_id=self.tenant.slug,
-            filename="manual.pdf",
-            content_type="application/pdf",
-            content=b"%PDF manual",
-            sender="operator@example.test",
-        )
+        def capture():
+            return process_manual_upload(
+                tenant_id=self.tenant.slug,
+                filename="manual.pdf",
+                content_type="application/pdf",
+                content=b"%PDF manual",
+                sender="operator@example.test",
+            )
 
         self._assert_channel_reaches_erp_sent(capture, "manual")
 
     def test_email_attachment_reaches_erp_sent_with_exported_json(self) -> None:
-        capture = lambda: process_email_attachments(
-            tenant_id=self.tenant.slug,
-            sender="sender@example.test",
-            message_id="msg-1",
-            subject="Documentos",
-            provider="webhook",
-            attachments=[
-                {
-                    "filename": "email.pdf",
-                    "content_type": "application/pdf",
-                    "content": b"%PDF email",
-                }
-            ],
-        )[0]
+        def capture():
+            return process_email_attachments(
+                tenant_id=self.tenant.slug,
+                sender="sender@example.test",
+                message_id="msg-1",
+                subject="Documentos",
+                provider="webhook",
+                attachments=[
+                    {
+                        "filename": "email.pdf",
+                        "content_type": "application/pdf",
+                        "content": b"%PDF email",
+                    }
+                ],
+            )[0]
 
         self._assert_channel_reaches_erp_sent(capture, "email")
 
     def test_whatsapp_media_reaches_erp_sent_with_exported_json(self) -> None:
-        capture = lambda: process_whatsapp_media(
-            tenant_id=self.tenant.slug,
-            sender="whatsapp:+5511999999999",
-            message_sid="SM123",
-            body="segue documento",
-            media_items=[
-                {
-                    "filename": "whatsapp.pdf",
-                    "content_type": "application/pdf",
-                    "content_base64": base64.b64encode(b"%PDF whatsapp").decode(
-                        "ascii"
-                    ),
-                }
-            ],
-        )[0]
+        def capture():
+            return process_whatsapp_media(
+                tenant_id=self.tenant.slug,
+                sender="whatsapp:+5511999999999",
+                message_sid="SM123",
+                body="segue documento",
+                media_items=[
+                    {
+                        "filename": "whatsapp.pdf",
+                        "content_type": "application/pdf",
+                        "content_base64": base64.b64encode(b"%PDF whatsapp").decode(
+                            "ascii"
+                        ),
+                    }
+                ],
+            )[0]
 
         self._assert_channel_reaches_erp_sent(capture, "whatsapp")
 

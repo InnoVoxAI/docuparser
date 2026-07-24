@@ -12,15 +12,14 @@ outro agente para evitar drift"). Full detail lives in
 `docs/specs/016-frontend-architecture-refactor/tasks.md` (per-task `Resultado`
 notes) — this note is a pointer + the non-obvious things worth remembering.
 
-## State (updated 2026-07-24, after Phase 4d)
+## State (updated 2026-07-24, after Phase 4e)
 
 - Branch: `016-frontend-architecture-refactor`.
 - Sub-phases done: **4a** (`86585ae`, shared UI primitives), **4b**
   (`8322754`, `modules/auth`), **4c** (`156ff46`, routing — T022-T025), **4d**
-  (T026-T033, `modules/documents` + TanStack Query — see per-task `Resultado`
-  notes in tasks.md for full detail; not yet committed as of this note, see
-  commit step still pending in that session). All gates green
-  (typecheck/lint/test/build) at each step.
+  (`42d9c9e`, `modules/documents` + TanStack Query — T026-T033), **4e**
+  (`cba0358`, `modules/operations` + TanStack Query — T034-T035). All gates
+  green (typecheck/lint/test/build) at each step.
 - **4d** extracted `Dashboard`/`InboxView`/`ApprovedView`/`RejectedView`/
   `ValidationView`/`DocumentTable`/`ExtractedFieldsModal`/
   `RejectedDocumentModal`/`LangExtractPanel`/`DocumentMetadataPanel`/
@@ -33,9 +32,19 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
   still there** — `ReferenceDocumentPanel` (Configurações) still uses the old
   hook and isn't extracted until Phase 4f (T036-040). Don't delete them before
   then.
-- Remaining: 4e through 4i (T034-T046) — `modules/operations`,
-  `modules/settings` (+ RHF/Zod), `modules/admin`, `modules/upload`,
-  Zustand/cleanup, remove `main.tsx`.
+- **4e** extracted `OperationsView` (DLQ summary/events/requeue) into
+  `modules/operations`, split the 220-line monolith view into a container
+  (`OperationsView.tsx`) + 3 presentational components
+  (`DlqStreamSummary`/`DlqEventsTable`/`DlqEventDetail`, all ≤150 lines),
+  converted the 3 manual axios calls to `useDlqSummaryQuery`/
+  `useDlqEventsQuery`/`useRequeueMutation` (TanStack Query v5), and wired
+  `router.tsx` to consume `OperationsRoutes`. `main.tsx` shrank from ~3832 to
+  ~3582 lines. No prerequisite gaps or bugs found this round (unlike 4d) —
+  `OperationsView` was fully self-contained (no `AppOutletContext`
+  dependency, no shared-but-unlisted components like the 4d
+  `DocumentBlobPreview`/`EmailMetadataModal` surprise).
+- Remaining: 4f through 4i (T036-T046) — `modules/settings` (+ RHF/Zod),
+  `modules/admin`, `modules/upload`, Zustand/cleanup, remove `main.tsx`.
 
 ## Things that will bite you (4d-specific)
 
@@ -94,6 +103,32 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
    **Lesson for any future large copy/move task**: diff the extracted file
    against the last-committed original before trusting it, don't rely on
    having read it correctly earlier in the same session.
+
+## Things that will bite you (4e-specific)
+
+1. **Removing a section from `main.tsx` orphans its now-unused shared imports
+   at the top of the file** — after deleting `OperationsView`, `formatDate`
+   (from `shared/utils`) and `Metric`/`KeyValueGrid` (from `shared/components`)
+   had no other consumer left in `main.tsx` and had to be dropped from the
+   import lines, or `eslint`'s `no-unused-vars` fails the gate. `grep -n` for
+   each named import across the whole file *before* assuming it's still used
+   elsewhere — don't just delete the block and re-run lint to find out
+   (`RefreshCw`/`AlertTriangle`/`FileText` all survived because other
+   not-yet-extracted views still use them; only `formatDate`/`Metric`/
+   `KeyValueGrid` were operations-exclusive). Expect the same check every
+   remaining sub-phase (4f-4i).
+2. **The diff-against-original-block verification from the 4d lesson (#7
+   below) is worth doing as a matter of course, not just when something feels
+   off** — for 4e, `diff`ing extracted strings/classNames/endpoints against
+   `git show HEAD:.../main.tsx`'s removed block (804-1052) confirmed zero
+   content drift before committing, cheap insurance against silent typos in a
+   manual copy/split.
+3. **No `AppOutletContext` dependency this time** — `OperationsView` never
+   read `schemas`/`layouts`/`selectedDocument`/etc., so the route component
+   (`OperationsRoute.tsx`) didn't need `useOutletContext` at all, unlike
+   `documents`' routes. Don't assume every module route needs the context
+   plumbing `documents` used — check what the original component actually
+   consumed first.
 
 ## New finding from 4c: router singleton + jsdom test bleed
 

@@ -19,6 +19,8 @@ dependencies = [
     "python-decouple>=3.8",
     "redis>=8.0.1",
     "requests>=2.34.2",
+    "boto3>=1.34.0",
+    "moto[s3]>=5.0",
 ]
 
 # ------------------------------
@@ -39,8 +41,6 @@ packages = ["."]
 
 [dependency-groups]
 dev = [
-    "boto3>=1.34.0",
-    "moto[s3]>=5.0",
     "pytest>=9.1.1",
     "pytest-django>=4.9.0",
 ]

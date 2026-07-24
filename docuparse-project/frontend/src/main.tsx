@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import ReactDOM from 'react-dom/client'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router'
 import {
     AlertTriangle,
     Building2,
@@ -38,8 +38,7 @@ import {
 } from './shared/components'
 import { asApiError, readError, formatDate } from './shared/utils'
 import { api, comApi, adminApi } from './shared/lib/http'
-import { AuthProvider, useAuth, PermissionGuard, AcessoNaoAutorizado, LoginPage } from './modules/auth'
-export { AuthProvider }
+import { useAuth, PermissionGuard } from './modules/auth'
 import type {
     Tenant,
     Document,
@@ -116,7 +115,7 @@ async function pollDocumentExtraction(
     return { status: 'timeout' }
 }
 
-interface NavItem {
+export interface NavItem {
     id: ActiveView
     label: string
     icon: LucideIcon
@@ -130,7 +129,7 @@ interface DashboardMetrics {
     failed: number
 }
 
-const NAV_ITEMS: NavItem[] = [
+export const NAV_ITEMS: NavItem[] = [
     { id: 'upload', label: 'Upload', icon: Upload, permission: 'documents.send' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, permission: 'inbox.view' },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'inbox.view' },
@@ -397,7 +396,7 @@ function TenantUsersPanel({ slug, currentTenant }: { slug: string; currentTenant
     )
 }
 
-function TenantsView() {
+export function TenantsView() {
     const { currentTenant, switchTenant } = useAuth()
     const [tenants, setTenants] = useState<Tenant[]>([])
     const [loadingList, setLoadingList] = useState(true)
@@ -620,13 +619,41 @@ function TenantsView() {
     )
 }
 
-// ─── App ─────────────────────────────────────────────────────────────────────
+// ─── AppLayout ───────────────────────────────────────────────────────────────
 
-function App() {
+/** Caminho de rota (React Router) para um item de NAV_ITEMS — mapeamento 1:1, `id` vira `/id`. */
+export function navPath(id: ActiveView): string {
+    return `/${id}`
+}
+
+function activeViewForPath(pathname: string): ActiveView | undefined {
+    return NAV_ITEMS.find((item) => navPath(item.id) === pathname)?.id
+}
+
+/**
+ * Estado/handlers de nível de app (schemas/layouts/documento selecionado/ações de
+ * documento) hoje mantidos aqui porque as telas que os consomem (Dashboard, Inbox,
+ * Validação, etc.) ainda não foram extraídas para `modules/documents` (Fase 4d) —
+ * quando forem, isto vira TanStack Query e este contexto desaparece.
+ */
+export interface AppOutletContext {
+    schemas: SchemaConfig[]
+    layouts: LayoutConfig[]
+    selectedDocumentId: string
+    selectedDocument: Document | null
+    refreshSignal: number
+    refreshData: (silent?: boolean) => Promise<void>
+    navigateToValidation: (documentId: string) => void
+    handleReprocessDocument: (id: string) => Promise<void>
+    handleDeleteDocument: (id: string) => Promise<void>
+    onSelectRejected: (doc: Document | null) => void
+}
+
+export function AppLayout() {
     const { user, logout, hasPermission, currentTenant } = useAuth()
-    const [activeView, setActiveView] = useState(
-        () => NAV_ITEMS.find((item) => hasPermission(item.permission))?.id ?? 'dashboard',
-    )
+    const location = useLocation()
+    const navigate = useNavigate()
+    const activeView = activeViewForPath(location.pathname)
     const [schemas, setSchemas] = useState<SchemaConfig[]>([])
     const [layouts, setLayouts] = useState<LayoutConfig[]>([])
     const [selectedDocumentId, setSelectedDocumentId] = useState('')
@@ -707,7 +734,7 @@ function App() {
 
     const navigateToValidation = (documentId: string) => {
         setSelectedDocumentId(documentId)
-        setActiveView('validation')
+        navigate(navPath('validation'))
     }
 
     const handleReprocessDocument = async (id: string) => {
@@ -746,11 +773,7 @@ function App() {
                     <nav className="space-y-1 px-3 py-4">
                         {NAV_ITEMS.map((item) => (
                             <PermissionGuard key={item.id} code={item.permission}>
-                                <NavButton
-                                    item={item}
-                                    active={activeView === item.id}
-                                    onClick={() => setActiveView(item.id)}
-                                />
+                                <NavButton item={item} active={activeView === item.id} />
                             </PermissionGuard>
                         ))}
                     </nav>
@@ -789,12 +812,7 @@ function App() {
                         <div className="flex gap-1 overflow-x-auto">
                             {NAV_ITEMS.map((item) => (
                                 <PermissionGuard key={item.id} code={item.permission}>
-                                    <NavButton
-                                        item={item}
-                                        active={activeView === item.id}
-                                        onClick={() => setActiveView(item.id)}
-                                        compact
-                                    />
+                                    <NavButton item={item} active={activeView === item.id} compact />
                                 </PermissionGuard>
                             ))}
                         </div>
@@ -804,76 +822,22 @@ function App() {
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}
 
-                        {activeView === 'dashboard' ? (
-                            <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
-                                <Dashboard refreshSignal={refreshSignal} onSelectRejected={setRejectedModal} />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'inbox' ? (
-                            <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
-                                <InboxView
-                                    refreshSignal={refreshSignal}
-                                    onNavigateToValidation={navigateToValidation}
-                                    onNavigateToUpload={() => setActiveView('upload')}
-                                />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'upload' ? (
-                            <PermissionGuard code="documents.send" fallback={<AcessoNaoAutorizado />}>
-                                <UploadView onUploaded={refreshData} />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'approved' ? (
-                            <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
-                                <ApprovedView refreshSignal={refreshSignal} />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'rejected' ? (
-                            <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
-                                <RejectedView
-                                    refreshSignal={refreshSignal}
-                                    onReprocess={handleReprocessDocument}
-                                    onDelete={handleDeleteDocument}
-                                    onRefresh={refreshData}
-                                />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'validation' ? (
-                            <PermissionGuard code="documents.validate" fallback={<AcessoNaoAutorizado />}>
-                                <ValidationView
-                                    schemas={schemas}
-                                    selectedDocument={selectedDocument}
-                                    selectedDocumentId={selectedDocumentId}
-                                    onValidated={refreshData}
-                                    onBackToInbox={() => setActiveView('inbox')}
-                                />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'operations' ? (
-                            <PermissionGuard code="operations.access" fallback={<AcessoNaoAutorizado />}>
-                                <OperationsView />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'settings' ? (
-                            <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}>
-                                <SettingsView schemas={schemas} layouts={layouts} onChanged={refreshData} />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'users' ? (
-                            <PermissionGuard code="users.manage" fallback={<AcessoNaoAutorizado />}>
-                                <GerenciarUsuarios />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'roles' ? (
-                            <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}>
-                                <GerenciarRoles />
-                            </PermissionGuard>
-                        ) : null}
-                        {activeView === 'tenants' ? (
-                            <PermissionGuard code="tenants.manage" fallback={<AcessoNaoAutorizado />}>
-                                <TenantsView />
-                            </PermissionGuard>
-                        ) : null}
+                        <Outlet
+                            context={
+                                {
+                                    schemas,
+                                    layouts,
+                                    selectedDocumentId,
+                                    selectedDocument,
+                                    refreshSignal,
+                                    refreshData,
+                                    navigateToValidation,
+                                    handleReprocessDocument,
+                                    handleDeleteDocument,
+                                    onSelectRejected: setRejectedModal,
+                                } satisfies AppOutletContext
+                            }
+                        />
                     </section>
                 </main>
             </div>
@@ -889,29 +853,18 @@ function App() {
     )
 }
 
-function NavButton({
-    item,
-    active,
-    onClick,
-    compact = false,
-}: {
-    item: NavItem
-    active: boolean
-    onClick: () => void
-    compact?: boolean
-}) {
+function NavButton({ item, active, compact = false }: { item: NavItem; active: boolean; compact?: boolean }) {
     const Icon = item.icon
     return (
-        <button
-            type="button"
-            onClick={onClick}
+        <Link
+            to={navPath(item.id)}
             className={`flex h-10 items-center gap-2 rounded-md px-3 text-sm font-medium ${
                 compact ? 'shrink-0' : 'w-full'
             } ${active ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950'}`}
         >
             <Icon size={17} aria-hidden="true" />
             {item.label}
-        </button>
+        </Link>
     )
 }
 
@@ -980,7 +933,7 @@ function RejectedDocumentModal({
     )
 }
 
-function Dashboard({
+export function Dashboard({
     refreshSignal,
     onSelectRejected,
 }: {
@@ -1046,7 +999,7 @@ function Dashboard({
 
 const INBOX_STATUS_BUCKET = 'RECEIVED,OCR_COMPLETED,EXTRACTION_COMPLETED,VALIDATION_PENDING'
 
-function InboxView({
+export function InboxView({
     refreshSignal,
     onNavigateToValidation,
     onNavigateToUpload,
@@ -1353,7 +1306,7 @@ interface DlqEvent {
     [key: string]: unknown
 }
 
-function OperationsView() {
+export function OperationsView() {
     const [summary, setSummary] = useState<DlqSummary>({ total: 0, streams: [] })
     const [selectedStream, setSelectedStream] = useState(DEFAULT_DLQ_STREAM)
     const [events, setEvents] = useState<DlqEvent[]>([])
@@ -1574,7 +1527,7 @@ function OperationsView() {
     )
 }
 
-function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> }) {
+export function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> }) {
     const [file, setFile] = useState<File | null>(null)
     const [previewUrl, setPreviewUrl] = useState('')
     const [sender, setSender] = useState('')
@@ -2459,7 +2412,7 @@ interface ReferenceReview {
     notes: string
 }
 
-function SettingsView({
+export function SettingsView({
     schemas,
     layouts,
     onChanged,
@@ -4972,7 +4925,7 @@ function ConfigList({
     )
 }
 
-function viewTitle(view: ActiveView): string {
+function viewTitle(view: ActiveView | undefined): string {
     return NAV_ITEMS.find((item) => item.id === view)?.label ?? 'DocuParse'
 }
 
@@ -5145,7 +5098,7 @@ interface AdminRole {
     [key: string]: unknown
 }
 
-function GerenciarUsuarios() {
+export function GerenciarUsuarios() {
     const [users, setUsers] = useState<AdminUser[]>([])
     const [roles, setRoles] = useState<AdminRole[]>([])
     const [loading, setLoading] = useState(true)
@@ -5328,7 +5281,7 @@ function GerenciarUsuarios() {
 
 // ─── Role Management Screen ───────────────────────────────────────────────────
 
-function GerenciarRoles() {
+export function GerenciarRoles() {
     const [roles, setRoles] = useState<AdminRole[]>([])
     const [perms, setPerms] = useState<AdminPermission[]>([])
     const [loading, setLoading] = useState(true)
@@ -5501,25 +5454,3 @@ function GerenciarRoles() {
     )
 }
 
-export function Root() {
-    const { user, loading } = useAuth()
-    if (loading) {
-        return (
-            <div className="flex min-h-screen items-center justify-center bg-zinc-50">
-                <div className="text-sm text-zinc-500">Carregando...</div>
-            </div>
-        )
-    }
-    return user ? <App /> : <LoginPage />
-}
-
-const rootElement = document.getElementById('root')
-if (rootElement) {
-    ReactDOM.createRoot(rootElement).render(
-        <React.StrictMode>
-            <AuthProvider>
-                <Root />
-            </AuthProvider>
-        </React.StrictMode>,
-    )
-}

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from './mocks/server'
 import { renderApp } from './utils'
@@ -44,5 +45,16 @@ describe('Telas / navegação (smoke)', () => {
         ]) {
             expect((await screen.findAllByText(label)).length).toBeGreaterThan(0)
         }
+    })
+
+    // 4c/T025 — navegação por rotas reais (FR-002): clicar num item de menu
+    // muda a URL de fato (React Router), não só um estado interno de view.
+    it('navega por rotas reais ao clicar nos itens de menu', async () => {
+        const user = userEvent.setup()
+        renderApp()
+        await user.click((await screen.findAllByText('Dashboard'))[0])
+        expect(window.location.pathname).toBe('/dashboard')
+        await user.click((await screen.findAllByText('Inbox'))[0])
+        expect(window.location.pathname).toBe('/inbox')
     })
 })

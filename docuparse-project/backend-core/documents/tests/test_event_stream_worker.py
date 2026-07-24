@@ -4,14 +4,20 @@ from datetime import datetime, timezone
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
+from django.db import connection
 from django.test import TestCase
 from docuparse_events import LocalJsonlEventBus
 
 from documents.models import Document, DocumentEvent
 from documents.services.event_stream_worker import CoreEventStreamWorker
+from tenants.models import Tenant
 
 
 class CoreEventStreamWorkerTests(TestCase):
+    def setUp(self) -> None:
+        self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
+        connection.set_tenant(self.tenant)
+
     def test_worker_consumes_document_and_ocr_events_from_event_bus(self) -> None:
         document_id = uuid4()
         correlation_id = uuid4()

@@ -6,6 +6,18 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+# Fixed UUID used as the singleton pk for per-schema settings models (IntegrationSettings,
+# OCRSettings, EmailSettings). Each tenant schema has exactly one row with this id.
+SETTINGS_SINGLETON_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+def default_openrouter_fallback_model() -> str:
+    return settings.OPENROUTER_FALLBACK_MODEL
+
+
+def default_email_webhook_url() -> str:
+    return settings.EMAIL_WEBHOOK_URL
+
 
 class TimeStampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -13,42 +25,6 @@ class TimeStampedModel(models.Model):
 
     class Meta:
         abstract = True
-
-
-class Tenant(TimeStampedModel):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    slug = models.SlugField(unique=True)
-    name = models.CharField(max_length=255)
-    is_active = models.BooleanField(default=True)
-
-    def __str__(self) -> str:
-        return self.slug
-
-
-class UserProfile(TimeStampedModel):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="docuparse_profile",
-    )
-    tenant = models.ForeignKey(
-        Tenant, on_delete=models.CASCADE, related_name="profiles"
-    )
-    role_ref = models.ForeignKey(
-        "users.Role",
-        null=True,
-        blank=True,
-        on_delete=models.PROTECT,
-        related_name="user_profiles",
-    )
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["tenant", "user"], name="unique_profile_per_tenant_user"
-            ),
-        ]
 
 
 class Document(TimeStampedModel):
@@ -61,20 +37,12 @@ class Document(TimeStampedModel):
         VALIDATION_PENDING = "VALIDATION_PENDING", "Validation pending"
         APPROVED = "APPROVED", "Approved"
         REJECTED = "REJECTED", "Rejected"
-        ERP_INTEGRATION_REQUESTED = (
-            "ERP_INTEGRATION_REQUESTED",
-            "ERP integration requested",
-        )
+        ERP_INTEGRATION_REQUESTED = "ERP_INTEGRATION_REQUESTED", "ERP integration requested"
         ERP_SENT = "ERP_SENT", "ERP sent"
         ERP_FAILED = "ERP_FAILED", "ERP failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.ForeignKey(
-        Tenant, on_delete=models.CASCADE, related_name="documents"
-    )
-    status = models.CharField(
-        max_length=64, choices=Status.choices, default=Status.RECEIVED
-    )
+    status = models.CharField(max_length=64, choices=Status.choices, default=Status.RECEIVED)
     channel = models.CharField(max_length=32)
     file_uri = models.CharField(max_length=1024)
     raw_text_uri = models.CharField(max_length=1024, blank=True)
@@ -90,8 +58,8 @@ class Document(TimeStampedModel):
 
     class Meta:
         indexes = [
-            models.Index(fields=["tenant", "status"]),
-            models.Index(fields=["tenant", "received_at"]),
+            models.Index(fields=["status"]),
+            models.Index(fields=["received_at"]),
         ]
 
     def transition_to(self, status: str) -> None:
@@ -102,12 +70,7 @@ class Document(TimeStampedModel):
 class DocumentEvent(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event_id = models.UUIDField(unique=True)
-    tenant = models.ForeignKey(
-        Tenant, on_delete=models.CASCADE, related_name="document_events"
-    )
-    document = models.ForeignKey(
-        Document, on_delete=models.CASCADE, related_name="events", null=True, blank=True
-    )
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="events", null=True, blank=True)
     event_type = models.CharField(max_length=128, db_index=True)
     event_version = models.CharField(max_length=16, default="v1")
     correlation_id = models.UUIDField(db_index=True)
@@ -117,16 +80,14 @@ class DocumentEvent(TimeStampedModel):
 
     class Meta:
         indexes = [
-            models.Index(fields=["tenant", "event_type"]),
+            models.Index(fields=["event_type"]),
             models.Index(fields=["document", "occurred_at"]),
         ]
 
 
 class ExtractionResult(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.OneToOneField(
-        Document, on_delete=models.CASCADE, related_name="extraction_result"
-    )
+    document = models.OneToOneField(Document, on_delete=models.CASCADE, related_name="extraction_result")
     schema_id = models.CharField(max_length=128)
     schema_version = models.CharField(max_length=32)
     fields = models.JSONField(default=dict)
@@ -135,10 +96,10 @@ class ExtractionResult(TimeStampedModel):
 
 
 class ExtractionFieldVersion(TimeStampedModel):
-    """Snapshot imutável da lista de campos extraídos de um documento.
+    """Immutable snapshot of extracted fields.
 
-    Uma nova versão é criada a cada extração, processamento, reprocessamento ou
-    edição manual. Há no máximo uma versão ativa por documento (a mais recente).
+    A new version is created on each extraction, reprocessing, or manual edit.
+    At most one version per document is active (the most recent).
     """
 
     class SourceType(models.TextChoices):
@@ -148,9 +109,7 @@ class ExtractionFieldVersion(TimeStampedModel):
         MANUAL_EDIT = "MANUAL_EDIT", "Manual edit"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.ForeignKey(
-        Document, on_delete=models.CASCADE, related_name="field_versions"
-    )
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="field_versions")
     version_number = models.PositiveIntegerField()
     source_type = models.CharField(max_length=32, choices=SourceType.choices)
     fields = models.JSONField(default=dict)
@@ -200,9 +159,7 @@ class ValidationDecision(TimeStampedModel):
         CORRECTED = "corrected", "Corrected"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.ForeignKey(
-        Document, on_delete=models.CASCADE, related_name="validation_decisions"
-    )
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="validation_decisions")
     decided_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -220,13 +177,9 @@ class ERPIntegrationAttempt(TimeStampedModel):
         FAILED = "failed", "Failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.ForeignKey(
-        Document, on_delete=models.CASCADE, related_name="erp_attempts"
-    )
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="erp_attempts")
     connector = models.CharField(max_length=128)
-    status = models.CharField(
-        max_length=32, choices=Status.choices, default=Status.REQUESTED
-    )
+    status = models.CharField(max_length=32, choices=Status.choices, default=Status.REQUESTED)
     idempotency_key = models.CharField(max_length=255, unique=True)
     request_payload = models.JSONField(default=dict)
     response_payload = models.JSONField(default=dict, blank=True)
@@ -245,9 +198,6 @@ class IntegrationSettings(TimeStampedModel):
         SANDBOX = "sandbox", "Sandbox"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.OneToOneField(
-        Tenant, on_delete=models.CASCADE, related_name="integration_settings"
-    )
     approved_export_enabled = models.BooleanField(default=True)
     approved_export_dir = models.CharField(max_length=1024, blank=True)
     approved_export_format = models.CharField(
@@ -266,24 +216,15 @@ class OCRSettings(TimeStampedModel):
         TESSERACT = "tesseract", "Tesseract"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.OneToOneField(
-        Tenant, on_delete=models.CASCADE, related_name="ocr_settings"
-    )
-    digital_pdf_engine = models.CharField(
-        max_length=32, choices=Engine.choices, default=Engine.DOCLING
-    )
-    scanned_image_engine = models.CharField(
-        max_length=32, choices=Engine.choices, default=Engine.OPENROUTER
-    )
-    handwritten_engine = models.CharField(
-        max_length=32, choices=Engine.choices, default=Engine.OPENROUTER
-    )
+    digital_pdf_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.DOCLING)
+    scanned_image_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.OPENROUTER)
+    handwritten_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.OPENROUTER)
     technical_fallback_engine = models.CharField(
         max_length=32, choices=Engine.choices, default=Engine.TESSERACT
     )
     openrouter_model = models.CharField(max_length=255, blank=True)
     openrouter_fallback_model = models.CharField(
-        max_length=255, default="qwen/qwen2.5-vl-72b-instruct"
+        max_length=255, default=default_openrouter_fallback_model
     )
     timeout_seconds = models.PositiveIntegerField(default=120)
     retry_empty_text_enabled = models.BooleanField(default=True)
@@ -297,19 +238,12 @@ class EmailSettings(TimeStampedModel):
         MANUAL_TEST = "manual_test", "Manual test"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.OneToOneField(
-        Tenant, on_delete=models.CASCADE, related_name="email_settings"
-    )
-    provider = models.CharField(
-        max_length=32, choices=Provider.choices, default=Provider.IMAP
-    )
+    provider = models.CharField(max_length=32, choices=Provider.choices, default=Provider.IMAP)
     inbox_folder = models.CharField(max_length=255, default="INBOX")
     imap_host = models.CharField(max_length=255, blank=True)
     imap_port = models.PositiveIntegerField(default=993)
     username = models.CharField(max_length=255, blank=True)
-    webhook_url = models.CharField(
-        max_length=1024, default="http://127.0.0.1:8070/api/v1/email/messages"
-    )
+    webhook_url = models.CharField(max_length=1024, default=default_email_webhook_url)
     accepted_content_types = models.CharField(
         max_length=1024,
         default="application/pdf,image/jpeg,image/png,image/tiff,image/webp",
@@ -321,9 +255,6 @@ class EmailSettings(TimeStampedModel):
 
 class SchemaConfig(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.ForeignKey(
-        Tenant, on_delete=models.CASCADE, related_name="schema_configs"
-    )
     schema_id = models.CharField(max_length=128)
     version = models.CharField(max_length=32)
     definition = models.JSONField(default=dict)
@@ -332,7 +263,7 @@ class SchemaConfig(TimeStampedModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["tenant", "schema_id", "version"],
+                fields=["schema_id", "version"],
                 name="unique_schema_config_version",
             ),
         ]
@@ -340,21 +271,16 @@ class SchemaConfig(TimeStampedModel):
 
 class LayoutConfig(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    tenant = models.ForeignKey(
-        Tenant, on_delete=models.CASCADE, related_name="layout_configs"
-    )
     layout = models.CharField(max_length=128)
     document_type = models.CharField(max_length=64)
-    schema_config = models.ForeignKey(
-        SchemaConfig, on_delete=models.PROTECT, related_name="layout_configs"
-    )
+    schema_config = models.ForeignKey(SchemaConfig, on_delete=models.PROTECT, related_name="layout_configs")
     confidence_threshold = models.FloatField(default=0.75)
     is_active = models.BooleanField(default=True)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["tenant", "layout", "document_type"],
+                fields=["layout", "document_type"],
                 name="unique_layout_config",
             ),
         ]

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
-import pathlib
 from contextlib import asynccontextmanager
 
 from application.layout_event_worker import start_worker_thread_from_env
 from domain.classifier import classify_layout
 from fastapi import FastAPI
+
+from docuparse_storage import get_storage
 
 from api.schemas import ClassifyLayoutRequest, ClassifyLayoutResponse
 
@@ -17,12 +17,12 @@ def _resolve_raw_text(request: ClassifyLayoutRequest) -> str:
         return request.raw_text
     if not request.raw_text_uri:
         return ""
-    storage_dir = os.getenv("DOCUPARSE_LOCAL_STORAGE_DIR", "/data/storage")
-    key = request.raw_text_uri.removeprefix("local://")
-    path = pathlib.Path(storage_dir) / key
-    if not path.exists():
+    # Resolve pelo storage compartilhado (despacha por esquema local://|s3://).
+    try:
+        raw = get_storage().get_bytes(request.raw_text_uri)
+    except FileNotFoundError:
         return ""
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(raw.decode("utf-8"))
     return data.get("raw_text") or data.get("text") or ""
 
 

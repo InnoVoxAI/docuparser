@@ -2,16 +2,21 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from documents.models import Tenant, UserProfile
 from rest_framework.test import APIClient
 
+from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
+from unittest.mock import patch
 
 User = get_user_model()
 
 
 def _make_tenant() -> Tenant:
-    return Tenant.objects.get_or_create(slug="test", defaults={"name": "Test"})[0]
+    with patch.object(Tenant, "auto_create_schema", new=False):
+        tenant, _ = Tenant.objects.get_or_create(
+            slug="test", defaults={"name": "Test", "schema_name": "tenant_test"}
+        )
+    return tenant
 
 
 def _make_role(name: str = "Admin", codes: list[str] | None = None) -> Role:
@@ -43,12 +48,10 @@ def _make_user(
 class LoginViewTest(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
-        Permission.objects.bulk_create(
-            [
-                Permission(code="inbox.view", description="Visualizar Inbox"),
-                Permission(code="documents.validate", description="Validar Documentos"),
-            ]
-        )
+        Permission.objects.bulk_create([
+            Permission(code="inbox.view", description="Visualizar Inbox"),
+            Permission(code="documents.validate", description="Validar Documentos"),
+        ])
         self.role = _make_role("Operador", ["inbox.view", "documents.validate"])
         self.user = _make_user("op@test.com", "senha123", role=self.role)
 

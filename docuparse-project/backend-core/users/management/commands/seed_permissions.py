@@ -13,6 +13,7 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("operations.access", "Acessar Operações"),
     ("users.manage", "Gerenciar Usuários"),
     ("roles.manage", "Gerenciar Roles"),
+    ("tenants.manage", "Gerenciar Tenants"),
 ]
 
 

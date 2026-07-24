@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
 
-from documents.models import Document, ExtractionResult, Tenant, ValidationDecision
+from documents.models import Document, ExtractionResult, ValidationDecision
+from tenants.models import Tenant
 from documents.serializers import DocumentListSerializer
 
 
 class DocumentListSerializerDecisionDateTests(TestCase):
     def setUp(self) -> None:
         self.tenant = Tenant.objects.create(slug="tenant-serial", name="Tenant Serial")
-        self.user = get_user_model().objects.create_user(
-            username="serial_op", password="test"
-        )
+        connection.set_tenant(self.tenant)
+        self.user = get_user_model().objects.create_user(username="serial_op", password="test")
         self.document = Document.objects.create(
-            tenant=self.tenant,
             status=Document.Status.VALIDATION_PENDING,
             channel="manual",
             file_uri="local://documents/tenant-serial/doc/original",

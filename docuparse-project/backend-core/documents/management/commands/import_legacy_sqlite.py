@@ -10,7 +10,8 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from documents.models import Document, DocumentEvent, ExtractionResult, Tenant
+from documents.models import Document, DocumentEvent, ExtractionResult
+from tenants.models import Tenant
 
 
 def _uuid(value: str) -> uuid.UUID:
@@ -51,98 +52,105 @@ class Command(BaseCommand):
         imported_events = 0
         skipped_documents = 0
 
-        with transaction.atomic():
-            tenants = {}
-            for row in connection.execute("select * from documents_tenant"):
-                tenant, _ = Tenant.objects.get_or_create(
-                    slug=row["slug"],
-                    defaults={
-                        "name": row["name"],
-                        "is_active": bool(row["is_active"]),
-                    },
-                )
-                tenants[row["id"]] = tenant
+        from django_tenants.utils import schema_context
 
-            for row in connection.execute(
-                "select * from documents_document order by created_at"
-            ):
-                document_id = _uuid(row["id"])
-                if Document.objects.filter(id=document_id).exists():
-                    skipped_documents += 1
-                    continue
+        # Phase 1: provision tenants in the public schema (no schema routing needed)
+        tenants: dict[str, Tenant] = {}
+        for row in connection.execute("select * from documents_tenant"):
+            slug = row["slug"]
+            schema_name = f"tenant_{slug}"
+            tenant, _ = Tenant.objects.get_or_create(
+                slug=slug,
+                defaults={
+                    "name": row["name"],
+                    "is_active": bool(row["is_active"]),
+                    "schema_name": schema_name,
+                },
+            )
+            tenants[row["id"]] = tenant
 
-                document = Document.objects.create(
-                    id=document_id,
-                    tenant=tenants[row["tenant_id"]],
-                    status=row["status"],
-                    channel=row["channel"],
-                    file_uri=row["file_uri"],
-                    raw_text_uri=row["raw_text_uri"],
-                    original_filename=row["original_filename"],
-                    content_type=row["content_type"],
-                    size_bytes=row["size_bytes"],
-                    document_type=row["document_type"],
-                    layout=row["layout"],
-                    correlation_id=_uuid(row["correlation_id"]),
-                    received_at=_datetime(row["received_at"]),
-                    metadata=_json(row["metadata"]),
-                )
-                Document.objects.filter(id=document.id).update(
-                    created_at=_datetime(row["created_at"]),
-                    updated_at=_datetime(row["updated_at"]),
-                )
-                imported_documents += 1
+        # Phase 2: import per-tenant data inside each tenant's schema
+        all_document_rows = list(connection.execute("select * from documents_document order by created_at"))
+        all_result_rows = list(connection.execute("select * from documents_extractionresult order by created_at"))
+        all_event_rows = list(connection.execute("select * from documents_documentevent order by created_at"))
 
-            for row in connection.execute(
-                "select * from documents_extractionresult order by created_at"
-            ):
-                document_id = _uuid(row["document_id"])
-                if not Document.objects.filter(id=document_id).exists():
-                    continue
-                result, created = ExtractionResult.objects.update_or_create(
-                    document_id=document_id,
-                    defaults={
-                        "id": _uuid(row["id"]),
-                        "schema_id": row["schema_id"],
-                        "schema_version": row["schema_version"],
-                        "fields": _json(row["fields"]),
-                        "confidence": row["confidence"],
-                        "requires_human_validation": bool(
-                            row["requires_human_validation"]
-                        ),
-                    },
-                )
-                ExtractionResult.objects.filter(id=result.id).update(
-                    created_at=_datetime(row["created_at"]),
-                    updated_at=_datetime(row["updated_at"]),
-                )
-                if created:
-                    imported_results += 1
+        for tenant_legacy_id, tenant in tenants.items():
+            with schema_context(tenant.schema_name):
+                with transaction.atomic():
+                    for row in all_document_rows:
+                        if row["tenant_id"] != tenant_legacy_id:
+                            continue
+                        document_id = _uuid(row["id"])
+                        if Document.objects.filter(id=document_id).exists():
+                            skipped_documents += 1
+                            continue
 
-            for row in connection.execute(
-                "select * from documents_documentevent order by created_at"
-            ):
-                event_id = _uuid(row["event_id"])
-                if DocumentEvent.objects.filter(event_id=event_id).exists():
-                    continue
-                document_id = _uuid(row["document_id"]) if row["document_id"] else None
-                event = DocumentEvent.objects.create(
-                    id=_uuid(row["id"]),
-                    event_id=event_id,
-                    tenant=tenants[row["tenant_id"]],
-                    document_id=document_id,
-                    event_type=row["event_type"],
-                    event_version=row["event_version"],
-                    correlation_id=_uuid(row["correlation_id"]),
-                    source=row["source"],
-                    occurred_at=_datetime(row["occurred_at"]),
-                    payload=_json(row["payload"]),
-                )
-                DocumentEvent.objects.filter(id=event.id).update(
-                    created_at=_datetime(row["created_at"]),
-                    updated_at=_datetime(row["updated_at"]),
-                )
-                imported_events += 1
+                        document = Document.objects.create(
+                            id=document_id,
+                            status=row["status"],
+                            channel=row["channel"],
+                            file_uri=row["file_uri"],
+                            raw_text_uri=row["raw_text_uri"],
+                            original_filename=row["original_filename"],
+                            content_type=row["content_type"],
+                            size_bytes=row["size_bytes"],
+                            document_type=row["document_type"],
+                            layout=row["layout"],
+                            correlation_id=_uuid(row["correlation_id"]),
+                            received_at=_datetime(row["received_at"]),
+                            metadata=_json(row["metadata"]),
+                        )
+                        Document.objects.filter(id=document.id).update(
+                            created_at=_datetime(row["created_at"]),
+                            updated_at=_datetime(row["updated_at"]),
+                        )
+                        imported_documents += 1
+
+                    for row in all_result_rows:
+                        document_id = _uuid(row["document_id"])
+                        if not Document.objects.filter(id=document_id).exists():
+                            continue
+                        result, created = ExtractionResult.objects.update_or_create(
+                            document_id=document_id,
+                            defaults={
+                                "id": _uuid(row["id"]),
+                                "schema_id": row["schema_id"],
+                                "schema_version": row["schema_version"],
+                                "fields": _json(row["fields"]),
+                                "confidence": row["confidence"],
+                                "requires_human_validation": bool(row["requires_human_validation"]),
+                            },
+                        )
+                        ExtractionResult.objects.filter(id=result.id).update(
+                            created_at=_datetime(row["created_at"]),
+                            updated_at=_datetime(row["updated_at"]),
+                        )
+                        if created:
+                            imported_results += 1
+
+                    for row in all_event_rows:
+                        if row["tenant_id"] != tenant_legacy_id:
+                            continue
+                        event_id = _uuid(row["event_id"])
+                        if DocumentEvent.objects.filter(event_id=event_id).exists():
+                            continue
+                        document_id = _uuid(row["document_id"]) if row["document_id"] else None
+                        event = DocumentEvent.objects.create(
+                            id=_uuid(row["id"]),
+                            event_id=event_id,
+                            document_id=document_id,
+                            event_type=row["event_type"],
+                            event_version=row["event_version"],
+                            correlation_id=_uuid(row["correlation_id"]),
+                            source=row["source"],
+                            occurred_at=_datetime(row["occurred_at"]),
+                            payload=_json(row["payload"]),
+                        )
+                        DocumentEvent.objects.filter(id=event.id).update(
+                            created_at=_datetime(row["created_at"]),
+                            updated_at=_datetime(row["updated_at"]),
+                        )
+                        imported_events += 1
 
         self.stdout.write(
             self.style.SUCCESS(

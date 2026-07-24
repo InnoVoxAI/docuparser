@@ -6,17 +6,12 @@ import os
 import threading
 from datetime import datetime, timezone
 from typing import Any, Protocol
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-from docuparse_events import (
-    EventBus,
-    event_bus_from_env,
-    publish_dead_letter,
-    sleep_interval,
-)
-from docuparse_observability import log_event
-from docuparse_storage import LocalStorage
 from events import DocumentReceivedEvent, OCRCompletedEvent, OCRFailedEvent
+from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
+from docuparse_observability import log_event
+from docuparse_storage import document_ocr_raw_text_key, get_storage
 
 from application.process_document import process_document
 
@@ -24,17 +19,16 @@ logger = logging.getLogger(__name__)
 
 
 class Storage(Protocol):
-    def get_bytes(self, uri_or_key: str) -> bytes: ...
+    def get_bytes(self, uri_or_key: str) -> bytes:
+        ...
 
-    def put_bytes(self, key: str, content: bytes): ...
+    def put_bytes(self, key: str, content: bytes):
+        ...
 
 
 class EventPublisher(Protocol):
-    def publish(self, stream: str, event: dict[str, Any]) -> int | str: ...
-
-
-def raw_text_key(tenant_id: str, document_id: UUID) -> str:
-    return f"documents/{tenant_id}/{document_id}/ocr/raw_text.json"
+    def publish(self, stream: str, event: dict[str, Any]) -> int | str:
+        ...
 
 
 def handle_document_received_event(
@@ -73,7 +67,7 @@ def handle_document_received_event(
             },
         }
         stored = storage.put_bytes(
-            raw_text_key(event.tenant_id, event.document_id),
+            document_ocr_raw_text_key(event.tenant_id, str(event.document_id)),
             json.dumps(raw_payload, ensure_ascii=False).encode("utf-8"),
         )
 
@@ -144,16 +138,12 @@ def handle_document_received_event(
         return event_dict
 
 
-def _process_or_mock_document(
-    event: DocumentReceivedEvent, file_bytes: bytes
-) -> dict[str, Any]:
+def _process_or_mock_document(event: DocumentReceivedEvent, file_bytes: bytes) -> dict[str, Any]:
     if _mock_ocr_allowed() and "ocr_mock_raw_text" in event.data.metadata:
         return {
             "raw_text": str(event.data.metadata.get("ocr_mock_raw_text", "")),
             "raw_text_fallback": "",
-            "document_type": str(
-                event.data.metadata.get("ocr_mock_document_type", "digital_pdf")
-            ),
+            "document_type": str(event.data.metadata.get("ocr_mock_document_type", "digital_pdf")),
             "engine_used": "mock",
             "processing_time_seconds": 0.0,
             "filename": event.data.file.filename,
@@ -172,11 +162,7 @@ def _process_or_mock_document(
 
 
 def _mock_ocr_allowed() -> bool:
-    return os.environ.get("DOCUPARSE_OCR_WORKER_ALLOW_MOCK", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+    return os.environ.get("DOCUPARSE_OCR_WORKER_ALLOW_MOCK", "").strip().lower() in {"1", "true", "yes"}
 
 
 class OCRWorker:
@@ -209,24 +195,17 @@ class OCRWorker:
         self._stop.set()
 
     def run_forever(self) -> None:
-        logger.info(
-            "OCR Redis worker started",
-            extra={"stream": self.input_stream, "offset": self._offset},
-        )
+        logger.info("OCR Redis worker started", extra={"stream": self.input_stream, "offset": self._offset})
         while not self._stop.is_set():
             processed = self.run_once()
             if processed == 0:
                 sleep_interval(self.poll_interval_seconds)
 
     def run_once(self) -> int:
-        entries = self.event_bus.consume_entries(
-            self.input_stream, self._offset, count=10
-        )
+        entries = self.event_bus.consume_entries(self.input_stream, self._offset, count=10)
         for entry in entries:
             try:
-                handle_document_received_event(
-                    entry.payload, self.storage, self.event_bus
-                )
+                handle_document_received_event(entry.payload, self.storage, self.event_bus)
             except Exception as exc:
                 publish_dead_letter(
                     self.event_bus,
@@ -250,34 +229,20 @@ class OCRWorker:
 
 
 def worker_from_env() -> OCRWorker:
-    storage_root = os.environ.get("DOCUPARSE_LOCAL_STORAGE_DIR", "/data/storage")
     return OCRWorker(
-        storage=LocalStorage(storage_root),
-        event_bus=event_bus_from_env(
-            os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")
-        ),
+        storage=get_storage(),
+        event_bus=event_bus_from_env(os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")),
         input_stream=os.environ.get("DOCUPARSE_OCR_INPUT_STREAM", "document.received"),
-        poll_interval_seconds=float(
-            os.environ.get("DOCUPARSE_OCR_WORKER_POLL_SECONDS", "2")
-        ),
-        start_at_latest=os.environ.get("DOCUPARSE_OCR_WORKER_START_AT_LATEST", "true")
-        .strip()
-        .lower()
-        not in {"0", "false", "no"},
+        poll_interval_seconds=float(os.environ.get("DOCUPARSE_OCR_WORKER_POLL_SECONDS", "2")),
+        start_at_latest=os.environ.get("DOCUPARSE_OCR_WORKER_START_AT_LATEST", "true").strip().lower() not in {"0", "false", "no"},
     )
 
 
 def start_worker_thread_from_env() -> OCRWorker | None:
-    enabled = os.environ.get("DOCUPARSE_OCR_WORKER_ENABLED", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+    enabled = os.environ.get("DOCUPARSE_OCR_WORKER_ENABLED", "").strip().lower() in {"1", "true", "yes"}
     if not enabled:
         return None
     worker = worker_from_env()
-    thread = threading.Thread(
-        target=worker.run_forever, name="docuparse-ocr-worker", daemon=True
-    )
+    thread = threading.Thread(target=worker.run_forever, name="docuparse-ocr-worker", daemon=True)
     thread.start()
     return worker

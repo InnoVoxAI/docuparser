@@ -1,11 +1,8 @@
 from __future__ import annotations
 
+from django.http import HttpRequest
 from rest_framework import status
-from rest_framework.decorators import (
-    api_view,
-    authentication_classes,
-    permission_classes,
-)
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -24,6 +21,7 @@ def login_view(request: Request) -> Response:
     from django.contrib.auth import get_user_model
 
     email = request.data.get("email", "")
+    password = request.data.get("password", "")
 
     # Check if account exists but is inactive before authenticate() swallows it
     User = get_user_model()
@@ -46,6 +44,17 @@ def login_view(request: Request) -> Response:
 
     user = serializer.validated_data["user"]
     refresh = RefreshToken.for_user(user)
+    try:
+        from tenants.models import UserProfile
+        profile = UserProfile.objects.select_related("tenant").get(user=user)
+        if not profile.tenant.is_active:
+            return Response(
+                {"detail": "Tenant inativo. Contate o administrador."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        refresh["tenant"] = profile.tenant.slug
+    except UserProfile.DoesNotExist:
+        pass
     return Response(
         {
             "access": str(refresh.access_token),
@@ -86,13 +95,11 @@ refresh_view = TokenRefreshView.as_view()
 @permission_classes([])
 def register_view(request: Request) -> Response:
     from users.serializers import RegisterSerializer
-
     serializer = RegisterSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     from django.contrib.auth import get_user_model
-
     User = get_user_model()
     data = serializer.validated_data
     user = User.objects.create_user(
@@ -102,11 +109,17 @@ def register_view(request: Request) -> Response:
         first_name=data["name"],
         is_active=False,
     )
-    from documents.models import Tenant, UserProfile
-
-    tenant = Tenant.objects.first()
-    if tenant:
-        UserProfile.objects.create(user=user, tenant=tenant, role_ref=None)
+    from tenants.models import Tenant, UserProfile
+    tenant_slug = data.get("tenant_slug", "").strip()
+    try:
+        tenant = Tenant.objects.get(slug=tenant_slug, is_active=True)
+    except Tenant.DoesNotExist:
+        user.delete()
+        return Response(
+            {"detail": f"Código de tenant '{tenant_slug}' inválido ou inativo."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    UserProfile.objects.create(user=user, tenant=tenant, role_ref=None)
 
     return Response(
         {

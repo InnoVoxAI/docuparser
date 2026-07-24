@@ -131,6 +131,7 @@ async def manual_document_upload(
     authorization: str | None = Header(default=None),
 ):
     _authenticate_caller(authorization)
+    tenant_slug = _tenant_slug_from_jwt(_bearer_token(authorization))
     try:
         metadata = json.loads(metadata_json) if metadata_json else {}
         if not isinstance(metadata, dict):
@@ -138,6 +139,7 @@ async def manual_document_upload(
         content = await file.read()
         return process_manual_upload(
             tenant_id=tenant_id,
+            tenant_slug=tenant_slug,
             filename=file.filename or "",
             content_type=file.content_type or "application/octet-stream",
             content=content,
@@ -258,12 +260,7 @@ def _bearer_token(authorization: str | None) -> str:
 
 
 def _is_valid_user_jwt(token: str) -> bool:
-    """Verifica o JWT do usuário emitido pelo backend-core.
-
-    Usa a mesma SECRET_KEY e algoritmo (HS256) do backend-core — por isso ambos
-    precisam compartilhar a SECRET_KEY. PyJWT já valida assinatura e expiração
-    (`exp`); exigimos também que seja um access token.
-    """
+    """Verifica o JWT do usuário emitido pelo backend-core."""
     if not token:
         return False
     try:
@@ -273,6 +270,17 @@ def _is_valid_user_jwt(token: str) -> bool:
     except jwt.PyJWTError:
         return False
     return payload.get("token_type") == "access"
+
+
+def _tenant_slug_from_jwt(token: str) -> str:
+    """Extract the 'tenant' claim from a user JWT without raising on failure."""
+    if not token:
+        return ""
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        return str(payload.get("tenant") or "")
+    except jwt.PyJWTError:
+        return ""
 
 
 def _authenticate_caller(authorization: str | None) -> None:

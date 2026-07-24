@@ -6,6 +6,7 @@ from services.document_ingest import ingest_document
 def process_manual_upload(
     *,
     tenant_id: str,
+    tenant_slug: str = "",
     filename: str,
     content_type: str,
     content: bytes,
@@ -15,6 +16,7 @@ def process_manual_upload(
 ) -> dict:
     return ingest_document(
         tenant_id=tenant_id,
+        tenant_slug=tenant_slug,
         channel="manual",
         filename=filename,
         content_type=content_type,

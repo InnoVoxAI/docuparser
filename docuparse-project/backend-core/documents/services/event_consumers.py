@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from django.db import transaction
-from docuparse_observability import log_event
+
 from events import (
     DocumentReceivedEvent,
     ERPFailedEvent,
@@ -13,13 +13,13 @@ from events import (
     OCRCompletedEvent,
     OCRFailedEvent,
 )
+from docuparse_observability import log_event
 
 from documents.models import (
     Document,
     DocumentEvent,
     ERPIntegrationAttempt,
     ExtractionResult,
-    Tenant,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,25 +34,18 @@ class DuplicateDocumentError(Exception):
 def consume_document_received(payload: dict[str, Any]) -> Document:
     event = DocumentReceivedEvent.model_validate(payload)
     with transaction.atomic():
-        tenant = _tenant_for(event.tenant_id)
-        existing_event, created = _record_event_once(event, tenant)
+        existing_event, created = _record_event_once(event)
         if not created and existing_event.document_id:
             return existing_event.document
 
         sha256 = event.data.file.sha256 or ""
         filename = event.data.file.filename
-        if (
-            filename
-            and Document.objects.filter(
-                tenant=tenant, original_filename=filename
-            ).exists()
-        ):
+        if filename and Document.objects.filter(original_filename=filename).exists():
             raise DuplicateDocumentError(filename)
 
         document, _ = Document.objects.get_or_create(
             id=event.document_id,
             defaults={
-                "tenant": tenant,
                 "status": Document.Status.RECEIVED,
                 "channel": event.data.channel,
                 "file_uri": event.data.file.uri,
@@ -81,11 +74,8 @@ def consume_document_received(payload: dict[str, Any]) -> Document:
 def consume_extraction_completed(payload: dict[str, Any]) -> Document:
     event = ExtractionCompletedEvent.model_validate(payload)
     with transaction.atomic():
-        tenant = _tenant_for(event.tenant_id)
-        existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(
-            id=event.document_id, tenant=tenant
-        )
+        existing_event, created = _record_event_once(event)
+        document = Document.objects.select_for_update().get(id=event.document_id)
         if not created and existing_event.document_id:
             return document
 
@@ -122,11 +112,8 @@ def consume_extraction_completed(payload: dict[str, Any]) -> Document:
 def consume_ocr_completed(payload: dict[str, Any]) -> Document:
     event = OCRCompletedEvent.model_validate(payload)
     with transaction.atomic():
-        tenant = _tenant_for(event.tenant_id)
-        existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(
-            id=event.document_id, tenant=tenant
-        )
+        existing_event, created = _record_event_once(event)
+        document = Document.objects.select_for_update().get(id=event.document_id)
         if not created and existing_event.document_id:
             return document
 
@@ -147,15 +134,7 @@ def consume_ocr_completed(payload: dict[str, Any]) -> Document:
                 "metadata": event.data.metadata,
             },
         }
-        document.save(
-            update_fields=[
-                "raw_text_uri",
-                "document_type",
-                "status",
-                "metadata",
-                "updated_at",
-            ]
-        )
+        document.save(update_fields=["raw_text_uri", "document_type", "status", "metadata", "updated_at"])
         existing_event.document = document
         existing_event.save(update_fields=["document", "updated_at"])
         log_event(
@@ -173,11 +152,8 @@ def consume_ocr_completed(payload: dict[str, Any]) -> Document:
 def consume_ocr_failed(payload: dict[str, Any]) -> Document:
     event = OCRFailedEvent.model_validate(payload)
     with transaction.atomic():
-        tenant = _tenant_for(event.tenant_id)
-        existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(
-            id=event.document_id, tenant=tenant
-        )
+        existing_event, created = _record_event_once(event)
+        document = Document.objects.select_for_update().get(id=event.document_id)
         if not created and existing_event.document_id:
             return document
 
@@ -210,11 +186,8 @@ def consume_ocr_failed(payload: dict[str, Any]) -> Document:
 def consume_erp_sent(payload: dict[str, Any]) -> Document:
     event = ERPSentEvent.model_validate(payload)
     with transaction.atomic():
-        tenant = _tenant_for(event.tenant_id)
-        existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(
-            id=event.document_id, tenant=tenant
-        )
+        existing_event, created = _record_event_once(event)
+        document = Document.objects.select_for_update().get(id=event.document_id)
         if not created and existing_event.document_id:
             return document
 
@@ -238,11 +211,8 @@ def consume_erp_sent(payload: dict[str, Any]) -> Document:
 def consume_erp_failed(payload: dict[str, Any]) -> Document:
     event = ERPFailedEvent.model_validate(payload)
     with transaction.atomic():
-        tenant = _tenant_for(event.tenant_id)
-        existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(
-            id=event.document_id, tenant=tenant
-        )
+        existing_event, created = _record_event_once(event)
+        document = Document.objects.select_for_update().get(id=event.document_id)
         if not created and existing_event.document_id:
             return document
 
@@ -266,17 +236,7 @@ def consume_erp_failed(payload: dict[str, Any]) -> Document:
         return document
 
 
-def _tenant_for(tenant_id: str) -> Tenant:
-    tenant, _ = Tenant.objects.get_or_create(
-        slug=tenant_id,
-        defaults={
-            "name": tenant_id,
-        },
-    )
-    return tenant
-
-
-def _record_event_once(event, tenant: Tenant) -> tuple[DocumentEvent, bool]:
+def _record_event_once(event: object) -> tuple[DocumentEvent, bool]:
     existing = DocumentEvent.objects.filter(event_id=event.event_id).first()
     if existing:
         return existing, False
@@ -284,10 +244,7 @@ def _record_event_once(event, tenant: Tenant) -> tuple[DocumentEvent, bool]:
     return (
         DocumentEvent.objects.create(
             event_id=event.event_id,
-            tenant=tenant,
-            document_id=event.document_id
-            if Document.objects.filter(id=event.document_id).exists()
-            else None,
+            document_id=event.document_id if Document.objects.filter(id=event.document_id).exists() else None,
             event_type=event.event_type,
             event_version=event.event_version,
             correlation_id=event.correlation_id,

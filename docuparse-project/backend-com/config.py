@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = Path(__file__).resolve().parents[3]
 
 
 def _env(key: str, default: str = "") -> str:
@@ -23,14 +23,24 @@ def _env(key: str, default: str = "") -> str:
     return value
 
 
+# Exporta o default local do serviço para o ambiente, de modo que
+# docuparse_storage.get_storage() (que lê a config exclusivamente de
+# DOCUPARSE_LOCAL_STORAGE_DIR no ambiente) preserve o caminho histórico deste
+# serviço sem precisar receber o diretório por argumento.
+os.environ.setdefault("DOCUPARSE_LOCAL_STORAGE_DIR", str(PROJECT_DIR / ".docuparse-storage"))
+
+
 class Settings:
     service_name = "docuparse-backend-com"
-    local_storage_dir = Path(
-        _env("DOCUPARSE_LOCAL_STORAGE_DIR", str(PROJECT_DIR / ".docuparse-storage"))
-    )
-    local_event_dir = Path(
-        _env("DOCUPARSE_LOCAL_EVENT_DIR", str(PROJECT_DIR / ".docuparse-events"))
-    )
+    local_storage_dir = Path(_env("DOCUPARSE_LOCAL_STORAGE_DIR"))
+    # Storage compartilhado de objetos (feature 011). Backend selecionado por
+    # DOCUPARSE_STORAGE_BACKEND (default "local"); consumido por
+    # docuparse_storage.get_storage(). Credenciais/endpoint sempre do ambiente.
+    storage_backend = _env("DOCUPARSE_STORAGE_BACKEND", "local").lower()
+    s3_endpoint_url = _env("S3_ENDPOINT_URL")
+    s3_bucket = _env("S3_BUCKET")
+    s3_region = _env("S3_REGION")
+    local_event_dir = Path(_env("DOCUPARSE_LOCAL_EVENT_DIR", str(PROJECT_DIR / ".docuparse-events")))
     max_upload_bytes = int(_env("DOCUPARSE_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)))
     email_webhook_token = _env("DOCUPARSE_EMAIL_WEBHOOK_TOKEN")
     whatsapp_webhook_token = _env("DOCUPARSE_WHATSAPP_WEBHOOK_TOKEN")
@@ -50,11 +60,7 @@ class Settings:
     )
     imap_password = _env("DOCUPARSE_IMAP_PASSWORD") or _env("imap_reader_password")
     imap_poll_limit = int(_env("DOCUPARSE_IMAP_POLL_LIMIT", "10"))
-    imap_mark_as_read = _env("DOCUPARSE_IMAP_MARK_AS_READ", "false").lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+    imap_mark_as_read = _env("DOCUPARSE_IMAP_MARK_AS_READ", "false").lower() in {"1", "true", "yes"}
     imap_timeout_seconds = int(_env("DOCUPARSE_IMAP_TIMEOUT_SECONDS", "20"))
     twilio_account_sid = _env("TWILIO_ACCOUNT_SID")
     twilio_auth_token = _env("TWILIO_AUTH_TOKEN")
@@ -62,9 +68,7 @@ class Settings:
     twilio_poll_limit = int(_env("TWILIO_POLL_LIMIT", "20"))
     cors_allowed_origins = [
         value.strip()
-        for value in _env(
-            "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-        ).split(",")
+        for value in _env("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
         if value.strip()
     ]
 

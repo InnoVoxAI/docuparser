@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-import json
 import logging
+import json
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from config import settings
 from docuparse_events import event_bus_from_env
 from docuparse_observability import log_event
-from docuparse_storage import LocalStorage, document_original_key
+from docuparse_storage import document_original_key, get_storage
 from events import DocumentReceivedEvent
+
+from backend_com.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ ALLOWED_CONTENT_TYPES = {
 def ingest_document(
     *,
     tenant_id: str,
+    tenant_slug: str = "",
     channel: str,
     filename: str,
     content_type: str,
@@ -40,6 +42,8 @@ def ingest_document(
     metadata: dict | None = None,
     skip_auto_process: bool = False,
 ) -> dict:
+    if tenant_slug:
+        tenant_id = tenant_slug
     if not tenant_id.strip():
         raise ValueError("tenant_id is required")
     if channel not in {"manual", "email", "whatsapp"}:
@@ -54,10 +58,8 @@ def ingest_document(
         raise ValueError(f"unsupported content_type: {content_type}")
 
     document_id = uuid4()
-    storage = LocalStorage(settings.local_storage_dir)
-    stored = storage.put_bytes(
-        document_original_key(tenant_id, str(document_id)), content
-    )
+    storage = get_storage()
+    stored = storage.put_bytes(document_original_key(tenant_id, str(document_id)), content)
 
     event = DocumentReceivedEvent(
         tenant_id=tenant_id,
@@ -79,12 +81,8 @@ def ingest_document(
         },
     )
     event_payload = event.model_dump(mode="json")
-    event_bus_from_env(settings.local_event_dir).publish(
-        "document.received", event_payload
-    )
-    core_sync_status = _sync_document_received_to_core(
-        event_payload, skip_auto_process=skip_auto_process
-    )
+    event_bus_from_env(settings.local_event_dir).publish("document.received", event_payload)
+    core_sync_status = _sync_document_received_to_core(event_payload, tenant_slug=tenant_slug, skip_auto_process=skip_auto_process)
     log_event(
         logger,
         "document.received published",
@@ -109,9 +107,7 @@ def ingest_document(
     }
 
 
-def _sync_document_received_to_core(
-    event_payload: dict, *, skip_auto_process: bool = False
-) -> str:
+def _sync_document_received_to_core(event_payload: dict, *, tenant_slug: str = "", skip_auto_process: bool = False) -> str:
     if not settings.backend_core_document_received_url:
         return "disabled"
 
@@ -122,6 +118,8 @@ def _sync_document_received_to_core(
     headers = {"Content-Type": "application/json"}
     if settings.internal_service_token:
         headers["Authorization"] = f"Bearer {settings.internal_service_token}"
+        if tenant_slug:
+            headers["X-Tenant"] = tenant_slug
     request = urllib.request.Request(
         url,
         data=body,

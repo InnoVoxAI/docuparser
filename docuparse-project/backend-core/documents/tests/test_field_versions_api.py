@@ -3,40 +3,41 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
-from users.models import Permission, Role
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from documents.models import (
-    Document,
-    ExtractionFieldVersion,
-    ExtractionResult,
-    Tenant,
-    UserProfile,
-)
+from documents.models import Document, ExtractionFieldVersion, ExtractionResult
 from documents.services import field_versioning as fv
+from tenants.models import Tenant, UserProfile
+from users.models import Permission, Role
 
 
 def _grant_validation(user, tenant):
-    permission = Permission.objects.create(
-        code="documents.validate", description="Validate"
-    )
+    permission = Permission.objects.create(code="documents.validate", description="Validate")
     role = Role.objects.create(name="Validador")
     role.permissions.add(permission)
     UserProfile.objects.create(user=user, tenant=tenant, role_ref=role)
+
+
+def _jwt_for(user, tenant) -> str:
+    token = RefreshToken.for_user(user)
+    token["tenant"] = tenant.slug
+    return str(token.access_token)
 
 
 class FieldVersionsApiTests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
         self.tenant = Tenant.objects.create(slug="t-api", name="Tenant API")
+        connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="val", password="x")
         _grant_validation(self.user, self.tenant)
-        self.client.force_authenticate(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {_jwt_for(self.user, self.tenant)}")
 
         self.document = Document.objects.create(
-            tenant=self.tenant,
             status=Document.Status.EXTRACTION_COMPLETED,
             channel="manual",
             file_uri="local://doc",
@@ -91,9 +92,7 @@ class FieldVersionsApiTests(TestCase):
         )
         assert response.status_code == 409
         assert response.json()["active_version_number"] == 2
-        assert (
-            ExtractionFieldVersion.objects.filter(document=self.document).count() == 2
-        )
+        assert ExtractionFieldVersion.objects.filter(document=self.document).count() == 2
 
     def test_save_empty_list_returns_422(self) -> None:
         response = self.client.put(
@@ -119,18 +118,12 @@ class FieldVersionsApiTests(TestCase):
     def test_save_with_removed_field_excludes_it_and_preserves_history(self) -> None:
         v2 = fv.save_manual_edit(
             self.document,
-            incoming_fields=[
-                {"name": "valor", "value": "100"},
-                {"name": "extra", "value": "x"},
-            ],
+            incoming_fields=[{"name": "valor", "value": "100"}, {"name": "extra", "value": "x"}],
             base_version_number=1,
         )
         response = self.client.put(
             self._save_url(),
-            {
-                "base_version_number": v2.version_number,
-                "fields": [{"name": "valor", "value": "100"}],
-            },
+            {"base_version_number": v2.version_number, "fields": [{"name": "valor", "value": "100"}]},
             format="json",
         )
         assert response.status_code == 201
@@ -176,6 +169,4 @@ class FieldVersionsApiTests(TestCase):
         assert active.source_type == ExtractionFieldVersion.SourceType.MANUAL_EDIT
         assert active.fields["valor"]["value"] == "555"
         # versão inicial preservada
-        assert ExtractionFieldVersion.objects.filter(
-            document=self.document, version_number=1
-        ).exists()
+        assert ExtractionFieldVersion.objects.filter(document=self.document, version_number=1).exists()

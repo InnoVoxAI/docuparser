@@ -1,38 +1,37 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from documents.models import Document, ExtractionResult, ValidationDecision
+from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
 
-from documents.models import (
-    Document,
-    ExtractionResult,
-    Tenant,
-    UserProfile,
-    ValidationDecision,
-)
+
+def _jwt_for(user, tenant) -> str:
+    token = RefreshToken.for_user(user)
+    token["tenant"] = tenant.slug
+    return str(token.access_token)
 
 
 class DocumentsInboxViewApprovedFilterTests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
         self.tenant = Tenant.objects.create(slug="tenant-inbox", name="Tenant Inbox")
-        self.user = get_user_model().objects.create_user(
-            username="inbox_op", password="test"
-        )
+        connection.set_tenant(self.tenant)
+        self.user = get_user_model().objects.create_user(username="inbox_op", password="test")
         # feature 009: o endpoint exige JWT do usuário com permissão "inbox.view".
-        permission = Permission.objects.create(
-            code="inbox.view", description="Inbox view"
-        )
+        permission = Permission.objects.create(code="inbox.view", description="Inbox view")
         role = Role.objects.create(name="Operador")
         role.permissions.add(permission)
         UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
-        self.client.force_authenticate(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {_jwt_for(self.user, self.tenant)}")
 
         self.approved_doc = Document.objects.create(
-            tenant=self.tenant,
             status=Document.Status.APPROVED,
             channel="manual",
             file_uri="local://documents/tenant-inbox/approved/original",
@@ -54,7 +53,6 @@ class DocumentsInboxViewApprovedFilterTests(TestCase):
             notes="",
         )
         Document.objects.create(
-            tenant=self.tenant,
             status=Document.Status.VALIDATION_PENDING,
             channel="manual",
             file_uri="local://documents/tenant-inbox/pending/original",

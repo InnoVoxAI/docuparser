@@ -2,24 +2,67 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from io import BytesIO
 
 from django.conf import settings
 from django.utils import timezone
-from docuparse_storage import LocalStorage, document_ocr_raw_text_key
+
+from docuparse_storage import document_ocr_raw_text_key, get_storage
 
 from documents.models import Document, ExtractionResult, LayoutConfig, SchemaConfig
-from documents.services.langextract_client import LangExtractClient
 from documents.services.ocr_client import OCRClient
+from documents.services.langextract_client import LangExtractClient
 
 logger = logging.getLogger(__name__)
 
+# Etapa corrente por thread. process_document_ocr roda numa thread do
+# ThreadPoolExecutor e toda exceção vira um único `processing_queue_failed`;
+# guardar a etapa aqui deixa o chamador anexar `last_step=` à linha do erro sem
+# precisar correlacionar com as linhas `step=` acima. threading.local isola cada
+# thread; process_document_ocr reseta no início (as threads do pool são reusadas).
+_progress = threading.local()
 
-def process_document_ocr(document_id) -> Document:
-    document = Document.objects.select_related("tenant").get(id=document_id)
-    content = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).get_bytes(
-        document.file_uri
+
+def current_step() -> str:
+    """Última etapa alcançada por process_document_ocr nesta thread."""
+    return getattr(_progress, "step", "not_started")
+
+
+def _log_step(step: str, document_id, tenant_slug: str, schema: str, **fields) -> None:
+    """Marca uma etapa do pipeline de OCR.
+
+    A última etapa logada antes de um `processing_queue_failed` diz qual
+    dependência caiu (storage de leitura, backend-ocr, storage de escrita). Os
+    valores saem com ``repr()`` porque é o que expõe aspas/espaços vindos de env.
+    """
+    _progress.step = step
+    detail = " | ".join(f"{key}={value!r}" for key, value in fields.items())
+    logger.info(
+        "ocr_processor: step=%s | document_id=%s | tenant=%s | schema=%s | %s",
+        step, document_id, tenant_slug, schema, detail,
+    )
+
+
+def process_document_ocr(document_id, tenant_slug: str | None = None) -> Document:
+    from django.db import connection as _conn
+    # Reset antes de qualquer trabalho: se a exceção vier daqui (ex.: documento
+    # inexistente, tenant/schema errado) o last_step reflete esta execução, não a
+    # anterior desta thread reusada do pool.
+    _progress.step = "load_document"
+    document = Document.objects.get(id=document_id)
+    if not tenant_slug:
+        # Fallback: derive from schema name when called directly (e.g. tests, management commands)
+        schema_name = _conn.schema_name or "public"
+        tenant_slug = schema_name.removeprefix("tenant_") if schema_name != "public" else "public"
+
+    _log_step("storage_read", document_id, tenant_slug, _conn.schema_name, file_uri=document.file_uri)
+    content = get_storage().get_bytes(document.file_uri)
+
+    _log_step(
+        "ocr_request", document_id, tenant_slug, _conn.schema_name,
+        url=settings.BACKEND_OCR_URL, size_bytes=len(content),
     )
     result = OCRClient().process_document(
         BytesIO(content),
@@ -30,11 +73,11 @@ def process_document_ocr(document_id) -> Document:
     raw_text = result.get("raw_text") or result.get("raw_text_fallback") or ""
     raw_text_formatted = result.get("raw_text_formatted", "")
 
-    logger.info(
-        "ocr_processor: raw_text_formatted storing | document_id=%s | chars=%d | preview=%r",
-        document_id,
-        len(raw_text_formatted),
-        raw_text_formatted[:300],
+    _log_step(
+        "storage_write", document_id, tenant_slug, _conn.schema_name,
+        engine=result.get("engine_used", "unknown"),
+        raw_text_chars=len(raw_text), formatted_chars=len(raw_text_formatted),
+        formatted_preview=raw_text_formatted[:200],
     )
 
     raw_text_payload = {
@@ -46,23 +89,20 @@ def process_document_ocr(document_id) -> Document:
             "engine_used": result.get("engine_used", "unknown"),
             "classification": result.get("document_type", "unknown"),
             "preprocessing_hint": result.get("preprocessing_hint", ""),
-            "classification_engine_preprocessing_hints": result.get(
-                "classification_engine_preprocessing_hints", {}
-            ),
+            "classification_engine_preprocessing_hints": result.get("classification_engine_preprocessing_hints", {}),
         },
         "processed_at": timezone.now().isoformat(),
     }
-    stored = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR).put_bytes(
-        document_ocr_raw_text_key(document.tenant.slug, str(document.id)),
+    stored = get_storage().put_bytes(
+        document_ocr_raw_text_key(tenant_slug, str(document.id)),
         json.dumps(raw_text_payload, ensure_ascii=False).encode("utf-8"),
     )
 
     document.raw_text_uri = stored.uri
     document.document_type = result.get("document_type", "") or document.document_type
     document.status = Document.Status.OCR_COMPLETED
-    document.save(
-        update_fields=["raw_text_uri", "document_type", "status", "updated_at"]
-    )
+    document.save(update_fields=["raw_text_uri", "document_type", "status", "updated_at"])
+    _log_step("ocr_completed", document_id, tenant_slug, _conn.schema_name, raw_text_uri=stored.uri)
     auto_extract_after_ocr(document)
     return document
 
@@ -93,14 +133,11 @@ def auto_extract_after_ocr(document: Document) -> None:
         return
 
     try:
-        storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+        storage = get_storage()
         payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
         raw_text = str(payload.get("raw_text") or "")
     except Exception as exc:
-        logger.warning(
-            "auto_extract_failed_reading_text",
-            extra={"document_id": str(document.id), "error": str(exc)},
-        )
+        logger.warning("auto_extract_failed_reading_text", extra={"document_id": str(document.id), "error": str(exc)})
         return
 
     if not raw_text.strip():
@@ -117,18 +154,13 @@ def auto_extract_after_ocr(document: Document) -> None:
             },
         )
         _record_extraction(
-            document,
-            "pending_no_schema",
-            layout=document.layout,
-            document_type=document.document_type,
-            trigger="auto",
+            document, "pending_no_schema",
+            layout=document.layout, document_type=document.document_type, trigger="auto",
         )
         return
 
     started = time.monotonic()
-    _record_extraction(
-        document, "running", schema_id=schema_config.schema_id, trigger="auto"
-    )
+    _record_extraction(document, "running", schema_id=schema_config.schema_id, trigger="auto")
     try:
         definition = {
             **schema_config.definition,
@@ -148,18 +180,13 @@ def auto_extract_after_ocr(document: Document) -> None:
                 "schema_version": result.get("schema_version") or schema_config.version,
                 "fields": result.get("fields") or {},
                 "confidence": result.get("confidence") or 0.0,
-                "requires_human_validation": result.get(
-                    "requires_human_validation", True
-                ),
+                "requires_human_validation": result.get("requires_human_validation", True),
             },
         )
         _record_extraction(
-            document,
-            "completed",
-            schema_id=schema_config.schema_id,
+            document, "completed", schema_id=schema_config.schema_id,
             duration_ms=int((time.monotonic() - started) * 1000),
-            confidence=result.get("confidence"),
-            trigger="auto",
+            confidence=result.get("confidence"), trigger="auto",
         )
         document.transition_to(Document.Status.VALIDATION_PENDING)
     except Exception as exc:
@@ -174,13 +201,9 @@ def auto_extract_after_ocr(document: Document) -> None:
             },
         )
         _record_extraction(
-            document,
-            "failed",
-            schema_id=schema_config.schema_id,
-            error=str(exc),
-            error_type=type(exc).__name__,
-            duration_ms=int((time.monotonic() - started) * 1000),
-            trigger="auto",
+            document, "failed", schema_id=schema_config.schema_id,
+            error=str(exc), error_type=type(exc).__name__,
+            duration_ms=int((time.monotonic() - started) * 1000), trigger="auto",
         )
 
 
@@ -194,12 +217,10 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
     document = Document.objects.get(id=document_id)
     schema_config = SchemaConfig.objects.get(id=schema_config_id)
     started = time.monotonic()
-    _record_extraction(
-        document, "running", schema_id=schema_config.schema_id, trigger="manual"
-    )
+    _record_extraction(document, "running", schema_id=schema_config.schema_id, trigger="manual")
 
     try:
-        storage = LocalStorage(settings.DOCUPARSE_LOCAL_STORAGE_DIR)
+        storage = get_storage()
         payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
         raw_text = str(payload.get("raw_text") or "")
         if not raw_text.strip():
@@ -223,9 +244,7 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
                 "schema_version": result.get("schema_version") or schema_config.version,
                 "fields": result.get("fields") or {},
                 "confidence": result.get("confidence") or 0.0,
-                "requires_human_validation": result.get(
-                    "requires_human_validation", True
-                ),
+                "requires_human_validation": result.get("requires_human_validation", True),
             },
         )
         if document.status not in (
@@ -235,12 +254,9 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
         ):
             document.transition_to(Document.Status.EXTRACTION_COMPLETED)
         _record_extraction(
-            document,
-            "completed",
-            schema_id=schema_config.schema_id,
+            document, "completed", schema_id=schema_config.schema_id,
             duration_ms=int((time.monotonic() - started) * 1000),
-            confidence=result.get("confidence"),
-            trigger="manual",
+            confidence=result.get("confidence"), trigger="manual",
         )
         return result
     except Exception as exc:
@@ -255,22 +271,18 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
             },
         )
         _record_extraction(
-            document,
-            "failed",
-            schema_id=schema_config.schema_id,
-            error=str(exc),
-            error_type=type(exc).__name__,
-            duration_ms=int((time.monotonic() - started) * 1000),
-            trigger="manual",
+            document, "failed", schema_id=schema_config.schema_id,
+            error=str(exc), error_type=type(exc).__name__,
+            duration_ms=int((time.monotonic() - started) * 1000), trigger="manual",
         )
         raise
 
 
 def _classify_raw_text(raw_text: str) -> str | None:
     """Returns the schema_id that best matches the document text, or None."""
-    import models.boleto.schemas as _boleto
-    import models.contadeagua.schemas as _agua
     import models.nota_fiscal.schemas as _nf
+    import models.contadeagua.schemas as _agua
+    import models.boleto.schemas as _boleto
 
     if _nf.is_likely(raw_text):
         return _nf.SCHEMA_ID
@@ -281,9 +293,7 @@ def _classify_raw_text(raw_text: str) -> str | None:
     return None
 
 
-def _resolve_schema_for_extraction(
-    document: Document, raw_text: str
-) -> SchemaConfig | None:
+def _resolve_schema_for_extraction(document: Document, raw_text: str) -> SchemaConfig | None:
     """
     Priority:
     1. Explicit LayoutConfig via document.layout (admin-configured)
@@ -292,9 +302,7 @@ def _resolve_schema_for_extraction(
     """
     if document.layout:
         cfg = (
-            LayoutConfig.objects.filter(
-                layout=document.layout, tenant=document.tenant, is_active=True
-            )
+            LayoutConfig.objects.filter(layout=document.layout, is_active=True)
             .select_related("schema_config")
             .first()
         )
@@ -309,11 +317,7 @@ def _resolve_schema_for_extraction(
 
     if document.document_type:
         cfg = (
-            LayoutConfig.objects.filter(
-                document_type=document.document_type,
-                tenant=document.tenant,
-                is_active=True,
-            )
+            LayoutConfig.objects.filter(document_type=document.document_type, is_active=True)
             .select_related("schema_config")
             .first()
         )
@@ -334,7 +338,6 @@ def _run_ocr_safely(document_id) -> None:
     try:
         process_document_ocr(document_id)
     except Exception as exc:
-        logger.warning(
-            "automatic_ocr_failed",
-            extra={"document_id": str(document_id), "error": str(exc)},
-        )
+        logger.warning("automatic_ocr_failed", extra={"document_id": str(document_id), "error": str(exc)})
+
+

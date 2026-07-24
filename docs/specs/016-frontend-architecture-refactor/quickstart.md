@@ -29,6 +29,18 @@ Login/logout · permissões por item de menu · Dashboard (métricas e listagem)
 Rejeitados (modal, reprocessar, excluir) · Aprovados · Operações/DLQ (summary,
 events, requeue) · Configurações (todas as abas) · Usuários/Roles.
 
+> **Nota (T012/T014, 2026-07-24)**: as telas de listagem completa "Aprovados"
+> (`ApprovedView`) e "Rejeitados" (`RejectedView`) existem no código mas **não
+> são alcançáveis por navegação manual hoje** — nenhum item de `NAV_ITEMS` leva
+> a elas e nenhum clique no app define `activeView` como `'approved'` ou
+> `'rejected'`. Apenas o modal "Documento Rejeitado" (aberto ao clicar em um
+> documento rejeitado no Dashboard) é alcançável manualmente — é isso que o
+> item "Rejeitados (modal, reprocessar, excluir)" acima cobre. As duas telas
+> de listagem completa só têm cobertura automatizada (`approved.test.tsx`,
+> `rejected.test.tsx`, renderizando o componente diretamente, como já era
+> feito para `ValidationView`) — não há passo manual equivalente a executar
+> para "Aprovados" até que a Fase 4 conecte essas telas a uma rota real.
+
 ## Como extrair um módulo (padrão a repetir por módulo, ver `research.md` §2)
 
 1. Criar `src/modules/<nome>/{components,hooks,services,types.ts,index.ts}`.

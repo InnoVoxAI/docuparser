@@ -1514,7 +1514,7 @@ function InboxView({
     )
 }
 
-function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
+export function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
     const { page, setPage, search, setSearch, data, loading, error } = useDocumentPage('APPROVED', { refreshSignal })
     const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
     return (
@@ -1614,7 +1614,7 @@ function ExtractedFieldsModal({ doc, onClose }: { doc: Document; onClose: () => 
     )
 }
 
-function RejectedView({
+export function RejectedView({
     refreshSignal,
     onReprocess,
     onDelete,

@@ -9,35 +9,15 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.136.0",
-    "camunda-external-task-client-python3>=4.5.0",
-    "pydantic>=2.13.1",
-    "pydantic-settings>=2.13.1",
-    "python-multipart>=0.0.26",
-    "pyjwt>=2.8.0",
-    "structlog>=25.5.0",
-    "toml>=0.10.2",
-    "uvicorn>=0.44.0",
-    "pytest>=9.0.3",
-    "pre-commit>=4.6.0",
-]
-
-[project.optional-dependencies]
-debounce = [
-    "redis>=7.4.0",
-]
-
-email-reader = [
-    "imap-tools>=1.12.0",
-]
-
-whatsapp-twilio = [
-    "httpx>=0.28.1",
-    "twilio>=9.10.5",
-]
-
-camunda8 = [
-    "pyzeebe>=4.4.0",
+    "django>=6.0.7",
+    "django-cors-headers>=4.9.0",
+    "djangorestframework>=3.17.1",
+    "djangorestframework-simplejwt>=5.5.1",
+    "psycopg2-binary>=2.9.12",
+    "pydantic>=2.13.4",
+    "python-decouple>=3.8",
+    "redis>=8.0.1",
+    "requests>=2.34.2",
 ]
 
 # ------------------------------

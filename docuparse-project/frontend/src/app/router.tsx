@@ -1,13 +1,13 @@
 import { Navigate, createBrowserRouter, useOutletContext } from 'react-router'
 import { useAuth, PermissionGuard, AcessoNaoAutorizado } from '../modules/auth'
 import { DocumentsRoutes } from '../modules/documents'
+import { OperationsRoutes } from '../modules/operations'
 import { ErrorBoundary } from '../shared/components'
 import {
     AppLayout,
     NAV_ITEMS,
     navPath,
     UploadView,
-    OperationsView,
     SettingsView,
     GerenciarUsuarios,
     GerenciarRoles,
@@ -31,14 +31,6 @@ function UploadRoute() {
     return (
         <PermissionGuard code="documents.send" fallback={<AcessoNaoAutorizado />}>
             <UploadView onUploaded={refreshData} />
-        </PermissionGuard>
-    )
-}
-
-function OperationsRoute() {
-    return (
-        <PermissionGuard code="operations.access" fallback={<AcessoNaoAutorizado />}>
-            <OperationsView />
         </PermissionGuard>
     )
 }
@@ -92,7 +84,7 @@ export function createAppRouter() {
                 { index: true, element: <IndexRedirect /> },
                 ...DocumentsRoutes,
                 { path: 'upload', element: <UploadRoute />, errorElement: <ErrorBoundary /> },
-                { path: 'operations', element: <OperationsRoute />, errorElement: <ErrorBoundary /> },
+                ...OperationsRoutes,
                 { path: 'settings', element: <SettingsRoute />, errorElement: <ErrorBoundary /> },
                 { path: 'users', element: <UsersRoute />, errorElement: <ErrorBoundary /> },
                 { path: 'roles', element: <RolesRoute />, errorElement: <ErrorBoundary /> },

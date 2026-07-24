@@ -3,17 +3,9 @@ import { useAuth, PermissionGuard, AcessoNaoAutorizado } from '../modules/auth'
 import { DocumentsRoutes } from '../modules/documents'
 import { OperationsRoutes } from '../modules/operations'
 import { SettingsRoutes } from '../modules/settings'
+import { AdminRoutes } from '../modules/admin'
 import { ErrorBoundary } from '../shared/components'
-import {
-    AppLayout,
-    NAV_ITEMS,
-    navPath,
-    UploadView,
-    GerenciarUsuarios,
-    GerenciarRoles,
-    TenantsView,
-    type AppOutletContext,
-} from '../main'
+import { AppLayout, NAV_ITEMS, navPath, UploadView, TenantsView, type AppOutletContext } from '../main'
 
 function useAppContext(): AppOutletContext {
     return useOutletContext<AppOutletContext>()
@@ -31,22 +23,6 @@ function UploadRoute() {
     return (
         <PermissionGuard code="documents.send" fallback={<AcessoNaoAutorizado />}>
             <UploadView onUploaded={refreshData} />
-        </PermissionGuard>
-    )
-}
-
-function UsersRoute() {
-    return (
-        <PermissionGuard code="users.manage" fallback={<AcessoNaoAutorizado />}>
-            <GerenciarUsuarios />
-        </PermissionGuard>
-    )
-}
-
-function RolesRoute() {
-    return (
-        <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}>
-            <GerenciarRoles />
         </PermissionGuard>
     )
 }
@@ -77,8 +53,7 @@ export function createAppRouter() {
                 { path: 'upload', element: <UploadRoute />, errorElement: <ErrorBoundary /> },
                 ...OperationsRoutes,
                 ...SettingsRoutes,
-                { path: 'users', element: <UsersRoute />, errorElement: <ErrorBoundary /> },
-                { path: 'roles', element: <RolesRoute />, errorElement: <ErrorBoundary /> },
+                ...AdminRoutes,
                 { path: 'tenants', element: <TenantsRoute />, errorElement: <ErrorBoundary /> },
                 { path: '*', element: <Navigate to="/" replace /> },
             ],

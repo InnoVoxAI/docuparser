@@ -12,14 +12,28 @@ outro agente para evitar drift"). Full detail lives in
 `docs/specs/016-frontend-architecture-refactor/tasks.md` (per-task `Resultado`
 notes) — this note is a pointer + the non-obvious things worth remembering.
 
-## State (updated 2026-07-24, after Phase 4e)
+## State (updated 2026-07-24, after Phase 4g)
 
 - Branch: `016-frontend-architecture-refactor`.
 - Sub-phases done: **4a** (`86585ae`, shared UI primitives), **4b**
   (`8322754`, `modules/auth`), **4c** (`156ff46`, routing — T022-T025), **4d**
   (`42d9c9e`, `modules/documents` + TanStack Query — T026-T033), **4e**
-  (`cba0358`, `modules/operations` + TanStack Query — T034-T035). All gates
-  green (typecheck/lint/test/build) at each step.
+  (`cba0358`, `modules/operations` + TanStack Query — T034-T035), **4f**
+  (`9c55ef4`, `modules/settings` + RHF/Zod — T036-T040), **4g**
+  (uncommitted at write time, `modules/admin` + TanStack Query — T041). All
+  gates green (typecheck/lint/test/build) at each step.
+- **4g** extracted `GerenciarUsuarios`/`GerenciarRoles` into `modules/admin`,
+  converted the 5 manual axios calls (`/users` GET, `/roles` GET/POST/PATCH/
+  DELETE, `/permissions` GET) to `useUsersQuery`/`useRolesQuery`/
+  `usePermissionsQuery`/`useUserMutations`/`useRoleMutations` (TanStack Query
+  v5, each mutation invalidating only its own list key — `adminKeys.users()`
+  or `adminKeys.roles()`, not a shared `adminKeys.all`, since the original
+  code never cross-refreshed the other list on mutation), split both
+  180ish-line views into container + table + form-modal (mirrors the 4e
+  `OperationsView` split), and wired `router.tsx` to consume `AdminRoutes`.
+  `main.tsx` shrank from 1075 to 712 lines. **Deliberately did NOT fold
+  `TenantsView` in** — see the resolved note under "4g-specific" below; this
+  reverses the plan recorded in the old item 6 further down this file.
 - **4d** extracted `Dashboard`/`InboxView`/`ApprovedView`/`RejectedView`/
   `ValidationView`/`DocumentTable`/`ExtractedFieldsModal`/
   `RejectedDocumentModal`/`LangExtractPanel`/`DocumentMetadataPanel`/
@@ -43,8 +57,8 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
   `OperationsView` was fully self-contained (no `AppOutletContext`
   dependency, no shared-but-unlisted components like the 4d
   `DocumentBlobPreview`/`EmailMetadataModal` surprise).
-- Remaining: 4f through 4i (T036-T046) — `modules/settings` (+ RHF/Zod),
-  `modules/admin`, `modules/upload`, Zustand/cleanup, remove `main.tsx`.
+- Remaining: 4h through 4i (T042-T046) — `modules/upload`, Zustand/cleanup,
+  remove `main.tsx`.
 
 ## Things that will bite you (4d-specific)
 
@@ -130,6 +144,37 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
    plumbing `documents` used — check what the original component actually
    consumed first.
 
+## Things that will bite you (4g-specific)
+
+1. **Resolved the item-6 plan below the other way**: T041's own text only
+   says "movendo `GerenciarUsuarios`/`GerenciarRoles`" — it doesn't mention
+   `TenantsView`, and `data-model.md`'s module→origin table lists `admin` as
+   `GerenciarUsuarios`/`GerenciarRoles` only. Rather than expand T041's scope
+   to match the old plan (which would also require updating `data-model.md`
+   to keep docs/code in sync — out of scope for "only execute Phase 4g"),
+   `TenantsView`/`TenantUsersPanel`/`CopySlugButton` were left in `main.tsx`
+   untouched. **This means T046 (remove `main.tsx`) will hit a wall**:
+   `TenantsView` still needs a home before the monolith can actually be
+   deleted, and no task in `tasks.md` currently owns that move. Whoever picks
+   up T042/T043/T046 needs to either add a task for it or fold it into T046
+   itself (new `modules/tenants` vs. stuffing it into `modules/admin` after
+   all — it's tenant-provisioning, not user/role management, so a separate
+   module may fit the domain boundary better; worth a deliberate call, not a
+   default).
+2. **`AdminRole` still needs to leave the module barrel for `main.tsx`**:
+   `TenantUsersPanel` (in `TenantsView`) types its own `api.get<AdminRole[]>
+  ('/roles')` call with the same `AdminRole` interface `GerenciarRoles` uses.
+   Since the interface can't be duplicated (single source of truth) and can't
+   live in `main.tsx` anymore (moved to `modules/admin/types.ts`), `admin`'s
+   barrel (`index.ts`) exports `AdminRole` as a type in addition to the
+   contract-mandated `AdminRoutes` — a legitimate cross-module type import
+   documented inline in the barrel. If `TenantsView` is ever extracted (see
+   point 1), check whether this export is still needed by anything else
+   before deleting it.
+3. Same `isFetching`-not-`isLoading` and per-list-key-invalidation choices as
+   4e's `OperationsView`/`operationsKeys` — see that section below, same
+   reasoning applies verbatim to `adminKeys.users()`/`adminKeys.roles()`.
+
 ## New finding from 4c: router singleton + jsdom test bleed
 
 `createBrowserRouter` binds to the real `window.location`/`history` at
@@ -189,7 +234,7 @@ across tests.
 6. **`TenantsView`/`TenantUsersPanel`/`CopySlugButton`** (multi-tenant admin UI,
    feature 010) are **not mentioned anywhere in `data-model.md`'s module
    mapping table**, but they exist in `main.tsx` and are wired into `NAV_ITEMS`
-   (`tenants.manage` permission) and `AuthContextValue.switchTenant`. This
-   session's plan is to fold them into `modules/admin` alongside
-   `GerenciarUsuarios`/`GerenciarRoles` (T041) since there's no better home —
-   flag this decision if anyone else picks up T041 without having seen this.
+   (`tenants.manage` permission) and `AuthContextValue.switchTenant`.
+   **Resolved (2026-07-24, during T041): NOT folded into `modules/admin`** —
+   see "Things that will bite you (4g-specific)" point 1 above for why, and
+   for what this defers onto T046.

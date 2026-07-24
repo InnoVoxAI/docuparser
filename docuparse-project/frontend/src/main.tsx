@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import axios, { type InternalAxiosRequestConfig } from 'axios'
+import { api, authApi, comApi } from './shared/lib/http'
 import {
     AlertTriangle,
     CheckCircle2,
@@ -55,12 +55,6 @@ import { CONTA_AGUA_DEFAULT_EXAMPLES } from './models/contadeagua/examples'
 import { CONTA_AGUA_DEFAULT_RULES } from './models/contadeagua/rules'
 import { DEFAULT_SCHEMA_ID, DEFAULT_MODEL_NAME, DEFAULT_LANGEXTRACT_FIELDS } from './models/recibo/schemas'
 import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
-
-const api = axios.create({ baseURL: '/api/ocr' })
-const authApi = axios.create({ baseURL: '/api/auth' })
-// backend-com (upload/poll) autentica pelo JWT do usuário — anexado via
-// interceptor abaixo, igual ao `api`. Nenhum segredo é embutido no frontend.
-const comApi = axios.create({ baseURL: '/com/api/v1' })
 
 // Resultado do polling de uma extração assíncrona (ver pollDocumentExtraction).
 type ExtractionPollOutcome =
@@ -265,20 +259,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .then((r) => setUser(r.data))
             .catch(() => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token') })
             .finally(() => setLoading(false))
-    }, [])
-
-    useEffect(() => {
-        const attachToken = (config: InternalAxiosRequestConfig) => {
-            const token = localStorage.getItem('access_token')
-            if (token) config.headers.Authorization = `Bearer ${token}`
-            return config
-        }
-        const apiId = api.interceptors.request.use(attachToken)
-        const comId = comApi.interceptors.request.use(attachToken)
-        return () => {
-            api.interceptors.request.eject(apiId)
-            comApi.interceptors.request.eject(comId)
-        }
     }, [])
 
     const login = async (email: string, password: string): Promise<void> => {

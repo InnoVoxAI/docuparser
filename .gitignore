@@ -232,6 +232,9 @@ yarn-error.log*
 dev-debug.log
 # Dependency directories
 /docuparse-project/frontend/node_modules/
+# `lib/` above is a Python venv/build-artifact pattern; it also matches the
+# frontend's src/shared/lib/ (TS source, not a build artifact) — un-ignore it.
+!/docuparse-project/frontend/src/shared/lib/
 # Environment variables
 # Editor directories and files
 .idea

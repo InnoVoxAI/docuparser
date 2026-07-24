@@ -38,6 +38,15 @@ export default defineConfig({
         statements: 65,
         branches: 58,
         functions: 40,
+        // Código migrado para src/modules/** deve atingir o piso definido
+        // por FR-010 (≥80% linha) — não retroativo ao main.tsx ainda não
+        // extraído (ver data-model.md "Cobertura de teste").
+        'src/modules/**': {
+          lines: 80,
+          statements: 80,
+          branches: 80,
+          functions: 80,
+        },
       },
     },
   },

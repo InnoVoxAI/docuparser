@@ -12,8 +12,8 @@ from email.policy import default
 from email.utils import getaddresses
 from typing import Protocol
 
-from backend_com.config import settings
-from backend_com.services.email_capture import process_email_attachments
+from config import settings
+from services.email_capture import process_email_attachments
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ from email.message import EmailMessage
 
 from fastapi.testclient import TestClient
 
-from backend_com.api.app import app
+from api.app import app
 from docuparse_events import LocalJsonlEventBus
 from docuparse_storage import LocalStorage
 from events import validate_event

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from backend_com.services.imap_polling import poll_configured_imap_once
+from services.imap_polling import poll_configured_imap_once
 
 
 def main() -> None:

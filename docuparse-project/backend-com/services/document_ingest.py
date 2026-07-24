@@ -12,7 +12,7 @@ from docuparse_observability import log_event
 from docuparse_storage import LocalStorage, document_original_key
 from events import DocumentReceivedEvent
 
-from backend_com.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 

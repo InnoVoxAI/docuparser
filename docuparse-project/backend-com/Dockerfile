@@ -11,4 +11,4 @@ COPY contracts/ /contracts
 
 ENV PYTHONPATH=/app/src:/contracts:/shared
 
-CMD ["uvicorn", "backend_com.api.app:app", "--host", "0.0.0.0", "--port", "8070"]
+CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8070"]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 
-from backend_com.services.document_ingest import ingest_document
+from services.document_ingest import ingest_document
 
 
 def process_whatsapp_media(

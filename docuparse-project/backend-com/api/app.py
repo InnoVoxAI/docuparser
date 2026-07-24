@@ -12,13 +12,13 @@ import jwt
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from backend_com.config import settings
-from backend_com.services.email_capture import process_email_attachments
-from backend_com.services.imap_polling import ImapPollingError, poll_configured_imap_once
-from backend_com.services.document_ingest import DuplicateDocumentError
-from backend_com.services.manual_upload import process_manual_upload
-from backend_com.services.whatsapp_capture import process_whatsapp_media
-from backend_com.services.twilio_polling import TwilioPollingError, download_twilio_media, poll_configured_twilio_once
+from config import settings
+from services.email_capture import process_email_attachments
+from services.imap_polling import ImapPollingError, poll_configured_imap_once
+from services.document_ingest import DuplicateDocumentError
+from services.manual_upload import process_manual_upload
+from services.whatsapp_capture import process_whatsapp_media
+from services.twilio_polling import TwilioPollingError, download_twilio_media, poll_configured_twilio_once
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,8 @@ def _log_startup_config() -> None:
     print("", flush=True)
     print("=== backend-com startup config ===", flush=True)
     print(f"  imap_password          : {password_status}", flush=True)
-    print(f"  DOCUPARSE_IMAP_PASSWORD: {'[presente, raw=' + repr(raw_primary[:4]) + '...]' if raw_primary else '[AUSENTE no os.environ]'}", flush=True)
-    print(f"  imap_reader_password   : {'[presente, raw=' + repr(raw_fallback[:4]) + '...]' if raw_fallback else '[AUSENTE no os.environ]'}", flush=True)
+    print(f"  DOCUPARSE_IMAP_PASSWORD: {'[presente, raw=' + repr(raw_primary[:2]) + '...]' if raw_primary else '[AUSENTE no os.environ]'}", flush=True)
+    print(f"  imap_reader_password   : {'[presente, raw=' + repr(raw_fallback[:2]) + '...]' if raw_fallback else '[AUSENTE no os.environ]'}", flush=True)
     print(f"  imap_poll_limit        : {settings.imap_poll_limit}", flush=True)
     print(f"  imap_mark_as_read      : {settings.imap_mark_as_read}", flush=True)
     print(f"  imap_timeout_seconds   : {settings.imap_timeout_seconds}", flush=True)

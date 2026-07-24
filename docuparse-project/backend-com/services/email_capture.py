@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend_com.services.document_ingest import DuplicateDocumentError, ingest_document
+from services.document_ingest import DuplicateDocumentError, ingest_document
 
 
 def process_email_attachments(

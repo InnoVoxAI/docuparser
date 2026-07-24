@@ -18,9 +18,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from backend_com.config import settings
-from backend_com.services.document_ingest import DuplicateDocumentError
-from backend_com.services.whatsapp_capture import process_whatsapp_media
+from config import settings
+from services.document_ingest import DuplicateDocumentError
+from services.whatsapp_capture import process_whatsapp_media
 
 logger = logging.getLogger(__name__)
 

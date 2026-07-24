@@ -7,8 +7,6 @@ import {
     Check,
     CheckCircle2,
     ChevronDown,
-    ChevronLeft,
-    ChevronRight,
     ClipboardCheck,
     Copy,
     Eye,
@@ -28,6 +26,17 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import './index.css'
+import {
+    Alert,
+    EmptyState,
+    Field,
+    Metric,
+    SearchInput,
+    StatusBadge,
+    KeyValueGrid,
+    Pagination,
+    ConfirmDialog,
+} from './shared/components'
 import type {
     AuthContextValue,
     User,
@@ -147,20 +156,6 @@ const NAV_ITEMS: NavItem[] = [
     { id: 'tenants', label: 'Tenants', icon: Building2, permission: 'tenants.manage' },
 ]
 
-const STATUS_LABELS: Record<string, string> = {
-    RECEIVED: 'Pendente',
-    OCR_COMPLETED: 'Pendente',
-    OCR_FAILED: 'Pendente',
-    LAYOUT_CLASSIFIED: 'Pendente',
-    EXTRACTION_COMPLETED: 'Pendente',
-    VALIDATION_PENDING: 'Pendente',
-    APPROVED: 'Aprovado',
-    REJECTED: 'Rejeitado',
-    ERP_INTEGRATION_REQUESTED: 'Pendente',
-    ERP_SENT: 'Pendente',
-    ERP_FAILED: 'Pendente',
-}
-
 // ─── Paginação (feature 009) ──────────────────────────────────────────────────
 
 const PAGE_SIZE = 25
@@ -228,59 +223,6 @@ function useDocumentPage(statusCsv?: string, options: { autoRefresh?: boolean; r
     }
 
     return { page, setPage, search, setSearch, data, loading, error, refresh: fetchPage }
-}
-
-/** Controles de navegação reutilizáveis: posição, total e anterior/próxima. */
-function Pagination({
-    page,
-    totalPages,
-    count,
-    pageSize,
-    onPageChange,
-}: {
-    page: number
-    totalPages: number
-    count: number
-    pageSize: number
-    onPageChange: (page: number) => void
-}) {
-    if (count === 0) return null
-    const effectiveTotal = Math.max(totalPages, 1)
-    const from = (page - 1) * pageSize + 1
-    const to = Math.min(page * pageSize, count)
-    return (
-        <nav
-            aria-label="Paginação de documentos"
-            className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 px-4 py-3 text-sm"
-        >
-            <span className="text-zinc-500">
-                Mostrando {from}–{to} de {count} {count === 1 ? 'documento' : 'documentos'}
-            </span>
-            <div className="flex items-center gap-2">
-                <button
-                    type="button"
-                    onClick={() => onPageChange(page - 1)}
-                    disabled={page <= 1}
-                    aria-label="Página anterior"
-                    className="inline-flex h-8 items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                    <ChevronLeft size={16} aria-hidden="true" /> Anterior
-                </button>
-                <span aria-live="polite" className="px-1 text-zinc-600">
-                    Página {page} de {effectiveTotal}
-                </span>
-                <button
-                    type="button"
-                    onClick={() => onPageChange(page + 1)}
-                    disabled={page >= effectiveTotal}
-                    aria-label="Próxima página"
-                    className="inline-flex h-8 items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                    Próxima <ChevronRight size={16} aria-hidden="true" />
-                </button>
-            </div>
-        </nav>
-    )
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -2574,51 +2516,6 @@ const FIELD_VERSION_SOURCE_LABELS = {
     PROCESSING: 'Processamento',
     REPROCESSING: 'Reprocessamento',
     MANUAL_EDIT: 'Edição manual',
-}
-
-function ConfirmDialog({
-    title,
-    message,
-    confirmLabel = 'Confirmar',
-    cancelLabel = 'Cancelar',
-    onConfirm,
-    onCancel,
-}: {
-    title: React.ReactNode
-    message: React.ReactNode
-    confirmLabel?: string
-    cancelLabel?: string
-    onConfirm: () => void | Promise<unknown>
-    onCancel: () => void
-}) {
-    return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-            role="dialog"
-            aria-modal="true"
-        >
-            <div className="w-full max-w-sm rounded-md border border-zinc-200 bg-white p-4 shadow-lg">
-                <div className="text-sm font-semibold text-zinc-900">{title}</div>
-                <p className="mt-2 text-sm text-zinc-600">{message}</p>
-                <div className="mt-4 flex justify-end gap-2">
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        className="h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
-                    >
-                        {cancelLabel}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={onConfirm}
-                        className="h-9 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700"
-                    >
-                        {confirmLabel}
-                    </button>
-                </div>
-            </div>
-        </div>
-    )
 }
 
 function FieldVersionHistoryModal({
@@ -5289,15 +5186,6 @@ function DocumentTable({
     )
 }
 
-function Metric({ label, value }: { label: React.ReactNode; value: React.ReactNode }) {
-    return (
-        <div className="rounded-md border border-zinc-200 bg-white p-4">
-            <div className="text-xs font-semibold uppercase text-zinc-500">{label}</div>
-            <div className="mt-2 text-2xl font-semibold">{value}</div>
-        </div>
-    )
-}
-
 const PROTECTED_SCHEMA_IDS = ['nota_fiscal_default', 'conta_agua_default']
 
 function DeleteSchemaModal({
@@ -5446,78 +5334,6 @@ function ConfigList({
                 </div>
             )}
         </section>
-    )
-}
-
-function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
-    return (
-        <label className="block">
-            <span className="mb-1 block text-xs font-semibold uppercase text-zinc-500">{label}</span>
-            {children}
-        </label>
-    )
-}
-
-function Alert({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'error' | 'success' }) {
-    const classes =
-        tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-zinc-200 bg-white text-zinc-600'
-    return <div className={`mb-4 rounded-md border px-3 py-2 text-sm ${classes}`}>{children}</div>
-}
-
-function EmptyState({ icon: Icon, text }: { icon: LucideIcon; text: React.ReactNode }) {
-    return (
-        <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 px-4 py-8 text-center text-sm text-zinc-500">
-            <Icon size={24} aria-hidden="true" />
-            <span>{text}</span>
-        </div>
-    )
-}
-
-function SearchInput({
-    value,
-    onChange,
-    placeholder = 'Buscar...',
-}: {
-    value: string
-    onChange: (value: string) => void
-    placeholder?: string
-}) {
-    return (
-        <input
-            type="search"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            className="h-8 w-56 rounded-md border border-zinc-300 bg-white px-3 text-sm placeholder-zinc-400 outline-none focus:border-zinc-500"
-        />
-    )
-}
-
-function StatusBadge({ status }: { status?: string }) {
-    const isGood = status === 'APPROVED'
-    const isBad = status === 'REJECTED'
-    const classes = isGood
-        ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-        : isBad
-          ? 'bg-red-50 text-red-700 ring-red-200'
-          : 'bg-amber-50 text-amber-700 ring-amber-200'
-    return (
-        <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ring-1 ${classes}`}>
-            {(status ? STATUS_LABELS[status] : '') || status || '-'}
-        </span>
-    )
-}
-
-function KeyValueGrid({ values }: { values: Record<string, unknown> }) {
-    return (
-        <dl className="grid gap-2 sm:grid-cols-3">
-            {Object.entries(values).map(([key, value]) => (
-                <div key={key} className="rounded-md bg-zinc-50 px-3 py-2">
-                    <dt className="text-xs uppercase text-zinc-500">{key}</dt>
-                    <dd className="mt-1 text-sm font-medium">{String(value)}</dd>
-                </div>
-            ))}
-        </dl>
     )
 }
 

@@ -97,9 +97,12 @@ Structure).
 
 ### 4a. `shared/components` (primitivas de UI — extração pura, zero risco)
 
-- [ ] T016 [P] [US2] Extrair `Alert`, `EmptyState`, `Field`, `Metric` de `docuparse-project/frontend/src/main.tsx` para `docuparse-project/frontend/src/shared/components/`
-- [ ] T017 [P] [US2] Extrair `SearchInput`, `StatusBadge`, `KeyValueGrid`, `Pagination`, `ConfirmDialog` de `docuparse-project/frontend/src/main.tsx` para `docuparse-project/frontend/src/shared/components/`
-- [ ] T018 [US2] Atualizar `docuparse-project/frontend/src/main.tsx` para importar essas primitivas de `docuparse-project/frontend/src/shared/components` (remover definições locais); rodar gate completo (T001) + checklist visual (`quickstart.md`); commit da etapa
+- [X] T016 [P] [US2] Extrair `Alert`, `EmptyState`, `Field`, `Metric` de `docuparse-project/frontend/src/main.tsx` para `docuparse-project/frontend/src/shared/components/`
+  - **Resultado (2026-07-24)**: 4 arquivos criados (um componente por arquivo, `ReactNode` importado de `react` em vez de `React.ReactNode`, único ajuste sobre a extração pura).
+- [X] T017 [P] [US2] Extrair `SearchInput`, `StatusBadge`, `KeyValueGrid`, `Pagination`, `ConfirmDialog` de `docuparse-project/frontend/src/main.tsx` para `docuparse-project/frontend/src/shared/components/`
+  - **Resultado (2026-07-24)**: `STATUS_LABELS` (usado só por `StatusBadge`) colocado junto no mesmo arquivo, não exportado. `Pagination` leva consigo os ícones `ChevronLeft`/`ChevronRight` (removidos do import de `main.tsx`, não usados em mais nenhum lugar).
+- [X] T018 [US2] Atualizar `docuparse-project/frontend/src/main.tsx` para importar essas primitivas de `docuparse-project/frontend/src/shared/components` (remover definições locais); rodar gate completo (T001) + checklist visual (`quickstart.md`); commit da etapa
+  - **Resultado (2026-07-24)**: Gate completo verde — `typecheck` limpo, `test:run` **32/32** (a falha de hang documentada em T001 permanece ausente, confirmando a suspeita de T013 de que foi resolvida como efeito colateral da Fase 2), `build` OK. `lint`: 1 erro (`max-lines` em `main.tsx`, esperado até a remoção final do monólito em T046) + 11 avisos `exhaustive-deps` pré-existentes documentados em T004 — nenhum problema novo. Checklist visual manual (`quickstart.md`) **não** executado em navegador nesta etapa (sem ferramenta de screenshot/browser neste ambiente, mesma limitação de T011); mudança é extração pura sem alteração de JSX/classes, risco visual mínimo.
 
 ### 4b. `modules/auth`
 

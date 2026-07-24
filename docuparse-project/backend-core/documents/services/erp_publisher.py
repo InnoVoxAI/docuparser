@@ -16,7 +16,9 @@ from documents.services.approved_exporter import export_approved_document_json
 logger = logging.getLogger(__name__)
 
 
-def publish_erp_integration_requested(document: Document, connector: str = "mock") -> dict:
+def publish_erp_integration_requested(
+    document: Document, connector: str = "mock"
+) -> dict:
     idempotency_key = f"{document.tenant.slug}:{document.id}:erp:v1"
     attempt, _ = ERPIntegrationAttempt.objects.get_or_create(
         idempotency_key=idempotency_key,
@@ -61,7 +63,9 @@ def publish_erp_integration_requested(document: Document, connector: str = "mock
         },
     ).model_dump(mode="json")
 
-    event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR).publish("erp.integration.requested", event)
+    event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR).publish(
+        "erp.integration.requested", event
+    )
     document.transition_to(Document.Status.ERP_INTEGRATION_REQUESTED)
     log_event(
         logger,

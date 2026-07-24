@@ -16,19 +16,21 @@
 from __future__ import annotations
 
 import importlib
-import re
 import time
-from typing import Any, Dict
+from typing import Any
 
 import cv2
 import numpy as np
 
 from infrastructure.engines.base_engine import BaseOCREngine
-from shared.preprocessing import decode_image, preprocess_for_trocr_engine, preprocess_for_trocr_region
+from shared.preprocessing import (
+    decode_image,
+    preprocess_for_trocr_engine,
+    preprocess_for_trocr_region,
+)
 
 
 class TrOCREngine(BaseOCREngine):
-
     @property
     def name(self) -> str:
         return "trocr"
@@ -54,8 +56,12 @@ class TrOCREngine(BaseOCREngine):
             return
 
         # PASSO CRÍTICO: checkpoint voltado para manuscrito.
-        self._processor = self._processor_cls.from_pretrained("microsoft/trocr-base-handwritten")
-        self._model = self._model_cls.from_pretrained("microsoft/trocr-base-handwritten")
+        self._processor = self._processor_cls.from_pretrained(
+            "microsoft/trocr-base-handwritten"
+        )
+        self._model = self._model_cls.from_pretrained(
+            "microsoft/trocr-base-handwritten"
+        )
         self._model.to(self._device)
         self._model.eval()
 
@@ -67,8 +73,18 @@ class TrOCREngine(BaseOCREngine):
         # Only normalize tokens that look like numeric identifiers (CNPJs, RGs, etc.).
         # Tokens with regular alphabetic content are left completely untouched to avoid
         # destroying handwritten words (e.g. "Recibo", "servico").
-        digit_substitutions = {"O": "0", "o": "0", "I": "1", "l": "1", "S": "5", "B": "8", "Z": "2"}
-        numeric_candidate_chars = set("0123456789/.-,") | set(digit_substitutions.keys())
+        digit_substitutions = {
+            "O": "0",
+            "o": "0",
+            "I": "1",
+            "l": "1",
+            "S": "5",
+            "B": "8",
+            "Z": "2",
+        }
+        numeric_candidate_chars = set("0123456789/.-,") | set(
+            digit_substitutions.keys()
+        )
 
         tokens = text.split()
         normalized_tokens = []
@@ -88,7 +104,7 @@ class TrOCREngine(BaseOCREngine):
     def _decode_to_bgr(image_data: Any) -> np.ndarray:
         return decode_image(image_data)
 
-    def process_region(self, region_image: np.ndarray) -> Dict[str, Any]:
+    def process_region(self, region_image: np.ndarray) -> dict[str, Any]:
         region_start = time.perf_counter()
         self._ensure_model()
 
@@ -98,13 +114,17 @@ class TrOCREngine(BaseOCREngine):
         from PIL import Image
 
         pil_image = Image.fromarray(image_rgb)
-        pixel_values = self._processor(images=pil_image, return_tensors="pt").pixel_values
+        pixel_values = self._processor(
+            images=pil_image, return_tensors="pt"
+        ).pixel_values
         pixel_values = pixel_values.to(self._device)
 
         with self._torch.no_grad():
             generated_ids = self._model.generate(pixel_values, max_new_tokens=128)
 
-        decoded_text = self._processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        decoded_text = self._processor.batch_decode(
+            generated_ids, skip_special_tokens=True
+        )[0]
         normalized_text = self._normalize_text(decoded_text)
 
         elapsed = time.perf_counter() - region_start
@@ -115,17 +135,23 @@ class TrOCREngine(BaseOCREngine):
             "engine": "trocr",
         }
 
-    def process_with_classification(self, image_bytes: bytes, classification: str) -> Dict[str, Any]:
+    def process_with_classification(
+        self, image_bytes: bytes, classification: str
+    ) -> dict[str, Any]:
         preprocessed_bytes, preprocess_meta = preprocess_for_trocr_engine(
             image_bytes=image_bytes,
             classification=classification,
         )
-        result = self.process({"original": image_bytes, "preprocessed": preprocessed_bytes})
+        result = self.process(
+            {"original": image_bytes, "preprocessed": preprocessed_bytes}
+        )
         result.setdefault("_meta", {})
         result["_meta"]["preprocessing"] = preprocess_meta
         return result
 
-    def process(self, content: Any, metadata: dict[str, Any] | None = None) -> Dict[str, Any]:
+    def process(
+        self, content: Any, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         metadata: aceito para satisfazer o contrato BaseOCREngine; não utilizado internamente.
         """

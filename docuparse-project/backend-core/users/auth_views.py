@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from django.http import HttpRequest
 from rest_framework import status
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -84,11 +87,13 @@ refresh_view = TokenRefreshView.as_view()
 @permission_classes([])
 def register_view(request: Request) -> Response:
     from users.serializers import RegisterSerializer
+
     serializer = RegisterSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     from django.contrib.auth import get_user_model
+
     User = get_user_model()
     data = serializer.validated_data
     user = User.objects.create_user(
@@ -99,6 +104,7 @@ def register_view(request: Request) -> Response:
         is_active=False,
     )
     from documents.models import Tenant, UserProfile
+
     tenant = Tenant.objects.first()
     if tenant:
         UserProfile.objects.create(user=user, tenant=tenant, role_ref=None)

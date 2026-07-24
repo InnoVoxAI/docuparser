@@ -56,7 +56,9 @@ class DocumentReceivedEvent(BaseEvent):
 class OCRCompletedData(EventModel):
     raw_text_uri: str = Field(min_length=1)
     raw_text_preview: str = ""
-    document_type: Literal["digital_pdf", "scanned_image", "handwritten_complex", "unknown"]
+    document_type: Literal[
+        "digital_pdf", "scanned_image", "handwritten_complex", "unknown"
+    ]
     engine_used: str = Field(min_length=1)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     processing_time_seconds: float = Field(ge=0.0)

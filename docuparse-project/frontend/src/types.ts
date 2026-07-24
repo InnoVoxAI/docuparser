@@ -10,8 +10,8 @@
 
 /** Campo extraído no formato objeto. */
 export interface ExtractionField {
-  value: string
-  confidence: number | null
+    value: string
+    confidence: number | null
 }
 
 /**
@@ -22,41 +22,37 @@ export interface ExtractionField {
 export type FieldsMap = Record<string, ExtractionField | string>
 
 export interface ExtractionResult {
-  schema_id: string
-  schema_version: string
-  fields: FieldsMap
-  confidence: number
-  requires_human_validation: boolean
-  // Preenchido quando a extração é processada de forma assíncrona pelo backend;
-  // usado pelo polling do frontend para detectar quando um novo resultado chegou.
-  updated_at?: string
+    schema_id: string
+    schema_version: string
+    fields: FieldsMap
+    confidence: number
+    requires_human_validation: boolean
+    // Preenchido quando a extração é processada de forma assíncrona pelo backend;
+    // usado pelo polling do frontend para detectar quando um novo resultado chegou.
+    updated_at?: string
 }
 
 // =========================================================
 // Versionamento de campos (feature 007)
 // =========================================================
 
-export type FieldVersionSource =
-  | 'INITIAL_EXTRACTION'
-  | 'PROCESSING'
-  | 'REPROCESSING'
-  | 'MANUAL_EDIT'
+export type FieldVersionSource = 'INITIAL_EXTRACTION' | 'PROCESSING' | 'REPROCESSING' | 'MANUAL_EDIT'
 
 export interface ExtractionFieldVersion {
-  version_number: number
-  source_type: FieldVersionSource
-  is_active: boolean
-  previous_version_number: number | null
-  created_at: string
-  created_by: string | null
-  fields: FieldsMap
+    version_number: number
+    source_type: FieldVersionSource
+    is_active: boolean
+    previous_version_number: number | null
+    created_at: string
+    created_by: string | null
+    fields: FieldsMap
 }
 
 /** Resposta de `GET /documents/{id}/field-versions`. */
 export interface FieldVersionsResponse {
-  results: ExtractionFieldVersion[]
-  count: number
-  active_version_number: number | null
+    results: ExtractionFieldVersion[]
+    count: number
+    active_version_number: number | null
 }
 
 // =========================================================
@@ -64,40 +60,40 @@ export interface FieldVersionsResponse {
 // =========================================================
 
 export type DocumentStatus =
-  | 'RECEIVED'
-  | 'OCR_COMPLETED'
-  | 'OCR_FAILED'
-  | 'LAYOUT_CLASSIFIED'
-  | 'EXTRACTION_COMPLETED'
-  | 'VALIDATION_PENDING'
-  | 'APPROVED'
-  | 'REJECTED'
-  | 'ERP_INTEGRATION_REQUESTED'
-  | 'ERP_SENT'
-  | 'ERP_FAILED'
+    | 'RECEIVED'
+    | 'OCR_COMPLETED'
+    | 'OCR_FAILED'
+    | 'LAYOUT_CLASSIFIED'
+    | 'EXTRACTION_COMPLETED'
+    | 'VALIDATION_PENDING'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'ERP_INTEGRATION_REQUESTED'
+    | 'ERP_SENT'
+    | 'ERP_FAILED'
 
 export interface Document {
-  id: string
-  status: DocumentStatus
-  channel: string
-  original_filename: string
-  content_type: string
-  document_type?: string
-  layout?: string
-  received_at?: string
-  updated_at?: string
-  metadata?: Record<string, unknown>
-  metadata_channel?: Record<string, unknown> | null
-  extraction_result: ExtractionResult | null
-  active_field_version_number: number | null
-  full_transcription?: string
-  full_transcription_formatted?: string
-  rejection_notes?: string | null
-  decision_date?: string | null
-  approved_at?: string | null
-  rejected_at?: string | null
-  // Campos adicionais do List/DetailSerializer são tolerados conforme uso.
-  [key: string]: unknown
+    id: string
+    status: DocumentStatus
+    channel: string
+    original_filename: string
+    content_type: string
+    document_type?: string
+    layout?: string
+    received_at?: string
+    updated_at?: string
+    metadata?: Record<string, unknown>
+    metadata_channel?: Record<string, unknown> | null
+    extraction_result: ExtractionResult | null
+    active_field_version_number: number | null
+    full_transcription?: string
+    full_transcription_formatted?: string
+    rejection_notes?: string | null
+    decision_date?: string | null
+    approved_at?: string | null
+    rejected_at?: string | null
+    // Campos adicionais do List/DetailSerializer são tolerados conforme uso.
+    [key: string]: unknown
 }
 
 // =========================================================
@@ -106,20 +102,20 @@ export interface Document {
 
 /** Envelope paginado genérico (espelha o backend `documents/pagination.py`). */
 export interface Paginated<T> {
-  results: T[]
-  count: number
-  page: number
-  page_size: number
-  total_pages: number
+    results: T[]
+    count: number
+    page: number
+    page_size: number
+    total_pages: number
 }
 
 /** Parâmetros de uma requisição de listagem paginada de documentos. */
 export interface DocumentListParams {
-  page: number
-  page_size?: number // default 25 (cap 25)
-  status?: string // single ou CSV (buckets por tela)
-  search?: string
-  tenant?: string
+    page: number
+    page_size?: number // default 25 (cap 25)
+    status?: string // single ou CSV (buckets por tela)
+    search?: string
+    tenant?: string
 }
 
 // =========================================================
@@ -128,17 +124,17 @@ export interface DocumentListParams {
 
 /** Forma dos itens em `*_DEFAULT_FIELDS`. */
 export interface SchemaField {
-  name: string
-  type: string
-  required: boolean
-  rule: string
+    name: string
+    type: string
+    required: boolean
+    rule: string
 }
 
 /** Forma dos itens em `*_DEFAULT_EXAMPLES`. */
 export interface SchemaExample {
-  field: string
-  expected: string
-  source: string
+    field: string
+    expected: string
+    source: string
 }
 
 /** Conjunto de regras de pós-processamento (`*_DEFAULT_RULES`) — heterogêneo. */
@@ -150,18 +146,18 @@ export type SchemaRules = Record<string, unknown>
  * permissivo para o restante (sem alterar contrato).
  */
 export interface SchemaConfig {
-  id: string
-  schema_id?: string
-  name?: string
-  schema_version?: string
-  [key: string]: any
+    id: string
+    schema_id?: string
+    name?: string
+    schema_version?: string
+    [key: string]: any
 }
 
 /** Configuração de layout vinda do backend (`LayoutConfigSerializer`). */
 export interface LayoutConfig {
-  id: string
-  name?: string
-  [key: string]: any
+    id: string
+    name?: string
+    [key: string]: any
 }
 
 // =========================================================
@@ -169,25 +165,25 @@ export interface LayoutConfig {
 // =========================================================
 
 export interface User {
-  id: string
-  name?: string
-  email: string
-  permissions: string[]
+    id: string
+    name?: string
+    email: string
+    permissions: string[]
 }
 
 export interface AuthContextValue {
-  user: User | null
-  loading: boolean
-  login: (email: string, password: string) => Promise<void>
-  logout: () => Promise<void>
-  hasPermission: (code: string) => boolean
+    user: User | null
+    loading: boolean
+    login: (email: string, password: string) => Promise<void>
+    logout: () => Promise<void>
+    hasPermission: (code: string) => boolean
 }
 
 /** Resposta de `POST /login`. */
 export interface LoginResponse {
-  access: string
-  refresh: string
-  user: User
+    access: string
+    refresh: string
+    user: User
 }
 
 // =========================================================
@@ -195,24 +191,24 @@ export interface LoginResponse {
 // =========================================================
 
 export interface FieldRow {
-  name: string
-  value: string
-  confidence: number | null
+    name: string
+    value: string
+    confidence: number | null
 }
 
 export interface SaveMessage {
-  tone: 'success' | 'error' | 'neutral'
-  text: string
+    tone: 'success' | 'error' | 'neutral'
+    text: string
 }
 
 export type ActiveView =
-  | 'upload'
-  | 'inbox'
-  | 'dashboard'
-  | 'validation'
-  | 'approved'
-  | 'rejected'
-  | 'operations'
-  | 'settings'
-  | 'users'
-  | 'roles'
+    | 'upload'
+    | 'inbox'
+    | 'dashboard'
+    | 'validation'
+    | 'approved'
+    | 'rejected'
+    | 'operations'
+    | 'settings'
+    | 'users'
+    | 'roles'

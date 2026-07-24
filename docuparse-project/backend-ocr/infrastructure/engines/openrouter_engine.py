@@ -41,7 +41,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import fitz  # pymupdf
@@ -51,6 +51,7 @@ from PIL import Image
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -64,13 +65,14 @@ _DoclingEngine = None  # lazy import to avoid loading Docling at startup
 
 # ── PDF classification ──────────────────────────────────────────────────────
 
-def _classify_pdf_bytes(content: bytes) -> Dict[str, Any]:
+
+def _classify_pdf_bytes(content: bytes) -> dict[str, Any]:
     """Mirrors classify_pdf() from ocr_openrouter_pipeline.py but uses bytes.
     Usado apenas como fallback quando doc_type não é fornecido via metadata.
     """
     doc = fitz.open(stream=content, filetype="pdf")
     txtblocks = imgblocks = 0
-    docfonts: List[str] = []
+    docfonts: list[str] = []
 
     for page in doc:
         for block in page.get_text("dict").get("blocks", []):
@@ -99,11 +101,13 @@ def _classify_pdf_bytes(content: bytes) -> Dict[str, Any]:
 
 # ── Text-PDF extraction ─────────────────────────────────────────────────────
 
+
 def _extract_text_with_docling(content: bytes) -> str:
     """Delegates to the existing DoclingEngine that already handles PDF bytes."""
     global _DoclingEngine
     if _DoclingEngine is None:
         from infrastructure.engines.docling_engine import DoclingEngine
+
         _DoclingEngine = DoclingEngine
 
     engine = _DoclingEngine()
@@ -121,7 +125,8 @@ def _extract_text_with_pymupdf(content: bytes) -> str:
 
 # ── Image rendering ─────────────────────────────────────────────────────────
 
-def _render_pdf_as_images(content: bytes, dpi: int = 300) -> List[Any]:
+
+def _render_pdf_as_images(content: bytes, dpi: int = 300) -> list[Any]:
     """Render every PDF page to a BGR numpy array."""
     doc = fitz.open(stream=content, filetype="pdf")
     zoom = dpi / 72.0
@@ -137,8 +142,11 @@ def _render_pdf_as_images(content: bytes, dpi: int = 300) -> List[Any]:
 
 # ── OpenRouter helpers ───────────────────────────────────────────────────────
 
+
 def _to_data_url(image_bgr: Any, quality: int = 90) -> str:
-    ok, encoded = cv2.imencode(".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+    ok, encoded = cv2.imencode(
+        ".jpg", image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+    )
     if not ok:
         raise RuntimeError("Failed to encode image to JPEG")
     b64 = base64.b64encode(encoded.tobytes()).decode("ascii")
@@ -153,10 +161,10 @@ def _extract_text_from_partial_json(text: str) -> str:
     raw = match.group(1)
     raw = (
         raw.replace("\\n", "\n")
-           .replace("\\t", "\t")
-           .replace('\\"', '"')
-           .replace("\\\\", "\\")
-           .replace("\\/", "/")
+        .replace("\\t", "\t")
+        .replace('\\"', '"')
+        .replace("\\\\", "\\")
+        .replace("\\/", "/")
     )
     return raw.strip()
 
@@ -169,15 +177,17 @@ def _remove_loop_repetitions(text: str, min_phrase: int = 15) -> str:
     for phrase_len in range(min_phrase, n // 3 + 1):
         i = 0
         while i + phrase_len * 3 <= n:
-            phrase = text[i:i + phrase_len]
-            if (text[i + phrase_len:i + phrase_len * 2] == phrase
-                    and text[i + phrase_len * 2:i + phrase_len * 3] == phrase):
-                return text[:i + phrase_len].rstrip(', \n')
+            phrase = text[i : i + phrase_len]
+            if (
+                text[i + phrase_len : i + phrase_len * 2] == phrase
+                and text[i + phrase_len * 2 : i + phrase_len * 3] == phrase
+            ):
+                return text[: i + phrase_len].rstrip(", \n")
             i += 1
     return text
 
 
-def _parse_llm_json(text: str) -> Dict[str, Any]:
+def _parse_llm_json(text: str) -> dict[str, Any]:
     stripped = text.strip()
     if stripped.startswith("```"):
         lines = stripped.splitlines()
@@ -195,18 +205,19 @@ def _parse_llm_json(text: str) -> Dict[str, Any]:
     extracted = _extract_text_from_partial_json(stripped)
     if extracted:
         logger.warning(
-            "LLM response truncated (token limit?); recovered %d chars of partial text", len(extracted)
+            "LLM response truncated (token limit?); recovered %d chars of partial text",
+            len(extracted),
         )
         return {"extracted_text": extracted, "_truncated": True}
     return {"parse_error": True, "raw_output": text}
 
 
-def _text_from_key_values(result: Dict[str, Any]) -> str:
+def _text_from_key_values(result: dict[str, Any]) -> str:
     key_values = result.get("key_values")
     if not isinstance(key_values, list):
         return ""
 
-    lines: List[str] = []
+    lines: list[str] = []
     for item in key_values:
         if not isinstance(item, dict):
             continue
@@ -222,8 +233,10 @@ def _text_from_key_values(result: Dict[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
-def _extract_ocr_text(result: Dict[str, Any]) -> str:
-    return str(result.get("extracted_text") or "").strip() or _text_from_key_values(result)
+def _extract_ocr_text(result: dict[str, Any]) -> str:
+    return str(result.get("extracted_text") or "").strip() or _text_from_key_values(
+        result
+    )
 
 
 OPENROUTER_EMPTY_TEXT_FALLBACK_MODEL = "qwen/qwen2.5-vl-72b-instruct"
@@ -234,7 +247,7 @@ def _call_openrouter(
     page_label: str = "page_1",
     timeout_s: int = 120,
     model_override: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     model = (model_override or os.getenv("OPENROUTER_MODEL", "")).strip()
     base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").strip()
@@ -267,7 +280,10 @@ def _call_openrouter(
                 "content": [
                     {"type": "text", "text": instruction},
                     {"type": "text", "text": f"Identificador da página: {page_label}"},
-                    {"type": "image_url", "image_url": {"url": _to_data_url(image_bgr)}},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": _to_data_url(image_bgr)},
+                    },
                 ],
             },
         ],
@@ -288,12 +304,15 @@ def _call_openrouter(
 
     body = resp.json()
     raw_content = body["choices"][0]["message"]["content"]
-    logger.info("OpenRouter response | page=%s | preview=%.400s", page_label, raw_content)
+    logger.info(
+        "OpenRouter response | page=%s | preview=%.400s", page_label, raw_content
+    )
     parsed = _parse_llm_json(raw_content)
     if parsed.get("parse_error"):
         logger.warning(
             "OpenRouter response could not be parsed as JSON | page=%s | raw=%.600s",
-            page_label, raw_content,
+            page_label,
+            raw_content,
         )
     else:
         extracted = parsed.get("extracted_text") or ""
@@ -302,14 +321,18 @@ def _call_openrouter(
             if cleaned != extracted:
                 logger.info(
                     "OpenRouter loop removed | page=%s | before=%d chars | after=%d chars",
-                    page_label, len(extracted), len(cleaned),
+                    page_label,
+                    len(extracted),
+                    len(cleaned),
                 )
                 parsed["extracted_text"] = cleaned
     return parsed
 
 
 def _empty_text_fallback_model() -> str:
-    return os.getenv("OPENROUTER_FALLBACK_MODEL", OPENROUTER_EMPTY_TEXT_FALLBACK_MODEL).strip()
+    return os.getenv(
+        "OPENROUTER_FALLBACK_MODEL", OPENROUTER_EMPTY_TEXT_FALLBACK_MODEL
+    ).strip()
 
 
 _NO_IMAGE_SUPPORT_MARKERS = (
@@ -328,7 +351,7 @@ def _call_openrouter_with_empty_text_retry(
     image_bgr: Any,
     page_label: str,
     timeout_s: int,
-) -> tuple[Dict[str, Any], bool, str]:
+) -> tuple[dict[str, Any], bool, str]:
     primary_model = os.getenv("OPENROUTER_MODEL", "").strip()
 
     try:
@@ -387,6 +410,7 @@ def _call_openrouter_with_empty_text_retry(
 
 # ── Engine class ─────────────────────────────────────────────────────────────
 
+
 class OpenRouterOCREngine(BaseOCREngine):
     """
     Primary OCR engine for the backend-ocr pipeline.
@@ -404,7 +428,9 @@ class OpenRouterOCREngine(BaseOCREngine):
     def name(self) -> str:
         return "openrouter"
 
-    def process(self, content: bytes, metadata: dict[str, Any] | None = None) -> Dict[str, Any]:
+    def process(
+        self, content: bytes, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Args:
             content:  Bytes do arquivo (imagem ou PDF).
@@ -420,11 +446,15 @@ class OpenRouterOCREngine(BaseOCREngine):
         doc_type = meta.get("doc_type")
 
         try:
-            suffix = filename.lower().rsplit(".", maxsplit=1)[-1] if "." in filename else ""
+            suffix = (
+                filename.lower().rsplit(".", maxsplit=1)[-1] if "." in filename else ""
+            )
             is_pdf = suffix == "pdf" or content[:4] == b"%PDF"
 
             if is_pdf:
-                return self._process_pdf(content, doc_type=doc_type, timeout_s=timeout_s)
+                return self._process_pdf(
+                    content, doc_type=doc_type, timeout_s=timeout_s
+                )
             return self._process_image(content, timeout_s=timeout_s)
 
         except Exception as exc:
@@ -441,27 +471,45 @@ class OpenRouterOCREngine(BaseOCREngine):
 
     # ── PDF ──────────────────────────────────────────────────────────────────
 
-    def _process_pdf(self, content: bytes, doc_type: str | None = None, timeout_s: int = 120) -> Dict[str, Any]:
+    def _process_pdf(
+        self, content: bytes, doc_type: str | None = None, timeout_s: int = 120
+    ) -> dict[str, Any]:
         # Usa doc_type do domain/classifier quando disponível, evitando classificação dupla (P2).
         # doc_type "digital_pdf" → PDF tem camada de texto → usar Docling.
         # doc_type "scanned_image" → PDF é só imagem → renderizar e enviar ao OpenRouter.
         # doc_type None/unknown → classificar internamente (caminho de compatibilidade).
         if doc_type == "digital_pdf":
-            pdf_class = {"mode": "text", "nr_pages": None, "txtblocks": -1, "imgblocks": -1, "docfonts": []}
+            pdf_class = {
+                "mode": "text",
+                "nr_pages": None,
+                "txtblocks": -1,
+                "imgblocks": -1,
+                "docfonts": [],
+            }
         elif doc_type in {"scanned_image", "handwritten_complex"}:
-            pdf_class = {"mode": "image", "nr_pages": None, "txtblocks": 0, "imgblocks": -1, "docfonts": []}
+            pdf_class = {
+                "mode": "image",
+                "nr_pages": None,
+                "txtblocks": 0,
+                "imgblocks": -1,
+                "docfonts": [],
+            }
         else:
             pdf_class = _classify_pdf_bytes(content)
             logger.info("OpenRouter PDF classificação interna: %s", pdf_class)
 
-        logger.info("OpenRouter PDF mode: %s (doc_type=%s)", pdf_class["mode"], doc_type)
+        logger.info(
+            "OpenRouter PDF mode: %s (doc_type=%s)", pdf_class["mode"], doc_type
+        )
 
         if pdf_class["mode"] == "text":
             return self._process_text_pdf(content, pdf_class)
 
         return self._process_image_pdf(content, pdf_class, timeout_s=timeout_s)
 
-    def _process_text_pdf(self, content: bytes, pdf_class: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_text_pdf(
+        self, content: bytes, pdf_class: dict[str, Any]
+    ) -> dict[str, Any]:
         try:
             text = _extract_text_with_docling(content)
             engine_used = "docling"
@@ -484,20 +532,24 @@ class OpenRouterOCREngine(BaseOCREngine):
             },
         }
 
-    def _process_image_pdf(self, content: bytes, pdf_class: Dict[str, Any], timeout_s: int = 120) -> Dict[str, Any]:
+    def _process_image_pdf(
+        self, content: bytes, pdf_class: dict[str, Any], timeout_s: int = 120
+    ) -> dict[str, Any]:
         images = _render_pdf_as_images(content, dpi=300)
-        texts: List[str] = []
-        page_results: List[Dict[str, Any]] = []
-        page_errors: List[str] = []
+        texts: list[str] = []
+        page_results: list[dict[str, Any]] = []
+        page_errors: list[str] = []
         api_model = os.getenv("OPENROUTER_MODEL", "")
 
         for i, img in enumerate(images, start=1):
             label = f"page_{i}"
             try:
-                result, retried_empty_text, model_used = _call_openrouter_with_empty_text_retry(
-                    img,
-                    page_label=label,
-                    timeout_s=timeout_s,
+                result, retried_empty_text, model_used = (
+                    _call_openrouter_with_empty_text_retry(
+                        img,
+                        page_label=label,
+                        timeout_s=timeout_s,
+                    )
                 )
                 if result.get("parse_error"):
                     err_msg = f"JSON parse error — raw: {str(result.get('raw_output', ''))[:300]}"
@@ -507,28 +559,46 @@ class OpenRouterOCREngine(BaseOCREngine):
                 else:
                     page_text = _extract_ocr_text(result)
                     if result.get("_truncated"):
-                        logger.warning("OpenRouter %s: response was truncated — extracted %d chars (partial)", label, len(page_text))
+                        logger.warning(
+                            "OpenRouter %s: response was truncated — extracted %d chars (partial)",
+                            label,
+                            len(page_text),
+                        )
                 texts.append(page_text)
-                page_results.append({
-                    "page": label,
-                    "text": page_text,
-                    "confidence": result.get("confidence_0_1"),
-                    "with_handwritten_text": result.get("with_handwritten_text"),
-                    "model_used": model_used,
-                    "empty_text_retry": retried_empty_text,
-                    **({"truncated": True} if result.get("_truncated") else {}),
-                    **({"parse_error": result.get("raw_output", "")[:200]} if result.get("parse_error") else {}),
-                })
+                page_results.append(
+                    {
+                        "page": label,
+                        "text": page_text,
+                        "confidence": result.get("confidence_0_1"),
+                        "with_handwritten_text": result.get("with_handwritten_text"),
+                        "model_used": model_used,
+                        "empty_text_retry": retried_empty_text,
+                        **({"truncated": True} if result.get("_truncated") else {}),
+                        **(
+                            {"parse_error": result.get("raw_output", "")[:200]}
+                            if result.get("parse_error")
+                            else {}
+                        ),
+                    }
+                )
                 logger.info("OpenRouter %s: %d chars", label, len(page_text))
             except Exception as exc:
-                logger.warning("OpenRouter failed for %s: %s", label, exc, exc_info=True)
+                logger.warning(
+                    "OpenRouter failed for %s: %s", label, exc, exc_info=True
+                )
                 page_errors.append(f"{label}: {exc}")
                 page_results.append({"page": label, "error": str(exc)})
 
         merged = "\n\n".join(t for t in texts if t).strip()
-        confs = [r["confidence"] for r in page_results if isinstance(r.get("confidence"), (int, float))]
+        confs = [
+            r["confidence"]
+            for r in page_results
+            if isinstance(r.get("confidence"), (int, float))
+        ]
         avg_conf = round(sum(confs) / len(confs) * 100, 2) if confs else None
-        has_handwritten = any(r.get("with_handwritten_text") for r in page_results if not r.get("error"))
+        has_handwritten = any(
+            r.get("with_handwritten_text") for r in page_results if not r.get("error")
+        )
 
         if not merged and page_errors:
             fallback_msg = "OpenRouter errors: " + "; ".join(page_errors)
@@ -555,7 +625,7 @@ class OpenRouterOCREngine(BaseOCREngine):
 
     # ── Image ─────────────────────────────────────────────────────────────────
 
-    def _process_image(self, content: bytes, timeout_s: int = 120) -> Dict[str, Any]:
+    def _process_image(self, content: bytes, timeout_s: int = 120) -> dict[str, Any]:
         nparr = np.frombuffer(content, np.uint8)
         image_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if image_bgr is None:
@@ -569,7 +639,9 @@ class OpenRouterOCREngine(BaseOCREngine):
         )
         text = _extract_ocr_text(result)
         confidence = result.get("confidence_0_1")
-        avg_conf = round(confidence * 100, 2) if isinstance(confidence, (int, float)) else None
+        avg_conf = (
+            round(confidence * 100, 2) if isinstance(confidence, (int, float)) else None
+        )
 
         return {
             "raw_text": text,
@@ -583,7 +655,11 @@ class OpenRouterOCREngine(BaseOCREngine):
                 "model": model_used or api_model,
                 "primary_model": api_model,
                 "empty_text_retry": retried_empty_text,
-                **({"fallback_model": result.get("_fallback_model")} if result.get("_fallback_model") else {}),
+                **(
+                    {"fallback_model": result.get("_fallback_model")}
+                    if result.get("_fallback_model")
+                    else {}
+                ),
                 "pipeline": "openrouter-ocr",
                 "avg_confidence": avg_conf,
                 "with_handwritten_text": result.get("with_handwritten_text"),

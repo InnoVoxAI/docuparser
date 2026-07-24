@@ -56,7 +56,9 @@ async def readiness_check():
 
 
 @app.post("/api/v1/classify-layout", response_model=ClassifyLayoutResponse)
-async def classify_layout_endpoint(request: ClassifyLayoutRequest) -> ClassifyLayoutResponse:
+async def classify_layout_endpoint(
+    request: ClassifyLayoutRequest,
+) -> ClassifyLayoutResponse:
     classification = classify_layout(_resolve_raw_text(request), request.document_type)
     return ClassifyLayoutResponse(
         layout=classification.layout,

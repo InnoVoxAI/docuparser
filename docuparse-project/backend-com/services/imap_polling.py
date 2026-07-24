@@ -47,7 +47,9 @@ class ImapClient(Protocol):
 
 def fetch_email_settings_from_core(tenant_id: str) -> EmailCaptureSettings:
     query = urllib.parse.urlencode({"tenant": tenant_id})
-    request = urllib.request.Request(f"{settings.backend_core_email_settings_url}?{query}", method="GET")
+    request = urllib.request.Request(
+        f"{settings.backend_core_email_settings_url}?{query}", method="GET"
+    )
     if settings.internal_service_token:
         request.add_header("Authorization", f"Bearer {settings.internal_service_token}")
     with urllib.request.urlopen(request, timeout=5) as response:
@@ -55,7 +57,9 @@ def fetch_email_settings_from_core(tenant_id: str) -> EmailCaptureSettings:
     return email_settings_from_payload(payload, tenant_id=tenant_id)
 
 
-def email_settings_from_payload(payload: dict, *, tenant_id: str = "tenant-demo") -> EmailCaptureSettings:
+def email_settings_from_payload(
+    payload: dict, *, tenant_id: str = "tenant-demo"
+) -> EmailCaptureSettings:
     accepted = {
         item.strip()
         for item in str(payload.get("accepted_content_types") or "").split(",")
@@ -90,9 +94,19 @@ def poll_imap_once(
     client_factory=None,
 ) -> dict:
     if not email_settings.is_active:
-        return {"status": "skipped", "reason": "email settings inactive", "accepted_count": 0, "documents": []}
+        return {
+            "status": "skipped",
+            "reason": "email settings inactive",
+            "accepted_count": 0,
+            "documents": [],
+        }
     if email_settings.provider != "imap":
-        return {"status": "skipped", "reason": f"provider {email_settings.provider} is not imap", "accepted_count": 0, "documents": []}
+        return {
+            "status": "skipped",
+            "reason": f"provider {email_settings.provider} is not imap",
+            "accepted_count": 0,
+            "documents": [],
+        }
     if not email_settings.imap_host.strip():
         raise ValueError("imap_host is required")
     if not email_settings.username.strip():
@@ -100,7 +114,11 @@ def poll_imap_once(
     if not password.strip():
         raise ValueError("DOCUPARSE_IMAP_PASSWORD is required")
 
-    factory = client_factory or (lambda host, port: imaplib.IMAP4_SSL(host, port, timeout=settings.imap_timeout_seconds))
+    factory = client_factory or (
+        lambda host, port: imaplib.IMAP4_SSL(
+            host, port, timeout=settings.imap_timeout_seconds
+        )
+    )
     client = factory(email_settings.imap_host, email_settings.imap_port)
     documents: list[dict] = []
     processed_messages = 0
@@ -108,14 +126,30 @@ def poll_imap_once(
     duplicate_count = 0
 
     try:
-        _expect_ok(_imap_call(client.login, email_settings.username, password, action="login"), "login")
-        _expect_ok(_imap_call(client.select, email_settings.inbox_folder, action="select mailbox"), "select mailbox")
-        _, message_ids = _expect_ok(_imap_call(client.search, None, "UNSEEN", action="search unseen"), "search unseen")
+        _expect_ok(
+            _imap_call(client.login, email_settings.username, password, action="login"),
+            "login",
+        )
+        _expect_ok(
+            _imap_call(
+                client.select, email_settings.inbox_folder, action="select mailbox"
+            ),
+            "select mailbox",
+        )
+        _, message_ids = _expect_ok(
+            _imap_call(client.search, None, "UNSEEN", action="search unseen"),
+            "search unseen",
+        )
         ids = message_ids[0].split()[:limit] if message_ids else []
 
         fetch_query = "(RFC822)" if mark_as_read else "(BODY.PEEK[])"
         for message_id in ids:
-            _, fetched = _expect_ok(_imap_call(client.fetch, message_id, fetch_query, action="fetch message"), "fetch message")
+            _, fetched = _expect_ok(
+                _imap_call(
+                    client.fetch, message_id, fetch_query, action="fetch message"
+                ),
+                "fetch message",
+            )
             raw_message = _raw_message_bytes(fetched)
             if raw_message is None:
                 continue
@@ -143,7 +177,10 @@ def poll_imap_once(
                     tenant_id=email_settings.tenant_id,
                     attachments=attachments,
                     sender=sender,
-                    message_id=str(message.get("Message-ID") or message_id.decode("ascii", errors="ignore")),
+                    message_id=str(
+                        message.get("Message-ID")
+                        or message_id.decode("ascii", errors="ignore")
+                    ),
                     subject=str(message.get("Subject") or ""),
                     provider="imap",
                     metadata_channel=email_metadata_channel,
@@ -151,7 +188,13 @@ def poll_imap_once(
                 documents.extend(result["documents"])
                 duplicate_count += result["duplicate_count"]
             if mark_as_read:
-                _imap_call(client.store, message_id, "+FLAGS", "\\Seen", action="mark message as read")
+                _imap_call(
+                    client.store,
+                    message_id,
+                    "+FLAGS",
+                    "\\Seen",
+                    action="mark message as read",
+                )
             processed_messages += 1
     finally:
         try:
@@ -178,7 +221,9 @@ def poll_configured_imap_once(tenant_id: str = "tenant-demo") -> dict:
     )
 
 
-def _attachments_from_message(message: Message, email_settings: EmailCaptureSettings) -> tuple[list[dict], int]:
+def _attachments_from_message(
+    message: Message, email_settings: EmailCaptureSettings
+) -> tuple[list[dict], int]:
     attachments = []
     skipped = 0
     for part in message.walk():
@@ -187,7 +232,10 @@ def _attachments_from_message(message: Message, email_settings: EmailCaptureSett
             continue
         content_type = part.get_content_type()
         payload = part.get_payload(decode=True) or b""
-        if email_settings.accepted_content_types and content_type not in email_settings.accepted_content_types:
+        if (
+            email_settings.accepted_content_types
+            and content_type not in email_settings.accepted_content_types
+        ):
             skipped += 1
             continue
         if len(payload) > email_settings.max_attachment_bytes:
@@ -214,7 +262,9 @@ def _imap_call(function, *args, action: str):
     try:
         return function(*args)
     except imaplib.IMAP4.error as exc:
-        raise ImapPollingError(f"IMAP {action} failed: {_format_imap_error(exc)}") from exc
+        raise ImapPollingError(
+            f"IMAP {action} failed: {_format_imap_error(exc)}"
+        ) from exc
 
 
 def _format_imap_error(error: imaplib.IMAP4.error) -> str:

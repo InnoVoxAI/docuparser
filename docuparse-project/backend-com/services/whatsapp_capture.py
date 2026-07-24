@@ -20,7 +20,9 @@ def process_whatsapp_media(
         if content is None and media.get("content_base64"):
             content = base64.b64decode(media["content_base64"])
         if content is None:
-            raise ValueError("media content is required when MediaUrl download is unavailable")
+            raise ValueError(
+                "media content is required when MediaUrl download is unavailable"
+            )
 
         metadata_channel = {
             "provider": "twilio",

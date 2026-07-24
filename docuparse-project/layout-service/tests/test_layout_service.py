@@ -17,8 +17,14 @@ from events import validate_event
 def test_health_and_ready() -> None:
     client = TestClient(app)
 
-    assert client.get("/health").json() == {"status": "healthy", "service": "docuparse-layout-service"}
-    assert client.get("/ready").json() == {"status": "ready", "service": "docuparse-layout-service"}
+    assert client.get("/health").json() == {
+        "status": "healthy",
+        "service": "docuparse-layout-service",
+    }
+    assert client.get("/ready").json() == {
+        "status": "ready",
+        "service": "docuparse-layout-service",
+    }
 
 
 def test_classify_layout_endpoint() -> None:
@@ -143,7 +149,9 @@ def test_layout_worker_consumes_ocr_completed_stream(tmp_path) -> None:
 def test_layout_worker_sends_invalid_event_to_dlq(tmp_path) -> None:
     storage = LocalStorage(tmp_path / "objects")
     event_bus = LocalJsonlEventBus(tmp_path / "events")
-    event_bus.publish("ocr.completed", {"event_type": "ocr.completed", "document_id": str(uuid4())})
+    event_bus.publish(
+        "ocr.completed", {"event_type": "ocr.completed", "document_id": str(uuid4())}
+    )
 
     worker = LayoutWorker(storage=storage, event_bus=event_bus, start_at_latest=False)
 

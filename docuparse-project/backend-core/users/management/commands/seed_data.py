@@ -22,7 +22,9 @@ class Command(BaseCommand):
             self.stdout.write("seed_data: created default tenant")
 
         for code, description in PERMISSIONS:
-            Permission.objects.get_or_create(code=code, defaults={"description": description})
+            Permission.objects.get_or_create(
+                code=code, defaults={"description": description}
+            )
         self.stdout.write("seed_data: permissions ready")
 
         role, _ = Role.objects.get_or_create(name="admin")
@@ -44,7 +46,9 @@ class Command(BaseCommand):
         else:
             self.stdout.write(f"seed_data: admin user {admin_email} already exists")
 
-        profile, _ = UserProfile.objects.get_or_create(user=user, defaults={"tenant": tenant})
+        profile, _ = UserProfile.objects.get_or_create(
+            user=user, defaults={"tenant": tenant}
+        )
         profile.role_ref = role
         profile.tenant = tenant
         profile.save()
@@ -55,8 +59,16 @@ class Command(BaseCommand):
         import models.contadeagua.definition as _agua_def
 
         DEFAULT_SCHEMAS = [
-            {"schema_id": _nf_def.SCHEMA_ID, "version": _nf_def.VERSION, "definition": _nf_def.EXTRACTION_DEFINITION},
-            {"schema_id": _agua_def.SCHEMA_ID, "version": _agua_def.VERSION, "definition": _agua_def.EXTRACTION_DEFINITION},
+            {
+                "schema_id": _nf_def.SCHEMA_ID,
+                "version": _nf_def.VERSION,
+                "definition": _nf_def.EXTRACTION_DEFINITION,
+            },
+            {
+                "schema_id": _agua_def.SCHEMA_ID,
+                "version": _agua_def.VERSION,
+                "definition": _agua_def.EXTRACTION_DEFINITION,
+            },
         ]
 
         for schema_spec in DEFAULT_SCHEMAS:
@@ -67,18 +79,25 @@ class Command(BaseCommand):
                 defaults={"definition": schema_spec["definition"], "is_active": True},
             )
             if created:
-                self.stdout.write(f"seed_data: created schema {schema_spec['schema_id']}")
+                self.stdout.write(
+                    f"seed_data: created schema {schema_spec['schema_id']}"
+                )
             else:
-                self.stdout.write(f"seed_data: updated schema {schema_spec['schema_id']}")
+                self.stdout.write(
+                    f"seed_data: updated schema {schema_spec['schema_id']}"
+                )
 
         from documents.models import LayoutConfig
+
         DEFAULT_LAYOUT_CONFIGS = [
             {"layout": "nota_fiscal", "schema_id": _nf_def.SCHEMA_ID},
             {"layout": "fatura_condominio", "schema_id": _agua_def.SCHEMA_ID},
             {"layout": "fatura_energia", "schema_id": _agua_def.SCHEMA_ID},
         ]
         for lc_spec in DEFAULT_LAYOUT_CONFIGS:
-            schema = SchemaConfig.objects.filter(tenant=tenant, schema_id=lc_spec["schema_id"], is_active=True).first()
+            schema = SchemaConfig.objects.filter(
+                tenant=tenant, schema_id=lc_spec["schema_id"], is_active=True
+            ).first()
             if not schema:
                 continue
             _, created = LayoutConfig.objects.get_or_create(
@@ -88,4 +107,6 @@ class Command(BaseCommand):
                 defaults={"schema_config": schema, "is_active": True},
             )
             if created:
-                self.stdout.write(f"seed_data: created layout config {lc_spec['layout']} -> {lc_spec['schema_id']}")
+                self.stdout.write(
+                    f"seed_data: created layout config {lc_spec['layout']} -> {lc_spec['schema_id']}"
+                )

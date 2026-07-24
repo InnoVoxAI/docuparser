@@ -17,19 +17,24 @@
 #   is_engine_error_fallback() → detecta quando o engine falhou por erro
 # =============================================================================
 
-from typing import Any, Dict
+from typing import Any
 
-from domain.field_extractor import compute_field_pipeline_quality, extract_avg_confidence
+from domain.field_extractor import (
+    compute_field_pipeline_quality,
+    extract_avg_confidence,
+)
 
 
-def _text_coverage_metrics(data: Dict[str, Any]) -> tuple[int, int]:
+def _text_coverage_metrics(data: dict[str, Any]) -> tuple[int, int]:
     raw_text = str(data.get("raw_text") or "").strip()
     text_length = int((data.get("_meta") or {}).get("text_length") or len(raw_text))
     token_count = len([token for token in raw_text.split() if token.strip()])
     return text_length, token_count
 
 
-def _should_replace_raw_text(primary_data: Dict[str, Any], fallback_data: Dict[str, Any]) -> bool:
+def _should_replace_raw_text(
+    primary_data: dict[str, Any], fallback_data: dict[str, Any]
+) -> bool:
     primary_len, primary_tokens = _text_coverage_metrics(primary_data)
     fallback_len, fallback_tokens = _text_coverage_metrics(fallback_data)
 
@@ -46,13 +51,17 @@ def _should_replace_raw_text(primary_data: Dict[str, Any], fallback_data: Dict[s
     return True
 
 
-def _has_low_text_coverage(data: Dict[str, Any]) -> bool:
+def _has_low_text_coverage(data: dict[str, Any]) -> bool:
     raw_text = str(data.get("raw_text") or "").strip()
     text_length = int((data.get("_meta") or {}).get("text_length") or len(raw_text))
     token_count = len([token for token in raw_text.split() if token.strip()])
 
-    input_meta = data.get("input_meta") if isinstance(data.get("input_meta"), dict) else {}
-    page_count = int(input_meta.get("pdf_page_count") or input_meta.get("stacked_pages") or 1)
+    input_meta = (
+        data.get("input_meta") if isinstance(data.get("input_meta"), dict) else {}
+    )
+    page_count = int(
+        input_meta.get("pdf_page_count") or input_meta.get("stacked_pages") or 1
+    )
     chars_per_page = text_length / max(1, page_count)
 
     # Ajuste de cobertura: pouco texto total, baixa densidade por página ou poucos tokens distintos.
@@ -63,7 +72,7 @@ def _has_low_text_coverage(data: Dict[str, Any]) -> bool:
     return low_total_text or low_density_for_pdf or low_tokens
 
 
-def should_trigger_fallback(data: Dict[str, Any], min_confidence: float = 70.0) -> bool:
+def should_trigger_fallback(data: dict[str, Any], min_confidence: float = 70.0) -> bool:
     # Ajuste de fallback: considera qualidade por campo além da confiança média do OCR.
     avg_confidence = extract_avg_confidence(data)
     low_avg_confidence = avg_confidence is not None and avg_confidence < min_confidence
@@ -75,7 +84,7 @@ def should_trigger_fallback(data: Dict[str, Any], min_confidence: float = 70.0) 
     return low_avg_confidence or field_driven_fallback or low_coverage_fallback
 
 
-def is_engine_error_fallback(data: Dict[str, Any]) -> bool:
+def is_engine_error_fallback(data: dict[str, Any]) -> bool:
     if not isinstance(data, dict):
         return True
 
@@ -88,11 +97,11 @@ def is_engine_error_fallback(data: Dict[str, Any]) -> bool:
 
 
 def merge_fallback_result(
-    primary_data: Dict[str, Any],
-    fallback_data: Dict[str, Any],
+    primary_data: dict[str, Any],
+    fallback_data: dict[str, Any],
     primary_engine: str,
     fallback_engine: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     merged = dict(primary_data)
     replace_raw_text = _should_replace_raw_text(primary_data, fallback_data)
 
@@ -107,8 +116,14 @@ def merge_fallback_result(
             if fallback_value not in (None, ""):
                 merged[key] = fallback_value
 
-    primary_meta = primary_data.get("_meta") if isinstance(primary_data.get("_meta"), dict) else {}
-    fallback_meta = fallback_data.get("_meta") if isinstance(fallback_data.get("_meta"), dict) else {}
+    primary_meta = (
+        primary_data.get("_meta") if isinstance(primary_data.get("_meta"), dict) else {}
+    )
+    fallback_meta = (
+        fallback_data.get("_meta")
+        if isinstance(fallback_data.get("_meta"), dict)
+        else {}
+    )
 
     merged["_meta"] = {
         **primary_meta,

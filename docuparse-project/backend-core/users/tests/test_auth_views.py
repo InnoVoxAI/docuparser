@@ -43,10 +43,12 @@ def _make_user(
 class LoginViewTest(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
-        Permission.objects.bulk_create([
-            Permission(code="inbox.view", description="Visualizar Inbox"),
-            Permission(code="documents.validate", description="Validar Documentos"),
-        ])
+        Permission.objects.bulk_create(
+            [
+                Permission(code="inbox.view", description="Visualizar Inbox"),
+                Permission(code="documents.validate", description="Validar Documentos"),
+            ]
+        )
         self.role = _make_role("Operador", ["inbox.view", "documents.validate"])
         self.user = _make_user("op@test.com", "senha123", role=self.role)
 

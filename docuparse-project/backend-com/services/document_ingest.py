@@ -56,7 +56,9 @@ def ingest_document(
 
     document_id = uuid4()
     storage = LocalStorage(settings.local_storage_dir)
-    stored = storage.put_bytes(document_original_key(tenant_id, str(document_id)), content)
+    stored = storage.put_bytes(
+        document_original_key(tenant_id, str(document_id)), content
+    )
 
     event = DocumentReceivedEvent(
         tenant_id=tenant_id,
@@ -78,8 +80,12 @@ def ingest_document(
         },
     )
     event_payload = event.model_dump(mode="json")
-    event_bus_from_env(settings.local_event_dir).publish("document.received", event_payload)
-    core_sync_status = _sync_document_received_to_core(event_payload, skip_auto_process=skip_auto_process)
+    event_bus_from_env(settings.local_event_dir).publish(
+        "document.received", event_payload
+    )
+    core_sync_status = _sync_document_received_to_core(
+        event_payload, skip_auto_process=skip_auto_process
+    )
     log_event(
         logger,
         "document.received published",
@@ -104,7 +110,9 @@ def ingest_document(
     }
 
 
-def _sync_document_received_to_core(event_payload: dict, *, skip_auto_process: bool = False) -> str:
+def _sync_document_received_to_core(
+    event_payload: dict, *, skip_auto_process: bool = False
+) -> str:
     if not settings.backend_core_document_received_url:
         return "disabled"
 

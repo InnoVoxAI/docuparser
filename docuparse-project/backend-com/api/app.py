@@ -7,7 +7,16 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Security, UploadFile
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    Security,
+    UploadFile,
+)
 import jwt
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -18,7 +27,11 @@ from services.imap_polling import ImapPollingError, poll_configured_imap_once
 from services.document_ingest import DuplicateDocumentError
 from services.manual_upload import process_manual_upload
 from services.whatsapp_capture import process_whatsapp_media
-from services.twilio_polling import TwilioPollingError, download_twilio_media, poll_configured_twilio_once
+from services.twilio_polling import (
+    TwilioPollingError,
+    download_twilio_media,
+    poll_configured_twilio_once,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,18 +46,31 @@ def _log_startup_config() -> None:
     """Print resolved config values on startup to diagnose env var issues."""
     raw_primary = os.environ.get("DOCUPARSE_IMAP_PASSWORD")
     raw_fallback = os.environ.get("imap_reader_password")
-    password_status = f"[SET, {len(settings.imap_password)} chars]" if settings.imap_password else "[EMPTY — adicione DOCUPARSE_IMAP_PASSWORD no .env raiz do projeto]"
+    password_status = (
+        f"[SET, {len(settings.imap_password)} chars]"
+        if settings.imap_password
+        else "[EMPTY — adicione DOCUPARSE_IMAP_PASSWORD no .env raiz do projeto]"
+    )
 
     print("", flush=True)
     print("=== backend-com startup config ===", flush=True)
     print(f"  imap_password          : {password_status}", flush=True)
-    print(f"  DOCUPARSE_IMAP_PASSWORD: {'[presente, raw=' + repr(raw_primary[:2]) + '...]' if raw_primary else '[AUSENTE no os.environ]'}", flush=True)
-    print(f"  imap_reader_password   : {'[presente, raw=' + repr(raw_fallback[:2]) + '...]' if raw_fallback else '[AUSENTE no os.environ]'}", flush=True)
+    print(
+        f"  DOCUPARSE_IMAP_PASSWORD: {'[presente, raw=' + repr(raw_primary[:2]) + '...]' if raw_primary else '[AUSENTE no os.environ]'}",
+        flush=True,
+    )
+    print(
+        f"  imap_reader_password   : {'[presente, raw=' + repr(raw_fallback[:2]) + '...]' if raw_fallback else '[AUSENTE no os.environ]'}",
+        flush=True,
+    )
     print(f"  imap_poll_limit        : {settings.imap_poll_limit}", flush=True)
     print(f"  imap_mark_as_read      : {settings.imap_mark_as_read}", flush=True)
     print(f"  imap_timeout_seconds   : {settings.imap_timeout_seconds}", flush=True)
     print(f"  cors_allowed_origins   : {settings.cors_allowed_origins}", flush=True)
-    print(f"  backend_core_email_url : {settings.backend_core_email_settings_url}", flush=True)
+    print(
+        f"  backend_core_email_url : {settings.backend_core_email_settings_url}",
+        flush=True,
+    )
     print("==================================", flush=True)
     print("", flush=True)
 
@@ -228,7 +254,7 @@ def _validate_email_signature(signature: str | None) -> None:
 
 def _bearer_token(authorization: str | None) -> str:
     if authorization and authorization.startswith("Bearer "):
-        return authorization[len("Bearer "):].strip()
+        return authorization[len("Bearer ") :].strip()
     return ""
 
 
@@ -242,7 +268,9 @@ def _is_valid_user_jwt(token: str) -> bool:
     if not token:
         return False
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+        )
     except jwt.PyJWTError:
         return False
     return payload.get("token_type") == "access"
@@ -281,7 +309,9 @@ async def whatsapp_webhook(
     try:
         tenant_id = str(form.get("tenant_id") or form.get("TenantId") or "tenant-demo")
         message_sid = str(form.get("MessageSid") or "")
-        sender = str(form.get("From") or form.get("WaId") or "").replace("whatsapp:", "")
+        sender = str(form.get("From") or form.get("WaId") or "").replace(
+            "whatsapp:", ""
+        )
         to_number = str(form.get("To") or "").replace("whatsapp:", "")
         body = str(form.get("Body") or "")
         num_media = int(str(form.get("NumMedia") or "0"))
@@ -324,13 +354,23 @@ def _media_item_from_form(form: Any, index: int) -> dict:
 
     # Tenta baixar a mídia da Twilio quando apenas a URL está presente (fluxo real)
     content: bytes | None = None
-    if not content_base64 and media_url and settings.twilio_account_sid and settings.twilio_auth_token:
+    if (
+        not content_base64
+        and media_url
+        and settings.twilio_account_sid
+        and settings.twilio_auth_token
+    ):
         try:
-            content, real_filename = download_twilio_media(str(media_url), settings.twilio_account_sid, settings.twilio_auth_token)
+            content, real_filename = download_twilio_media(
+                str(media_url), settings.twilio_account_sid, settings.twilio_auth_token
+            )
             if real_filename:
                 filename = real_filename
         except Exception:
-            logger.warning("whatsapp_webhook_media_download_failed", extra={"media_url": str(media_url)})
+            logger.warning(
+                "whatsapp_webhook_media_download_failed",
+                extra={"media_url": str(media_url)},
+            )
 
     return {
         "filename": filename,
@@ -343,4 +383,6 @@ def _media_item_from_form(form: Any, index: int) -> dict:
 
 def _validate_whatsapp_signature(signature: str | None) -> None:
     if settings.whatsapp_webhook_token and signature != settings.whatsapp_webhook_token:
-        raise HTTPException(status_code=401, detail="invalid whatsapp webhook signature")
+        raise HTTPException(
+            status_code=401, detail="invalid whatsapp webhook signature"
+        )

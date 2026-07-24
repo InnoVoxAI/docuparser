@@ -38,7 +38,9 @@ class LocalChannelToERPMockE2ETests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
         self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
-        self.user = get_user_model().objects.create_user(username="operator", password="test")
+        self.user = get_user_model().objects.create_user(
+            username="operator", password="test"
+        )
 
     def test_manual_upload_reaches_erp_sent_with_exported_json(self) -> None:
         capture = lambda: process_manual_upload(
@@ -79,7 +81,9 @@ class LocalChannelToERPMockE2ETests(TestCase):
                 {
                     "filename": "whatsapp.pdf",
                     "content_type": "application/pdf",
-                    "content_base64": base64.b64encode(b"%PDF whatsapp").decode("ascii"),
+                    "content_base64": base64.b64encode(b"%PDF whatsapp").decode(
+                        "ascii"
+                    ),
                 }
             ],
         )[0]
@@ -87,9 +91,14 @@ class LocalChannelToERPMockE2ETests(TestCase):
         self._assert_channel_reaches_erp_sent(capture, "whatsapp")
 
     def _assert_channel_reaches_erp_sent(self, capture, expected_channel: str) -> None:
-        with tempfile.TemporaryDirectory() as event_dir, tempfile.TemporaryDirectory() as storage_dir, tempfile.TemporaryDirectory() as export_dir, self.settings(
-            DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
-            DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+        with (
+            tempfile.TemporaryDirectory() as event_dir,
+            tempfile.TemporaryDirectory() as storage_dir,
+            tempfile.TemporaryDirectory() as export_dir,
+            self.settings(
+                DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
+                DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+            ),
         ):
             self._point_backend_com_to_tmp(storage_dir, event_dir)
             bus = LocalJsonlEventBus(event_dir)
@@ -137,7 +146,9 @@ class LocalChannelToERPMockE2ETests(TestCase):
 
             document.refresh_from_db()
             attempt = ERPIntegrationAttempt.objects.get(document=document)
-            export_path = Path(erp_requested[0]["data"]["metadata"]["approved_export_path"])
+            export_path = Path(
+                erp_requested[0]["data"]["metadata"]["approved_export_path"]
+            )
             exported = json.loads(export_path.read_text(encoding="utf-8"))
             sent_events = bus.consume("erp.sent")
 

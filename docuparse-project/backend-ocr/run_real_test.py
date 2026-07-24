@@ -19,7 +19,7 @@ print(f"Testing with file: {file_path}")
 with open(file_path, "rb") as f:
     response = client.post(
         "/api/v1/process",
-        files={"file": ("AnyScanner_12_09_2025.pdf", f, "application/pdf")}
+        files={"file": ("AnyScanner_12_09_2025.pdf", f, "application/pdf")},
     )
 
 print(f"Status Code: {response.status_code}")

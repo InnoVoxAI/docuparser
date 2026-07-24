@@ -199,8 +199,8 @@ O sistema deve permitir a definição de padrões distintos para documentos com 
 
 ---
 
-## Contexto: 
-  
+## Contexto:
+
   O Supervisor só visualiza a árvore de "Tipos de Documento" e "Layouts" da sua própria empresa.
 
 ## Regra de Negócio
@@ -528,5 +528,3 @@ Você tem um sistema com 3 camadas claras:
 E a UI é essencialmente:
 
 > 📊 gestão + 🔍 validação + ⚙️ configuração
-
-

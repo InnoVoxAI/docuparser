@@ -16,7 +16,9 @@ DEFAULT_DLQ_STREAMS = [
     "erp.failed.dlq",
 ]
 
-DEFAULT_REQUEUE_TARGETS = [stream.removesuffix(".dlq") for stream in DEFAULT_DLQ_STREAMS]
+DEFAULT_REQUEUE_TARGETS = [
+    stream.removesuffix(".dlq") for stream in DEFAULT_DLQ_STREAMS
+]
 
 
 def inspect_dlq_streams(
@@ -53,7 +55,9 @@ def requeue_dlq_entry(
     if not isinstance(payload, dict):
         raise ValueError("DLQ entry does not contain a requeueable original payload")
 
-    resolved_target = target_stream or entry.payload.get("stream") or stream.removesuffix(".dlq")
+    resolved_target = (
+        target_stream or entry.payload.get("stream") or stream.removesuffix(".dlq")
+    )
     if resolved_target not in DEFAULT_REQUEUE_TARGETS:
         raise ValueError(f"Invalid requeue target stream: {resolved_target}")
 
@@ -74,7 +78,9 @@ def requeue_dlq_entry(
     if not execute:
         return result
 
-    result["requeued_event_stream_id"] = str(event_bus.publish(resolved_target, payload))
+    result["requeued_event_stream_id"] = str(
+        event_bus.publish(resolved_target, payload)
+    )
     result["audit_event_stream_id"] = str(
         event_bus.publish(
             f"{stream}.requeued",

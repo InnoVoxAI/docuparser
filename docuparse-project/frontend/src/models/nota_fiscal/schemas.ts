@@ -15,7 +15,6 @@ export const NOTA_FISCAL_DEFAULT_MODEL_NAME = 'NOTA FISCAL DEFAULT'
 // ]
 
 export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
-
     // =========================================================
     // IDENTIFICACAO DO DOCUMENTO
     // =========================================================
@@ -24,70 +23,70 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'tipo_documento',
         type: 'string',
         required: true,
-        rule: 'Tipo do documento fiscal: NFE, NFSE, DANFE, CTE etc.'
+        rule: 'Tipo do documento fiscal: NFE, NFSE, DANFE, CTE etc.',
     },
 
     {
         name: 'modelo_documento',
         type: 'string',
         required: false,
-        rule: 'Modelo fiscal do documento.'
+        rule: 'Modelo fiscal do documento.',
     },
 
     {
         name: 'numero_nota',
         type: 'string',
         required: true,
-        rule: 'Numero da nota fiscal.'
+        rule: 'Numero da nota fiscal.',
     },
 
     {
         name: 'serie_nota',
         type: 'string',
         required: false,
-        rule: 'Serie da nota fiscal.'
+        rule: 'Serie da nota fiscal.',
     },
 
     {
         name: 'codigo_verificacao',
         type: 'string',
         required: false,
-        rule: 'Codigo de verificacao da nota.'
+        rule: 'Codigo de verificacao da nota.',
     },
 
     {
         name: 'chave_acesso',
         type: 'string',
         required: false,
-        rule: 'Chave de acesso da NF-e/NFS-e; normalizar numerico.'
+        rule: 'Chave de acesso da NF-e/NFS-e; normalizar numerico.',
     },
 
     {
         name: 'protocolo_autorizacao',
         type: 'string',
         required: false,
-        rule: 'Numero do protocolo de autorizacao.'
+        rule: 'Numero do protocolo de autorizacao.',
     },
 
     {
         name: 'data_emissao',
         type: 'date',
         required: true,
-        rule: 'Data de emissao da nota fiscal.'
+        rule: 'Data de emissao da nota fiscal.',
     },
 
     {
         name: 'hora_emissao',
         type: 'string',
         required: false,
-        rule: 'Hora da emissao.'
+        rule: 'Hora da emissao.',
     },
 
     {
         name: 'competencia',
         type: 'date',
         required: false,
-        rule: 'Competencia da nota fiscal.'
+        rule: 'Competencia da nota fiscal.',
     },
 
     // =========================================================
@@ -98,70 +97,70 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'fornecedor_nome',
         type: 'string',
         required: true,
-        rule: 'Razao social do fornecedor.'
+        rule: 'Razao social do fornecedor.',
     },
 
     {
         name: 'fornecedor_nome_fantasia',
         type: 'string',
         required: false,
-        rule: 'Nome fantasia do fornecedor.'
+        rule: 'Nome fantasia do fornecedor.',
     },
 
     {
         name: 'cnpj_fornecedor',
         type: 'string',
         required: true,
-        rule: 'CNPJ do fornecedor; normalizar numerico.'
+        rule: 'CNPJ do fornecedor; normalizar numerico.',
     },
 
     {
         name: 'cpf_fornecedor',
         type: 'string',
         required: false,
-        rule: 'CPF do fornecedor se pessoa fisica.'
+        rule: 'CPF do fornecedor se pessoa fisica.',
     },
 
     {
         name: 'inscricao_estadual_fornecedor',
         type: 'string',
         required: false,
-        rule: 'Inscricao estadual do fornecedor.'
+        rule: 'Inscricao estadual do fornecedor.',
     },
 
     {
         name: 'inscricao_municipal_fornecedor',
         type: 'string',
         required: false,
-        rule: 'Inscricao municipal do fornecedor.'
+        rule: 'Inscricao municipal do fornecedor.',
     },
 
     {
         name: 'regime_tributario',
         type: 'string',
         required: false,
-        rule: 'Regime tributario da empresa.'
+        rule: 'Regime tributario da empresa.',
     },
 
     {
         name: 'simples_nacional',
         type: 'boolean',
         required: false,
-        rule: 'Indica se optante pelo simples nacional.'
+        rule: 'Indica se optante pelo simples nacional.',
     },
 
     {
         name: 'email_fornecedor',
         type: 'string',
         required: false,
-        rule: 'Email do fornecedor.'
+        rule: 'Email do fornecedor.',
     },
 
     {
         name: 'telefone_fornecedor',
         type: 'string',
         required: false,
-        rule: 'Telefone do fornecedor.'
+        rule: 'Telefone do fornecedor.',
     },
 
     // =========================================================
@@ -172,49 +171,49 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'endereco_fornecedor',
         type: 'string',
         required: false,
-        rule: 'Endereco completo do fornecedor.'
+        rule: 'Endereco completo do fornecedor.',
     },
 
     {
         name: 'logradouro_fornecedor',
         type: 'string',
         required: false,
-        rule: 'Logradouro do fornecedor.'
+        rule: 'Logradouro do fornecedor.',
     },
 
     {
         name: 'numero_endereco_fornecedor',
         type: 'string',
         required: false,
-        rule: 'Numero do endereco.'
+        rule: 'Numero do endereco.',
     },
 
     {
         name: 'bairro_fornecedor',
         type: 'string',
         required: false,
-        rule: 'Bairro do fornecedor.'
+        rule: 'Bairro do fornecedor.',
     },
 
     {
         name: 'cidade_fornecedor',
         type: 'string',
         required: false,
-        rule: 'Cidade do fornecedor.'
+        rule: 'Cidade do fornecedor.',
     },
 
     {
         name: 'uf_fornecedor',
         type: 'string',
         required: false,
-        rule: 'UF do fornecedor.'
+        rule: 'UF do fornecedor.',
     },
 
     {
         name: 'cep_fornecedor',
         type: 'string',
         required: false,
-        rule: 'CEP do fornecedor.'
+        rule: 'CEP do fornecedor.',
     },
 
     // =========================================================
@@ -225,49 +224,49 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'tomador_nome',
         type: 'string',
         required: true,
-        rule: 'Razao social do tomador.'
+        rule: 'Razao social do tomador.',
     },
 
     {
         name: 'cnpj_tomador',
         type: 'string',
         required: false,
-        rule: 'CNPJ do tomador; normalizar numerico.'
+        rule: 'CNPJ do tomador; normalizar numerico.',
     },
 
     {
         name: 'cpf_tomador',
         type: 'string',
         required: false,
-        rule: 'CPF do tomador.'
+        rule: 'CPF do tomador.',
     },
 
     {
         name: 'inscricao_estadual_tomador',
         type: 'string',
         required: false,
-        rule: 'Inscricao estadual do tomador.'
+        rule: 'Inscricao estadual do tomador.',
     },
 
     {
         name: 'inscricao_municipal_tomador',
         type: 'string',
         required: false,
-        rule: 'Inscricao municipal do tomador.'
+        rule: 'Inscricao municipal do tomador.',
     },
 
     {
         name: 'email_tomador',
         type: 'string',
         required: false,
-        rule: 'Email do tomador.'
+        rule: 'Email do tomador.',
     },
 
     {
         name: 'telefone_tomador',
         type: 'string',
         required: false,
-        rule: 'Telefone do tomador.'
+        rule: 'Telefone do tomador.',
     },
 
     // =========================================================
@@ -278,28 +277,28 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'endereco_tomador',
         type: 'string',
         required: false,
-        rule: 'Endereco completo do tomador.'
+        rule: 'Endereco completo do tomador.',
     },
 
     {
         name: 'cidade_tomador',
         type: 'string',
         required: false,
-        rule: 'Cidade do tomador.'
+        rule: 'Cidade do tomador.',
     },
 
     {
         name: 'uf_tomador',
         type: 'string',
         required: false,
-        rule: 'UF do tomador.'
+        rule: 'UF do tomador.',
     },
 
     {
         name: 'cep_tomador',
         type: 'string',
         required: false,
-        rule: 'CEP do tomador.'
+        rule: 'CEP do tomador.',
     },
 
     // =========================================================
@@ -310,28 +309,28 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'descricao_servico',
         type: 'string',
         required: false,
-        rule: 'Descricao do servico.'
+        rule: 'Descricao do servico.',
     },
 
     {
         name: 'codigo_servico',
         type: 'string',
         required: false,
-        rule: 'Codigo municipal/nacional do servico.'
+        rule: 'Codigo municipal/nacional do servico.',
     },
 
     {
         name: 'natureza_operacao',
         type: 'string',
         required: false,
-        rule: 'Natureza da operacao.'
+        rule: 'Natureza da operacao.',
     },
 
     {
         name: 'local_prestacao',
         type: 'string',
         required: false,
-        rule: 'Cidade/local da prestacao do servico.'
+        rule: 'Cidade/local da prestacao do servico.',
     },
 
     // =========================================================
@@ -342,49 +341,49 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'valor_servico',
         type: 'decimal',
         required: true,
-        rule: 'Valor bruto do servico.'
+        rule: 'Valor bruto do servico.',
     },
 
     {
         name: 'valor_produtos',
         type: 'decimal',
         required: false,
-        rule: 'Valor total dos produtos.'
+        rule: 'Valor total dos produtos.',
     },
 
     {
         name: 'valor_nota',
         type: 'decimal',
         required: true,
-        rule: 'Valor total da nota.'
+        rule: 'Valor total da nota.',
     },
 
     {
         name: 'valor_liquido',
         type: 'decimal',
         required: false,
-        rule: 'Valor liquido da nota.'
+        rule: 'Valor liquido da nota.',
     },
 
     {
         name: 'desconto',
         type: 'decimal',
         required: false,
-        rule: 'Valor total de descontos.'
+        rule: 'Valor total de descontos.',
     },
 
     {
         name: 'desconto_condicionado',
         type: 'decimal',
         required: false,
-        rule: 'Desconto condicionado.'
+        rule: 'Desconto condicionado.',
     },
 
     {
         name: 'desconto_incondicionado',
         type: 'decimal',
         required: false,
-        rule: 'Desconto incondicionado.'
+        rule: 'Desconto incondicionado.',
     },
 
     // =========================================================
@@ -395,63 +394,63 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'issqn',
         type: 'decimal',
         required: false,
-        rule: 'Valor do ISSQN.'
+        rule: 'Valor do ISSQN.',
     },
 
     {
         name: 'aliquota_issqn',
         type: 'decimal',
         required: false,
-        rule: 'Aliquota ISSQN.'
+        rule: 'Aliquota ISSQN.',
     },
 
     {
         name: 'icms',
         type: 'decimal',
         required: false,
-        rule: 'Valor do ICMS.'
+        rule: 'Valor do ICMS.',
     },
 
     {
         name: 'ipi',
         type: 'decimal',
         required: false,
-        rule: 'Valor do IPI.'
+        rule: 'Valor do IPI.',
     },
 
     {
         name: 'pis',
         type: 'decimal',
         required: false,
-        rule: 'Valor do PIS.'
+        rule: 'Valor do PIS.',
     },
 
     {
         name: 'cofins',
         type: 'decimal',
         required: false,
-        rule: 'Valor do COFINS.'
+        rule: 'Valor do COFINS.',
     },
 
     {
         name: 'csll',
         type: 'decimal',
         required: false,
-        rule: 'Valor da CSLL.'
+        rule: 'Valor da CSLL.',
     },
 
     {
         name: 'irrf',
         type: 'decimal',
         required: false,
-        rule: 'Valor do IRRF.'
+        rule: 'Valor do IRRF.',
     },
 
     {
         name: 'inss',
         type: 'decimal',
         required: false,
-        rule: 'Valor do INSS.'
+        rule: 'Valor do INSS.',
     },
 
     // =========================================================
@@ -462,21 +461,21 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'retencao',
         type: 'boolean',
         required: false,
-        rule: 'True/false indicando retencao.'
+        rule: 'True/false indicando retencao.',
     },
 
     {
         name: 'iss_retido',
         type: 'boolean',
         required: false,
-        rule: 'Indica ISS retido.'
+        rule: 'Indica ISS retido.',
     },
 
     {
         name: 'valor_retido',
         type: 'decimal',
         required: false,
-        rule: 'Valor total retido.'
+        rule: 'Valor total retido.',
     },
 
     // =========================================================
@@ -487,35 +486,35 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'municipio_incidencia',
         type: 'string',
         required: false,
-        rule: 'Municipio de incidencia tributaria.'
+        rule: 'Municipio de incidencia tributaria.',
     },
 
     {
         name: 'pais_prestacao',
         type: 'string',
         required: false,
-        rule: 'Pais da prestacao do servico.'
+        rule: 'Pais da prestacao do servico.',
     },
 
     {
         name: 'tributacao',
         type: 'string',
         required: false,
-        rule: 'Tipo de tributacao aplicada.'
+        rule: 'Tipo de tributacao aplicada.',
     },
 
     {
         name: 'regime_especial_tributacao',
         type: 'string',
         required: false,
-        rule: 'Regime especial de tributacao.'
+        rule: 'Regime especial de tributacao.',
     },
 
     {
         name: 'beneficio_fiscal',
         type: 'string',
         required: false,
-        rule: 'Beneficio fiscal aplicado.'
+        rule: 'Beneficio fiscal aplicado.',
     },
 
     // =========================================================
@@ -526,39 +525,37 @@ export const NOTA_FISCAL_DEFAULT_FIELDS: SchemaField[] = [
         name: 'municipio_emissao',
         type: 'string',
         required: false,
-        rule: 'Municipio emissor da nota.'
+        rule: 'Municipio emissor da nota.',
     },
 
     {
         name: 'uf_emissao',
         type: 'string',
         required: false,
-        rule: 'UF emissora.'
+        rule: 'UF emissora.',
     },
 
     {
         name: 'ambiente',
         type: 'string',
         required: false,
-        rule: 'Homologacao ou producao.'
+        rule: 'Homologacao ou producao.',
     },
 
     {
         name: 'qr_code_presente',
         type: 'boolean',
         required: false,
-        rule: 'Indica se existe QRCode no documento.'
+        rule: 'Indica se existe QRCode no documento.',
     },
 
     {
         name: 'texto_complementar',
         type: 'string',
         required: false,
-        rule: 'Informacoes complementares.'
+        rule: 'Informacoes complementares.',
     },
-
 ]
-
 
 function scoreNotaFiscalText(rawText: string): number {
     if (!rawText) {

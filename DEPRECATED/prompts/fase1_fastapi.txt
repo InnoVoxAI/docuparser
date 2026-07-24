@@ -2,9 +2,9 @@
 
 ## 🎯 Objetivo
 
-Desenvolver uma API em **FastAPI** (backend-ocr) para validar a extração de dados estruturados 
-de documentos complexos (Notas Fiscais, recibos e tabelas manuscritas). 
-O sistema deve atuar como um roteador que seleciona a ferramenta de OCR ideal e 
+Desenvolver uma API em **FastAPI** (backend-ocr) para validar a extração de dados estruturados
+de documentos complexos (Notas Fiscais, recibos e tabelas manuscritas).
+O sistema deve atuar como um roteador que seleciona a ferramenta de OCR ideal e
 retorna os dados já formatados em **JSON estruturado**.
 
 ## 🏗️ Requisitos de Arquitetura (Stateless)
@@ -30,7 +30,7 @@ A resposta da API deve seguir estritamente este formato:
 {
   "filename": "nf_servico_01.pdf",
   "detected_type": "handwritten_scanned",
-  "tools_used": ["opencv-python", "easyocr", "llama-parse"], 
+  "tools_used": ["opencv-python", "easyocr", "llama-parse"],
   "transcription": {
     "document_info": {
       "type": "Nota Fiscal",
@@ -82,17 +82,17 @@ docuparse-project/
 │   │   ├── services/          # Conexão com a API do Django
 │   │   └── hooks/             # Lógica de estado e chamadas assíncronas
 │
-├── backend-core/              # Django (Gestão e Autenticação - Porta 8000) 
+├── backend-core/              # Django (Gestão e Autenticação - Porta 8000)
 │   ├── Dockerfile
 │   ├── manage.py
 │   ├── core/                  # Configurações do projeto Django
-│   ├── accounts/              # App de Autenticação (JWT/User) 
+│   ├── accounts/              # App de Autenticação (JWT/User)
 │   ├── documents/             # App de Gestão (CRUD, Histórico, Webhooks) [cite: 7, 9]
 │   │   ├── services/          # Client para chamar a API do FastAPI
-│   │   └── models.py          # Tabelas: Users, Documents, ExtractedData 
+│   │   └── models.py          # Tabelas: Users, Documents, ExtractedData
 │   └── requirements.txt
 │
-└── backend-ocr/               # FastAPI (Motor de IA e Extração - Porta 8080) 
+└── backend-ocr/               # FastAPI (Motor de IA e Extração - Porta 8080)
     ├── Dockerfile
     ├── main.py                # Entrypoint FastAPI
     ├── requirements.txt
@@ -125,5 +125,5 @@ O objetivo do projeto atual é a construção do backend-ocr.
 6. **Documentação:** gere todas as documentações nevcessárias para o funcionamento do sistema.
 7. **Testes:** gere todos os testes nevcessários para o funcionamento do sistema.
 8. **Deploy:** gere todos os arquivos necessários para o deploy do sistema.
-9. **docs:** salve na pasta docs todos os passos que você utilizou para desenvolver o sistema. 
+9. **docs:** salve na pasta docs todos os passos que você utilizou para desenvolver o sistema.
 10. **Estrutura:** gere todas as estruturas de pastas necessárias para o funcionamento do sistema.

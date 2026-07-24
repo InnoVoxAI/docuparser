@@ -7,7 +7,9 @@ from services.imap_polling import poll_configured_imap_once
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Poll configured IMAP inbox once and ingest accepted attachments.")
+    parser = argparse.ArgumentParser(
+        description="Poll configured IMAP inbox once and ingest accepted attachments."
+    )
     parser.add_argument("--tenant", default="tenant-demo")
     args = parser.parse_args()
 

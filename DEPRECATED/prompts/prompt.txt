@@ -216,5 +216,3 @@ Um produto:
 * Pronto para escalar
 * Com UX profissional
 * Focado em **extração de dados confiável**, não apenas OCR bruto
-
-

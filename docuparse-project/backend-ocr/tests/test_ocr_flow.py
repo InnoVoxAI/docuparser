@@ -17,4 +17,5 @@ def test_list_engines():
     assert isinstance(data["engines"], list)
     assert data["total_count"] == len(data["engines"])
 
+
 # Note: Integration tests with DeepSeek require a running Ollama instance and are mocked here or manual.

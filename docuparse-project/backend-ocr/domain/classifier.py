@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
 
 import cv2
 import numpy as np
@@ -92,11 +91,11 @@ def classify_document(filename: str, content: bytes) -> str:
     return CLASS_SCANNED_IMAGE
 
 
-def get_engine_preprocessing_hints_for_class(classification: str) -> Dict[str, str]:
+def get_engine_preprocessing_hints_for_class(classification: str) -> dict[str, str]:
     return dict(CLASSIFICATION_ENGINE_PREPROCESSING_HINTS.get(classification, {}))
 
 
-def _classify_pdf(content: bytes, name_signals: Dict[str, bool]) -> str:
+def _classify_pdf(content: bytes, name_signals: dict[str, bool]) -> str:
     """
     Classifica PDFs usando combinação de:
     - contagem estrutural de blocos de texto/imagem via PyMuPDF;
@@ -172,20 +171,21 @@ def _classify_pdf(content: bytes, name_signals: Dict[str, bool]) -> str:
         if (
             text_chars_total >= 800
             and image_like_ratio <= 0.25
-            and (
-                avg_table_score >= 0.015
-                or name_signals["table"]
-            )
+            and (avg_table_score >= 0.015 or name_signals["table"])
             and not name_signals["handwritten"]
         ):
-            logger.info(f"\nLinha 1 CLASS_DIGITAL_PDF by text_chars_total: {text_chars_total}\n")
+            logger.info(
+                f"\nLinha 1 CLASS_DIGITAL_PDF by text_chars_total: {text_chars_total}\n"
+            )
             return CLASS_DIGITAL_PDF
 
         force_handwritten = name_signals["handwritten"] and not name_signals["scanned"]
         visual_handwritten = avg_handwriting_score >= 0.68 and text_chars_total < 900
 
         if force_handwritten or visual_handwritten:
-            logger.info(f"\nLinha 1 PDF classified as HANDWRITTEN_COMPLEX by handwriting_score: {avg_handwriting_score:.3f}\n")
+            logger.info(
+                f"\nLinha 1 PDF classified as HANDWRITTEN_COMPLEX by handwriting_score: {avg_handwriting_score:.3f}\n"
+            )
             return CLASS_HANDWRITTEN_COMPLEX
 
         if (
@@ -193,11 +193,15 @@ def _classify_pdf(content: bytes, name_signals: Dict[str, bool]) -> str:
             and avg_table_score >= 0.030
             and avg_handwriting_score < 0.62
         ):
-            logger.info(f"\nLinha 2 CLASS_DIGITAL_PDF by text_chars_total: {text_chars_total}\n")
+            logger.info(
+                f"\nLinha 2 CLASS_DIGITAL_PDF by text_chars_total: {text_chars_total}\n"
+            )
             return CLASS_DIGITAL_PDF
 
         if text_chars_total >= 120 and avg_handwriting_score < 0.58:
-            logger.info(f"\nLinha 3 CLASS_DIGITAL_PDF by text_chars_total: {text_chars_total}\n")
+            logger.info(
+                f"\nLinha 3 CLASS_DIGITAL_PDF by text_chars_total: {text_chars_total}\n"
+            )
             return CLASS_DIGITAL_PDF
 
         if name_signals["scanned"] and text_chars_total < 80:
@@ -208,35 +212,44 @@ def _classify_pdf(content: bytes, name_signals: Dict[str, bool]) -> str:
                 )
                 return CLASS_HANDWRITTEN_COMPLEX
 
-            logger.info("\nLinha 3.1 PDF classified as SCANNED_IMAGE (low text + scanned signal)\n")
+            logger.info(
+                "\nLinha 3.1 PDF classified as SCANNED_IMAGE (low text + scanned signal)\n"
+            )
             return CLASS_SCANNED_IMAGE
 
         if text_chars_total < 40 and image_like_ratio >= 0.5:
             if name_signals["mixed"] or avg_handwriting_score >= 0.62:
-                logger.info(f"\nLinha 2 PDF classified as HANDWRITTEN_COMPLEX by handwriting_score: {avg_handwriting_score:.3f}\n")
+                logger.info(
+                    f"\nLinha 2 PDF classified as HANDWRITTEN_COMPLEX by handwriting_score: {avg_handwriting_score:.3f}\n"
+                )
                 return CLASS_HANDWRITTEN_COMPLEX
             return CLASS_SCANNED_IMAGE
 
         if (
-            (name_signals["mixed"] and avg_handwriting_score >= 0.56)
-            or avg_handwriting_score >= 0.62
-        ):
-            logger.info(f"Linha 3 PDF classified as HANDWRITTEN_COMPLEX by handwriting_score: {avg_handwriting_score:.3f}")
+            name_signals["mixed"] and avg_handwriting_score >= 0.56
+        ) or avg_handwriting_score >= 0.62:
+            logger.info(
+                f"Linha 3 PDF classified as HANDWRITTEN_COMPLEX by handwriting_score: {avg_handwriting_score:.3f}"
+            )
             return CLASS_HANDWRITTEN_COMPLEX
 
         _ = avg_table_score  # Mantido para extensões futuras de roteamento.
-        logger.info(f"\nLinha 4 CLASS_DIGITAL_PDF by text_chars_total: {text_chars_total}\n")
+        logger.info(
+            f"\nLinha 4 CLASS_DIGITAL_PDF by text_chars_total: {text_chars_total}\n"
+        )
         return CLASS_DIGITAL_PDF
 
     except Exception:
         # Fallback resiliente: se falhar parsing PDF, inferimos por sinais do nome.
         if name_signals["handwritten"] or name_signals["mixed"]:
-            logger.info("Linha 4 PDF classified as HANDWRITTEN_COMPLEX by name signal fallback")
+            logger.info(
+                "Linha 4 PDF classified as HANDWRITTEN_COMPLEX by name signal fallback"
+            )
             return CLASS_HANDWRITTEN_COMPLEX
         return CLASS_SCANNED_IMAGE
 
 
-def _extract_pdf_block_features(content: bytes) -> Dict[str, int | list[str]] | None:
+def _extract_pdf_block_features(content: bytes) -> dict[str, int | list[str]] | None:
     """Extrai contagem de blocos de texto/imagem do PDF, preservando a heuristica do pipeline antigo."""
     try:
         import fitz
@@ -272,7 +285,9 @@ def _extract_pdf_block_features(content: bytes) -> Dict[str, int | list[str]] | 
         return None
 
 
-def _is_text_pdf_by_blocks(block_features: Dict[str, int | list[str]], name_signals: Dict[str, bool]) -> bool:
+def _is_text_pdf_by_blocks(
+    block_features: dict[str, int | list[str]], name_signals: dict[str, bool]
+) -> bool:
     """Regra forte: se o PDF tem mais blocos de texto que imagem, trate como PDF textual."""
     txtblocks = int(block_features["txtblocks"])
     imgblocks = int(block_features["imgblocks"])
@@ -283,7 +298,7 @@ def _is_text_pdf_by_blocks(block_features: Dict[str, int | list[str]], name_sign
     return txtblocks >= imgblocks
 
 
-def _classify_image(content: bytes, name_signals: Dict[str, bool]) -> str:
+def _classify_image(content: bytes, name_signals: dict[str, bool]) -> str:
     """
     Classifica arquivos de imagem por sinais visuais e semânticos.
 
@@ -295,39 +310,72 @@ def _classify_image(content: bytes, name_signals: Dict[str, bool]) -> str:
     image = _decode_image(content)
     if image is None:
         if name_signals["handwritten"] or name_signals["mixed"]:
-            logger.info("Linha 5 IMAGE classified as HANDWRITTEN_COMPLEX by name signal fallback")
+            logger.info(
+                "Linha 5 IMAGE classified as HANDWRITTEN_COMPLEX by name signal fallback"
+            )
             return CLASS_HANDWRITTEN_COMPLEX
         return CLASS_SCANNED_IMAGE
 
     visual_features = _extract_visual_features(image)
 
     if name_signals["handwritten"] and not name_signals["scanned"]:
-        logger.info(f"Linha 6 IMAGE classified as HANDWRITTEN_COMPLEX by handwriting_score: {visual_features['handwriting_score']:.3f}")
+        logger.info(
+            f"Linha 6 IMAGE classified as HANDWRITTEN_COMPLEX by handwriting_score: {visual_features['handwriting_score']:.3f}"
+        )
         return CLASS_HANDWRITTEN_COMPLEX
 
     if name_signals["mixed"] and visual_features["handwriting_score"] >= 0.40:
-        logger.info(f"Linha 7 IMAGE classified as HANDWRITTEN_COMPLEX by handwriting_score: {visual_features['handwriting_score']:.3f}")
+        logger.info(
+            f"Linha 7 IMAGE classified as HANDWRITTEN_COMPLEX by handwriting_score: {visual_features['handwriting_score']:.3f}"
+        )
         return CLASS_HANDWRITTEN_COMPLEX
 
     if visual_features["handwriting_score"] >= 0.60:
-        logger.info(f"Linha 8 IMAGE classified as HANDWRITTEN_COMPLEX by handwriting_score: {visual_features['handwriting_score']:.3f}")
+        logger.info(
+            f"Linha 8 IMAGE classified as HANDWRITTEN_COMPLEX by handwriting_score: {visual_features['handwriting_score']:.3f}"
+        )
         return CLASS_HANDWRITTEN_COMPLEX
 
     return CLASS_SCANNED_IMAGE
 
 
-def _extract_name_signals(filename_lower: str) -> Dict[str, bool]:
+def _extract_name_signals(filename_lower: str) -> dict[str, bool]:
     """Extrai indícios semânticos do nome para auxiliar o decisor."""
-    handwritten_tokens = {"manuscrito", "handwritten", "assinatura", "signature", "anotacao", "anotação"}
-    scanned_tokens = {"scan", "scanned", "digitalizado", "foto", "image", "camera", "print"}
-    table_tokens = {"tabela", "table", "invoice", "fatura", "nota", "extrato", "statement"}
+    handwritten_tokens = {
+        "manuscrito",
+        "handwritten",
+        "assinatura",
+        "signature",
+        "anotacao",
+        "anotação",
+    }
+    scanned_tokens = {
+        "scan",
+        "scanned",
+        "digitalizado",
+        "foto",
+        "image",
+        "camera",
+        "print",
+    }
+    table_tokens = {
+        "tabela",
+        "table",
+        "invoice",
+        "fatura",
+        "nota",
+        "extrato",
+        "statement",
+    }
     mixed_tokens = {"misto", "mixed", "hibrido", "híbrido", "completo", "complex"}
 
     tokens = set(filename_lower.replace("-", " ").replace("_", " ").split())
     full_name = filename_lower
 
     def has_any(candidates: set[str]) -> bool:
-        return any(token in tokens for token in candidates) or any(token in full_name for token in candidates)
+        return any(token in tokens for token in candidates) or any(
+            token in full_name for token in candidates
+        )
 
     return {
         "handwritten": has_any(handwritten_tokens),
@@ -360,7 +408,7 @@ def _decode_image(content: bytes) -> np.ndarray | None:
     return image
 
 
-def _extract_visual_features(image_bgr: np.ndarray) -> Dict[str, float | bool]:
+def _extract_visual_features(image_bgr: np.ndarray) -> dict[str, float | bool]:
     """
     Extrai um conjunto pequeno de features visuais robustas e baratas.
 
@@ -385,20 +433,33 @@ def _extract_visual_features(image_bgr: np.ndarray) -> Dict[str, float | bool]:
         maxLineGap=8,
     )
     line_count = 0 if lines is None else len(lines)
-    line_density = float(line_count) / max(1.0, (gray.shape[0] * gray.shape[1]) / 10000.0)
+    line_density = float(line_count) / max(
+        1.0, (gray.shape[0] * gray.shape[1]) / 10000.0
+    )
 
     bin_img = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 10,
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        31,
+        10,
     )
-    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(20, gray.shape[1] // 30), 1))
-    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(20, gray.shape[0] // 30)))
+    h_kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (max(20, gray.shape[1] // 30), 1)
+    )
+    v_kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (1, max(20, gray.shape[0] // 30))
+    )
     h_lines = cv2.morphologyEx(bin_img, cv2.MORPH_OPEN, h_kernel)
     v_lines = cv2.morphologyEx(bin_img, cv2.MORPH_OPEN, v_kernel)
     table_mask = cv2.bitwise_or(h_lines, v_lines)
     table_score = float(np.count_nonzero(table_mask)) / float(table_mask.size)
 
     contour_count, _ = _count_components(bin_img)
-    contour_density_raw = float(contour_count) / max(1.0, (gray.shape[0] * gray.shape[1]) / 10000.0)
+    contour_density_raw = float(contour_count) / max(
+        1.0, (gray.shape[0] * gray.shape[1]) / 10000.0
+    )
     contour_density = _clip01(contour_density_raw / 10.0)
 
     line_density_norm = _clip01(line_density / 1.2)
@@ -406,10 +467,10 @@ def _extract_visual_features(image_bgr: np.ndarray) -> Dict[str, float | bool]:
     edge_density_norm = _clip01((edge_density - 0.01) / 0.15)
 
     handwriting_score = _clip01(
-        (edge_density_norm * 0.35) +
-        (contour_density * 0.40) -
-        (line_density_norm * 0.35) -
-        (table_score_norm * 0.25)
+        (edge_density_norm * 0.35)
+        + (contour_density * 0.40)
+        - (line_density_norm * 0.35)
+        - (table_score_norm * 0.25)
     )
 
     is_image_like = edge_density > 0.015 and line_density < 0.25
@@ -423,9 +484,11 @@ def _extract_visual_features(image_bgr: np.ndarray) -> Dict[str, float | bool]:
     }
 
 
-def _count_components(binary_image: np.ndarray) -> Tuple[int, np.ndarray]:
+def _count_components(binary_image: np.ndarray) -> tuple[int, np.ndarray]:
     """Conta componentes conectados úteis para medir fragmentação de traços."""
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_image, connectivity=8)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary_image, connectivity=8
+    )
 
     valid = 0
     for idx in range(1, num_labels):

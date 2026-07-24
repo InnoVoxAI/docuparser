@@ -38,7 +38,7 @@ admin_role = Role.objects.create(name='Administrador')
 admin_role.permissions.set(Permission.objects.all())
 
 # Criar usuário admin
-u = User.objects.create_user(username='admin@docuparse.com', email='admin@docuparse.com', 
+u = User.objects.create_user(username='admin@docuparse.com', email='admin@docuparse.com',
     password='admin123', first_name='Admin', is_active=True)
 from documents.models import Tenant, UserProfile
 tenant, _ = Tenant.objects.get_or_create(slug='tenant-demo', defaults={'name': 'Demo'})

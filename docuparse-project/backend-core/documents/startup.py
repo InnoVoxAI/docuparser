@@ -12,7 +12,9 @@ def ensure_default_schemas() -> None:
 
     tenant = Tenant.objects.filter(name="default").first()
     if tenant is None:
-        logger.warning("startup: default tenant not found — skipping default schema creation")
+        logger.warning(
+            "startup: default tenant not found — skipping default schema creation"
+        )
         return
 
     specs = [

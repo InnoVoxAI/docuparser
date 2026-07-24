@@ -15,7 +15,9 @@ def main() -> None:
         "tenant_id": "tenant-demo",
     }
     offset = bus.publish("document.received.fake", event)
-    print(f"published document.received.fake offset={offset} document_id={event['document_id']}")
+    print(
+        f"published document.received.fake offset={offset} document_id={event['document_id']}"
+    )
 
 
 if __name__ == "__main__":

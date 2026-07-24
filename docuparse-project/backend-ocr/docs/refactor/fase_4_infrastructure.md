@@ -1,7 +1,7 @@
 # Fase 4 — Infrastructure
 
-**Data:** 2026-04-29  
-**Status:** Concluída  
+**Data:** 2026-04-29
+**Status:** Concluída
 **Branch:** `fix/architeture-refactor`
 
 ---

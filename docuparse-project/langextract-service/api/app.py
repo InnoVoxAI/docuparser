@@ -49,7 +49,9 @@ async def extract_endpoint(request: ExtractRequest) -> ExtractResponse:
             tenant_id=str(request.metadata.get("tenant_id", "unknown")),
         )
     else:
-        extracted = extract_fields(request.raw_text, request.layout, request.document_type)
+        extracted = extract_fields(
+            request.raw_text, request.layout, request.document_type
+        )
 
     return ExtractResponse(
         schema_id=extracted.schema_id,

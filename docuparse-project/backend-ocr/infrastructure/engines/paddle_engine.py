@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 import cv2
 import numpy as np
@@ -26,7 +26,6 @@ from shared.preprocessing import decode_image, preprocess_for_paddle_engine
 
 
 class PaddleOCREngine(BaseOCREngine):
-
     @property
     def name(self) -> str:
         return "paddle"
@@ -52,7 +51,9 @@ class PaddleOCREngine(BaseOCREngine):
         image = decode_image(image_data)
         return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    def _build_term_metrics(self, terms: List[tuple[str, float]], total_seconds: float) -> Dict[str, Any]:
+    def _build_term_metrics(
+        self, terms: list[tuple[str, float]], total_seconds: float
+    ) -> dict[str, Any]:
         if not terms:
             return {
                 "confidence_by_term": {},
@@ -61,15 +62,17 @@ class PaddleOCREngine(BaseOCREngine):
             }
 
         total_weight = sum(max(len(term), 1) for term, _ in terms)
-        confidence_by_term: Dict[str, List[float]] = {}
-        conversion_time_by_term: Dict[str, str] = {}
+        confidence_by_term: dict[str, list[float]] = {}
+        conversion_time_by_term: dict[str, str] = {}
 
         for index, (term, confidence) in enumerate(terms, start=1):
             term_key = f"{index}:{term}"
             confidence_by_term[term_key] = [round(confidence, 2)]
 
             weight = max(len(term), 1)
-            term_seconds = total_seconds * (weight / total_weight) if total_weight else 0.0
+            term_seconds = (
+                total_seconds * (weight / total_weight) if total_weight else 0.0
+            )
             conversion_time_by_term[term_key] = self._format_seconds(term_seconds)
 
         return {
@@ -78,7 +81,9 @@ class PaddleOCREngine(BaseOCREngine):
             "total_conversion_time": self._format_seconds(total_seconds),
         }
 
-    def _extract_text(self, image_rgb: np.ndarray) -> tuple[str, float, List[tuple[str, float]]]:
+    def _extract_text(
+        self, image_rgb: np.ndarray
+    ) -> tuple[str, float, list[tuple[str, float]]]:
         if self.ocr is None:
             return "", 0.0, []
 
@@ -86,7 +91,7 @@ class PaddleOCREngine(BaseOCREngine):
         result = self.ocr.ocr(image_rgb, cls=True)
         lines = result[0] if isinstance(result, list) and result else []
 
-        terms: List[tuple[str, float]] = []
+        terms: list[tuple[str, float]] = []
         for line in lines:
             if not isinstance(line, (list, tuple)) or len(line) < 2:
                 continue
@@ -114,19 +119,25 @@ class PaddleOCREngine(BaseOCREngine):
         avg_confidence = float(np.mean([conf for _, conf in terms])) if terms else 0.0
         return raw_text, avg_confidence, terms
 
-    def process_with_classification(self, image_bytes: bytes, classification: str) -> Dict[str, Any]:
+    def process_with_classification(
+        self, image_bytes: bytes, classification: str
+    ) -> dict[str, Any]:
         # PASSO CRÍTICO: preprocess dedicado para Paddle (RGB natural + deskew/CLAHE).
         preprocessed_bytes, preprocess_meta = preprocess_for_paddle_engine(
             image_bytes=image_bytes,
             classification=classification,
         )
 
-        result = self.process({"original": image_bytes, "preprocessed": preprocessed_bytes})
+        result = self.process(
+            {"original": image_bytes, "preprocessed": preprocessed_bytes}
+        )
         result.setdefault("_meta", {})
         result["_meta"]["preprocessing"] = preprocess_meta
         return result
 
-    def process(self, content: Any, metadata: dict[str, Any] | None = None) -> Dict[str, Any]:
+    def process(
+        self, content: Any, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         metadata: aceito para satisfazer o contrato BaseOCREngine; não utilizado internamente.
         """
@@ -163,7 +174,9 @@ class PaddleOCREngine(BaseOCREngine):
         fallback_recommended = avg_confidence < 85.0
 
         total_ocr_seconds = time.perf_counter() - process_start
-        term_metrics = self._build_term_metrics(terms=terms, total_seconds=total_ocr_seconds)
+        term_metrics = self._build_term_metrics(
+            terms=terms, total_seconds=total_ocr_seconds
+        )
 
         return {
             "raw_text": raw_text,

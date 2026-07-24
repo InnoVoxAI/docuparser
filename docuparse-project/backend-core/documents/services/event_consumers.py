@@ -4,7 +4,6 @@ import logging
 from typing import Any
 
 from django.db import transaction
-from django.utils.dateparse import parse_datetime
 
 from events import (
     DocumentReceivedEvent,
@@ -43,7 +42,12 @@ def consume_document_received(payload: dict[str, Any]) -> Document:
 
         sha256 = event.data.file.sha256 or ""
         filename = event.data.file.filename
-        if filename and Document.objects.filter(tenant=tenant, original_filename=filename).exists():
+        if (
+            filename
+            and Document.objects.filter(
+                tenant=tenant, original_filename=filename
+            ).exists()
+        ):
             raise DuplicateDocumentError(filename)
 
         document, _ = Document.objects.get_or_create(
@@ -80,7 +84,9 @@ def consume_extraction_completed(payload: dict[str, Any]) -> Document:
     with transaction.atomic():
         tenant = _tenant_for(event.tenant_id)
         existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(id=event.document_id, tenant=tenant)
+        document = Document.objects.select_for_update().get(
+            id=event.document_id, tenant=tenant
+        )
         if not created and existing_event.document_id:
             return document
 
@@ -119,12 +125,18 @@ def consume_ocr_completed(payload: dict[str, Any]) -> Document:
     with transaction.atomic():
         tenant = _tenant_for(event.tenant_id)
         existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(id=event.document_id, tenant=tenant)
+        document = Document.objects.select_for_update().get(
+            id=event.document_id, tenant=tenant
+        )
         if not created and existing_event.document_id:
             return document
 
         document.raw_text_uri = event.data.raw_text_uri
-        document.document_type = event.data.document_type if event.data.document_type != "unknown" else document.document_type
+        document.document_type = (
+            event.data.document_type
+            if event.data.document_type != "unknown"
+            else document.document_type
+        )
         document.status = Document.Status.OCR_COMPLETED
         document.metadata = {
             **(document.metadata or {}),
@@ -136,7 +148,15 @@ def consume_ocr_completed(payload: dict[str, Any]) -> Document:
                 "metadata": event.data.metadata,
             },
         }
-        document.save(update_fields=["raw_text_uri", "document_type", "status", "metadata", "updated_at"])
+        document.save(
+            update_fields=[
+                "raw_text_uri",
+                "document_type",
+                "status",
+                "metadata",
+                "updated_at",
+            ]
+        )
         existing_event.document = document
         existing_event.save(update_fields=["document", "updated_at"])
         log_event(
@@ -156,7 +176,9 @@ def consume_ocr_failed(payload: dict[str, Any]) -> Document:
     with transaction.atomic():
         tenant = _tenant_for(event.tenant_id)
         existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(id=event.document_id, tenant=tenant)
+        document = Document.objects.select_for_update().get(
+            id=event.document_id, tenant=tenant
+        )
         if not created and existing_event.document_id:
             return document
 
@@ -191,7 +213,9 @@ def consume_erp_sent(payload: dict[str, Any]) -> Document:
     with transaction.atomic():
         tenant = _tenant_for(event.tenant_id)
         existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(id=event.document_id, tenant=tenant)
+        document = Document.objects.select_for_update().get(
+            id=event.document_id, tenant=tenant
+        )
         if not created and existing_event.document_id:
             return document
 
@@ -217,7 +241,9 @@ def consume_erp_failed(payload: dict[str, Any]) -> Document:
     with transaction.atomic():
         tenant = _tenant_for(event.tenant_id)
         existing_event, created = _record_event_once(event, tenant)
-        document = Document.objects.select_for_update().get(id=event.document_id, tenant=tenant)
+        document = Document.objects.select_for_update().get(
+            id=event.document_id, tenant=tenant
+        )
         if not created and existing_event.document_id:
             return document
 
@@ -260,7 +286,9 @@ def _record_event_once(event, tenant: Tenant) -> tuple[DocumentEvent, bool]:
         DocumentEvent.objects.create(
             event_id=event.event_id,
             tenant=tenant,
-            document_id=event.document_id if Document.objects.filter(id=event.document_id).exists() else None,
+            document_id=event.document_id
+            if Document.objects.filter(id=event.document_id).exists()
+            else None,
             event_type=event.event_type,
             event_version=event.event_version,
             correlation_id=event.correlation_id,

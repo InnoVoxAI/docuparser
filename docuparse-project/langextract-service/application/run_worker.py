@@ -6,8 +6,12 @@ from application.extraction_event_worker import worker_from_env
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the DocuParse extraction event worker.")
-    parser.add_argument("--once", action="store_true", help="Process available events once and exit.")
+    parser = argparse.ArgumentParser(
+        description="Run the DocuParse extraction event worker."
+    )
+    parser.add_argument(
+        "--once", action="store_true", help="Process available events once and exit."
+    )
     args = parser.parse_args()
 
     worker = worker_from_env()

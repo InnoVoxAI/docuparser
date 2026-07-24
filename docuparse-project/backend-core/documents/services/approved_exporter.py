@@ -33,6 +33,8 @@ def export_approved_document_json(
     if export_format == "jsonl":
         content = json.dumps(export_payload, ensure_ascii=False, sort_keys=True) + "\n"
     else:
-        content = json.dumps(export_payload, ensure_ascii=False, indent=2, sort_keys=True)
+        content = json.dumps(
+            export_payload, ensure_ascii=False, indent=2, sort_keys=True
+        )
     target_path.write_text(content, encoding="utf-8")
     return target_path

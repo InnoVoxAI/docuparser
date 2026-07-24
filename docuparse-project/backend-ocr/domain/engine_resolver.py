@@ -18,8 +18,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 
 # Mapeamento padrão: doc_type classificado → engine OCR
 ENGINE_DEFAULTS: dict[str, str] = {
@@ -75,7 +73,9 @@ class EngineResolver:
         self._aliases = aliases if aliases is not None else ENGINE_ALIASES
         self._fallback = fallback
 
-    def get_engine(self, classification: str, selected_engine: str | None = None) -> str:
+    def get_engine(
+        self, classification: str, selected_engine: str | None = None
+    ) -> str:
         """
         Retorna o nome do engine a usar para o documento.
 

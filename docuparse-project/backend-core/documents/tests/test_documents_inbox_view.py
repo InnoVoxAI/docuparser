@@ -5,7 +5,13 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 
-from documents.models import Document, ExtractionResult, Tenant, UserProfile, ValidationDecision
+from documents.models import (
+    Document,
+    ExtractionResult,
+    Tenant,
+    UserProfile,
+    ValidationDecision,
+)
 from users.models import Permission, Role
 
 
@@ -13,9 +19,13 @@ class DocumentsInboxViewApprovedFilterTests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
         self.tenant = Tenant.objects.create(slug="tenant-inbox", name="Tenant Inbox")
-        self.user = get_user_model().objects.create_user(username="inbox_op", password="test")
+        self.user = get_user_model().objects.create_user(
+            username="inbox_op", password="test"
+        )
         # feature 009: o endpoint exige JWT do usuário com permissão "inbox.view".
-        permission = Permission.objects.create(code="inbox.view", description="Inbox view")
+        permission = Permission.objects.create(
+            code="inbox.view", description="Inbox view"
+        )
         role = Role.objects.create(name="Operador")
         role.permissions.add(permission)
         UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)

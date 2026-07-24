@@ -5,17 +5,17 @@ A validação estática **não é decorativa** — `tsc --noEmit` reporta erros 
 ## Como reproduzir
 
 1. Introduzir um erro de tipo deliberado (ex.: ao final de `src/main.tsx`):
-   ```ts
-   const __typecheck_probe: number = "not a number"
-   ```
+    ```ts
+    const __typecheck_probe: number = 'not a number'
+    ```
 2. Rodar a checagem:
-   ```bash
-   docker compose exec -T frontend npx tsc --noEmit   # ou: npm run typecheck
-   ```
+    ```bash
+    docker compose exec -T frontend npx tsc --noEmit   # ou: npm run typecheck
+    ```
 3. Resultado esperado (falha):
-   ```
-   src/main.tsx(NNNN,7): error TS2322: Type 'string' is not assignable to type 'number'.
-   ```
+    ```
+    src/main.tsx(NNNN,7): error TS2322: Type 'string' is not assignable to type 'number'.
+    ```
 4. Remover a linha de teste → `tsc --noEmit` volta a sair com código 0.
 
 ## Estado atual (Phase 2, modo permissivo)

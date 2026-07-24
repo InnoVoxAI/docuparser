@@ -45,26 +45,26 @@ frontend/
 
 ### Tabela de arquivos
 
-| Arquivo | Tipo Atual | Função no Sistema | Complexidade da Migração |
-|---|---|---|---|
-| `src/main.jsx` (4047 LOC) | JSX | **Toda a aplicação**: AuthContext, App, ~60 componentes/telas, 3 instâncias axios, helpers, render raiz | **Muito alta** (único arquivo, muito estado e props) |
-| `src/models/boleto/schemas.js` (666) | JS | Constantes de schema + `isLikelyBoletoText()` (classificador) | Média (dados + função) |
-| `src/models/nota_fiscal/schemas.js` (600) | JS | Schema + classificador NF | Média |
-| `src/models/contadeagua/schemas.js` (434) | JS | Schema + classificador | Média |
-| `src/models/contadeagua/rules.js` (216) | JS | Regras de normalização | Baixa |
-| `src/models/boleto/examples.js` (154) | JS | Exemplos few-shot | Baixa |
-| `src/models/contadeagua/examples.js` (158) | JS | Exemplos few-shot | Baixa |
-| `src/models/boleto/rules.js` (119) | JS | Regras de normalização | Baixa |
-| `src/models/nota_fiscal/examples.js` (95) | JS | Exemplos few-shot | Baixa |
-| `src/models/contadeagua/prompts.js` (82) | JS | Função de prompt por tipo | Baixa |
-| `src/models/nota_fiscal/prompts.js` (65) | JS | Função de prompt | Baixa |
-| `src/models/nota_fiscal/rules.js` (42) | JS | Regras | Baixa |
-| `src/models/boleto/prompts.js` (40) | JS | Função de prompt | Baixa |
-| `src/models/recibo/prompts.js` (10) | JS | Prompt default | Trivial |
-| `src/models/recibo/schemas.js` (9) | JS | Schema default | Trivial |
-| `src/index.css` (21) | CSS | Estilos globais | **Não migra** |
-| `vite.config.js` | JS | Config Vite (proxy/alias) | Baixa (opcional → `.ts`) |
-| `tailwind.config.js` / `postcss.config.cjs` | JS/CJS | Config de build CSS | **Não migra** (pode ficar em JS) |
+| Arquivo                                     | Tipo Atual | Função no Sistema                                                                                       | Complexidade da Migração                             |
+| ------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `src/main.jsx` (4047 LOC)                   | JSX        | **Toda a aplicação**: AuthContext, App, ~60 componentes/telas, 3 instâncias axios, helpers, render raiz | **Muito alta** (único arquivo, muito estado e props) |
+| `src/models/boleto/schemas.js` (666)        | JS         | Constantes de schema + `isLikelyBoletoText()` (classificador)                                           | Média (dados + função)                               |
+| `src/models/nota_fiscal/schemas.js` (600)   | JS         | Schema + classificador NF                                                                               | Média                                                |
+| `src/models/contadeagua/schemas.js` (434)   | JS         | Schema + classificador                                                                                  | Média                                                |
+| `src/models/contadeagua/rules.js` (216)     | JS         | Regras de normalização                                                                                  | Baixa                                                |
+| `src/models/boleto/examples.js` (154)       | JS         | Exemplos few-shot                                                                                       | Baixa                                                |
+| `src/models/contadeagua/examples.js` (158)  | JS         | Exemplos few-shot                                                                                       | Baixa                                                |
+| `src/models/boleto/rules.js` (119)          | JS         | Regras de normalização                                                                                  | Baixa                                                |
+| `src/models/nota_fiscal/examples.js` (95)   | JS         | Exemplos few-shot                                                                                       | Baixa                                                |
+| `src/models/contadeagua/prompts.js` (82)    | JS         | Função de prompt por tipo                                                                               | Baixa                                                |
+| `src/models/nota_fiscal/prompts.js` (65)    | JS         | Função de prompt                                                                                        | Baixa                                                |
+| `src/models/nota_fiscal/rules.js` (42)      | JS         | Regras                                                                                                  | Baixa                                                |
+| `src/models/boleto/prompts.js` (40)         | JS         | Função de prompt                                                                                        | Baixa                                                |
+| `src/models/recibo/prompts.js` (10)         | JS         | Prompt default                                                                                          | Trivial                                              |
+| `src/models/recibo/schemas.js` (9)          | JS         | Schema default                                                                                          | Trivial                                              |
+| `src/index.css` (21)                        | CSS        | Estilos globais                                                                                         | **Não migra**                                        |
+| `vite.config.js`                            | JS         | Config Vite (proxy/alias)                                                                               | Baixa (opcional → `.ts`)                             |
+| `tailwind.config.js` / `postcss.config.cjs` | JS/CJS     | Config de build CSS                                                                                     | **Não migra** (pode ficar em JS)                     |
 
 ### Componentes, contexts, hooks e services dentro de `main.jsx`
 
@@ -173,60 +173,94 @@ Não há `react-router`. A navegação é **estado interno** em `App` (`activeVi
 > Recomenda-se um bloco de tipos em `src/types.ts` (ou no topo de `main.tsx`). Tipar a partir dos **serializers do backend** (`backend-core/documents/serializers.py`) garante fidelidade.
 
 ### Props de componentes
+
 Cada `function X({ a, b })` ganha `interface XProps { a: TipoA; b: TipoB }` e vira `function X({ a, b }: XProps)`. Para componentes com `children`, usar `React.PropsWithChildren<...>` ou `children: React.ReactNode`. Para callbacks, tipar a assinatura completa (`onChange: (rows: FieldRow[]) => void`).
 
 ### Estados React
+
 `useState` deve receber o tipo quando o valor inicial não o revela:
+
 - `useState<Document | null>(null)`, `useState<FieldRow[]>([])`, `useState<SaveMessage | null>(null)`.
 - Estados primitivos (`useState('')`, `useState(false)`) são inferidos — não anotar.
 
 ### Contexts
+
 ```ts
 interface AuthContextValue {
-  user: User | null
-  loading: boolean
-  login: (email: string, password: string) => Promise<void>
-  logout: () => Promise<void>
-  hasPermission: (code: string) => boolean
+    user: User | null
+    loading: boolean
+    login: (email: string, password: string) => Promise<void>
+    logout: () => Promise<void>
+    hasPermission: (code: string) => boolean
 }
 const AuthContext = createContext<AuthContextValue | null>(null)
 ```
+
 `useAuth()` deve garantir não-nulo (lançar erro se usado fora do provider) para evitar `?` em todo lugar.
 
 ### Hooks customizados
+
 Só há `useAuth` → retorna `AuthContextValue`.
 
 ### DTOs / Objetos de API / Responses do backend
+
 Tipos espelhando os serializers (campos reais):
+
 ```ts
-interface ExtractionField { value: string; confidence: number | null }
+interface ExtractionField {
+    value: string
+    confidence: number | null
+}
 type FieldsMap = Record<string, ExtractionField | string>
 
 interface ExtractionResult {
-  schema_id: string; schema_version: string
-  fields: FieldsMap; confidence: number; requires_human_validation: boolean
+    schema_id: string
+    schema_version: string
+    fields: FieldsMap
+    confidence: number
+    requires_human_validation: boolean
 }
 interface Document {
-  id: string; status: DocumentStatus; channel: string
-  original_filename: string; content_type: string
-  extraction_result: ExtractionResult | null
-  active_field_version_number: number | null   // adicionado na feature 007
-  full_transcription?: string; metadata?: Record<string, unknown>
-  // … demais campos do DocumentDetailSerializer
+    id: string
+    status: DocumentStatus
+    channel: string
+    original_filename: string
+    content_type: string
+    extraction_result: ExtractionResult | null
+    active_field_version_number: number | null // adicionado na feature 007
+    full_transcription?: string
+    metadata?: Record<string, unknown>
+    // … demais campos do DocumentDetailSerializer
 }
 interface ExtractionFieldVersion {
-  version_number: number
-  source_type: 'INITIAL_EXTRACTION' | 'PROCESSING' | 'REPROCESSING' | 'MANUAL_EDIT'
-  is_active: boolean; previous_version_number: number | null
-  created_at: string; created_by: string | null; fields: FieldsMap
+    version_number: number
+    source_type: 'INITIAL_EXTRACTION' | 'PROCESSING' | 'REPROCESSING' | 'MANUAL_EDIT'
+    is_active: boolean
+    previous_version_number: number | null
+    created_at: string
+    created_by: string | null
+    fields: FieldsMap
 }
-interface User { id: string; name?: string; email: string; permissions: string[] }
-type DocumentStatus = 'RECEIVED' | 'OCR_COMPLETED' | 'EXTRACTION_COMPLETED'
-  | 'VALIDATION_PENDING' | 'APPROVED' | 'REJECTED' | /* … */ string
+interface User {
+    id: string
+    name?: string
+    email: string
+    permissions: string[]
+}
+type DocumentStatus =
+    | 'RECEIVED'
+    | 'OCR_COMPLETED'
+    | 'EXTRACTION_COMPLETED'
+    | 'VALIDATION_PENDING'
+    | 'APPROVED'
+    | 'REJECTED'
+    | /* … */ string
 ```
+
 Aplicar com generics do axios: `api.get<Document[]>('/documents')`, `api.put<ExtractionFieldVersion>(...)`. Modelar **estado de UI local** como `FieldRow { name: string; value: string; confidence: number | null }`.
 
 ### Modelos compartilhados (`src/models/**`)
+
 - `*_DEFAULT_FIELDS` → tipar como `SchemaField[]` (definir `SchemaField`).
 - Funções `isLikely*Text(rawText: string, threshold?: number): boolean`.
 - `*PromptForDocumentType(type: string): string`.
@@ -236,75 +270,85 @@ Aplicar com generics do axios: `api.get<Document[]>('/documents')`, `api.put<Ext
 ## Etapa 6 — Dependências e Configuração
 
 ### `package.json`
+
 - Adicionar devDep: `typescript` (compatível com Vite 5 / React 18, ex.: `^5.4`).
 - Manter `@types/react` / `@types/react-dom` (já presentes).
 - Adicionar scripts:
-  ```json
-  "typecheck": "tsc --noEmit",
-  "build": "tsc --noEmit && vite build"
-  ```
-  (incluir `tsc --noEmit` no build trava regressões de tipo no CI).
+    ```json
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build"
+    ```
+    (incluir `tsc --noEmit` no build trava regressões de tipo no CI).
 
 ### `tsconfig.json` (inicial — permissivo)
+
 ```jsonc
 {
-  "compilerOptions": {
-    "target": "ES2020",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "allowJs": true,          // permite .js durante a transição
-    "checkJs": false,
-    "strict": false,          // endurecer por etapas (ver passo 11)
-    "noEmit": true,
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"] }   // espelha o alias do vite.config
-  },
-  "include": ["src"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+    "compilerOptions": {
+        "target": "ES2020",
+        "lib": ["ES2020", "DOM", "DOM.Iterable"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "jsx": "react-jsx",
+        "allowJs": true, // permite .js durante a transição
+        "checkJs": false,
+        "strict": false, // endurecer por etapas (ver passo 11)
+        "noEmit": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "baseUrl": ".",
+        "paths": { "@/*": ["./src/*"] }, // espelha o alias do vite.config
+    },
+    "include": ["src"],
+    "references": [{ "path": "./tsconfig.node.json" }],
 }
 ```
 
 ### `tsconfig.node.json`
+
 ```jsonc
 {
-  "compilerOptions": {
-    "composite": true,
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "allowSyntheticDefaultImports": true
-  },
-  "include": ["vite.config.ts"]
+    "compilerOptions": {
+        "composite": true,
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "allowSyntheticDefaultImports": true,
+    },
+    "include": ["vite.config.ts"],
 }
 ```
 
 ### `src/vite-env.d.ts`
+
 ```ts
 /// <reference types="vite/client" />
 interface ImportMetaEnv {
-  readonly VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN?: string
-  readonly VITE_BACKEND_CORE_URL?: string
-  readonly VITE_BACKEND_COM_URL?: string
+    readonly VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN?: string
+    readonly VITE_BACKEND_CORE_URL?: string
+    readonly VITE_BACKEND_COM_URL?: string
 }
-interface ImportMeta { readonly env: ImportMetaEnv }
+interface ImportMeta {
+    readonly env: ImportMetaEnv
+}
 ```
 
 ### `vite.config` / aliases
+
 - O plugin `@vitejs/plugin-react` já trata `.tsx` automaticamente — **nenhuma mudança** necessária no plugin.
 - Renomear para `vite.config.ts` (opcional) e manter `resolve.alias['@']`. Garantir que `tsconfig.paths` e o alias do Vite fiquem **iguais**.
 
 ### `index.html`
+
 - Atualizar a tag `<script type="module" src="/src/main.jsx">` → `.../src/main.tsx`.
 
 ### ESLint / Prettier
+
 - **Hoje não existem** configs de ESLint/Prettier no projeto. Não é pré-requisito da migração; **opcional** adicionar depois: `@typescript-eslint/parser` + `@typescript-eslint/eslint-plugin`. Se adicionar, começar com regras suaves para não gerar ruído (`no-explicit-any: warn`).
 
 ### Build pipeline / Docker
+
 - O `Dockerfile` roda `npm run dev`/`vite` — **continua igual**; Vite serve `.tsx` nativamente. Garantir que `typescript` esteja em `devDependencies` antes do `npm install` da imagem.
 - Lembrar do `.dockerignore` (já criado) para não copiar `node_modules` do host.
 
@@ -312,32 +356,35 @@ interface ImportMeta { readonly env: ImportMetaEnv }
 
 ## Etapa 7 — Pontos de Atenção (riscos e mitigação)
 
-| Risco | Como aparece aqui | Mitigação |
-|---|---|---|
-| **Uso excessivo de `any`** | Atalho para silenciar erros no `main.tsx` gigante | Permitir `any` **temporário** com `// TODO: tipar`; ligar `noImplicitAny` só no passo 11; usar `unknown` em vez de `any` em fronteiras |
-| **Perda de inferência** | Anotar demais estados óbvios | Não anotar `useState('')`/`useState(false)`; anotar só union/null/arrays vazios |
-| **Componentes não tipados** | 60+ componentes sem Props | Definir `interface XProps` por componente; em último caso `React.FC<XProps>` (preferir função tipada) |
-| **Refs** | `useRef` em inputs/áreas de texto | `useRef<HTMLInputElement \| null>(null)` / `HTMLTextAreaElement`; cuidado com `.current` possivelmente nulo |
-| **Context API** | `createContext(null)` perde tipo | Tipar `createContext<AuthContextValue \| null>` e validar no `useAuth` |
-| **React Query / Zustand / Redux** | **Não usados** | Nada a fazer — estado é `useState`/Context |
-| **Formulários** | Vários inputs controlados (Login, Settings, campos) | Tipar handlers: `(e: React.ChangeEvent<HTMLInputElement>) => void`; `onSubmit: React.FormEventHandler` |
-| **Bibliotecas sem tipos** | axios, lucide-react, clsx, tailwind-merge | **Todas já trazem tipos** — risco baixo; nenhum `@types/*` extra necessário |
-| **Integração com backend** | Respostas `any` por padrão | Tipar via generics do axios e os DTOs da Etapa 5, espelhando os serializers; tratar campos opcionais com `?`/`\| null` |
-| **`fields` com formato duplo** | `parseFieldEntry` aceita escalar **ou** `{value,confidence}` | Tipar `FieldsMap = Record<string, ExtractionField \| string>` e manter `parseFieldEntry` como **type guard** |
-| **Monólito expõe tudo de uma vez** | Rename de `main.jsx` gera muitos erros | `tsconfig` permissivo no início + endurecimento gradual + `@ts-expect-error` pontuais |
-| **`import.meta.env`** | `VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN` | Declarar `ImportMetaEnv` em `vite-env.d.ts` |
+| Risco                              | Como aparece aqui                                            | Mitigação                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Uso excessivo de `any`**         | Atalho para silenciar erros no `main.tsx` gigante            | Permitir `any` **temporário** com `// TODO: tipar`; ligar `noImplicitAny` só no passo 11; usar `unknown` em vez de `any` em fronteiras |
+| **Perda de inferência**            | Anotar demais estados óbvios                                 | Não anotar `useState('')`/`useState(false)`; anotar só union/null/arrays vazios                                                        |
+| **Componentes não tipados**        | 60+ componentes sem Props                                    | Definir `interface XProps` por componente; em último caso `React.FC<XProps>` (preferir função tipada)                                  |
+| **Refs**                           | `useRef` em inputs/áreas de texto                            | `useRef<HTMLInputElement \| null>(null)` / `HTMLTextAreaElement`; cuidado com `.current` possivelmente nulo                            |
+| **Context API**                    | `createContext(null)` perde tipo                             | Tipar `createContext<AuthContextValue \| null>` e validar no `useAuth`                                                                 |
+| **React Query / Zustand / Redux**  | **Não usados**                                               | Nada a fazer — estado é `useState`/Context                                                                                             |
+| **Formulários**                    | Vários inputs controlados (Login, Settings, campos)          | Tipar handlers: `(e: React.ChangeEvent<HTMLInputElement>) => void`; `onSubmit: React.FormEventHandler`                                 |
+| **Bibliotecas sem tipos**          | axios, lucide-react, clsx, tailwind-merge                    | **Todas já trazem tipos** — risco baixo; nenhum `@types/*` extra necessário                                                            |
+| **Integração com backend**         | Respostas `any` por padrão                                   | Tipar via generics do axios e os DTOs da Etapa 5, espelhando os serializers; tratar campos opcionais com `?`/`\| null`                 |
+| **`fields` com formato duplo**     | `parseFieldEntry` aceita escalar **ou** `{value,confidence}` | Tipar `FieldsMap = Record<string, ExtractionField \| string>` e manter `parseFieldEntry` como **type guard**                           |
+| **Monólito expõe tudo de uma vez** | Rename de `main.jsx` gera muitos erros                       | `tsconfig` permissivo no início + endurecimento gradual + `@ts-expect-error` pontuais                                                  |
+| **`import.meta.env`**              | `VITE_DOCUPARSE_INTERNAL_SERVICE_TOKEN`                      | Declarar `ImportMetaEnv` em `vite-env.d.ts`                                                                                            |
 
 ---
 
 ## Etapa 8 — Critérios de Validação
 
 ### Build
+
 ```bash
 cd frontend
 npm run typecheck        # tsc --noEmit → 0 erros (ao final)
 npm run build            # tsc --noEmit && vite build → bundle gerado sem erros
 ```
+
 No Docker:
+
 ```bash
 cd docuparse-project
 docker compose build --no-cache frontend
@@ -346,16 +393,19 @@ docker compose logs --tail=20 frontend     # "VITE vX ready"
 ```
 
 ### Lint / tipagem
+
 ```bash
 npx tsc --noEmit                 # verificação de tipos (gate principal — não há ESLint hoje)
 # (opcional, se ESLint for adicionado) npx eslint "src/**/*.{ts,tsx}"
 ```
 
 ### Execução (validação visual)
+
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5173/        # 200
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5173/api/ocr/health  # 200 (proxy)
 ```
+
 Abrir `http://localhost:5173/` e navegar por todas as telas.
 
 ### Regressão — checklist (zero mudança funcional)
@@ -388,6 +438,7 @@ Abrir `http://localhost:5173/` e navegar por todas as telas.
 5. App com **comportamento e visual inalterados**, validado pelo checklist.
 
 ### Ordem segura, resumida
+
 `typescript + tsconfig (permissivo)` → `vite-env.d.ts` → `models/*.ts` → `vite.config.ts` → `main.tsx` → tipar núcleo (Auth/axios) → tipar componentes/telas → DTOs de API → endurecer `strict` por etapas → limpeza + regressão.
 
 > **Fora do escopo (trabalho futuro):** quebrar `main.tsx` em módulos por domínio (Auth, Documents, Settings, UI) e adicionar ESLint/Prettier + testes. Fazer **depois** que o TypeScript estiver estável, como mudança separada — para não misturar refatoração estrutural com a migração de tipos.
@@ -399,11 +450,13 @@ Abrir `http://localhost:5173/` e navegar por todas as telas.
 A migração foi concluída e endurecida até **`strict: true`** com `allowJs: false`.
 
 ### Configuração TypeScript
+
 - `tsconfig.json`: `strict: true`, `allowJs: false`, `noEmit: true`, `jsx: "react-jsx"`, `moduleResolution: "bundler"`, paths `@/*`.
 - `tsconfig.node.json` cobre `vite.config.ts`/`vitest.config.ts`; `src/vite-env.d.ts` tipa `import.meta.env`.
 - `npm run typecheck` (`tsc --noEmit`) e `npm run build` (`tsc --noEmit && vite build`) **verdes**.
 
 ### Tipagem
+
 - `src/types.ts`: domínio + DTOs espelhando o backend (`Document`, `ExtractionResult`, `ExtractionField`/`FieldsMap`, `ExtractionFieldVersion`, `FieldVersionsResponse`, `User`, `AuthContextValue`, `SchemaConfig`/`LayoutConfig`, `SchemaField`/`SchemaExample`, `FieldRow`, `SaveMessage`, `ActiveView`, etc.).
 - `src/models/**/*.ts`: exports tipados (`SchemaField[]`, `SchemaExample[]`, `isLikely*Text`, `*PromptForDocumentType`).
 - `src/main.tsx`: contexto de auth, props de todos os componentes/telas, estados (`useState<...>`), formulários (Ocr/Email/Integration/Schema/Layout) e DTOs via generics do axios (`api.get<Document[]>`, `api.put<ExtractionFieldVersion>`, …).
@@ -411,9 +464,11 @@ A migração foi concluída e endurecida até **`strict: true`** com `allowJs: f
 - `any` remanescente é **pontual e documentado**: índices de payloads dinâmicos (`SchemaConfig`/`LayoutConfig`/DLQ), metadados de canal (email/whatsapp), setters genéricos de formulário e `parseFieldEntry`. Sem `// @ts-ignore`/`// @ts-expect-error`.
 
 ### Suíte de testes (Vitest + Testing Library + MSW)
+
 - Scripts: `npm run test`, `test:run`, `coverage`.
 - **23 testes** cobrindo: autenticação (login/`/me`/logout), permissões/navegação, validação 007 (salvar/409/histórico/aprovar/rejeitar/editar), Inbox (busca), Dashboard (modal de rejeição), Operações (DLQ), Configurações (saves de OCR/Email/Integrações), CRUD de Usuários/Roles e upload manual.
 - Cobertura de linhas **~67%** com piso de regressão em `vitest.config.ts` (`lines/statements 65`, `branches 58`, `functions 40`). Meta aspiracional (críticos ≥90%, demais ≥80%) é por fluxo; a métrica por arquivo é diluída pelo monólito preservado (sem split, por decisão de US1).
 
 ### Fora do escopo (trabalho futuro)
+
 Quebrar `main.tsx` por domínio e adicionar ESLint/Prettier permanecem como mudança separada, posterior à estabilização do TypeScript.

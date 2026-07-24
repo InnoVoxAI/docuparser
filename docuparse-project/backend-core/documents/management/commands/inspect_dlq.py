@@ -43,7 +43,9 @@ class Command(BaseCommand):
         report = inspect_dlq_streams(event_bus, streams=streams, limit=limit)
 
         if options["json"]:
-            self.stdout.write(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+            self.stdout.write(
+                json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
+            )
             return
 
         for item in report:

@@ -10,7 +10,12 @@ from uuid import uuid4
 
 from domain.classifier import classify_layout
 from events import LayoutClassifiedEvent, OCRCompletedEvent
-from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
+from docuparse_events import (
+    EventBus,
+    event_bus_from_env,
+    publish_dead_letter,
+    sleep_interval,
+)
 from docuparse_observability import log_event
 from docuparse_storage import LocalStorage
 
@@ -18,13 +23,11 @@ logger = logging.getLogger(__name__)
 
 
 class Storage(Protocol):
-    def get_bytes(self, uri_or_key: str) -> bytes:
-        ...
+    def get_bytes(self, uri_or_key: str) -> bytes: ...
 
 
 class EventPublisher(Protocol):
-    def publish(self, stream: str, event: dict[str, Any]) -> int | str:
-        ...
+    def publish(self, stream: str, event: dict[str, Any]) -> int | str: ...
 
 
 def handle_ocr_completed_event(
@@ -93,14 +96,19 @@ class LayoutWorker:
         self._stop.set()
 
     def run_forever(self) -> None:
-        logger.info("Layout Redis worker started", extra={"stream": self.input_stream, "offset": self._offset})
+        logger.info(
+            "Layout Redis worker started",
+            extra={"stream": self.input_stream, "offset": self._offset},
+        )
         while not self._stop.is_set():
             processed = self.run_once()
             if processed == 0:
                 sleep_interval(self.poll_interval_seconds)
 
     def run_once(self) -> int:
-        entries = self.event_bus.consume_entries(self.input_stream, self._offset, count=10)
+        entries = self.event_bus.consume_entries(
+            self.input_stream, self._offset, count=10
+        )
         for entry in entries:
             try:
                 handle_ocr_completed_event(entry.payload, self.storage, self.event_bus)
@@ -139,19 +147,33 @@ def worker_from_env() -> LayoutWorker:
     storage_root = os.environ.get("DOCUPARSE_LOCAL_STORAGE_DIR", "/data/storage")
     return LayoutWorker(
         storage=LocalStorage(storage_root),
-        event_bus=event_bus_from_env(os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")),
+        event_bus=event_bus_from_env(
+            os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")
+        ),
         input_stream=os.environ.get("DOCUPARSE_LAYOUT_INPUT_STREAM", "ocr.completed"),
-        poll_interval_seconds=float(os.environ.get("DOCUPARSE_LAYOUT_WORKER_POLL_SECONDS", "2")),
-        start_at_latest=os.environ.get("DOCUPARSE_LAYOUT_WORKER_START_AT_LATEST", "true").strip().lower()
+        poll_interval_seconds=float(
+            os.environ.get("DOCUPARSE_LAYOUT_WORKER_POLL_SECONDS", "2")
+        ),
+        start_at_latest=os.environ.get(
+            "DOCUPARSE_LAYOUT_WORKER_START_AT_LATEST", "true"
+        )
+        .strip()
+        .lower()
         not in {"0", "false", "no"},
     )
 
 
 def start_worker_thread_from_env() -> LayoutWorker | None:
-    enabled = os.environ.get("DOCUPARSE_LAYOUT_WORKER_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+    enabled = os.environ.get("DOCUPARSE_LAYOUT_WORKER_ENABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     if not enabled:
         return None
     worker = worker_from_env()
-    thread = threading.Thread(target=worker.run_forever, name="docuparse-layout-worker", daemon=True)
+    thread = threading.Thread(
+        target=worker.run_forever, name="docuparse-layout-worker", daemon=True
+    )
     thread.start()
     return worker

@@ -11,10 +11,10 @@
 2. Substitua `{DESCRICAO_NEGOCIO}` pela descrição do problema de negócio
 3. Substitua `{PORTA_POSTGRES}` Valide a porta que não esteja em uso (ex: 5436, 5437...)
 4. Substitua `{PORTA_REDIS}` valide a porta que nao esteja em uso  (ex: 6381, 6382...)
-5. Substitua `{SUA_API_KEY}` pela sua chave API do DeepSeek ou outro LLM coloque essa api do deepseek no env para o nosos chat : sk-6dc0381d8c484da79baf063750b4bac0   essa api será depois removida é apenas para teste então pode colocar sem nehum problema 
+5. Substitua `{SUA_API_KEY}` pela sua chave API do DeepSeek ou outro LLM coloque essa api do deepseek no env para o nosos chat : sk-6dc0381d8c484da79baf063750b4bac0   essa api será depois removida é apenas para teste então pode colocar sem nehum problema
 
 **VALIDAÇÃO DE PORTAS DOCKER (EXECUTE ANTES)**:
-```powershell ou wsl 2 wntão vai depender do q estaremos usando no momento. 
+```powershell ou wsl 2 wntão vai depender do q estaremos usando no momento.
 # Verificar portas Postgres em uso:
 docker ps --format "table {{.Names}}\t{{.Ports}}" | Select-String "5432|5433|5434|5435|5436"
 
@@ -286,7 +286,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'channels',
-    'core', 
+    'core',
 ]
 
 MIDDLEWARE = [
@@ -395,20 +395,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.mode = "standard"  # standard | sql_expert | excel_agent
         self.agent = None       # Agent instance
-        
+
     async def connect(self):
         await self.accept()
         await self.send(text_data=json.dumps({
             'type': 'connection',
             'message': '✅ Conectado ao Chat AI'
         }))
-    
+
     async def receive(self, text_data):
         data = json.loads(text_data)
         # Router de modos...
         # Invoke agent graph
         # Stream agent steps para UI
-        
+
     # Implementar handlers para cada modo...
 ```
 
@@ -436,7 +436,7 @@ class MainAgent:
     def __init__(self):
         self.llm = ChatOpenAI(model=MODEL_NAME, api_key=API_KEY, base_url=BASE_URL)
         self.graph = self._build_graph()
-        
+
     def _build_graph(self):
         workflow = StateGraph(AgentState)
         # Adicionar nodes e edges...
@@ -468,7 +468,7 @@ class SchemaLinker:
     def __init__(self, semantic_path):
         self.load_semantic_layer()
         self.initialize_vectorizer()
-        
+
     def get_relevant_context(self, query: str) -> dict:
         # TF-IDF similarity search
         # Retorna métricas e entidades relevantes
@@ -558,12 +558,12 @@ Sidebar colapsável com seções:
 function App() {
   const [activeTab, setActiveTab] = useState('Dashboard')
   const [expandedSections, setExpandedSections] = useState({...})
-  
+
   return (
     <div className="flex h-screen bg-gray-900">
       {/* Sidebar */}
       <aside>...</aside>
-      
+
       {/* Content */}
       <main>
         {activeTab === 'Chat AI' && <ChatAI />}
@@ -598,7 +598,7 @@ export default function ChatAI() {
     const wsRef = useRef(null);
     const [messages, setMessages] = useState([]);
     const [agents, setAgents] = useState([]);
-    
+
     useEffect(() => {
         wsRef.current = new WebSocket('ws://localhost:8000/ws/chat/');
         wsRef.current.onmessage = (event) => {
@@ -606,7 +606,7 @@ export default function ChatAI() {
             // Handle: connection, agent_step, final_answer, error
         };
     }, []);
-    
+
     // Render: painel agentes (esquerda) + chat (direita)
 }
 ```
@@ -710,7 +710,7 @@ CERTIFIQUE-SE de:
 
 ---
 
-## 🎨 DESIGN SYSTEM abaixo instruções de designer do sistema 
+## 🎨 DESIGN SYSTEM abaixo instruções de designer do sistema
 
 ```css
 /* Cores Principais */

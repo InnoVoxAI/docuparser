@@ -8,6 +8,7 @@ Fluxo:
     → Deduplicação por SHA256 dentro da sessão (cross-sessão: DuplicateDocumentError do core)
     → process_whatsapp_media() → ingest_document() → pipeline OCR
 """
+
 from __future__ import annotations
 
 import base64
@@ -72,7 +73,11 @@ def _poll_once(
     tenant_id: str,
     limit: int = 20,
 ) -> dict:
-    to_param = from_number if from_number.startswith("whatsapp:") else f"whatsapp:{from_number}"
+    to_param = (
+        from_number
+        if from_number.startswith("whatsapp:")
+        else f"whatsapp:{from_number}"
+    )
     encoded_to = urllib.parse.quote(to_param, safe="")
     url = (
         f"{TWILIO_API_BASE}/Accounts/{account_sid}/Messages.json"
@@ -88,7 +93,9 @@ def _poll_once(
     for message in messages:
         message_sid = str(message.get("sid") or "")
         sender = str(message.get("from") or "").replace("whatsapp:", "")
-        to_number = str(message.get("to") or "").replace("whatsapp:", "") or from_number.replace("whatsapp:", "")
+        to_number = str(message.get("to") or "").replace(
+            "whatsapp:", ""
+        ) or from_number.replace("whatsapp:", "")
         body = str(message.get("body") or "")
         num_media = int(message.get("num_media") or 0)
 
@@ -102,7 +109,10 @@ def _poll_once(
             media_sid = str(media.get("sid") or "")
             content_type = str(media.get("content_type") or "")
             if content_type not in ACCEPTED_CONTENT_TYPES:
-                logger.debug("twilio_media_skipped_type", extra={"content_type": content_type, "media_sid": media_sid})
+                logger.debug(
+                    "twilio_media_skipped_type",
+                    extra={"content_type": content_type, "media_sid": media_sid},
+                )
                 continue
 
             media_url = (
@@ -110,9 +120,14 @@ def _poll_once(
                 f"/Messages/{message_sid}/Media/{media_sid}"
             )
             try:
-                content, real_filename = download_twilio_media(media_url, account_sid, auth_token)
+                content, real_filename = download_twilio_media(
+                    media_url, account_sid, auth_token
+                )
             except Exception as exc:
-                logger.warning("twilio_media_download_failed", extra={"error": str(exc), "media_sid": media_sid})
+                logger.warning(
+                    "twilio_media_download_failed",
+                    extra={"error": str(exc), "media_sid": media_sid},
+                )
                 continue
 
             sha256 = hashlib.sha256(content).hexdigest()
@@ -124,12 +139,14 @@ def _poll_once(
             ext = _EXT_MAP.get(content_type, "")
             fallback_filename = f"whatsapp-{message_sid}-{media_sid}{ext}"
             filename = real_filename or fallback_filename
-            media_items.append({
-                "filename": filename,
-                "content_type": content_type,
-                "content": content,
-                "media_url": media_url,
-            })
+            media_items.append(
+                {
+                    "filename": filename,
+                    "content_type": content_type,
+                    "content": content,
+                    "media_url": media_url,
+                }
+            )
 
         if not media_items:
             continue
@@ -147,7 +164,10 @@ def _poll_once(
         except DuplicateDocumentError:
             duplicate_count += len(media_items)
         except Exception as exc:
-            logger.warning("twilio_message_ingest_failed", extra={"error": str(exc), "message_sid": message_sid})
+            logger.warning(
+                "twilio_message_ingest_failed",
+                extra={"error": str(exc), "message_sid": message_sid},
+            )
 
     return {
         "status": "ok",
@@ -157,7 +177,9 @@ def _poll_once(
     }
 
 
-def download_twilio_media(url: str, account_sid: str, auth_token: str) -> tuple[bytes, str | None]:
+def download_twilio_media(
+    url: str, account_sid: str, auth_token: str
+) -> tuple[bytes, str | None]:
     """Baixa um arquivo de mídia da Twilio com autenticação Basic.
 
     Returns (content, original_filename) where original_filename is extracted from
@@ -195,7 +217,9 @@ def _extract_filename_from_headers(headers) -> str | None:
     return None
 
 
-def _fetch_message_media(account_sid: str, auth_token: str, message_sid: str) -> list[dict]:
+def _fetch_message_media(
+    account_sid: str, auth_token: str, message_sid: str
+) -> list[dict]:
     url = f"{TWILIO_API_BASE}/Accounts/{account_sid}/Messages/{message_sid}/Media.json"
     data = _api_get(url, account_sid, auth_token)
     return data.get("media_list", [])

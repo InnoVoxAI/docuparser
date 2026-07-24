@@ -23,7 +23,9 @@ def document_original_key(tenant_id: str, document_id: str) -> str:
 
 
 def document_ocr_raw_text_key(tenant_id: str, document_id: str) -> str:
-    return DOCUMENT_OCR_RAW_TEXT_KEY.format(tenant_id=tenant_id, document_id=document_id)
+    return DOCUMENT_OCR_RAW_TEXT_KEY.format(
+        tenant_id=tenant_id, document_id=document_id
+    )
 
 
 class LocalStorage:

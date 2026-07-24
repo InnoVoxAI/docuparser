@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
-from users.serializers import UserCreateSerializer, UserListSerializer, UserUpdateSerializer
+from users.serializers import (
+    UserCreateSerializer,
+    UserListSerializer,
+    UserUpdateSerializer,
+)
 
 User = get_user_model()
 
@@ -18,6 +25,7 @@ User = get_user_model()
 def last_admin_guard(user_id: int) -> bool:
     """Return True (guard triggered) if deactivating user_id leaves zero active admins."""
     from documents.models import UserProfile
+
     admins_after = (
         UserProfile.objects.filter(
             user__is_active=True,
@@ -36,10 +44,8 @@ def last_admin_guard(user_id: int) -> bool:
 @permission_classes([require_permission("users.manage")])
 def users_list_create_view(request: Request) -> Response:
     if request.method == "GET":
-        from documents.models import UserProfile
         users = (
-            User.objects
-            .select_related("docuparse_profile__role_ref")
+            User.objects.select_related("docuparse_profile__role_ref")
             .prefetch_related("docuparse_profile__role_ref__permissions")
             .order_by("first_name", "username")
         )
@@ -73,7 +79,9 @@ def user_detail_update_view(request: Request, user_id: int) -> Response:
     # Guard: prevent deactivating the last admin
     if data.get("is_active") is False and last_admin_guard(user_id):
         return Response(
-            {"detail": "Não é possível desativar o último administrador ativo do sistema."},
+            {
+                "detail": "Não é possível desativar o último administrador ativo do sistema."
+            },
             status=status.HTTP_409_CONFLICT,
         )
 

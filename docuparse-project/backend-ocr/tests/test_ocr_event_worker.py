@@ -9,8 +9,12 @@ from docuparse_storage import LocalStorage, document_original_key
 from events import validate_event
 
 
-def _document_received_payload(storage: LocalStorage, tenant_id: str, document_id) -> dict:
-    stored = storage.put_bytes(document_original_key(tenant_id, str(document_id)), b"document-bytes")
+def _document_received_payload(
+    storage: LocalStorage, tenant_id: str, document_id
+) -> dict:
+    stored = storage.put_bytes(
+        document_original_key(tenant_id, str(document_id)), b"document-bytes"
+    )
     return {
         "event_id": str(uuid4()),
         "event_type": "document.received",
@@ -43,7 +47,13 @@ def test_document_received_becomes_ocr_completed(monkeypatch, tmp_path) -> None:
     document_id = uuid4()
     payload = _document_received_payload(storage, tenant_id, document_id)
 
-    def fake_process_document(file_bytes, filename, timeout_s=120, legacy_extraction=False, selected_engine=None):
+    def fake_process_document(
+        file_bytes,
+        filename,
+        timeout_s=120,
+        legacy_extraction=False,
+        selected_engine=None,
+    ):
         assert file_bytes == b"document-bytes"
         assert legacy_extraction is False
         return {
@@ -58,11 +68,16 @@ def test_document_received_becomes_ocr_completed(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr(ocr_event_worker, "process_document", fake_process_document)
 
-    output = ocr_event_worker.handle_document_received_event(payload, storage, publisher)
+    output = ocr_event_worker.handle_document_received_event(
+        payload, storage, publisher
+    )
 
     validated = validate_event(output)
     assert validated.event_type == "ocr.completed"
-    assert output["data"]["raw_text_uri"] == f"local://documents/{tenant_id}/{document_id}/ocr/raw_text.json"
+    assert (
+        output["data"]["raw_text_uri"]
+        == f"local://documents/{tenant_id}/{document_id}/ocr/raw_text.json"
+    )
     assert b"texto bruto" in storage.get_bytes(output["data"]["raw_text_uri"])
     assert publisher.consume("ocr.completed") == [output]
 
@@ -77,7 +92,9 @@ def test_document_received_failure_publishes_ocr_failed(monkeypatch, tmp_path) -
 
     monkeypatch.setattr(ocr_event_worker, "process_document", failing_process_document)
 
-    output = ocr_event_worker.handle_document_received_event(payload, storage, publisher)
+    output = ocr_event_worker.handle_document_received_event(
+        payload, storage, publisher
+    )
 
     validated = validate_event(output)
     assert validated.event_type == "ocr.failed"
@@ -93,7 +110,13 @@ def test_ocr_worker_consumes_document_received_stream(monkeypatch, tmp_path) -> 
     payload = _document_received_payload(storage, tenant_id, document_id)
     event_bus.publish("document.received", payload)
 
-    def fake_process_document(file_bytes, filename, timeout_s=120, legacy_extraction=False, selected_engine=None):
+    def fake_process_document(
+        file_bytes,
+        filename,
+        timeout_s=120,
+        legacy_extraction=False,
+        selected_engine=None,
+    ):
         return {
             "raw_text": "texto do worker",
             "raw_text_fallback": "",
@@ -151,7 +174,10 @@ def test_ocr_worker_can_use_explicit_mock_mode(monkeypatch, tmp_path) -> None:
 def test_ocr_worker_sends_invalid_event_to_dlq(tmp_path) -> None:
     storage = LocalStorage(tmp_path / "objects")
     event_bus = LocalJsonlEventBus(tmp_path / "events")
-    event_bus.publish("document.received", {"event_type": "document.received", "document_id": str(uuid4())})
+    event_bus.publish(
+        "document.received",
+        {"event_type": "document.received", "document_id": str(uuid4())},
+    )
 
     worker = ocr_event_worker.OCRWorker(
         storage=storage,

@@ -20,7 +20,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, Union
+from typing import Any
 
 from infrastructure.engines.base_engine import BaseOCREngine
 from shared.preprocessing import preprocess_for_deepseek_engine
@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 
 class DeepSeekEngine(BaseOCREngine):
-
     @property
     def name(self) -> str:
         return "deepseek"
@@ -67,7 +66,7 @@ class DeepSeekEngine(BaseOCREngine):
     def get_init_error(self) -> str | None:
         return self._init_error
 
-    def _encode_image(self, image_path_or_bytes: Union[str, bytes]) -> str:
+    def _encode_image(self, image_path_or_bytes: str | bytes) -> str:
         if isinstance(image_path_or_bytes, str):
             with open(image_path_or_bytes, "rb") as image_file:
                 return base64.b64encode(image_file.read()).decode("utf-8")
@@ -88,7 +87,7 @@ class DeepSeekEngine(BaseOCREngine):
 
         raise ValueError("DeepSeekEngine expected bytes or file path")
 
-    def _extract_text(self, image_bytes: bytes) -> Dict[str, Any]:
+    def _extract_text(self, image_bytes: bytes) -> dict[str, Any]:
         if self.client is None:
             raise RuntimeError(f"DeepSeek client unavailable: {self._init_error}")
 
@@ -135,19 +134,26 @@ class DeepSeekEngine(BaseOCREngine):
 
         return {"raw_text": str(content).strip()}
 
-    def process_with_classification(self, image_bytes: bytes, classification: str) -> Dict[str, Any]:
+    def process_with_classification(
+        self, image_bytes: bytes, classification: str
+    ) -> dict[str, Any]:
         # PASSO CRÍTICO: preprocess por ROI para cenários manuscritos/complexos.
         preprocessed_bytes, preprocess_meta = preprocess_for_deepseek_engine(
             image_bytes=image_bytes,
             classification=classification,
         )
 
-        result = self.process({"original": image_bytes, "preprocessed": preprocessed_bytes}, metadata={"doc_type": classification})
+        result = self.process(
+            {"original": image_bytes, "preprocessed": preprocessed_bytes},
+            metadata={"doc_type": classification},
+        )
         result.setdefault("_meta", {})
         result["_meta"]["preprocessing"] = preprocess_meta
         return result
 
-    def process(self, content: Any, metadata: dict[str, Any] | None = None) -> Dict[str, Any]:
+    def process(
+        self, content: Any, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         metadata: quando presente, 'doc_type' é registrado nos _meta do resultado.
         """
@@ -171,7 +177,7 @@ class DeepSeekEngine(BaseOCREngine):
 
             elapsed = time.perf_counter() - process_start
 
-            meta: Dict[str, Any] = {
+            meta: dict[str, Any] = {
                 "engine": "deepseek",
                 "model": self.model,
                 "avg_confidence": avg_confidence,

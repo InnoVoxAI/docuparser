@@ -35,16 +35,22 @@ class ValidationViewGuardTests(TestCase):
         return reverse("document-validate", args=[self.document.id])
 
     def test_approve_with_extraction_returns_201_and_approved_status(self) -> None:
-        response = self.client.post(self._url(), {**self.payload_base, "decision": "approved"}, format="json")
+        response = self.client.post(
+            self._url(), {**self.payload_base, "decision": "approved"}, format="json"
+        )
         self.document.refresh_from_db()
 
         assert response.status_code == 201
         assert self.document.status == Document.Status.APPROVED
-        assert ValidationDecision.objects.filter(document=self.document, decision="approved").exists()
+        assert ValidationDecision.objects.filter(
+            document=self.document, decision="approved"
+        ).exists()
 
     def test_approve_without_extraction_returns_422(self) -> None:
         self.extraction.delete()
-        response = self.client.post(self._url(), {**self.payload_base, "decision": "approved"}, format="json")
+        response = self.client.post(
+            self._url(), {**self.payload_base, "decision": "approved"}, format="json"
+        )
 
         assert response.status_code == 422
         assert "Extração" in response.json()["detail"]
@@ -52,14 +58,20 @@ class ValidationViewGuardTests(TestCase):
     def test_reject_with_valid_notes_returns_201_and_persists_notes(self) -> None:
         response = self.client.post(
             self._url(),
-            {**self.payload_base, "decision": "rejected", "notes": "Documento ilegível"},
+            {
+                **self.payload_base,
+                "decision": "rejected",
+                "notes": "Documento ilegível",
+            },
             format="json",
         )
         self.document.refresh_from_db()
 
         assert response.status_code == 201
         assert self.document.status == Document.Status.REJECTED
-        decision = ValidationDecision.objects.get(document=self.document, decision="rejected")
+        decision = ValidationDecision.objects.get(
+            document=self.document, decision="rejected"
+        )
         assert decision.notes == "Documento ilegível"
 
     def test_reject_with_empty_notes_returns_400(self) -> None:

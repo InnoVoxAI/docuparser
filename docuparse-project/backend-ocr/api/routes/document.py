@@ -18,16 +18,13 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse
 
 from api.schemas.ocr_schema import (
     OCRResponse,
     EngineInfo,
     EnginesListResponse,
-    ProcessRequest,
 )
 from application.process_document import ENGINE_REGISTRY, process_document
 from domain.engine_resolver import resolver as engine_resolver
@@ -116,7 +113,9 @@ async def list_engines_endpoint() -> EnginesListResponse:
         }
 
         # Construir lista somente com engines do perfil operacional atual.
-        all_engines = sorted(engine for engine in ENGINE_REGISTRY if engine in operational_engines)
+        all_engines = sorted(
+            engine for engine in ENGINE_REGISTRY if engine in operational_engines
+        )
         for engine_name in all_engines:
             # Encontrar tipos de documento onde este engine é padrão
             default_for = []
@@ -147,21 +146,26 @@ async def list_engines_endpoint() -> EnginesListResponse:
                     is_configured = False
                     status = f"missing_config:{','.join(missing)}"
 
-            engines_info.append(EngineInfo(
-                name=engine_name,
-                description=engine_descriptions.get(engine_name, f"Engine {engine_name}"),
-                supported_document_types=["digital_pdf", "scanned_image", "handwritten_complex"],
-                is_default_for=default_for,
-                capabilities=capabilities,
-                available=True,
-                is_configured=is_configured,
-                status=status,
-            ))
+            engines_info.append(
+                EngineInfo(
+                    name=engine_name,
+                    description=engine_descriptions.get(
+                        engine_name, f"Engine {engine_name}"
+                    ),
+                    supported_document_types=[
+                        "digital_pdf",
+                        "scanned_image",
+                        "handwritten_complex",
+                    ],
+                    is_default_for=default_for,
+                    capabilities=capabilities,
+                    available=True,
+                    is_configured=is_configured,
+                    status=status,
+                )
+            )
 
-        return EnginesListResponse(
-            engines=engines_info,
-            total_count=len(engines_info)
-        )
+        return EnginesListResponse(engines=engines_info, total_count=len(engines_info))
 
     except Exception as e:
         logger.error(f"Erro ao listar engines: {e}")

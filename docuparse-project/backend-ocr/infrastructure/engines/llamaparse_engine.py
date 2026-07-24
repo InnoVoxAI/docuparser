@@ -17,13 +17,12 @@ from __future__ import annotations
 import io
 import re
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 from infrastructure.engines.base_engine import BaseOCREngine
 
 
 class LlamaParseEngine(BaseOCREngine):
-
     @property
     def name(self) -> str:
         return "llamaparse"
@@ -46,11 +45,11 @@ class LlamaParseEngine(BaseOCREngine):
 
         raise ValueError("LlamaParseEngine expected file bytes or file path")
 
-    def _read_pdf_text_by_page(self, pdf_bytes: bytes) -> List[str]:
+    def _read_pdf_text_by_page(self, pdf_bytes: bytes) -> list[str]:
         import pypdfium2 as pdfium
 
         pdf = pdfium.PdfDocument(pdf_bytes)
-        page_texts: List[str] = []
+        page_texts: list[str] = []
 
         for idx in range(len(pdf)):
             page = pdf.get_page(idx)
@@ -62,7 +61,7 @@ class LlamaParseEngine(BaseOCREngine):
     def _clean_text(self, text: str) -> str:
         # PASSO CRÍTICO: limpeza leve para remover duplicações e ruído de blocos.
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        deduped_lines: List[str] = []
+        deduped_lines: list[str] = []
         seen = set()
         for line in lines:
             key = re.sub(r"\s+", " ", line.lower())
@@ -73,7 +72,7 @@ class LlamaParseEngine(BaseOCREngine):
 
         return "\n".join(deduped_lines)
 
-    def _group_semantic_blocks(self, page_texts: List[str]) -> Dict[str, Any]:
+    def _group_semantic_blocks(self, page_texts: list[str]) -> dict[str, Any]:
         pages = []
         for page_index, text in enumerate(page_texts, start=1):
             clean_text = self._clean_text(text)
@@ -101,10 +100,14 @@ class LlamaParseEngine(BaseOCREngine):
             ],
         }
 
-    def process_with_classification(self, file_bytes: bytes, classification: str) -> Dict[str, Any]:
+    def process_with_classification(
+        self, file_bytes: bytes, classification: str
+    ) -> dict[str, Any]:
         return self.process(file_bytes, metadata={"doc_type": classification})
 
-    def process(self, content: Any, metadata: dict[str, Any] | None = None) -> Dict[str, Any]:
+    def process(
+        self, content: Any, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         metadata: quando presente, 'doc_type' é registrado nos _meta do resultado.
         """
@@ -117,16 +120,14 @@ class LlamaParseEngine(BaseOCREngine):
         semantic = self._group_semantic_blocks(page_texts)
 
         raw_text = "\n\n".join(
-            self._clean_text(page_text)
-            for page_text in page_texts
-            if page_text.strip()
+            self._clean_text(page_text) for page_text in page_texts if page_text.strip()
         ).strip()
 
         avg_confidence = round(min(100.0, len(raw_text) / 35.0), 2)
         fallback_recommended = avg_confidence < 65.0 or not raw_text
         elapsed = time.perf_counter() - process_start
 
-        meta: Dict[str, Any] = {
+        meta: dict[str, Any] = {
             "engine": "llamaparse",
             "avg_confidence": avg_confidence,
             "ocr_time_seconds": round(elapsed, 4),

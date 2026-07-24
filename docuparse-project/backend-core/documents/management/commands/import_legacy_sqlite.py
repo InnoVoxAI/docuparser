@@ -63,7 +63,9 @@ class Command(BaseCommand):
                 )
                 tenants[row["id"]] = tenant
 
-            for row in connection.execute("select * from documents_document order by created_at"):
+            for row in connection.execute(
+                "select * from documents_document order by created_at"
+            ):
                 document_id = _uuid(row["id"])
                 if Document.objects.filter(id=document_id).exists():
                     skipped_documents += 1
@@ -91,7 +93,9 @@ class Command(BaseCommand):
                 )
                 imported_documents += 1
 
-            for row in connection.execute("select * from documents_extractionresult order by created_at"):
+            for row in connection.execute(
+                "select * from documents_extractionresult order by created_at"
+            ):
                 document_id = _uuid(row["document_id"])
                 if not Document.objects.filter(id=document_id).exists():
                     continue
@@ -103,7 +107,9 @@ class Command(BaseCommand):
                         "schema_version": row["schema_version"],
                         "fields": _json(row["fields"]),
                         "confidence": row["confidence"],
-                        "requires_human_validation": bool(row["requires_human_validation"]),
+                        "requires_human_validation": bool(
+                            row["requires_human_validation"]
+                        ),
                     },
                 )
                 ExtractionResult.objects.filter(id=result.id).update(
@@ -113,7 +119,9 @@ class Command(BaseCommand):
                 if created:
                     imported_results += 1
 
-            for row in connection.execute("select * from documents_documentevent order by created_at"):
+            for row in connection.execute(
+                "select * from documents_documentevent order by created_at"
+            ):
                 event_id = _uuid(row["event_id"])
                 if DocumentEvent.objects.filter(event_id=event_id).exists():
                     continue

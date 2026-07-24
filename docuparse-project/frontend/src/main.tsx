@@ -45,11 +45,19 @@ import { BOLETO_DEFAULT_SCHEMA_ID, BOLETO_DEFAULT_MODEL_NAME, BOLETO_DEFAULT_FIE
 import { boletoPromptForDocumentType } from './models/boleto/prompts'
 import { BOLETO_DEFAULT_EXAMPLES } from './models/boleto/examples'
 import { BOLETO_DEFAULT_RULES } from './models/boleto/rules'
-import { NOTA_FISCAL_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_MODEL_NAME, NOTA_FISCAL_DEFAULT_FIELDS } from './models/nota_fiscal/schemas'
+import {
+    NOTA_FISCAL_DEFAULT_SCHEMA_ID,
+    NOTA_FISCAL_DEFAULT_MODEL_NAME,
+    NOTA_FISCAL_DEFAULT_FIELDS,
+} from './models/nota_fiscal/schemas'
 import { notaFiscalPromptForDocumentType } from './models/nota_fiscal/prompts'
 import { NOTA_FISCAL_DEFAULT_EXAMPLES } from './models/nota_fiscal/examples'
 import { NOTA_FISCAL_DEFAULT_RULES } from './models/nota_fiscal/rules'
-import { CONTA_AGUA_DEFAULT_SCHEMA_ID, CONTA_AGUA_DEFAULT_MODEL_NAME, CONTA_AGUA_DEFAULT_FIELDS } from './models/contadeagua/schemas'
+import {
+    CONTA_AGUA_DEFAULT_SCHEMA_ID,
+    CONTA_AGUA_DEFAULT_MODEL_NAME,
+    CONTA_AGUA_DEFAULT_FIELDS,
+} from './models/contadeagua/schemas'
 import { contaAguaPromptForDocumentType } from './models/contadeagua/prompts'
 import { CONTA_AGUA_DEFAULT_EXAMPLES } from './models/contadeagua/examples'
 import { CONTA_AGUA_DEFAULT_RULES } from './models/contadeagua/rules'
@@ -58,9 +66,7 @@ import { DEFAULT_LANGEXTRACT_PROMPT } from './models/recibo/prompts'
 
 // Resultado do polling de uma extração assíncrona (ver pollDocumentExtraction).
 type ExtractionPollOutcome =
-    | { status: 'completed'; extraction: ExtractionResult }
-    | { status: 'failed'; error: string }
-    | { status: 'timeout' }
+    { status: 'completed'; extraction: ExtractionResult } | { status: 'failed'; error: string } | { status: 'timeout' }
 
 // Poll do detalhe do documento até que seu extraction_result mude — i.e. uma
 // extração LLM em background terminou. O backend agora processa a extração de
@@ -82,11 +88,15 @@ async function pollDocumentExtraction(
             }
             // Surface a real backend failure (e.g. langextract-service unreachable) instead
             // of polling forever — see document.metadata.extraction recorded by the backend.
-            const meta = (data?.metadata as { extraction?: { state?: string; updated_at?: string; error?: string } } | undefined)?.extraction
+            const meta = (
+                data?.metadata as { extraction?: { state?: string; updated_at?: string; error?: string } } | undefined
+            )?.extraction
             if (meta?.state === 'failed' && meta.updated_at !== baseline.metaUpdatedAt) {
                 return { status: 'failed', error: meta.error || 'Erro desconhecido na extracao.' }
             }
-        } catch { /* transient error — keep polling */ }
+        } catch {
+            /* transient error — keep polling */
+        }
     }
     return { status: 'timeout' }
 }
@@ -151,10 +161,7 @@ async function fetchDocumentCount(statusCsv?: string): Promise<number> {
  * `autoRefresh` reconsulta a página atual enquanto houver documentos em
  * processamento, preservando filtros (FR-009).
  */
-function useDocumentPage(
-    statusCsv?: string,
-    options: { autoRefresh?: boolean; refreshSignal?: number } = {},
-) {
+function useDocumentPage(statusCsv?: string, options: { autoRefresh?: boolean; refreshSignal?: number } = {}) {
     const { autoRefresh = false, refreshSignal = 0 } = options
     const [page, setPage] = useState(1)
     const [search, setSearchState] = useState('')
@@ -162,24 +169,29 @@ function useDocumentPage(
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
 
-    const fetchPage = useCallback(async (silent = false) => {
-        if (!silent) setLoading(true)
-        setError('')
-        try {
-            const params: DocumentListParams = { page, page_size: PAGE_SIZE }
-            if (statusCsv) params.status = statusCsv
-            const term = search.trim()
-            if (term) params.search = term
-            const response = await api.get<Paginated<Document>>('/documents', { params })
-            setData(response.data)
-        } catch (requestError) {
-            setError(readError(requestError, 'Nao foi possivel carregar os documentos.'))
-        } finally {
-            if (!silent) setLoading(false)
-        }
-    }, [page, search, statusCsv])
+    const fetchPage = useCallback(
+        async (silent = false) => {
+            if (!silent) setLoading(true)
+            setError('')
+            try {
+                const params: DocumentListParams = { page, page_size: PAGE_SIZE }
+                if (statusCsv) params.status = statusCsv
+                const term = search.trim()
+                if (term) params.search = term
+                const response = await api.get<Paginated<Document>>('/documents', { params })
+                setData(response.data)
+            } catch (requestError) {
+                setError(readError(requestError, 'Nao foi possivel carregar os documentos.'))
+            } finally {
+                if (!silent) setLoading(false)
+            }
+        },
+        [page, search, statusCsv],
+    )
 
-    useEffect(() => { fetchPage() }, [fetchPage, refreshSignal])
+    useEffect(() => {
+        fetchPage()
+    }, [fetchPage, refreshSignal])
 
     useEffect(() => {
         if (!autoRefresh) return
@@ -198,7 +210,13 @@ function useDocumentPage(
 }
 
 /** Controles de navegação reutilizáveis: posição, total e anterior/próxima. */
-function Pagination({ page, totalPages, count, pageSize, onPageChange }: {
+function Pagination({
+    page,
+    totalPages,
+    count,
+    pageSize,
+    onPageChange,
+}: {
     page: number
     totalPages: number
     count: number
@@ -254,10 +272,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         const token = localStorage.getItem('access_token')
-        if (!token) { setLoading(false); return }
-        authApi.get<User>('/me', { headers: { Authorization: `Bearer ${token}` } })
+        if (!token) {
+            setLoading(false)
+            return
+        }
+        authApi
+            .get<User>('/me', { headers: { Authorization: `Bearer ${token}` } })
             .then((r) => setUser(r.data))
-            .catch(() => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token') })
+            .catch(() => {
+                localStorage.removeItem('access_token')
+                localStorage.removeItem('refresh_token')
+            })
             .finally(() => setLoading(false))
     }, [])
 
@@ -270,8 +295,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const logout = async (): Promise<void> => {
         const refresh = localStorage.getItem('refresh_token')
-        try { if (refresh) await authApi.post('/logout', { refresh }, { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } }) }
-        catch (_) { /* ignore */ }
+        try {
+            if (refresh)
+                await authApi.post(
+                    '/logout',
+                    { refresh },
+                    { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } },
+                )
+        } catch (_) {
+            /* ignore */
+        }
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
         setUser(null)
@@ -280,9 +313,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const hasPermission = (code: string): boolean => Array.isArray(user?.permissions) && user.permissions.includes(code)
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>
-            {children}
-        </AuthContext.Provider>
+        <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>{children}</AuthContext.Provider>
     )
 }
 
@@ -292,7 +323,11 @@ function useAuth(): AuthContextValue {
     return ctx
 }
 
-function PermissionGuard({ code, children, fallback = null }: {
+function PermissionGuard({
+    code,
+    children,
+    fallback = null,
+}: {
     code: string
     children: React.ReactNode
     fallback?: React.ReactNode
@@ -331,9 +366,11 @@ function LoginPage() {
         } catch (err) {
             const e = asApiError(err)
             const detail = e.response?.data?.detail
-            setError(e.response?.status === 403
-                ? (detail || 'Conta inativa. Aguarde ativação pelo administrador.')
-                : (detail || 'Credenciais inválidas.'))
+            setError(
+                e.response?.status === 403
+                    ? detail || 'Conta inativa. Aguarde ativação pelo administrador.'
+                    : detail || 'Credenciais inválidas.',
+            )
         } finally {
             setSubmitting(false)
         }
@@ -342,7 +379,10 @@ function LoginPage() {
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
-        if (password !== confirmPassword) { setError('As senhas não coincidem.'); return }
+        if (password !== confirmPassword) {
+            setError('As senhas não coincidem.')
+            return
+        }
         setSubmitting(true)
         try {
             await authApi.post('/register', { name, email, password })
@@ -363,29 +403,54 @@ function LoginPage() {
             <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-8 shadow-sm">
                 <div className="mb-6 text-center">
                     <div className="text-2xl font-semibold">DocuParse</div>
-                    <div className="mt-1 text-sm text-zinc-500">{mode === 'login' ? 'Entre com sua conta para continuar' : 'Criar nova conta'}</div>
+                    <div className="mt-1 text-sm text-zinc-500">
+                        {mode === 'login' ? 'Entre com sua conta para continuar' : 'Criar nova conta'}
+                    </div>
                 </div>
-                {success && <div className="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</div>}
+                {success && (
+                    <div className="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{success}</div>
+                )}
                 {error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
                 {mode === 'login' ? (
                     <form onSubmit={handleLogin} className="space-y-4">
                         <div>
                             <label className="mb-1 block text-sm font-medium text-zinc-700">E-mail</label>
-                            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="voce@empresa.com" />
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                                placeholder="voce@empresa.com"
+                            />
                         </div>
                         <div>
                             <label className="mb-1 block text-sm font-medium text-zinc-700">Senha</label>
-                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="••••••••" />
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                                placeholder="••••••••"
+                            />
                         </div>
-                        <button type="submit" disabled={submitting}
-                            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
+                        <button
+                            type="submit"
+                            disabled={submitting}
+                            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                        >
                             {submitting ? 'Entrando...' : 'Entrar'}
                         </button>
-                        <button type="button" onClick={() => { setMode('register'); setError('') }}
-                            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-800">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setMode('register')
+                                setError('')
+                            }}
+                            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-800"
+                        >
                             Criar conta
                         </button>
                     </form>
@@ -393,30 +458,64 @@ function LoginPage() {
                     <form onSubmit={handleRegister} className="space-y-4">
                         <div>
                             <label className="mb-1 block text-sm font-medium text-zinc-700">Nome</label>
-                            <input type="text" value={name} onChange={(e) => setName(e.target.value)} required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="Seu nome" />
+                            <input
+                                type="text"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                                placeholder="Seu nome"
+                            />
                         </div>
                         <div>
                             <label className="mb-1 block text-sm font-medium text-zinc-700">E-mail</label>
-                            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="voce@empresa.com" />
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                                placeholder="voce@empresa.com"
+                            />
                         </div>
                         <div>
                             <label className="mb-1 block text-sm font-medium text-zinc-700">Senha</label>
-                            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8}
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="Mín. 8 caracteres" />
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                                minLength={8}
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                                placeholder="Mín. 8 caracteres"
+                            />
                         </div>
                         <div>
                             <label className="mb-1 block text-sm font-medium text-zinc-700">Confirmar senha</label>
-                            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required
-                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none" placeholder="••••••••" />
+                            <input
+                                type="password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                required
+                                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-500 focus:outline-none"
+                                placeholder="••••••••"
+                            />
                         </div>
-                        <button type="submit" disabled={submitting}
-                            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50">
+                        <button
+                            type="submit"
+                            disabled={submitting}
+                            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                        >
                             {submitting ? 'Criando conta...' : 'Criar conta'}
                         </button>
-                        <button type="button" onClick={() => { setMode('login'); setError('') }}
-                            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-800">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setMode('login')
+                                setError('')
+                            }}
+                            className="w-full text-center text-sm text-zinc-500 hover:text-zinc-800"
+                        >
                             Já tenho conta
                         </button>
                     </form>
@@ -430,8 +529,8 @@ function LoginPage() {
 
 function App() {
     const { user, logout, hasPermission } = useAuth()
-    const [activeView, setActiveView] = useState(() =>
-        NAV_ITEMS.find(item => hasPermission(item.permission))?.id ?? 'dashboard'
+    const [activeView, setActiveView] = useState(
+        () => NAV_ITEMS.find((item) => hasPermission(item.permission))?.id ?? 'dashboard',
     )
     const [schemas, setSchemas] = useState<SchemaConfig[]>([])
     const [layouts, setLayouts] = useState<LayoutConfig[]>([])
@@ -516,8 +615,6 @@ function App() {
         setActiveView('validation')
     }
 
-
-
     const handleReprocessDocument = async (id: string) => {
         try {
             await api.post(`/documents/${id}/reprocess-ocr`)
@@ -572,7 +669,9 @@ function App() {
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
                                 <h1 className="text-xl font-semibold">{viewTitle(activeView)}</h1>
-                                <p className="mt-1 text-sm text-zinc-500">Fluxo de captura, validacao e exportacao aprovado.</p>
+                                <p className="mt-1 text-sm text-zinc-500">
+                                    Fluxo de captura, validacao e exportacao aprovado.
+                                </p>
                             </div>
                             <button
                                 type="button"
@@ -604,7 +703,11 @@ function App() {
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}
 
-                        {activeView === 'dashboard' ? <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}><Dashboard refreshSignal={refreshSignal} onSelectRejected={setRejectedModal} /></PermissionGuard> : null}
+                        {activeView === 'dashboard' ? (
+                            <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
+                                <Dashboard refreshSignal={refreshSignal} onSelectRejected={setRejectedModal} />
+                            </PermissionGuard>
+                        ) : null}
                         {activeView === 'inbox' ? (
                             <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
                                 <InboxView
@@ -614,7 +717,11 @@ function App() {
                                 />
                             </PermissionGuard>
                         ) : null}
-                        {activeView === 'upload' ? <PermissionGuard code="documents.send" fallback={<AcessoNaoAutorizado />}><UploadView onUploaded={refreshData} /></PermissionGuard> : null}
+                        {activeView === 'upload' ? (
+                            <PermissionGuard code="documents.send" fallback={<AcessoNaoAutorizado />}>
+                                <UploadView onUploaded={refreshData} />
+                            </PermissionGuard>
+                        ) : null}
                         {activeView === 'approved' ? (
                             <PermissionGuard code="inbox.view" fallback={<AcessoNaoAutorizado />}>
                                 <ApprovedView refreshSignal={refreshSignal} />
@@ -641,10 +748,26 @@ function App() {
                                 />
                             </PermissionGuard>
                         ) : null}
-                        {activeView === 'operations' ? <PermissionGuard code="operations.access" fallback={<AcessoNaoAutorizado />}><OperationsView /></PermissionGuard> : null}
-                        {activeView === 'settings' ? <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}><SettingsView schemas={schemas} layouts={layouts} onChanged={refreshData} /></PermissionGuard> : null}
-                        {activeView === 'users' ? <PermissionGuard code="users.manage" fallback={<AcessoNaoAutorizado />}><GerenciarUsuarios /></PermissionGuard> : null}
-                        {activeView === 'roles' ? <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}><GerenciarRoles /></PermissionGuard> : null}
+                        {activeView === 'operations' ? (
+                            <PermissionGuard code="operations.access" fallback={<AcessoNaoAutorizado />}>
+                                <OperationsView />
+                            </PermissionGuard>
+                        ) : null}
+                        {activeView === 'settings' ? (
+                            <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}>
+                                <SettingsView schemas={schemas} layouts={layouts} onChanged={refreshData} />
+                            </PermissionGuard>
+                        ) : null}
+                        {activeView === 'users' ? (
+                            <PermissionGuard code="users.manage" fallback={<AcessoNaoAutorizado />}>
+                                <GerenciarUsuarios />
+                            </PermissionGuard>
+                        ) : null}
+                        {activeView === 'roles' ? (
+                            <PermissionGuard code="roles.manage" fallback={<AcessoNaoAutorizado />}>
+                                <GerenciarRoles />
+                            </PermissionGuard>
+                        ) : null}
                     </section>
                 </main>
             </div>
@@ -660,7 +783,12 @@ function App() {
     )
 }
 
-function NavButton({ item, active, onClick, compact = false }: {
+function NavButton({
+    item,
+    active,
+    onClick,
+    compact = false,
+}: {
     item: NavItem
     active: boolean
     onClick: () => void
@@ -681,7 +809,12 @@ function NavButton({ item, active, onClick, compact = false }: {
     )
 }
 
-function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }: {
+function RejectedDocumentModal({
+    doc,
+    onClose,
+    onReprocess,
+    onDelete,
+}: {
     doc: Document
     onClose: () => void
     onReprocess: (id: string) => void
@@ -715,7 +848,10 @@ function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }: {
                 <div className="flex gap-2 justify-end mt-5">
                     <button
                         type="button"
-                        onClick={() => { onDelete(doc.id); onClose(); }}
+                        onClick={() => {
+                            onDelete(doc.id)
+                            onClose()
+                        }}
                         className="inline-flex items-center gap-1 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
                     >
                         <Trash2 size={14} aria-hidden="true" />
@@ -723,7 +859,10 @@ function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }: {
                     </button>
                     <button
                         type="button"
-                        onClick={() => { onReprocess(doc.id); onClose(); }}
+                        onClick={() => {
+                            onReprocess(doc.id)
+                            onClose()
+                        }}
                         className="inline-flex items-center gap-1 rounded bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700"
                     >
                         <RefreshCw size={14} aria-hidden="true" />
@@ -735,7 +874,10 @@ function RejectedDocumentModal({ doc, onClose, onReprocess, onDelete }: {
     )
 }
 
-function Dashboard({ refreshSignal, onSelectRejected }: {
+function Dashboard({
+    refreshSignal,
+    onSelectRejected,
+}: {
     refreshSignal?: number
     onSelectRejected?: (doc: Document) => void
 }) {
@@ -747,18 +889,18 @@ function Dashboard({ refreshSignal, onSelectRejected }: {
 
     useEffect(() => {
         let ignore = false
-        Promise.all([
-            fetchDocumentCount(),
-            fetchDocumentCount('APPROVED'),
-            fetchDocumentCount('REJECTED'),
-        ])
+        Promise.all([fetchDocumentCount(), fetchDocumentCount('APPROVED'), fetchDocumentCount('REJECTED')])
             .then(([total, approved, failed]) => {
                 if (!ignore) {
                     setMetrics({ total, approved, failed, pending: Math.max(total - approved - failed, 0) })
                 }
             })
-            .catch(() => { /* métricas best-effort; a lista já reporta erros */ })
-        return () => { ignore = true }
+            .catch(() => {
+                /* métricas best-effort; a lista já reporta erros */
+            })
+        return () => {
+            ignore = true
+        }
     }, [refreshSignal, data])
 
     function handleSelectDocument(id: string) {
@@ -784,7 +926,13 @@ function Dashboard({ refreshSignal, onSelectRejected }: {
                 {error ? <Alert tone="error">{error}</Alert> : null}
                 {loading ? <Alert>Carregando documentos...</Alert> : null}
                 <DocumentTable documents={data.results} onSelectDocument={handleSelectDocument} />
-                <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
+                <Pagination
+                    page={page}
+                    totalPages={data.total_pages}
+                    count={data.count}
+                    pageSize={data.page_size}
+                    onPageChange={setPage}
+                />
             </section>
         </div>
     )
@@ -792,7 +940,11 @@ function Dashboard({ refreshSignal, onSelectRejected }: {
 
 const INBOX_STATUS_BUCKET = 'RECEIVED,OCR_COMPLETED,EXTRACTION_COMPLETED,VALIDATION_PENDING'
 
-function InboxView({ refreshSignal, onNavigateToValidation, onNavigateToUpload }: {
+function InboxView({
+    refreshSignal,
+    onNavigateToValidation,
+    onNavigateToUpload,
+}: {
     refreshSignal?: number
     onNavigateToValidation: (id: string) => void
     onNavigateToUpload: () => void
@@ -821,7 +973,13 @@ function InboxView({ refreshSignal, onNavigateToValidation, onNavigateToUpload }
                 {error ? <Alert tone="error">{error}</Alert> : null}
                 {loading ? <Alert>Carregando documentos...</Alert> : null}
                 <DocumentTable documents={data.results} onSelectDocument={onNavigateToValidation} />
-                <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
+                <Pagination
+                    page={page}
+                    totalPages={data.total_pages}
+                    count={data.count}
+                    pageSize={data.page_size}
+                    onPageChange={setPage}
+                />
             </section>
         </div>
     )
@@ -855,12 +1013,15 @@ function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
                             {data.results.map((doc) => (
                                 <tr key={doc.id} className="hover:bg-zinc-50">
                                     <td className="px-4 py-3 font-medium">{doc.original_filename || doc.id}</td>
-                                    <td className="px-4 py-3"><StatusBadge status={doc.status} /></td>
+                                    <td className="px-4 py-3">
+                                        <StatusBadge status={doc.status} />
+                                    </td>
                                     <td className="whitespace-nowrap px-4 py-3 text-zinc-500">
                                         {formatDate(doc.approved_at ?? doc.decision_date ?? doc.updated_at)}
                                     </td>
                                     <td className="px-4 py-3">
-                                        {doc.extraction_result?.fields && Object.keys(doc.extraction_result.fields).length > 0 ? (
+                                        {doc.extraction_result?.fields &&
+                                        Object.keys(doc.extraction_result.fields).length > 0 ? (
                                             <button
                                                 type="button"
                                                 onClick={() => setSelectedDoc(doc)}
@@ -879,10 +1040,14 @@ function ApprovedView({ refreshSignal }: { refreshSignal?: number }) {
                     </table>
                 </div>
             )}
-            <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
-            {selectedDoc && (
-                <ExtractedFieldsModal doc={selectedDoc} onClose={() => setSelectedDoc(null)} />
-            )}
+            <Pagination
+                page={page}
+                totalPages={data.total_pages}
+                count={data.count}
+                pageSize={data.page_size}
+                onPageChange={setPage}
+            />
+            {selectedDoc && <ExtractedFieldsModal doc={selectedDoc} onClose={() => setSelectedDoc(null)} />}
         </section>
     )
 }
@@ -912,7 +1077,12 @@ function ExtractedFieldsModal({ doc, onClose }: { doc: Document; onClose: () => 
     )
 }
 
-function RejectedView({ refreshSignal, onReprocess, onDelete, onRefresh }: {
+function RejectedView({
+    refreshSignal,
+    onReprocess,
+    onDelete,
+    onRefresh,
+}: {
     refreshSignal?: number
     onReprocess: (id: string) => void
     onDelete: (id: string) => void
@@ -963,12 +1133,22 @@ function RejectedView({ refreshSignal, onReprocess, onDelete, onRefresh }: {
                     </table>
                 </div>
             )}
-            <Pagination page={page} totalPages={data.total_pages} count={data.count} pageSize={data.page_size} onPageChange={setPage} />
+            <Pagination
+                page={page}
+                totalPages={data.total_pages}
+                count={data.count}
+                pageSize={data.page_size}
+                onPageChange={setPage}
+            />
         </section>
     )
 }
 
-function RejectedRow({ document, onReprocess, onDelete }: {
+function RejectedRow({
+    document,
+    onReprocess,
+    onDelete,
+}: {
     document: Document
     onReprocess: (id: string) => void
     onDelete: (id: string) => void
@@ -1098,7 +1278,12 @@ function OperationsView() {
         if (!selectedEvent || requeueing) {
             return
         }
-        if (execute && !window.confirm('Reenfileirar este payload original para reprocessamento? O registro da DLQ sera mantido para auditoria.')) {
+        if (
+            execute &&
+            !window.confirm(
+                'Reenfileirar este payload original para reprocessamento? O registro da DLQ sera mantido para auditoria.',
+            )
+        ) {
             return
         }
         setRequeueing(true)
@@ -1136,9 +1321,15 @@ function OperationsView() {
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
                     <div>
                         <div className="text-sm font-semibold">Dead-letter queues</div>
-                        <div className="mt-1 text-xs text-zinc-500">Eventos que falharam nos workers e aguardam revisao operacional.</div>
+                        <div className="mt-1 text-xs text-zinc-500">
+                            Eventos que falharam nos workers e aguardam revisao operacional.
+                        </div>
                     </div>
-                    <button type="button" onClick={() => loadOperations(selectedStream)} className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
+                    <button
+                        type="button"
+                        onClick={() => loadOperations(selectedStream)}
+                        className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                    >
                         <RefreshCw size={16} aria-hidden="true" />
                         Atualizar
                     </button>
@@ -1154,7 +1345,9 @@ function OperationsView() {
                         >
                             <div className="truncate text-xs font-semibold uppercase text-zinc-500">{item.stream}</div>
                             <div className="mt-2 text-2xl font-semibold">{item.count}</div>
-                            <div className="mt-1 truncate text-xs text-zinc-500">{item.latest?.error_type || 'Sem eventos'}</div>
+                            <div className="mt-1 truncate text-xs text-zinc-500">
+                                {item.latest?.error_type || 'Sem eventos'}
+                            </div>
                         </button>
                     ))}
                 </div>
@@ -1164,7 +1357,9 @@ function OperationsView() {
                 <div className="rounded-md border border-zinc-200 bg-white">
                     <div className="border-b border-zinc-200 px-4 py-3">
                         <div className="text-sm font-semibold">{selectedStream}</div>
-                        <div className="mt-1 text-xs text-zinc-500">Selecione um evento para ver erro e payload original.</div>
+                        <div className="mt-1 text-xs text-zinc-500">
+                            Selecione um evento para ver erro e payload original.
+                        </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-zinc-200 text-sm">
@@ -1183,15 +1378,21 @@ function OperationsView() {
                                         onClick={() => setSelectedEvent(event)}
                                         className={`cursor-pointer hover:bg-zinc-50 ${selectedEvent?.id === event.id ? 'bg-zinc-50' : ''}`}
                                     >
-                                        <td className="whitespace-nowrap px-4 py-3 text-zinc-600">{formatDate(event.occurred_at)}</td>
+                                        <td className="whitespace-nowrap px-4 py-3 text-zinc-600">
+                                            {formatDate(event.occurred_at)}
+                                        </td>
                                         <td className="whitespace-nowrap px-4 py-3">{event.source || '-'}</td>
                                         <td className="px-4 py-3">
                                             <div className="font-medium">{event.event_type || '-'}</div>
-                                            <div className="max-w-[220px] truncate text-xs text-zinc-500">{event.event_id || '-'}</div>
+                                            <div className="max-w-[220px] truncate text-xs text-zinc-500">
+                                                {event.event_id || '-'}
+                                            </div>
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="font-medium text-red-700">{event.error_type || '-'}</div>
-                                            <div className="max-w-[360px] truncate text-xs text-zinc-500">{event.error || '-'}</div>
+                                            <div className="max-w-[360px] truncate text-xs text-zinc-500">
+                                                {event.error || '-'}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -1234,11 +1435,17 @@ function OperationsView() {
                             </div>
                             <div>
                                 <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Mensagem</div>
-                                <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-800">{selectedEvent.error || '-'}</div>
+                                <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-800">
+                                    {selectedEvent.error || '-'}
+                                </div>
                             </div>
                             <div>
-                                <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Payload original</div>
-                                <pre className="max-h-[420px] overflow-auto rounded-md bg-zinc-950 p-3 text-xs text-zinc-50">{JSON.stringify(selectedEvent.payload || {}, null, 2)}</pre>
+                                <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">
+                                    Payload original
+                                </div>
+                                <pre className="max-h-[420px] overflow-auto rounded-md bg-zinc-950 p-3 text-xs text-zinc-50">
+                                    {JSON.stringify(selectedEvent.payload || {}, null, 2)}
+                                </pre>
                             </div>
                         </div>
                     ) : (
@@ -1300,7 +1507,11 @@ function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> 
             <section className="rounded-md border border-zinc-200 bg-white p-4">
                 <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Tenant">
-                        <input value={tenantId} onChange={(event) => setTenantId(event.target.value)} className="input" />
+                        <input
+                            value={tenantId}
+                            onChange={(event) => setTenantId(event.target.value)}
+                            className="input"
+                        />
                     </Field>
                     <Field label="Remetente">
                         <input value={sender} onChange={(event) => setSender(event.target.value)} className="input" />
@@ -1335,7 +1546,11 @@ function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> 
                     </object>
                 ) : (
                     <div className="max-h-[520px] overflow-auto p-3">
-                        <img src={previewUrl} alt="Preview do arquivo selecionado" className="max-w-full rounded border border-zinc-200" />
+                        <img
+                            src={previewUrl}
+                            alt="Preview do arquivo selecionado"
+                            className="max-w-full rounded border border-zinc-200"
+                        />
                     </div>
                 )}
             </section>
@@ -1343,7 +1558,13 @@ function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> 
     )
 }
 
-export function ValidationView({ schemas = [], selectedDocument, selectedDocumentId, onValidated, onBackToInbox }: {
+export function ValidationView({
+    schemas = [],
+    selectedDocument,
+    selectedDocumentId,
+    onValidated,
+    onBackToInbox,
+}: {
     schemas?: SchemaConfig[]
     selectedDocument: Document | null
     selectedDocumentId: string
@@ -1377,7 +1598,10 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
             setFieldRows(
                 Object.entries(persistedFields)
                     .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
+                    .map(([name, raw]) => {
+                        const { value, confidence } = parseFieldEntry(raw)
+                        return { name, value, confidence }
+                    })
                     .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
             )
         } else {
@@ -1390,7 +1614,10 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         // then fall back to backend text classification.
         if (isLangExtracted && result.schema_id) {
             const match = schemas.find((s) => s.schema_id === result.schema_id)
-            if (match) { setSelectedSchemaId(match.id); return }
+            if (match) {
+                setSelectedSchemaId(match.id)
+                return
+            }
         }
         const rawText = selectedDocument?.full_transcription || ''
         if (!rawText) return
@@ -1405,7 +1632,9 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                 if (s) setSelectedSchemaId(s.id)
             })
             .catch(() => {})
-        return () => { ignore = true }
+        return () => {
+            ignore = true
+        }
     }, [selectedDocument?.id])
 
     const applyExtractionData = (data: ExtractionResult) => {
@@ -1413,7 +1642,10 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         setFieldRows(
             Object.entries(fields)
                 .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                .map(([name, raw]) => { const { value, confidence } = parseFieldEntry(raw); return { name, value, confidence } })
+                .map(([name, raw]) => {
+                    const { value, confidence } = parseFieldEntry(raw)
+                    return { name, value, confidence }
+                })
                 .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
         )
         const pct = data.confidence != null ? ` Confianca: ${(data.confidence * 100).toFixed(0)}%` : ''
@@ -1426,7 +1658,9 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         setExtractMessage('Extraindo... isso pode levar alguns segundos.')
         const baseline = {
             resultUpdatedAt: selectedDocument?.extraction_result?.updated_at ?? null,
-            metaUpdatedAt: (selectedDocument?.metadata as { extraction?: { updated_at?: string } } | undefined)?.extraction?.updated_at ?? null,
+            metaUpdatedAt:
+                (selectedDocument?.metadata as { extraction?: { updated_at?: string } } | undefined)?.extraction
+                    ?.updated_at ?? null,
         }
         try {
             const response = await api.post<ExtractionResult>(`/documents/${selectedDocumentId}/langextract`, {
@@ -1438,7 +1672,10 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                 const outcome = await pollDocumentExtraction(selectedDocumentId, baseline)
                 if (outcome.status === 'completed') applyExtractionData(outcome.extraction)
                 else if (outcome.status === 'failed') setExtractMessage(`Falha na extracao: ${outcome.error}`)
-                else setExtractMessage('A extracao ainda esta em andamento. Clique em Atualizar em instantes para ver o resultado.')
+                else
+                    setExtractMessage(
+                        'A extracao ainda esta em andamento. Clique em Atualizar em instantes para ver o resultado.',
+                    )
             } else {
                 // Synchronous response (e.g. local dev). Apply the result directly.
                 applyExtractionData(response.data)
@@ -1471,9 +1708,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                 decision,
                 notes,
                 corrected_fields: Object.fromEntries(
-                    fieldRows
-                        .filter((row) => row.name.trim())
-                        .map((row) => [row.name.trim(), row.value]),
+                    fieldRows.filter((row) => row.name.trim()).map((row) => [row.name.trim(), row.value]),
                 ),
             })
             setNotes('')
@@ -1488,9 +1723,7 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
     }
 
     const buildFieldsPayload = () =>
-        fieldRows
-            .filter((row) => row.name.trim())
-            .map((row) => ({ name: row.name.trim(), value: row.value }))
+        fieldRows.filter((row) => row.name.trim()).map((row) => ({ name: row.name.trim(), value: row.value }))
 
     const handleSaveFields = async () => {
         setConfirmSaveOpen(false)
@@ -1563,7 +1796,9 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
         <div className="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(460px,1.1fr)]">
             <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
-                    <div className="text-sm font-semibold">{selectedDocument?.original_filename || selectedDocument?.id || 'Documento'}</div>
+                    <div className="text-sm font-semibold">
+                        {selectedDocument?.original_filename || selectedDocument?.id || 'Documento'}
+                    </div>
                     {selectedDocument ? (
                         <a
                             href={`/api/ocr/documents/${selectedDocument.id}/file`}
@@ -1619,7 +1854,10 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                             <button
                                 type="button"
                                 disabled={saving}
-                                onClick={() => { setSaveMessage(null); setConfirmSaveOpen(true) }}
+                                onClick={() => {
+                                    setSaveMessage(null)
+                                    setConfirmSaveOpen(true)
+                                }}
                                 className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
                             >
                                 <Save size={16} aria-hidden="true" />
@@ -1654,17 +1892,30 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
                         ) : null}
                         <textarea
                             value={notes}
-                            onChange={(event) => { setNotes(event.target.value); setNotesError(false) }}
+                            onChange={(event) => {
+                                setNotes(event.target.value)
+                                setNotesError(false)
+                            }}
                             className={`input min-h-[86px]${notesError ? ' border-red-500 ring-1 ring-red-500' : ''}`}
                             placeholder="Motivo da rejeição (obrigatório para rejeitar)"
                         />
                         {submitError ? <Alert tone="error">{submitError}</Alert> : null}
                         <div className="flex flex-wrap gap-2">
-                            <button type="button" disabled={submitting} onClick={() => submitDecision('approved')} className="success-button">
+                            <button
+                                type="button"
+                                disabled={submitting}
+                                onClick={() => submitDecision('approved')}
+                                className="success-button"
+                            >
                                 <CheckCircle2 size={16} aria-hidden="true" />
                                 Aprovar
                             </button>
-                            <button type="button" disabled={submitting} onClick={() => submitDecision('rejected')} className="danger-button">
+                            <button
+                                type="button"
+                                disabled={submitting}
+                                onClick={() => submitDecision('rejected')}
+                                className="danger-button"
+                            >
                                 <XCircle size={16} aria-hidden="true" />
                                 Rejeitar
                             </button>
@@ -1676,7 +1927,17 @@ export function ValidationView({ schemas = [], selectedDocument, selectedDocumen
     )
 }
 
-function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChange, extracting, extractMessage, onRunExtract, fieldRows, onFieldRowsChange }: {
+function LangExtractPanel({
+    documentId,
+    schemas,
+    selectedSchemaId,
+    onSchemaChange,
+    extracting,
+    extractMessage,
+    onRunExtract,
+    fieldRows,
+    onFieldRowsChange,
+}: {
     documentId: string
     schemas: SchemaConfig[]
     selectedSchemaId: string
@@ -1739,7 +2000,10 @@ function LangExtractPanel({ documentId, schemas, selectedSchemaId, onSchemaChang
             ) : (
                 <div className="divide-y divide-zinc-100">
                     {fieldRows.map((row, index) => (
-                        <div key={`${row.name}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto_auto]">
+                        <div
+                            key={`${row.name}-${index}`}
+                            className="grid gap-2 px-3 py-3 md:grid-cols-[220px_1fr_auto_auto]"
+                        >
                             <input
                                 value={row.name}
                                 onChange={(event) => updateRow(index, { name: event.target.value })}
@@ -1781,7 +2045,14 @@ const FIELD_VERSION_SOURCE_LABELS = {
     MANUAL_EDIT: 'Edição manual',
 }
 
-function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar', onConfirm, onCancel }: {
+function ConfirmDialog({
+    title,
+    message,
+    confirmLabel = 'Confirmar',
+    cancelLabel = 'Cancelar',
+    onConfirm,
+    onCancel,
+}: {
     title: React.ReactNode
     message: React.ReactNode
     confirmLabel?: string
@@ -1790,7 +2061,11 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel
     onCancel: () => void
 }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            role="dialog"
+            aria-modal="true"
+        >
             <div className="w-full max-w-sm rounded-md border border-zinc-200 bg-white p-4 shadow-lg">
                 <div className="text-sm font-semibold text-zinc-900">{title}</div>
                 <p className="mt-2 text-sm text-zinc-600">{message}</p>
@@ -1815,7 +2090,12 @@ function ConfirmDialog({ title, message, confirmLabel = 'Confirmar', cancelLabel
     )
 }
 
-function FieldVersionHistoryModal({ history, loading, error, onClose }: {
+function FieldVersionHistoryModal({
+    history,
+    loading,
+    error,
+    onClose,
+}: {
     history: FieldVersionsResponse | null
     loading: boolean
     error: string
@@ -1823,11 +2103,20 @@ function FieldVersionHistoryModal({ history, loading, error, onClose }: {
 }) {
     const versions = history?.results ?? []
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            role="dialog"
+            aria-modal="true"
+        >
             <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-md border border-zinc-200 bg-white shadow-lg">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
                     <div className="text-sm font-semibold">Histórico de versões (somente leitura)</div>
-                    <button type="button" onClick={onClose} className="rounded p-1 text-zinc-500 hover:bg-zinc-100" aria-label="Fechar">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded p-1 text-zinc-500 hover:bg-zinc-100"
+                        aria-label="Fechar"
+                    >
                         <X size={16} aria-hidden="true" />
                     </button>
                 </div>
@@ -1837,7 +2126,9 @@ function FieldVersionHistoryModal({ history, loading, error, onClose }: {
                     ) : error ? (
                         <Alert tone="error">{error}</Alert>
                     ) : versions.length === 0 ? (
-                        <div className="py-6 text-center text-sm text-zinc-400">Nenhuma versão registrada para este documento.</div>
+                        <div className="py-6 text-center text-sm text-zinc-400">
+                            Nenhuma versão registrada para este documento.
+                        </div>
                     ) : (
                         <div className="space-y-3">
                             {versions.map((version) => (
@@ -1846,7 +2137,9 @@ function FieldVersionHistoryModal({ history, loading, error, onClose }: {
                                         <div className="text-sm font-semibold">
                                             Versão {version.version_number}
                                             {version.is_active ? (
-                                                <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-700">Ativa</span>
+                                                <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-700">
+                                                    Ativa
+                                                </span>
                                             ) : null}
                                         </div>
                                         <div className="text-xs text-zinc-500">
@@ -1860,7 +2153,10 @@ function FieldVersionHistoryModal({ history, loading, error, onClose }: {
                                         {Object.entries(version.fields || {}).map(([name, raw]) => {
                                             const { value, confidence } = parseFieldEntry(raw)
                                             return (
-                                                <div key={name} className="grid grid-cols-[200px_1fr_auto] gap-2 px-3 py-2 text-sm">
+                                                <div
+                                                    key={name}
+                                                    className="grid grid-cols-[200px_1fr_auto] gap-2 px-3 py-2 text-sm"
+                                                >
                                                     <div className="font-medium text-zinc-600">{name}</div>
                                                     <div className="break-words text-zinc-900">{value}</div>
                                                     <div className="text-xs text-zinc-400">
@@ -1895,19 +2191,13 @@ function DocumentMetadataPanel({ document }: { document: Document }) {
         { label: 'Corpo do email', value: meta.body },
     ].filter((row) => row.value != null && row.value !== '')
 
-    const attachments = Array.isArray(meta.attachments)
-        ? meta.attachments
-        : meta.attachments
-        ? [meta.attachments]
-        : []
+    const attachments = Array.isArray(meta.attachments) ? meta.attachments : meta.attachments ? [meta.attachments] : []
 
     const isEmpty = rows.length === 0 && attachments.length === 0
 
     return (
         <div className="rounded-md border border-zinc-200">
-            <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">
-                Metadados do Documento
-            </div>
+            <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">Metadados do Documento</div>
             {isEmpty ? (
                 <EmptyState icon={FileText} text="Nenhum metadado disponível para este documento." />
             ) : (
@@ -1924,7 +2214,7 @@ function DocumentMetadataPanel({ document }: { document: Document }) {
                             <div className="space-y-0.5">
                                 {attachments.map((a: any, i: number) => (
                                     <div key={i} className="text-sm text-zinc-800">
-                                        {typeof a === 'object' ? (a.filename || JSON.stringify(a)) : a}
+                                        {typeof a === 'object' ? a.filename || JSON.stringify(a) : a}
                                     </div>
                                 ))}
                             </div>
@@ -1953,7 +2243,9 @@ function ReadOnlyTranscriptionFormatted({ value }: { value?: string }) {
                     </button>
                 </div>
             </div>
-            <pre className={`min-h-[160px] max-h-[420px] w-full overflow-auto whitespace-pre bg-zinc-50 px-3 py-3 text-xs leading-5 text-zinc-700${open ? '' : ' hidden'}`}>
+            <pre
+                className={`min-h-[160px] max-h-[420px] w-full overflow-auto whitespace-pre bg-zinc-50 px-3 py-3 text-xs leading-5 text-zinc-700${open ? '' : ' hidden'}`}
+            >
                 {value || ''}
             </pre>
             {!value ? (
@@ -2092,7 +2384,11 @@ interface ReferenceReview {
     notes: string
 }
 
-function SettingsView({ schemas, layouts, onChanged }: {
+function SettingsView({
+    schemas,
+    layouts,
+    onChanged,
+}: {
     schemas: SchemaConfig[]
     layouts: LayoutConfig[]
     onChanged: () => void | Promise<unknown>
@@ -2116,7 +2412,9 @@ function SettingsView({ schemas, layouts, onChanged }: {
     })
     const [fields, setFields] = useState(DEFAULT_LANGEXTRACT_FIELDS)
     const [prompt, setPrompt] = useState(DEFAULT_LANGEXTRACT_PROMPT)
-    const [normalizationRules, setNormalizationRules] = useState('{\n  "valor_total": { "type": "decimal", "required": true, "min": 0 },\n  "fornecedor_cnpj": { "type": "cnpj", "validate_checksum": true }\n}')
+    const [normalizationRules, setNormalizationRules] = useState(
+        '{\n  "valor_total": { "type": "decimal", "required": true, "min": 0 },\n  "fornecedor_cnpj": { "type": "cnpj", "validate_checksum": true }\n}',
+    )
     const [examples, setExamples] = useState<SchemaExample[]>([
         {
             field: 'valor_total',
@@ -2185,10 +2483,11 @@ function SettingsView({ schemas, layouts, onChanged }: {
         [schemas],
     )
 
-    const activeLayout = layouts.find((layout) => (
-        layout.schema_config_id === selectedSchemaId
-        || (layout.layout === layoutForm.layout && layout.document_type === layoutForm.document_type)
-    ))
+    const activeLayout = layouts.find(
+        (layout) =>
+            layout.schema_config_id === selectedSchemaId ||
+            (layout.layout === layoutForm.layout && layout.document_type === layoutForm.document_type),
+    )
 
     useEffect(() => {
         if (!selectedDocumentId) {
@@ -2241,12 +2540,22 @@ function SettingsView({ schemas, layouts, onChanged }: {
                         setFields(NOTA_FISCAL_DEFAULT_FIELDS)
                         setExamples(NOTA_FISCAL_DEFAULT_EXAMPLES)
                         setNormalizationRules(JSON.stringify(NOTA_FISCAL_DEFAULT_RULES, null, 2))
-                        setSchemaForm((current) => ({ ...current, model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME, schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID, document_type: docType }))
+                        setSchemaForm((current) => ({
+                            ...current,
+                            model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
+                            schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID,
+                            document_type: docType,
+                        }))
                         setPrompt(notaPrompt)
                         return
                     }
                     setSelectedSchemaId('')
-                    setSchemaForm((current) => ({ ...current, model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME, schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID, document_type: docType }))
+                    setSchemaForm((current) => ({
+                        ...current,
+                        model_name: NOTA_FISCAL_DEFAULT_MODEL_NAME,
+                        schema_id: NOTA_FISCAL_DEFAULT_SCHEMA_ID,
+                        document_type: docType,
+                    }))
                     setFields(NOTA_FISCAL_DEFAULT_FIELDS)
                     setPrompt(notaPrompt)
                     setExamples(NOTA_FISCAL_DEFAULT_EXAMPLES)
@@ -2261,12 +2570,22 @@ function SettingsView({ schemas, layouts, onChanged }: {
                         setFields(CONTA_AGUA_DEFAULT_FIELDS)
                         setExamples(CONTA_AGUA_DEFAULT_EXAMPLES)
                         setNormalizationRules(JSON.stringify(CONTA_AGUA_DEFAULT_RULES, null, 2))
-                        setSchemaForm((current) => ({ ...current, model_name: CONTA_AGUA_DEFAULT_MODEL_NAME, schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID, document_type: docType }))
+                        setSchemaForm((current) => ({
+                            ...current,
+                            model_name: CONTA_AGUA_DEFAULT_MODEL_NAME,
+                            schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID,
+                            document_type: docType,
+                        }))
                         setPrompt(aguaPrompt)
                         return
                     }
                     setSelectedSchemaId('')
-                    setSchemaForm((current) => ({ ...current, model_name: CONTA_AGUA_DEFAULT_MODEL_NAME, schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID, document_type: docType }))
+                    setSchemaForm((current) => ({
+                        ...current,
+                        model_name: CONTA_AGUA_DEFAULT_MODEL_NAME,
+                        schema_id: CONTA_AGUA_DEFAULT_SCHEMA_ID,
+                        document_type: docType,
+                    }))
                     setFields(CONTA_AGUA_DEFAULT_FIELDS)
                     setPrompt(aguaPrompt)
                     setExamples(CONTA_AGUA_DEFAULT_EXAMPLES)
@@ -2281,12 +2600,22 @@ function SettingsView({ schemas, layouts, onChanged }: {
                         setFields(BOLETO_DEFAULT_FIELDS)
                         setExamples(BOLETO_DEFAULT_EXAMPLES)
                         setNormalizationRules(JSON.stringify(BOLETO_DEFAULT_RULES, null, 2))
-                        setSchemaForm((current) => ({ ...current, model_name: BOLETO_DEFAULT_MODEL_NAME, schema_id: BOLETO_DEFAULT_SCHEMA_ID, document_type: docType }))
+                        setSchemaForm((current) => ({
+                            ...current,
+                            model_name: BOLETO_DEFAULT_MODEL_NAME,
+                            schema_id: BOLETO_DEFAULT_SCHEMA_ID,
+                            document_type: docType,
+                        }))
                         setPrompt(boletoPrompt)
                         return
                     }
                     setSelectedSchemaId('')
-                    setSchemaForm((current) => ({ ...current, model_name: BOLETO_DEFAULT_MODEL_NAME, schema_id: BOLETO_DEFAULT_SCHEMA_ID, document_type: docType }))
+                    setSchemaForm((current) => ({
+                        ...current,
+                        model_name: BOLETO_DEFAULT_MODEL_NAME,
+                        schema_id: BOLETO_DEFAULT_SCHEMA_ID,
+                        document_type: docType,
+                    }))
                     setFields(BOLETO_DEFAULT_FIELDS)
                     setPrompt(boletoPrompt)
                     setExamples(BOLETO_DEFAULT_EXAMPLES)
@@ -2295,16 +2624,26 @@ function SettingsView({ schemas, layouts, onChanged }: {
                 }
 
                 // No match — reset to default if currently on a known auto-selected schema.
-                if ([BOLETO_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_SCHEMA_ID, CONTA_AGUA_DEFAULT_SCHEMA_ID].includes(capturedSchemaId)) {
+                if (
+                    [BOLETO_DEFAULT_SCHEMA_ID, NOTA_FISCAL_DEFAULT_SCHEMA_ID, CONTA_AGUA_DEFAULT_SCHEMA_ID].includes(
+                        capturedSchemaId,
+                    )
+                ) {
                     setSelectedSchemaId('')
-                    setSchemaForm((current) => ({ ...current, model_name: DEFAULT_MODEL_NAME, schema_id: DEFAULT_SCHEMA_ID }))
+                    setSchemaForm((current) => ({
+                        ...current,
+                        model_name: DEFAULT_MODEL_NAME,
+                        schema_id: DEFAULT_SCHEMA_ID,
+                    }))
                     setFields(DEFAULT_LANGEXTRACT_FIELDS)
                     setPrompt(DEFAULT_LANGEXTRACT_PROMPT)
                     setExamples([])
                 }
             })
             .catch(() => {})
-        return () => { ignore = true }
+        return () => {
+            ignore = true
+        }
     }, [
         referenceDocument?.id,
         referenceDocument?.full_transcription,
@@ -2411,15 +2750,19 @@ function SettingsView({ schemas, layouts, onChanged }: {
         }
     }, [])
 
-    const schemaDefinition = useMemo(() => buildLangExtractDefinition({
-        schemaForm,
-        fields,
-        prompt,
-        examples,
-        normalizationRules,
-        referenceReview,
-        referenceDocument,
-    }), [schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument])
+    const schemaDefinition = useMemo(
+        () =>
+            buildLangExtractDefinition({
+                schemaForm,
+                fields,
+                prompt,
+                examples,
+                normalizationRules,
+                referenceReview,
+                referenceDocument,
+            }),
+        [schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument],
+    )
 
     const loadExistingSchema = (schemaId: string, { source = 'manual' }: { source?: string } = {}) => {
         // Preserve the selection source so auto-detection does not override manual choices.
@@ -2455,12 +2798,14 @@ function SettingsView({ schemas, layouts, onChanged }: {
             }))
         }
         if (Array.isArray(definition.fields)) {
-            setFields(definition.fields.map((field: any) => ({
-                name: field.name || '',
-                type: field.type || 'string',
-                required: Boolean(field.required),
-                rule: field.rule || '',
-            })))
+            setFields(
+                definition.fields.map((field: any) => ({
+                    name: field.name || '',
+                    type: field.type || 'string',
+                    required: Boolean(field.required),
+                    rule: field.rule || '',
+                })),
+            )
         }
         if (definition.prompt?.instructions) {
             setPrompt(definition.prompt.instructions)
@@ -2678,234 +3023,356 @@ function SettingsView({ schemas, layouts, onChanged }: {
                 </div>
                 {activeSettingsArea === 'extraction' ? (
                     <>
-                <div className="flex gap-1 overflow-x-auto border-b border-zinc-200 px-3 py-2">
-                    {SETTINGS_TABS.map((tab) => (
-                        <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => setActiveTab(tab.id)}
-                            className={`h-9 shrink-0 rounded-md px-3 text-sm font-medium ${activeTab === tab.id ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
-                <div className="p-4">
-                    <TabHelp tab={activeTab} />
-                    {activeTab !== 'setup' ? (
-                        <ActiveTemplateHeader schemaForm={schemaForm} layoutForm={layoutForm} activeLayout={activeLayout} onChangeModel={() => setActiveTab('setup')} />
-                    ) : null}
-                    {activeTab === 'setup' ? (
-                        <div className="space-y-4">
-                            <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
-                                <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_220px]">
-                                    <Field label="Selecionar modelo existente">
-                                        <select
-                                            value={selectedSchemaId}
-                                            onChange={(event) => loadExistingSchema(event.target.value, { source: 'manual' })}
-                                            className="input"
-                                        >
-                                            <option value="">Criar novo modelo</option>
-                                            {schemas.map((schema) => (
-                                                <option key={schema.id} value={schema.id}>
-                                                    {schema.schema_id} {schema.version}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </Field>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSelectedSchemaId('')
-                                            setSchemaForm({
-                                                tenant_slug: 'tenant-demo',
-                                                schema_id: 'novo_modelo',
-                                                version: 'v1',
-                                                model_name: 'Novo modelo',
-                                                document_type: 'scanned_image',
-                                                status: 'draft',
-                                            })
-                                            setLayoutForm({
-                                                tenant_slug: 'tenant-demo',
-                                                layout: 'novo_layout',
-                                                document_type: 'scanned_image',
-                                                schema_config_id: '',
-                                                confidence_threshold: '0.75',
-                                            })
-                                            setFields(DEFAULT_LANGEXTRACT_FIELDS)
-                                            setPrompt(DEFAULT_LANGEXTRACT_PROMPT)
-                                            setExamples([])
-                                            setReferenceReview({ quality: 'pending', action: 'review_before_examples', notes: '' })
-                                        }}
-                                        className="mt-6 h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium hover:bg-zinc-100"
-                                    >
-                                        Novo modelo
-                                    </button>
-                                </div>
-                            </section>
-                            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-                                <div className="grid gap-3 md:grid-cols-2">
-                                    <Field label="Nome do modelo">
-                                        <input value={schemaForm.model_name} onChange={(event) => setSchemaForm({ ...schemaForm, model_name: event.target.value })} className="input" placeholder="Recibo de servico" />
-                                    </Field>
-                                    <Field label="Schema">
-                                        <input value={schemaForm.schema_id} onChange={(event) => setSchemaForm({ ...schemaForm, schema_id: event.target.value })} className="input" placeholder="recibo_servico" />
-                                    </Field>
-                                    <Field label="Tenant">
-                                        <input value={schemaForm.tenant_slug} onChange={(event) => setSchemaForm({ ...schemaForm, tenant_slug: event.target.value, })} className="input" />
-                                    </Field>
-                                    <Field label="Versao">
-                                        <input value={schemaForm.version} onChange={(event) => setSchemaForm({ ...schemaForm, version: event.target.value })} className="input" />
-                                    </Field>
-                                    <Field label="Tipo de documento">
-                                        <select value={schemaForm.document_type} onChange={(event) => {
-                                            setSchemaForm({ ...schemaForm, document_type: event.target.value })
-                                            setLayoutForm({ ...layoutForm, document_type: event.target.value })
-                                        }} className="input">
-                                            <option value="scanned_image">Imagem/PDF escaneado</option>
-                                            <option value="digital_pdf">PDF textual</option>
-                                            <option value="handwritten_complex">Manuscrito complexo</option>
-                                        </select>
-                                    </Field>
-                                    <Field label="Status">
-                                        <select value={schemaForm.status} onChange={(event) => setSchemaForm({ ...schemaForm, status: event.target.value })} className="input">
-                                            <option value="draft">Rascunho</option>
-                                            <option value="testing">Em teste</option>
-                                            <option value="approved">Aprovado</option>
-                                            <option value="disabled">Desativado</option>
-                                        </select>
-                                    </Field>
-                                </div>
-                                <HintPanel
-                                    title="Checklist LangExtract"
-                                    items={[
-                                        'Defina o schema antes do prompt.',
-                                        'Use exemplos anotados para campos ambiguos.',
-                                        'Mantenha o trecho fonte para validacao visual.',
-                                        'Publique somente versoes testadas.',
-                                    ]}
+                        <div className="flex gap-1 overflow-x-auto border-b border-zinc-200 px-3 py-2">
+                            {SETTINGS_TABS.map((tab) => (
+                                <button
+                                    key={tab.id}
+                                    type="button"
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`h-9 shrink-0 rounded-md px-3 text-sm font-medium ${activeTab === tab.id ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-100'}`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="p-4">
+                            <TabHelp tab={activeTab} />
+                            {activeTab !== 'setup' ? (
+                                <ActiveTemplateHeader
+                                    schemaForm={schemaForm}
+                                    layoutForm={layoutForm}
+                                    activeLayout={activeLayout}
+                                    onChangeModel={() => setActiveTab('setup')}
                                 />
-                            </div>
-                            <div className="grid gap-4 lg:grid-cols-2">
-                                <SchemaList schemas={schemas} onDeleted={onChanged} />
-                                <ConfigList title="Layouts existentes" items={layouts} primaryKey="layout" secondaryKey="document_type" />
-                            </div>
-                        </div>
-                    ) : null}
+                            ) : null}
+                            {activeTab === 'setup' ? (
+                                <div className="space-y-4">
+                                    <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+                                        <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_220px]">
+                                            <Field label="Selecionar modelo existente">
+                                                <select
+                                                    value={selectedSchemaId}
+                                                    onChange={(event) =>
+                                                        loadExistingSchema(event.target.value, { source: 'manual' })
+                                                    }
+                                                    className="input"
+                                                >
+                                                    <option value="">Criar novo modelo</option>
+                                                    {schemas.map((schema) => (
+                                                        <option key={schema.id} value={schema.id}>
+                                                            {schema.schema_id} {schema.version}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </Field>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setSelectedSchemaId('')
+                                                    setSchemaForm({
+                                                        tenant_slug: 'tenant-demo',
+                                                        schema_id: 'novo_modelo',
+                                                        version: 'v1',
+                                                        model_name: 'Novo modelo',
+                                                        document_type: 'scanned_image',
+                                                        status: 'draft',
+                                                    })
+                                                    setLayoutForm({
+                                                        tenant_slug: 'tenant-demo',
+                                                        layout: 'novo_layout',
+                                                        document_type: 'scanned_image',
+                                                        schema_config_id: '',
+                                                        confidence_threshold: '0.75',
+                                                    })
+                                                    setFields(DEFAULT_LANGEXTRACT_FIELDS)
+                                                    setPrompt(DEFAULT_LANGEXTRACT_PROMPT)
+                                                    setExamples([])
+                                                    setReferenceReview({
+                                                        quality: 'pending',
+                                                        action: 'review_before_examples',
+                                                        notes: '',
+                                                    })
+                                                }}
+                                                className="mt-6 h-9 rounded-md border border-zinc-300 px-3 text-sm font-medium hover:bg-zinc-100"
+                                            >
+                                                Novo modelo
+                                            </button>
+                                        </div>
+                                    </section>
+                                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+                                        <div className="grid gap-3 md:grid-cols-2">
+                                            <Field label="Nome do modelo">
+                                                <input
+                                                    value={schemaForm.model_name}
+                                                    onChange={(event) =>
+                                                        setSchemaForm({ ...schemaForm, model_name: event.target.value })
+                                                    }
+                                                    className="input"
+                                                    placeholder="Recibo de servico"
+                                                />
+                                            </Field>
+                                            <Field label="Schema">
+                                                <input
+                                                    value={schemaForm.schema_id}
+                                                    onChange={(event) =>
+                                                        setSchemaForm({ ...schemaForm, schema_id: event.target.value })
+                                                    }
+                                                    className="input"
+                                                    placeholder="recibo_servico"
+                                                />
+                                            </Field>
+                                            <Field label="Tenant">
+                                                <input
+                                                    value={schemaForm.tenant_slug}
+                                                    onChange={(event) =>
+                                                        setSchemaForm({
+                                                            ...schemaForm,
+                                                            tenant_slug: event.target.value,
+                                                        })
+                                                    }
+                                                    className="input"
+                                                />
+                                            </Field>
+                                            <Field label="Versao">
+                                                <input
+                                                    value={schemaForm.version}
+                                                    onChange={(event) =>
+                                                        setSchemaForm({ ...schemaForm, version: event.target.value })
+                                                    }
+                                                    className="input"
+                                                />
+                                            </Field>
+                                            <Field label="Tipo de documento">
+                                                <select
+                                                    value={schemaForm.document_type}
+                                                    onChange={(event) => {
+                                                        setSchemaForm({
+                                                            ...schemaForm,
+                                                            document_type: event.target.value,
+                                                        })
+                                                        setLayoutForm({
+                                                            ...layoutForm,
+                                                            document_type: event.target.value,
+                                                        })
+                                                    }}
+                                                    className="input"
+                                                >
+                                                    <option value="scanned_image">Imagem/PDF escaneado</option>
+                                                    <option value="digital_pdf">PDF textual</option>
+                                                    <option value="handwritten_complex">Manuscrito complexo</option>
+                                                </select>
+                                            </Field>
+                                            <Field label="Status">
+                                                <select
+                                                    value={schemaForm.status}
+                                                    onChange={(event) =>
+                                                        setSchemaForm({ ...schemaForm, status: event.target.value })
+                                                    }
+                                                    className="input"
+                                                >
+                                                    <option value="draft">Rascunho</option>
+                                                    <option value="testing">Em teste</option>
+                                                    <option value="approved">Aprovado</option>
+                                                    <option value="disabled">Desativado</option>
+                                                </select>
+                                            </Field>
+                                        </div>
+                                        <HintPanel
+                                            title="Checklist LangExtract"
+                                            items={[
+                                                'Defina o schema antes do prompt.',
+                                                'Use exemplos anotados para campos ambiguos.',
+                                                'Mantenha o trecho fonte para validacao visual.',
+                                                'Publique somente versoes testadas.',
+                                            ]}
+                                        />
+                                    </div>
+                                    <div className="grid gap-4 lg:grid-cols-2">
+                                        <SchemaList schemas={schemas} onDeleted={onChanged} />
+                                        <ConfigList
+                                            title="Layouts existentes"
+                                            items={layouts}
+                                            primaryKey="layout"
+                                            secondaryKey="document_type"
+                                        />
+                                    </div>
+                                </div>
+                            ) : null}
 
-                    {activeTab === 'ocr' ? (
-                        <ReferenceDocumentPanel
-                            selectedDocumentId={selectedDocumentId}
-                            onSelectDocument={setSelectedDocumentId}
-                            referenceDocument={referenceDocument}
-                            fields={fields}
-                            review={referenceReview}
-                            onReviewChange={setReferenceReview}
-                        />
-                    ) : null}
+                            {activeTab === 'ocr' ? (
+                                <ReferenceDocumentPanel
+                                    selectedDocumentId={selectedDocumentId}
+                                    onSelectDocument={setSelectedDocumentId}
+                                    referenceDocument={referenceDocument}
+                                    fields={fields}
+                                    review={referenceReview}
+                                    onReviewChange={setReferenceReview}
+                                />
+                            ) : null}
 
-                    {activeTab === 'schema' ? (
-                        <SchemaFieldsEditor
-                            fields={fields}
-                            onChange={setFields}
-                            schemaForm={schemaForm}
-                        />
-                    ) : null}
+                            {activeTab === 'schema' ? (
+                                <SchemaFieldsEditor fields={fields} onChange={setFields} schemaForm={schemaForm} />
+                            ) : null}
 
-                    {activeTab === 'instructions' ? (
-                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                            <Field label="Prompt controlado">
-                                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} className="input min-h-[280px] font-mono" />
-                            </Field>
-                            <HintPanel title="Blocos prontos" items={PROMPT_HINTS} onUse={(hint) => setPrompt((current) => `${current}\n- ${hint}.`)} />
-                        </div>
-                    ) : null}
-
-                    {activeTab === 'examples' ? (
-                        <ExamplesEditor examples={examples} onChange={setExamples} referenceText={referenceDocument?.full_transcription || ''} />
-                    ) : null}
-
-                    {activeTab === 'test' ? (
-                        <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(360px,1.1fr)_minmax(320px,0.8fr)]">
-                            <DocumentPreview document={referenceDocument} />
-                            <HighlightedOcrText text={referenceDocument?.full_transcription || ''} fields={fields} examples={examples} />
-                            <Field label="Preview JSON">
-                                <textarea value={testOutput} onChange={(event) => setTestOutput(event.target.value)} className="input min-h-[520px] font-mono" />
-                            </Field>
-                        </div>
-                    ) : null}
-
-                    {activeTab === 'rules' ? (
-                        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                            <Field label="Regras de pos-processamento JSON">
-                                <textarea value={normalizationRules} onChange={(event) => setNormalizationRules(event.target.value)} className="input min-h-[300px] font-mono" />
-                            </Field>
-                            <HintPanel
-                                title="Regras recomendadas"
-                                items={[
-                                    'Normalizar moeda para decimal.',
-                                    'Normalizar datas para YYYY-MM-DD.',
-                                    'Validar CPF/CNPJ por checksum.',
-                                    'Comparar valor liquido com total quando houver.',
-                                ]}
-                            />
-                        </div>
-                    ) : null}
-
-                    {activeTab === 'publish' ? (
-                        <div className="grid gap-4 xl:grid-cols-2">
-                            <section className="rounded-md border border-zinc-200 p-4">
-                                <div className="mb-3 text-sm font-semibold">Salvar modelo como schema</div>
-                                <pre className="max-h-[360px] overflow-auto rounded-md bg-zinc-950 p-3 text-xs text-zinc-50">{JSON.stringify(schemaDefinition, null, 2)}</pre>
-                                <button type="button" onClick={createSchema} disabled={!schemaForm.schema_id.trim()} className="primary-button mt-3">
-                                    Salvar schema LangExtract
-                                </button>
-                            </section>
-                            <section className="rounded-md border border-zinc-200 p-4">
-                                <div className="mb-3 text-sm font-semibold">Vincular layout ao schema</div>
-                                <div className="grid gap-3 md:grid-cols-2">
-                                    <Field label="Layout">
-                                        <input value={layoutForm.layout} onChange={(event) => setLayoutForm({ ...layoutForm, layout: event.target.value })} className="input" />
+                            {activeTab === 'instructions' ? (
+                                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                                    <Field label="Prompt controlado">
+                                        <textarea
+                                            value={prompt}
+                                            onChange={(event) => setPrompt(event.target.value)}
+                                            className="input min-h-[280px] font-mono"
+                                        />
                                     </Field>
-                                    <Field label="Tipo documento">
-                                        <input value={layoutForm.document_type} onChange={(event) => setLayoutForm({ ...layoutForm, document_type: event.target.value })} className="input" />
-                                    </Field>
-                                    <Field label="Schema">
-                                        <select value={layoutForm.schema_config_id} onChange={(event) => setLayoutForm({ ...layoutForm, schema_config_id: event.target.value })} className="input">
-                                            <option value="">Selecionar</option>
-                                            {schemas.map((schema) => (
-                                                <option key={schema.id} value={schema.id}>
-                                                    {schema.schema_id} {schema.version}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </Field>
-                                    <Field label="Confianca minima">
-                                        <input value={layoutForm.confidence_threshold} onChange={(event) => setLayoutForm({ ...layoutForm, confidence_threshold: event.target.value })} className="input" />
+                                    <HintPanel
+                                        title="Blocos prontos"
+                                        items={PROMPT_HINTS}
+                                        onUse={(hint) => setPrompt((current) => `${current}\n- ${hint}.`)}
+                                    />
+                                </div>
+                            ) : null}
+
+                            {activeTab === 'examples' ? (
+                                <ExamplesEditor
+                                    examples={examples}
+                                    onChange={setExamples}
+                                    referenceText={referenceDocument?.full_transcription || ''}
+                                />
+                            ) : null}
+
+                            {activeTab === 'test' ? (
+                                <div className="grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(360px,1.1fr)_minmax(320px,0.8fr)]">
+                                    <DocumentPreview document={referenceDocument} />
+                                    <HighlightedOcrText
+                                        text={referenceDocument?.full_transcription || ''}
+                                        fields={fields}
+                                        examples={examples}
+                                    />
+                                    <Field label="Preview JSON">
+                                        <textarea
+                                            value={testOutput}
+                                            onChange={(event) => setTestOutput(event.target.value)}
+                                            className="input min-h-[520px] font-mono"
+                                        />
                                     </Field>
                                 </div>
-                                <button type="button" onClick={createLayout} disabled={!layoutForm.layout.trim() || !layoutForm.schema_config_id} className="primary-button mt-3">
-                                    Criar layout
-                                </button>
-                            </section>
+                            ) : null}
+
+                            {activeTab === 'rules' ? (
+                                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                                    <Field label="Regras de pos-processamento JSON">
+                                        <textarea
+                                            value={normalizationRules}
+                                            onChange={(event) => setNormalizationRules(event.target.value)}
+                                            className="input min-h-[300px] font-mono"
+                                        />
+                                    </Field>
+                                    <HintPanel
+                                        title="Regras recomendadas"
+                                        items={[
+                                            'Normalizar moeda para decimal.',
+                                            'Normalizar datas para YYYY-MM-DD.',
+                                            'Validar CPF/CNPJ por checksum.',
+                                            'Comparar valor liquido com total quando houver.',
+                                        ]}
+                                    />
+                                </div>
+                            ) : null}
+
+                            {activeTab === 'publish' ? (
+                                <div className="grid gap-4 xl:grid-cols-2">
+                                    <section className="rounded-md border border-zinc-200 p-4">
+                                        <div className="mb-3 text-sm font-semibold">Salvar modelo como schema</div>
+                                        <pre className="max-h-[360px] overflow-auto rounded-md bg-zinc-950 p-3 text-xs text-zinc-50">
+                                            {JSON.stringify(schemaDefinition, null, 2)}
+                                        </pre>
+                                        <button
+                                            type="button"
+                                            onClick={createSchema}
+                                            disabled={!schemaForm.schema_id.trim()}
+                                            className="primary-button mt-3"
+                                        >
+                                            Salvar schema LangExtract
+                                        </button>
+                                    </section>
+                                    <section className="rounded-md border border-zinc-200 p-4">
+                                        <div className="mb-3 text-sm font-semibold">Vincular layout ao schema</div>
+                                        <div className="grid gap-3 md:grid-cols-2">
+                                            <Field label="Layout">
+                                                <input
+                                                    value={layoutForm.layout}
+                                                    onChange={(event) =>
+                                                        setLayoutForm({ ...layoutForm, layout: event.target.value })
+                                                    }
+                                                    className="input"
+                                                />
+                                            </Field>
+                                            <Field label="Tipo documento">
+                                                <input
+                                                    value={layoutForm.document_type}
+                                                    onChange={(event) =>
+                                                        setLayoutForm({
+                                                            ...layoutForm,
+                                                            document_type: event.target.value,
+                                                        })
+                                                    }
+                                                    className="input"
+                                                />
+                                            </Field>
+                                            <Field label="Schema">
+                                                <select
+                                                    value={layoutForm.schema_config_id}
+                                                    onChange={(event) =>
+                                                        setLayoutForm({
+                                                            ...layoutForm,
+                                                            schema_config_id: event.target.value,
+                                                        })
+                                                    }
+                                                    className="input"
+                                                >
+                                                    <option value="">Selecionar</option>
+                                                    {schemas.map((schema) => (
+                                                        <option key={schema.id} value={schema.id}>
+                                                            {schema.schema_id} {schema.version}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </Field>
+                                            <Field label="Confianca minima">
+                                                <input
+                                                    value={layoutForm.confidence_threshold}
+                                                    onChange={(event) =>
+                                                        setLayoutForm({
+                                                            ...layoutForm,
+                                                            confidence_threshold: event.target.value,
+                                                        })
+                                                    }
+                                                    className="input"
+                                                />
+                                            </Field>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={createLayout}
+                                            disabled={!layoutForm.layout.trim() || !layoutForm.schema_config_id}
+                                            className="primary-button mt-3"
+                                        >
+                                            Criar layout
+                                        </button>
+                                    </section>
+                                </div>
+                            ) : null}
+                            {activeTab !== 'publish' ? (
+                                <SettingsStepActions
+                                    activeTab={activeTab}
+                                    onSaveDraft={saveDraft}
+                                    onNext={goToNextStep}
+                                />
+                            ) : null}
                         </div>
-                    ) : null}
-                    {activeTab !== 'publish' ? (
-                        <SettingsStepActions
-                            activeTab={activeTab}
-                            onSaveDraft={saveDraft}
-                            onNext={goToNextStep}
-                        />
-                    ) : null}
-                </div>
                     </>
                 ) : null}
                 {activeSettingsArea === 'ocr-routing' ? (
-                    <OcrSettingsPanel
-                        settings={ocrSettings}
-                        onChange={setOcrSettings}
-                        onSave={saveOcrSettings}
-                    />
+                    <OcrSettingsPanel settings={ocrSettings} onChange={setOcrSettings} onSave={saveOcrSettings} />
                 ) : null}
                 {activeSettingsArea === 'email' ? (
                     <EmailSettingsPanel
@@ -2941,7 +3408,11 @@ function TabHelp({ tab }: { tab: string }) {
     )
 }
 
-function OcrSettingsPanel({ settings, onChange, onSave }: {
+function OcrSettingsPanel({
+    settings,
+    onChange,
+    onSave,
+}: {
     settings: OcrSettingsForm
     onChange: React.Dispatch<React.SetStateAction<OcrSettingsForm>>
     onSave: () => void | Promise<unknown>
@@ -2984,7 +3455,11 @@ function OcrSettingsPanel({ settings, onChange, onSave }: {
                 text="Perfil operacional atual do OCR. A tela mostra somente os engines usados de fato no fluxo automatico: Docling para PDF textual, OpenRouter para imagem/PDF escaneado e Tesseract como fallback tecnico."
             />
             <div className="flex justify-end">
-                <button type="button" onClick={onSave} className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700">
+                <button
+                    type="button"
+                    onClick={onSave}
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700"
+                >
                     <CheckCircle2 size={16} aria-hidden="true" />
                     Salvar OCR
                 </button>
@@ -2994,7 +3469,10 @@ function OcrSettingsPanel({ settings, onChange, onSave }: {
                     <div className="mb-3 text-sm font-semibold">Roteamento ativo</div>
                     <div className="space-y-3">
                         {activeOcrRoutes.map((route) => (
-                            <div key={route.classification} className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                            <div
+                                key={route.classification}
+                                className="rounded-md border border-zinc-200 bg-zinc-50 p-3"
+                            >
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
                                         <div className="text-sm font-semibold">{route.type}</div>
@@ -3013,16 +3491,28 @@ function OcrSettingsPanel({ settings, onChange, onSave }: {
                     <div className="mb-3 text-sm font-semibold">Configuracao em uso</div>
                     <div className="grid gap-3 md:grid-cols-2">
                         <Field label="PDF textual">
-                            <EngineSelect value={settings.digital_pdf_engine} onChange={(value) => updateField('digital_pdf_engine', value)} />
+                            <EngineSelect
+                                value={settings.digital_pdf_engine}
+                                onChange={(value) => updateField('digital_pdf_engine', value)}
+                            />
                         </Field>
                         <Field label="Imagem/PDF escaneado">
-                            <EngineSelect value={settings.scanned_image_engine} onChange={(value) => updateField('scanned_image_engine', value)} />
+                            <EngineSelect
+                                value={settings.scanned_image_engine}
+                                onChange={(value) => updateField('scanned_image_engine', value)}
+                            />
                         </Field>
                         <Field label="Manuscrito complexo">
-                            <EngineSelect value={settings.handwritten_engine} onChange={(value) => updateField('handwritten_engine', value)} />
+                            <EngineSelect
+                                value={settings.handwritten_engine}
+                                onChange={(value) => updateField('handwritten_engine', value)}
+                            />
                         </Field>
                         <Field label="Fallback tecnico">
-                            <EngineSelect value={settings.technical_fallback_engine} onChange={(value) => updateField('technical_fallback_engine', value)} />
+                            <EngineSelect
+                                value={settings.technical_fallback_engine}
+                                onChange={(value) => updateField('technical_fallback_engine', value)}
+                            />
                         </Field>
                         <Field label="Modelo OpenRouter primario">
                             <input
@@ -3054,7 +3544,9 @@ function OcrSettingsPanel({ settings, onChange, onSave }: {
                             <select
                                 className="input"
                                 value={settings.retry_empty_text_enabled ? 'enabled' : 'disabled'}
-                                onChange={(event) => updateField('retry_empty_text_enabled', event.target.value === 'enabled')}
+                                onChange={(event) =>
+                                    updateField('retry_empty_text_enabled', event.target.value === 'enabled')
+                                }
                             >
                                 <option value="enabled">Tentar segundo modelo</option>
                                 <option value="disabled">Nao tentar</option>
@@ -3072,7 +3564,9 @@ function OcrSettingsPanel({ settings, onChange, onSave }: {
                         </Field>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-zinc-500">
-                        A chave OpenRouter continua no `.env` e nao e gravada aqui. PaddleOCR, EasyOCR, TrOCR, LlamaParse e DeepSeek permanecem como codigo legado/opcional, mas nao fazem parte do setup operacional atual.
+                        A chave OpenRouter continua no `.env` e nao e gravada aqui. PaddleOCR, EasyOCR, TrOCR,
+                        LlamaParse e DeepSeek permanecem como codigo legado/opcional, mas nao fazem parte do setup
+                        operacional atual.
                     </p>
                 </section>
             </div>
@@ -3091,14 +3585,25 @@ function EngineSelect({ value, onChange }: { value?: string; onChange: (value: s
 }
 
 function engineLabel(value?: string): string {
-    return ({
-        docling: 'Docling',
-        openrouter: 'OpenRouter',
-        tesseract: 'Tesseract',
-    } as Record<string, string>)[value ?? ''] || value || '-'
+    return (
+        (
+            {
+                docling: 'Docling',
+                openrouter: 'OpenRouter',
+                tesseract: 'Tesseract',
+            } as Record<string, string>
+        )[value ?? ''] ||
+        value ||
+        '-'
+    )
 }
 
-function EmailSettingsPanel({ settings, onChange, onSave, onPoll }: {
+function EmailSettingsPanel({
+    settings,
+    onChange,
+    onSave,
+    onPoll,
+}: {
     settings: EmailSettingsForm
     onChange: React.Dispatch<React.SetStateAction<EmailSettingsForm>>
     onSave: () => void | Promise<unknown>
@@ -3115,11 +3620,19 @@ function EmailSettingsPanel({ settings, onChange, onSave, onPoll }: {
                 text="Configure como documentos chegam por email. A senha/app password continua fora do banco e deve estar em DOCUPARSE_IMAP_PASSWORD no servidor."
             />
             <div className="flex flex-wrap justify-end gap-2">
-                <button type="button" onClick={onPoll} className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
+                <button
+                    type="button"
+                    onClick={onPoll}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                >
                     <RefreshCw size={16} aria-hidden="true" />
                     Testar captura IMAP
                 </button>
-                <button type="button" onClick={onSave} className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700">
+                <button
+                    type="button"
+                    onClick={onSave}
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700"
+                >
                     <CheckCircle2 size={16} aria-hidden="true" />
                     Salvar email
                 </button>
@@ -3129,35 +3642,73 @@ function EmailSettingsPanel({ settings, onChange, onSave, onPoll }: {
                     <div className="mb-3 text-sm font-semibold">Conta de captura</div>
                     <div className="grid gap-3 md:grid-cols-2">
                         <Field label="Provider">
-                            <select className="input" value={settings.provider || 'imap'} onChange={(event) => updateField('provider', event.target.value)}>
+                            <select
+                                className="input"
+                                value={settings.provider || 'imap'}
+                                onChange={(event) => updateField('provider', event.target.value)}
+                            >
                                 <option value="imap">IMAP</option>
                                 <option value="webhook">Webhook</option>
                                 <option value="manual_test">Teste manual</option>
                             </select>
                         </Field>
                         <Field label="Ativo">
-                            <select className="input" value={settings.is_active ? 'enabled' : 'disabled'} onChange={(event) => updateField('is_active', event.target.value === 'enabled')}>
+                            <select
+                                className="input"
+                                value={settings.is_active ? 'enabled' : 'disabled'}
+                                onChange={(event) => updateField('is_active', event.target.value === 'enabled')}
+                            >
                                 <option value="enabled">Ativo</option>
                                 <option value="disabled">Inativo</option>
                             </select>
                         </Field>
                         <Field label="Pasta monitorada">
-                            <input className="input" value={settings.inbox_folder || ''} onChange={(event) => updateField('inbox_folder', event.target.value)} />
+                            <input
+                                className="input"
+                                value={settings.inbox_folder || ''}
+                                onChange={(event) => updateField('inbox_folder', event.target.value)}
+                            />
                         </Field>
                         <Field label="Host IMAP">
-                            <input className="input" value={settings.imap_host || ''} onChange={(event) => updateField('imap_host', event.target.value)} placeholder="imap.exemplo.com" />
+                            <input
+                                className="input"
+                                value={settings.imap_host || ''}
+                                onChange={(event) => updateField('imap_host', event.target.value)}
+                                placeholder="imap.exemplo.com"
+                            />
                         </Field>
                         <Field label="Porta">
-                            <input className="input" type="number" min="1" max="65535" value={settings.imap_port} onChange={(event) => updateField('imap_port', event.target.value)} />
+                            <input
+                                className="input"
+                                type="number"
+                                min="1"
+                                max="65535"
+                                value={settings.imap_port}
+                                onChange={(event) => updateField('imap_port', event.target.value)}
+                            />
                         </Field>
                         <Field label="Usuario">
-                            <input className="input" value={settings.username || ''} onChange={(event) => updateField('username', event.target.value)} placeholder="documentos@empresa.com" />
+                            <input
+                                className="input"
+                                value={settings.username || ''}
+                                onChange={(event) => updateField('username', event.target.value)}
+                                placeholder="documentos@empresa.com"
+                            />
                         </Field>
                         <Field label="Senha/app password">
-                            <input className="input" type="password" placeholder="Nao persistido por enquanto" disabled />
+                            <input
+                                className="input"
+                                type="password"
+                                placeholder="Nao persistido por enquanto"
+                                disabled
+                            />
                         </Field>
                         <Field label="Webhook URL">
-                            <input className="input" value={settings.webhook_url || ''} onChange={(event) => updateField('webhook_url', event.target.value)} />
+                            <input
+                                className="input"
+                                value={settings.webhook_url || ''}
+                                onChange={(event) => updateField('webhook_url', event.target.value)}
+                            />
                         </Field>
                     </div>
                 </section>
@@ -3165,13 +3716,29 @@ function EmailSettingsPanel({ settings, onChange, onSave, onPoll }: {
                     <div className="mb-3 text-sm font-semibold">Regras de anexos</div>
                     <div className="space-y-3">
                         <Field label="Tipos aceitos">
-                            <input className="input" value={settings.accepted_content_types || ''} onChange={(event) => updateField('accepted_content_types', event.target.value)} />
+                            <input
+                                className="input"
+                                value={settings.accepted_content_types || ''}
+                                onChange={(event) => updateField('accepted_content_types', event.target.value)}
+                            />
                         </Field>
                         <Field label="Tamanho maximo MB">
-                            <input className="input" type="number" min="1" max="200" value={settings.max_attachment_mb} onChange={(event) => updateField('max_attachment_mb', event.target.value)} />
+                            <input
+                                className="input"
+                                type="number"
+                                min="1"
+                                max="200"
+                                value={settings.max_attachment_mb}
+                                onChange={(event) => updateField('max_attachment_mb', event.target.value)}
+                            />
                         </Field>
                         <Field label="Remetentes bloqueados">
-                            <textarea className="input min-h-[90px]" value={settings.blocked_senders || ''} onChange={(event) => updateField('blocked_senders', event.target.value)} placeholder="um email por linha" />
+                            <textarea
+                                className="input min-h-[90px]"
+                                value={settings.blocked_senders || ''}
+                                onChange={(event) => updateField('blocked_senders', event.target.value)}
+                                placeholder="um email por linha"
+                            />
                         </Field>
                     </div>
                 </section>
@@ -3188,7 +3755,11 @@ function WhatsAppSettingsPanel({ onPoll }: { onPoll: () => void | Promise<unknow
                 text="Configure a recepcao via Twilio WhatsApp. Enquanto as credenciais finais nao estiverem disponiveis, os testes reais podem falhar sem bloquear o restante do desenvolvimento."
             />
             <div className="flex flex-wrap justify-end gap-2">
-                <button type="button" onClick={onPoll} className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
+                <button
+                    type="button"
+                    onClick={onPoll}
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                >
                     <RefreshCw size={16} aria-hidden="true" />
                     Processar arquivos do WhatsApp
                 </button>
@@ -3230,7 +3801,10 @@ function WhatsAppSettingsPanel({ onPoll }: { onPoll: () => void | Promise<unknow
                             </select>
                         </Field>
                         <Field label="Tipos de midia aceitos">
-                            <input className="input" defaultValue="application/pdf,image/jpeg,image/png,image/tiff,image/webp" />
+                            <input
+                                className="input"
+                                defaultValue="application/pdf,image/jpeg,image/png,image/tiff,image/webp"
+                            />
                         </Field>
                     </div>
                 </section>
@@ -3239,7 +3813,11 @@ function WhatsAppSettingsPanel({ onPoll }: { onPoll: () => void | Promise<unknow
     )
 }
 
-function IntegrationSettingsPanel({ settings, onChange, onSave }: {
+function IntegrationSettingsPanel({
+    settings,
+    onChange,
+    onSave,
+}: {
     settings: IntegrationSettingsForm
     onChange: React.Dispatch<React.SetStateAction<IntegrationSettingsForm>>
     onSave: () => void | Promise<unknown>
@@ -3255,7 +3833,11 @@ function IntegrationSettingsPanel({ settings, onChange, onSave }: {
                 text="Configure o destino dos dados aprovados. Por enquanto o caminho intermediario e exportacao JSON; Superlogica fica preparado para quando houver acesso ao ambiente."
             />
             <div className="flex justify-end">
-                <button type="button" onClick={onSave} className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700">
+                <button
+                    type="button"
+                    onClick={onSave}
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700"
+                >
                     <CheckCircle2 size={16} aria-hidden="true" />
                     Salvar integracoes
                 </button>
@@ -3268,7 +3850,9 @@ function IntegrationSettingsPanel({ settings, onChange, onSave }: {
                             <select
                                 className="input"
                                 value={settings.approved_export_enabled ? 'enabled' : 'disabled'}
-                                onChange={(event) => updateField('approved_export_enabled', event.target.value === 'enabled')}
+                                onChange={(event) =>
+                                    updateField('approved_export_enabled', event.target.value === 'enabled')
+                                }
                             >
                                 <option value="enabled">Ativado</option>
                                 <option value="disabled">Desativado</option>
@@ -3305,7 +3889,12 @@ function IntegrationSettingsPanel({ settings, onChange, onSave }: {
                             />
                         </Field>
                         <Field label="Credencial">
-                            <input className="input" type="password" placeholder="Nao persistido por enquanto" disabled />
+                            <input
+                                className="input"
+                                type="password"
+                                placeholder="Nao persistido por enquanto"
+                                disabled
+                            />
                         </Field>
                         <Field label="Modo de envio">
                             <select
@@ -3334,7 +3923,12 @@ function ConfigIntro({ title, text }: { title: React.ReactNode; text: React.Reac
     )
 }
 
-function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeModel }: {
+function ActiveTemplateHeader({
+    schemaForm,
+    layoutForm,
+    activeLayout,
+    onChangeModel,
+}: {
     schemaForm: SchemaForm
     layoutForm: LayoutForm
     activeLayout?: LayoutConfig
@@ -3349,13 +3943,25 @@ function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeMo
                         {schemaForm.model_name || schemaForm.schema_id || 'Modelo sem nome'}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-zinc-600">
-                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">schema: {schemaForm.schema_id || '-'} · {schemaForm.version || '-'}</span>
-                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">layout: {activeLayout?.layout || layoutForm.layout || '-'}</span>
-                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">tipo: {schemaForm.document_type || '-'}</span>
-                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">status: {schemaForm.status || '-'}</span>
+                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">
+                            schema: {schemaForm.schema_id || '-'} · {schemaForm.version || '-'}
+                        </span>
+                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">
+                            layout: {activeLayout?.layout || layoutForm.layout || '-'}
+                        </span>
+                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">
+                            tipo: {schemaForm.document_type || '-'}
+                        </span>
+                        <span className="rounded bg-white px-2 py-1 ring-1 ring-zinc-200">
+                            status: {schemaForm.status || '-'}
+                        </span>
                     </div>
                 </div>
-                <button type="button" onClick={onChangeModel} className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium hover:bg-zinc-100">
+                <button
+                    type="button"
+                    onClick={onChangeModel}
+                    className="h-9 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium hover:bg-zinc-100"
+                >
                     Alterar modelo
                 </button>
             </div>
@@ -3363,7 +3969,11 @@ function ActiveTemplateHeader({ schemaForm, layoutForm, activeLayout, onChangeMo
     )
 }
 
-function SettingsStepActions({ activeTab, onSaveDraft, onNext }: {
+function SettingsStepActions({
+    activeTab,
+    onSaveDraft,
+    onNext,
+}: {
     activeTab: string
     onSaveDraft: () => void | Promise<unknown>
     onNext: () => void | Promise<unknown>
@@ -3372,7 +3982,11 @@ function SettingsStepActions({ activeTab, onSaveDraft, onNext }: {
     const nextTab = SETTINGS_TABS[currentIndex + 1]
     return (
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 pt-4">
-            <button type="button" onClick={onSaveDraft} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100">
+            <button
+                type="button"
+                onClick={onSaveDraft}
+                className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100"
+            >
                 Salvar rascunho
             </button>
             {nextTab ? (
@@ -3384,7 +3998,11 @@ function SettingsStepActions({ activeTab, onSaveDraft, onNext }: {
     )
 }
 
-function HintPanel({ title, items, onUse = undefined }: {
+function HintPanel({
+    title,
+    items,
+    onUse = undefined,
+}: {
     title: React.ReactNode
     items: string[]
     onUse?: (item: string) => void
@@ -3394,10 +4012,17 @@ function HintPanel({ title, items, onUse = undefined }: {
             <div className="text-sm font-semibold">{title}</div>
             <div className="mt-3 space-y-2">
                 {items.map((item) => (
-                    <div key={item} className="flex items-start justify-between gap-2 rounded border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-600">
+                    <div
+                        key={item}
+                        className="flex items-start justify-between gap-2 rounded border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-600"
+                    >
                         <span>{item}</span>
                         {onUse ? (
-                            <button type="button" onClick={() => onUse(item)} className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100">
+                            <button
+                                type="button"
+                                onClick={() => onUse(item)}
+                                className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100"
+                            >
                                 Usar
                             </button>
                         ) : null}
@@ -3408,7 +4033,14 @@ function HintPanel({ title, items, onUse = undefined }: {
     )
 }
 
-function ReferenceDocumentPanel({ selectedDocumentId, onSelectDocument, referenceDocument, fields, review, onReviewChange }: {
+function ReferenceDocumentPanel({
+    selectedDocumentId,
+    onSelectDocument,
+    referenceDocument,
+    fields,
+    review,
+    onReviewChange,
+}: {
     selectedDocumentId: string
     onSelectDocument: (id: string) => void
     referenceDocument: Document | null
@@ -3438,7 +4070,9 @@ function ReferenceDocumentPanel({ selectedDocumentId, onSelectDocument, referenc
                                 className={`block w-full border-b border-zinc-100 px-3 py-2 text-left text-sm hover:bg-zinc-50 ${selectedDocumentId === document.id ? 'bg-zinc-100' : ''}`}
                             >
                                 <div className="font-medium">{document.original_filename || document.id}</div>
-                                <div className="mt-1 text-xs text-zinc-500">{document.document_type || '-'} · {document.channel || '-'}</div>
+                                <div className="mt-1 text-xs text-zinc-500">
+                                    {document.document_type || '-'} · {document.channel || '-'}
+                                </div>
                             </button>
                         ))}
                     </div>
@@ -3450,7 +4084,11 @@ function ReferenceDocumentPanel({ selectedDocumentId, onSelectDocument, referenc
                 <div className="mb-3 text-sm font-semibold">Revisao da qualidade do OCR</div>
                 <div className="grid gap-3 lg:grid-cols-[220px_260px_1fr]">
                     <Field label="Texto confere?">
-                        <select value={review.quality} onChange={(event) => onReviewChange({ ...review, quality: event.target.value })} className="input">
+                        <select
+                            value={review.quality}
+                            onChange={(event) => onReviewChange({ ...review, quality: event.target.value })}
+                            className="input"
+                        >
                             <option value="pending">Nao revisado</option>
                             <option value="matches">Confere com o documento</option>
                             <option value="minor_issues">Tem pequenas divergencias</option>
@@ -3458,7 +4096,11 @@ function ReferenceDocumentPanel({ selectedDocumentId, onSelectDocument, referenc
                         </select>
                     </Field>
                     <Field label="Acao recomendada">
-                        <select value={review.action} onChange={(event) => onReviewChange({ ...review, action: event.target.value })} className="input">
+                        <select
+                            value={review.action}
+                            onChange={(event) => onReviewChange({ ...review, action: event.target.value })}
+                            className="input"
+                        >
                             <option value="review_before_examples">Revisar antes de criar exemplos</option>
                             <option value="use_as_reference">Usar como referencia</option>
                             <option value="reprocess_ocr">Reprocessar OCR</option>
@@ -3499,7 +4141,11 @@ function DocumentPreview({ document }: { document: Document | null }) {
     )
 }
 
-function HighlightedOcrText({ text, fields, examples }: {
+function HighlightedOcrText({
+    text,
+    fields,
+    examples,
+}: {
     text?: string
     fields: SchemaField[]
     examples: SchemaExample[]
@@ -3519,7 +4165,11 @@ function HighlightedOcrText({ text, fields, examples }: {
     )
 }
 
-function SchemaFieldsEditor({ fields, onChange, schemaForm }: {
+function SchemaFieldsEditor({
+    fields,
+    onChange,
+    schemaForm,
+}: {
     fields: SchemaField[]
     onChange: (fields: SchemaField[]) => void
     schemaForm: SchemaForm
@@ -3538,7 +4188,8 @@ function SchemaFieldsEditor({ fields, onChange, schemaForm }: {
                             {schemaForm.schema_id || 'novo_schema'} · {schemaForm.version || 'v1'}
                         </div>
                         <div className="mt-1 text-sm text-zinc-600">
-                            Os campos abaixo pertencem ao schema definido na aba Setup. Ao salvar em Publicacao, eles serao gravados nessa versao.
+                            Os campos abaixo pertencem ao schema definido na aba Setup. Ao salvar em Publicacao, eles
+                            serao gravados nessa versao.
                         </div>
                     </div>
                 </div>
@@ -3546,15 +4197,31 @@ function SchemaFieldsEditor({ fields, onChange, schemaForm }: {
             <div className="rounded-md border border-zinc-200">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
                     <div className="text-sm font-semibold">Campos de saida</div>
-                    <button type="button" onClick={() => onChange([...fields, { name: '', type: 'string', required: false, rule: '' }])} className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100">
+                    <button
+                        type="button"
+                        onClick={() => onChange([...fields, { name: '', type: 'string', required: false, rule: '' }])}
+                        className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100"
+                    >
                         Adicionar
                     </button>
                 </div>
                 <div className="divide-y divide-zinc-100">
                     {fields.map((field, index) => (
-                        <div key={`${field.name}-${index}`} className="grid gap-2 px-3 py-3 lg:grid-cols-[180px_140px_120px_1fr]">
-                            <input value={field.name} onChange={(event) => updateField(index, { name: event.target.value })} className="input" placeholder="campo" />
-                            <select value={field.type} onChange={(event) => updateField(index, { type: event.target.value })} className="input">
+                        <div
+                            key={`${field.name}-${index}`}
+                            className="grid gap-2 px-3 py-3 lg:grid-cols-[180px_140px_120px_1fr]"
+                        >
+                            <input
+                                value={field.name}
+                                onChange={(event) => updateField(index, { name: event.target.value })}
+                                className="input"
+                                placeholder="campo"
+                            />
+                            <select
+                                value={field.type}
+                                onChange={(event) => updateField(index, { type: event.target.value })}
+                                className="input"
+                            >
                                 <option value="string">string</option>
                                 <option value="decimal">decimal</option>
                                 <option value="date">date</option>
@@ -3563,10 +4230,19 @@ function SchemaFieldsEditor({ fields, onChange, schemaForm }: {
                                 <option value="enum">enum</option>
                             </select>
                             <label className="flex h-9 items-center gap-2 rounded-md border border-zinc-300 px-3 text-sm text-zinc-700">
-                                <input type="checkbox" checked={field.required} onChange={(event) => updateField(index, { required: event.target.checked })} />
+                                <input
+                                    type="checkbox"
+                                    checked={field.required}
+                                    onChange={(event) => updateField(index, { required: event.target.checked })}
+                                />
                                 Obrigatorio
                             </label>
-                            <input value={field.rule} onChange={(event) => updateField(index, { rule: event.target.value })} className="input" placeholder="regra de extracao/normalizacao" />
+                            <input
+                                value={field.rule}
+                                onChange={(event) => updateField(index, { rule: event.target.value })}
+                                className="input"
+                                placeholder="regra de extracao/normalizacao"
+                            />
                         </div>
                     ))}
                 </div>
@@ -3575,7 +4251,11 @@ function SchemaFieldsEditor({ fields, onChange, schemaForm }: {
     )
 }
 
-function ExamplesEditor({ examples, onChange, referenceText }: {
+function ExamplesEditor({
+    examples,
+    onChange,
+    referenceText,
+}: {
     examples: SchemaExample[]
     onChange: (examples: SchemaExample[]) => void
     referenceText?: string
@@ -3589,16 +4269,35 @@ function ExamplesEditor({ examples, onChange, referenceText }: {
             <section className="rounded-md border border-zinc-200">
                 <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
                     <div className="text-sm font-semibold">Few-shot anotados</div>
-                    <button type="button" onClick={() => onChange([...examples, { field: '', expected: '', source: '' }])} className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100">
+                    <button
+                        type="button"
+                        onClick={() => onChange([...examples, { field: '', expected: '', source: '' }])}
+                        className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-100"
+                    >
                         Adicionar
                     </button>
                 </div>
                 <div className="divide-y divide-zinc-100">
                     {examples.map((example, index) => (
                         <div key={`${example.field}-${index}`} className="grid gap-2 px-3 py-3 md:grid-cols-3">
-                            <input value={example.field} onChange={(event) => updateExample(index, { field: event.target.value })} className="input" placeholder="campo" />
-                            <input value={example.expected} onChange={(event) => updateExample(index, { expected: event.target.value })} className="input" placeholder="valor esperado" />
-                            <input value={example.source} onChange={(event) => updateExample(index, { source: event.target.value })} className="input" placeholder="trecho fonte" />
+                            <input
+                                value={example.field}
+                                onChange={(event) => updateExample(index, { field: event.target.value })}
+                                className="input"
+                                placeholder="campo"
+                            />
+                            <input
+                                value={example.expected}
+                                onChange={(event) => updateExample(index, { expected: event.target.value })}
+                                className="input"
+                                placeholder="valor esperado"
+                            />
+                            <input
+                                value={example.source}
+                                onChange={(event) => updateExample(index, { source: event.target.value })}
+                                className="input"
+                                placeholder="trecho fonte"
+                            />
                         </div>
                     ))}
                 </div>
@@ -3627,7 +4326,12 @@ interface EmailModalDoc {
  * FR-015) e renderiza inline sem forçar download (FR-011): PDF via iframe,
  * imagem via <img>, fallback amigável para os demais formatos.
  */
-function DocumentBlobPreview({ documentId, contentType, filename, frameClassName = 'h-[420px] w-full rounded border border-zinc-200' }: {
+function DocumentBlobPreview({
+    documentId,
+    contentType,
+    filename,
+    frameClassName = 'h-[420px] w-full rounded border border-zinc-200',
+}: {
     documentId: string
     contentType?: string
     filename?: string
@@ -3649,9 +4353,12 @@ function DocumentBlobPreview({ documentId, contentType, filename, frameClassName
                 setBlobUrl(objectUrl)
             })
             .catch((requestError) => {
-                if (!ignore) setError(readError(requestError, 'Nao foi possivel carregar a pre-visualizacao do documento.'))
+                if (!ignore)
+                    setError(readError(requestError, 'Nao foi possivel carregar a pre-visualizacao do documento.'))
             })
-            .finally(() => { if (!ignore) setLoading(false) })
+            .finally(() => {
+                if (!ignore) setLoading(false)
+            })
         return () => {
             ignore = true
             if (objectUrl) URL.revokeObjectURL(objectUrl)
@@ -3659,10 +4366,18 @@ function DocumentBlobPreview({ documentId, contentType, filename, frameClassName
     }, [documentId])
 
     if (loading) {
-        return <div className="flex min-h-[200px] items-center justify-center text-sm text-zinc-500">Carregando documento...</div>
+        return (
+            <div className="flex min-h-[200px] items-center justify-center text-sm text-zinc-500">
+                Carregando documento...
+            </div>
+        )
     }
     if (error) {
-        return <div className="flex min-h-[200px] items-center justify-center px-4 text-center text-sm text-red-600">{error}</div>
+        return (
+            <div className="flex min-h-[200px] items-center justify-center px-4 text-center text-sm text-red-600">
+                {error}
+            </div>
+        )
     }
     if (!blobUrl) {
         return <EmptyState icon={FileText} text="Documento indisponivel." />
@@ -3675,7 +4390,11 @@ function DocumentBlobPreview({ documentId, contentType, filename, frameClassName
     if (isImage) {
         return (
             <div className="max-h-[420px] overflow-auto p-2">
-                <img src={blobUrl} alt={`Documento ${filename ?? documentId}`} className="max-w-full rounded border border-zinc-200" />
+                <img
+                    src={blobUrl}
+                    alt={`Documento ${filename ?? documentId}`}
+                    className="max-w-full rounded border border-zinc-200"
+                />
             </div>
         )
     }
@@ -3699,27 +4418,27 @@ function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: (
               { label: 'Provedor', value: meta.provider },
           ].filter((row) => row.value)
         : isWhatsApp
-        ? [
-              { label: 'Número que recebeu', value: meta.to_number },
-              { label: 'Número que enviou', value: meta.sender },
-              { label: 'Message SID', value: meta.message_sid },
-              { label: 'Provedor', value: meta.provider },
-          ].filter((row) => row.value)
-        : []
+          ? [
+                { label: 'Número que recebeu', value: meta.to_number },
+                { label: 'Número que enviou', value: meta.sender },
+                { label: 'Message SID', value: meta.message_sid },
+                { label: 'Provedor', value: meta.provider },
+            ].filter((row) => row.value)
+          : []
 
     const rows = [{ label: 'Código de Processo', value: data.id }, ...channelRows].filter((row) => row.value)
 
     const modalTitle = isEmail
         ? 'Metadados do email'
         : isWhatsApp
-        ? 'Metadados do WhatsApp'
-        : 'Informações do documento'
+          ? 'Metadados do WhatsApp'
+          : 'Informações do documento'
 
     const noMetaWarning = isEmail
         ? 'Metadados do email nao disponiveis para este documento. Reimporte-o para capturar as informacoes.'
         : isWhatsApp
-        ? 'Metadados do WhatsApp nao disponiveis para este documento. Reimporte-o para capturar as informacoes.'
-        : null
+          ? 'Metadados do WhatsApp nao disponiveis para este documento. Reimporte-o para capturar as informacoes.'
+          : null
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -3730,9 +4449,15 @@ function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: (
                 <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
                     <div className="min-w-0 flex-1 pr-4">
                         <div className="text-sm font-semibold">{modalTitle}</div>
-                        {data.filename ? <div className="mt-0.5 text-xs text-zinc-500 truncate">{data.filename}</div> : null}
+                        {data.filename ? (
+                            <div className="mt-0.5 text-xs text-zinc-500 truncate">{data.filename}</div>
+                        ) : null}
                     </div>
-                    <button type="button" onClick={onClose} className="shrink-0 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="shrink-0 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+                    >
                         <X size={16} aria-hidden="true" />
                     </button>
                 </div>
@@ -3740,60 +4465,74 @@ function EmailMetadataModal({ data, onClose }: { data: EmailModalDoc; onClose: (
                     pré-visualização do documento é ADICIONADA à direita (sem
                     remover nada — FR-012/FR-019). */}
                 <div className="grid md:grid-cols-2">
-                <div className="min-w-0 md:border-r md:border-zinc-200">
-                {(isEmail || isWhatsApp) && channelRows.length === 0 ? (
-                    <div className="divide-y divide-zinc-100 px-5 py-2">
-                        <div className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
-                            <dt className="font-medium text-zinc-500">Código de Processo</dt>
-                            <dd className="min-w-0 break-all text-zinc-800">{data.id}</dd>
-                        </div>
-                        {noMetaWarning ? (
-                            <div className="py-4 text-sm text-zinc-500">{noMetaWarning}</div>
+                    <div className="min-w-0 md:border-r md:border-zinc-200">
+                        {(isEmail || isWhatsApp) && channelRows.length === 0 ? (
+                            <div className="divide-y divide-zinc-100 px-5 py-2">
+                                <div className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
+                                    <dt className="font-medium text-zinc-500">Código de Processo</dt>
+                                    <dd className="min-w-0 break-all text-zinc-800">{data.id}</dd>
+                                </div>
+                                {noMetaWarning ? (
+                                    <div className="py-4 text-sm text-zinc-500">{noMetaWarning}</div>
+                                ) : null}
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-zinc-100 px-5 py-2">
+                                {rows.map(({ label, value }) => (
+                                    <div key={label} className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
+                                        <dt className="font-medium text-zinc-500">{label}</dt>
+                                        <dd className="min-w-0 break-all text-zinc-800">{value}</dd>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {meta.attachments?.length > 0 ? (
+                            <div className="border-t border-zinc-200 px-5 py-3">
+                                <div className="mb-1.5 text-xs font-semibold uppercase text-zinc-500">Anexos</div>
+                                <ul className="space-y-1">
+                                    {meta.attachments.map((name: any, i: number) => (
+                                        <li key={i} className="flex items-center gap-1.5 text-sm text-zinc-700">
+                                            <span className="text-zinc-400">·</span>
+                                            {name}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ) : null}
+                        {meta.body_text ? (
+                            <div className="border-t border-zinc-200 px-5 py-3">
+                                <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Corpo do email</div>
+                                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">
+                                    {meta.body_text}
+                                </pre>
+                            </div>
+                        ) : null}
+                        {isWhatsApp && meta.body ? (
+                            <div className="border-t border-zinc-200 px-5 py-3">
+                                <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">
+                                    Mensagem de texto
+                                </div>
+                                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">
+                                    {meta.body}
+                                </pre>
+                            </div>
                         ) : null}
                     </div>
-                ) : (
-                    <div className="divide-y divide-zinc-100 px-5 py-2">
-                        {rows.map(({ label, value }) => (
-                            <div key={label} className="grid grid-cols-[140px_1fr] gap-3 py-2 text-sm">
-                                <dt className="font-medium text-zinc-500">{label}</dt>
-                                <dd className="min-w-0 break-all text-zinc-800">{value}</dd>
-                            </div>
-                        ))}
+                    <div className="min-w-0 border-t border-zinc-200 px-5 py-4 md:border-t-0">
+                        <div className="mb-2 text-xs font-semibold uppercase text-zinc-500">Documento original</div>
+                        <DocumentBlobPreview
+                            documentId={data.id}
+                            contentType={data.content_type}
+                            filename={data.filename}
+                        />
                     </div>
-                )}
-                {meta.attachments?.length > 0 ? (
-                    <div className="border-t border-zinc-200 px-5 py-3">
-                        <div className="mb-1.5 text-xs font-semibold uppercase text-zinc-500">Anexos</div>
-                        <ul className="space-y-1">
-                            {meta.attachments.map((name: any, i: number) => (
-                                <li key={i} className="flex items-center gap-1.5 text-sm text-zinc-700">
-                                    <span className="text-zinc-400">·</span>
-                                    {name}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                ) : null}
-                {meta.body_text ? (
-                    <div className="border-t border-zinc-200 px-5 py-3">
-                        <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Corpo do email</div>
-                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">{meta.body_text}</pre>
-                    </div>
-                ) : null}
-                {isWhatsApp && meta.body ? (
-                    <div className="border-t border-zinc-200 px-5 py-3">
-                        <div className="mb-1 text-xs font-semibold uppercase text-zinc-500">Mensagem de texto</div>
-                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs text-zinc-700">{meta.body}</pre>
-                    </div>
-                ) : null}
-                </div>
-                <div className="min-w-0 border-t border-zinc-200 px-5 py-4 md:border-t-0">
-                    <div className="mb-2 text-xs font-semibold uppercase text-zinc-500">Documento original</div>
-                    <DocumentBlobPreview documentId={data.id} contentType={data.content_type} filename={data.filename} />
-                </div>
                 </div>
                 <div className="border-t border-zinc-200 px-5 py-3 text-right">
-                    <button type="button" onClick={onClose} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100"
+                    >
                         Fechar
                     </button>
                 </div>
@@ -3826,38 +4565,42 @@ function DocumentTable({
 
     function handleSort(key: string) {
         if (sortKey === key) {
-            setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+            setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
         } else {
             setSortKey(key)
             setSortDir('asc')
         }
     }
 
-    const sortedDocuments = sortKey ? [...documents].sort((a, b) => {
-        let aVal = '', bVal = ''
-        if (sortKey === 'arquivo') {
-            aVal = (a.original_filename || a.id || '').toLowerCase()
-            bVal = (b.original_filename || b.id || '').toLowerCase()
-        } else if (sortKey === 'status') {
-            aVal = (a.status || '').toLowerCase()
-            bVal = (b.status || '').toLowerCase()
-        } else if (sortKey === 'canal') {
-            aVal = (a.channel || '').toLowerCase()
-            bVal = (b.channel || '').toLowerCase()
-        } else if (sortKey === 'tipo') {
-            aVal = (a.document_type || '').toLowerCase()
-            bVal = (b.document_type || '').toLowerCase()
-        } else if (sortKey === 'atualizado') {
-            aVal = a.updated_at || a.received_at || ''
-            bVal = b.updated_at || b.received_at || ''
-        }
-        if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
-        if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
-        return 0
-    }) : documents
+    const sortedDocuments = sortKey
+        ? [...documents].sort((a, b) => {
+              let aVal = '',
+                  bVal = ''
+              if (sortKey === 'arquivo') {
+                  aVal = (a.original_filename || a.id || '').toLowerCase()
+                  bVal = (b.original_filename || b.id || '').toLowerCase()
+              } else if (sortKey === 'status') {
+                  aVal = (a.status || '').toLowerCase()
+                  bVal = (b.status || '').toLowerCase()
+              } else if (sortKey === 'canal') {
+                  aVal = (a.channel || '').toLowerCase()
+                  bVal = (b.channel || '').toLowerCase()
+              } else if (sortKey === 'tipo') {
+                  aVal = (a.document_type || '').toLowerCase()
+                  bVal = (b.document_type || '').toLowerCase()
+              } else if (sortKey === 'atualizado') {
+                  aVal = a.updated_at || a.received_at || ''
+                  bVal = b.updated_at || b.received_at || ''
+              }
+              if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
+              if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
+              return 0
+          })
+        : documents
 
-    const allSelected = selectable && sortedDocuments.length > 0 && sortedDocuments.every(d => bulkSelectedIds?.has(d.id))
-    const someSelected = selectable && !allSelected && sortedDocuments.some(d => bulkSelectedIds?.has(d.id))
+    const allSelected =
+        selectable && sortedDocuments.length > 0 && sortedDocuments.every((d) => bulkSelectedIds?.has(d.id))
+    const someSelected = selectable && !allSelected && sortedDocuments.some((d) => bulkSelectedIds?.has(d.id))
 
     useEffect(() => {
         if (selectAllRef.current) {
@@ -3870,9 +4613,9 @@ function DocumentTable({
         if (!onBulkSelectionChange) return
         const next = new Set(bulkSelectedIds)
         if (allSelected) {
-            sortedDocuments.forEach(d => next.delete(d.id))
+            sortedDocuments.forEach((d) => next.delete(d.id))
         } else {
-            sortedDocuments.forEach(d => next.add(d.id))
+            sortedDocuments.forEach((d) => next.add(d.id))
         }
         onBulkSelectionChange(next)
     }
@@ -3887,9 +4630,11 @@ function DocumentTable({
     }
 
     const indicator = (col: string) =>
-        sortKey !== col
-            ? <span className="ml-1 opacity-30">↕</span>
-            : <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+        sortKey !== col ? (
+            <span className="ml-1 opacity-30">↕</span>
+        ) : (
+            <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+        )
 
     const thClass = 'cursor-pointer select-none px-3 py-2 hover:text-zinc-700'
 
@@ -3915,11 +4660,25 @@ function DocumentTable({
                                     />
                                 </th>
                             ) : null}
-                            <th className={thClass} onClick={() => handleSort('arquivo')}>Arquivo{indicator('arquivo')}</th>
-                            <th className={thClass} onClick={() => handleSort('status')}>Status{indicator('status')}</th>
-                            {compact ? null : <th className={thClass} onClick={() => handleSort('canal')}>Canal{indicator('canal')}</th>}
-                            {compact ? null : <th className={thClass} onClick={() => handleSort('tipo')}>Tipo{indicator('tipo')}</th>}
-                            <th className={thClass} onClick={() => handleSort('atualizado')}>Atualizado{indicator('atualizado')}</th>
+                            <th className={thClass} onClick={() => handleSort('arquivo')}>
+                                Arquivo{indicator('arquivo')}
+                            </th>
+                            <th className={thClass} onClick={() => handleSort('status')}>
+                                Status{indicator('status')}
+                            </th>
+                            {compact ? null : (
+                                <th className={thClass} onClick={() => handleSort('canal')}>
+                                    Canal{indicator('canal')}
+                                </th>
+                            )}
+                            {compact ? null : (
+                                <th className={thClass} onClick={() => handleSort('tipo')}>
+                                    Tipo{indicator('tipo')}
+                                </th>
+                            )}
+                            <th className={thClass} onClick={() => handleSort('atualizado')}>
+                                Atualizado{indicator('atualizado')}
+                            </th>
                             {compact ? null : <th className="px-3 py-2">Decisão em</th>}
                             <th className="w-8 px-2 py-2"></th>
                         </tr>
@@ -3932,7 +4691,11 @@ function DocumentTable({
                                     key={document.id}
                                     onClick={() => onSelectDocument(document.id)}
                                     className={`cursor-pointer border-b border-zinc-100 hover:bg-zinc-50 ${
-                                        isChecked ? 'bg-zinc-50' : selectedDocumentId === document.id ? 'bg-zinc-100' : ''
+                                        isChecked
+                                            ? 'bg-zinc-50'
+                                            : selectedDocumentId === document.id
+                                              ? 'bg-zinc-100'
+                                              : ''
                                     }`}
                                 >
                                     {selectable ? (
@@ -3945,25 +4708,39 @@ function DocumentTable({
                                             />
                                         </td>
                                     ) : null}
-                                    <td className="px-3 py-2 font-medium">{document.original_filename || document.id}</td>
-                                    <td className="px-3 py-2"><StatusBadge status={document.status} /></td>
+                                    <td className="px-3 py-2 font-medium">
+                                        {document.original_filename || document.id}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                        <StatusBadge status={document.status} />
+                                    </td>
                                     {compact ? null : <td className="px-3 py-2">{document.channel || '-'}</td>}
                                     {compact ? null : <td className="px-3 py-2">{document.document_type || '-'}</td>}
-                                    <td className="px-3 py-2 text-zinc-500">{formatDate(document.updated_at || document.received_at)}</td>
+                                    <td className="px-3 py-2 text-zinc-500">
+                                        {formatDate(document.updated_at || document.received_at)}
+                                    </td>
                                     {compact ? null : (
                                         <td className="px-3 py-2 text-zinc-500">
                                             {document.status === 'APPROVED'
                                                 ? formatDate(document.approved_at)
                                                 : document.status === 'REJECTED'
-                                                    ? formatDate(document.rejected_at)
-                                                    : null}
+                                                  ? formatDate(document.rejected_at)
+                                                  : null}
                                         </td>
                                     )}
                                     <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
                                         <button
                                             type="button"
                                             title="Ver informações do documento"
-                                            onClick={() => setEmailModalDoc({ id: document.id, filename: document.original_filename || document.id, channel: document.channel, content_type: document.content_type, metadata_channel: document.metadata_channel })}
+                                            onClick={() =>
+                                                setEmailModalDoc({
+                                                    id: document.id,
+                                                    filename: document.original_filename || document.id,
+                                                    channel: document.channel,
+                                                    content_type: document.content_type,
+                                                    metadata_channel: document.metadata_channel,
+                                                })
+                                            }
                                             className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
                                         >
                                             <Eye size={14} aria-hidden="true" />
@@ -3991,7 +4768,11 @@ function Metric({ label, value }: { label: React.ReactNode; value: React.ReactNo
 
 const PROTECTED_SCHEMA_IDS = ['nota_fiscal_default', 'conta_agua_default']
 
-function DeleteSchemaModal({ schema, onClose, onDeleted }: {
+function DeleteSchemaModal({
+    schema,
+    onClose,
+    onDeleted,
+}: {
     schema: SchemaConfig
     onClose: () => void
     onDeleted: () => void | Promise<unknown>
@@ -4005,10 +4786,15 @@ function DeleteSchemaModal({ schema, onClose, onDeleted }: {
                 <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-6 shadow-xl">
                     <div className="text-sm font-semibold text-zinc-900">Modelo protegido</div>
                     <p className="mt-2 text-sm text-zinc-600">
-                        O modelo <span className="font-medium">{schema.schema_id}</span> é padrão do sistema e não pode ser excluído.
+                        O modelo <span className="font-medium">{schema.schema_id}</span> é padrão do sistema e não pode
+                        ser excluído.
                     </p>
                     <div className="mt-4 flex justify-end">
-                        <button type="button" onClick={onClose} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100"
+                        >
                             Fechar
                         </button>
                     </div>
@@ -4034,14 +4820,25 @@ function DeleteSchemaModal({ schema, onClose, onDeleted }: {
             <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-6 shadow-xl">
                 <div className="text-sm font-semibold text-zinc-900">Excluir modelo</div>
                 <p className="mt-2 text-sm text-zinc-600">
-                    Tem certeza que deseja excluir o modelo <span className="font-medium">{schema.schema_id}</span>? Esta ação não pode ser desfeita.
+                    Tem certeza que deseja excluir o modelo <span className="font-medium">{schema.schema_id}</span>?
+                    Esta ação não pode ser desfeita.
                 </p>
                 {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
                 <div className="mt-4 flex justify-end gap-2">
-                    <button type="button" onClick={onClose} disabled={loading} className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={loading}
+                        className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50"
+                    >
                         Cancelar
                     </button>
-                    <button type="button" onClick={handleDelete} disabled={loading} className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                    <button
+                        type="button"
+                        onClick={handleDelete}
+                        disabled={loading}
+                        className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    >
                         {loading ? 'Excluindo...' : 'Excluir'}
                     </button>
                 </div>
@@ -4050,10 +4847,7 @@ function DeleteSchemaModal({ schema, onClose, onDeleted }: {
     )
 }
 
-function SchemaList({ schemas, onDeleted }: {
-    schemas: SchemaConfig[]
-    onDeleted: () => void | Promise<unknown>
-}) {
+function SchemaList({ schemas, onDeleted }: { schemas: SchemaConfig[]; onDeleted: () => void | Promise<unknown> }) {
     const [targetSchema, setTargetSchema] = useState<SchemaConfig | null>(null)
     return (
         <>
@@ -4083,14 +4877,22 @@ function SchemaList({ schemas, onDeleted }: {
                 <DeleteSchemaModal
                     schema={targetSchema}
                     onClose={() => setTargetSchema(null)}
-                    onDeleted={async () => { setTargetSchema(null); await onDeleted() }}
+                    onDeleted={async () => {
+                        setTargetSchema(null)
+                        await onDeleted()
+                    }}
                 />
             )}
         </>
     )
 }
 
-function ConfigList({ title, items, primaryKey, secondaryKey }: {
+function ConfigList({
+    title,
+    items,
+    primaryKey,
+    secondaryKey,
+}: {
     title: React.ReactNode
     items: Array<Record<string, any> & { id: React.Key }>
     primaryKey: string
@@ -4125,9 +4927,8 @@ function Field({ label, children }: { label: React.ReactNode; children: React.Re
 }
 
 function Alert({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'error' | 'success' }) {
-    const classes = tone === 'error'
-        ? 'border-red-200 bg-red-50 text-red-700'
-        : 'border-zinc-200 bg-white text-zinc-600'
+    const classes =
+        tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-zinc-200 bg-white text-zinc-600'
     return <div className={`mb-4 rounded-md border px-3 py-2 text-sm ${classes}`}>{children}</div>
 }
 
@@ -4140,7 +4941,11 @@ function EmptyState({ icon: Icon, text }: { icon: LucideIcon; text: React.ReactN
     )
 }
 
-function SearchInput({ value, onChange, placeholder = 'Buscar...' }: {
+function SearchInput({
+    value,
+    onChange,
+    placeholder = 'Buscar...',
+}: {
     value: string
     onChange: (value: string) => void
     placeholder?: string
@@ -4162,9 +4967,13 @@ function StatusBadge({ status }: { status?: string }) {
     const classes = isGood
         ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
         : isBad
-            ? 'bg-red-50 text-red-700 ring-red-200'
-            : 'bg-amber-50 text-amber-700 ring-amber-200'
-    return <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ring-1 ${classes}`}>{(status ? STATUS_LABELS[status] : '') || status || '-'}</span>
+          ? 'bg-red-50 text-red-700 ring-red-200'
+          : 'bg-amber-50 text-amber-700 ring-amber-200'
+    return (
+        <span className={`inline-flex rounded px-2 py-1 text-xs font-medium ring-1 ${classes}`}>
+            {(status ? STATUS_LABELS[status] : '') || status || '-'}
+        </span>
+    )
 }
 
 function KeyValueGrid({ values }: { values: Record<string, unknown> }) {
@@ -4216,7 +5025,15 @@ function parseFieldEntry(raw: any): { value: string; confidence: number | null }
     return { value: String(raw), confidence: null }
 }
 
-function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, normalizationRules, referenceReview, referenceDocument }: {
+function buildLangExtractDefinition({
+    schemaForm,
+    fields,
+    prompt,
+    examples,
+    normalizationRules,
+    referenceReview,
+    referenceDocument,
+}: {
     schemaForm: SchemaForm
     fields: SchemaField[]
     prompt: string
@@ -4237,17 +5054,21 @@ function buildLangExtractDefinition({ schemaForm, fields, prompt, examples, norm
         model_name: schemaForm.model_name,
         document_type: schemaForm.document_type,
         status: schemaForm.status,
-        fields: fields.filter((field) => field.name.trim()).map((field) => ({
-            name: field.name.trim(),
-            type: field.type,
-            required: Boolean(field.required),
-            rule: field.rule,
-        })),
+        fields: fields
+            .filter((field) => field.name.trim())
+            .map((field) => ({
+                name: field.name.trim(),
+                type: field.type,
+                required: Boolean(field.required),
+                rule: field.rule,
+            })),
         prompt: {
             instructions: prompt,
             guardrails: PROMPT_HINTS,
         },
-        examples: examples.filter((example) => example.field.trim() || example.expected.trim() || example.source.trim()),
+        examples: examples.filter(
+            (example) => example.field.trim() || example.expected.trim() || example.source.trim(),
+        ),
         reference_review: {
             document_id: referenceDocument?.id || '',
             filename: referenceDocument?.original_filename || '',
@@ -4298,7 +5119,9 @@ function renderHighlightedText(text: string, highlights: string[]): React.ReactN
     return text.split(pattern).map((part, index) => {
         const isHighlighted = terms.some((term) => normalizeSearchText(term) === normalizeSearchText(part))
         return isHighlighted ? (
-            <mark key={`${part}-${index}`} className="rounded bg-amber-100 px-0.5 text-amber-950">{part}</mark>
+            <mark key={`${part}-${index}`} className="rounded bg-amber-100 px-0.5 text-amber-950">
+                {part}
+            </mark>
         ) : (
             <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
         )
@@ -4306,7 +5129,9 @@ function renderHighlightedText(text: string, highlights: string[]): React.ReactN
 }
 
 function normalizeSearchText(value: unknown): string {
-    return String(value || '').trim().toLowerCase()
+    return String(value || '')
+        .trim()
+        .toLowerCase()
 }
 
 function escapeRegExp(value: string): string {
@@ -4388,10 +5213,20 @@ function GerenciarUsuarios() {
         setLoading(false)
     }
 
-    useEffect(() => { load() }, [])
+    useEffect(() => {
+        load()
+    }, [])
 
-    const openCreate = () => { setForm({ name: '', email: '', password: '', role_id: '' }); setModal({ mode: 'create' }); setError('') }
-    const openEdit = (u: AdminUser) => { setForm({ name: u.name, email: u.email, password: '', role_id: u.role?.id || '' }); setModal({ mode: 'edit', user: u }); setError('') }
+    const openCreate = () => {
+        setForm({ name: '', email: '', password: '', role_id: '' })
+        setModal({ mode: 'create' })
+        setError('')
+    }
+    const openEdit = (u: AdminUser) => {
+        setForm({ name: u.name, email: u.email, password: '', role_id: u.role?.id || '' })
+        setModal({ mode: 'edit', user: u })
+        setError('')
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -4424,23 +5259,52 @@ function GerenciarUsuarios() {
         <div className="space-y-4">
             <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Usuários</h2>
-                <button onClick={openCreate} className="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700">Novo Usuário</button>
+                <button
+                    onClick={openCreate}
+                    className="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700"
+                >
+                    Novo Usuário
+                </button>
             </div>
-            {loading ? <div className="text-sm text-zinc-500">Carregando...</div> : (
+            {loading ? (
+                <div className="text-sm text-zinc-500">Carregando...</div>
+            ) : (
                 <table className="w-full text-sm border border-zinc-200 rounded-md overflow-hidden">
                     <thead className="bg-zinc-50 text-zinc-600">
-                        <tr>{['Nome', 'E-mail', 'Role', 'Status', 'Ações'].map(h => <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>)}</tr>
+                        <tr>
+                            {['Nome', 'E-mail', 'Role', 'Status', 'Ações'].map((h) => (
+                                <th key={h} className="px-3 py-2 text-left font-medium">
+                                    {h}
+                                </th>
+                            ))}
+                        </tr>
                     </thead>
                     <tbody>
-                        {users.map(u => (
+                        {users.map((u) => (
                             <tr key={u.id} className="border-t border-zinc-100">
                                 <td className="px-3 py-2">{u.name}</td>
                                 <td className="px-3 py-2 text-zinc-500">{u.email}</td>
                                 <td className="px-3 py-2">{u.role?.name || '—'}</td>
-                                <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>{u.is_active ? 'Ativo' : 'Inativo'}</span></td>
+                                <td className="px-3 py-2">
+                                    <span
+                                        className={`rounded-full px-2 py-0.5 text-xs ${u.is_active ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}
+                                    >
+                                        {u.is_active ? 'Ativo' : 'Inativo'}
+                                    </span>
+                                </td>
                                 <td className="px-3 py-2 flex gap-2">
-                                    <button onClick={() => openEdit(u)} className="text-xs text-zinc-600 hover:underline">Editar</button>
-                                    <button onClick={() => toggleActive(u)} className="text-xs text-zinc-600 hover:underline">{u.is_active ? 'Desativar' : 'Ativar'}</button>
+                                    <button
+                                        onClick={() => openEdit(u)}
+                                        className="text-xs text-zinc-600 hover:underline"
+                                    >
+                                        Editar
+                                    </button>
+                                    <button
+                                        onClick={() => toggleActive(u)}
+                                        className="text-xs text-zinc-600 hover:underline"
+                                    >
+                                        {u.is_active ? 'Desativar' : 'Ativar'}
+                                    </button>
                                 </td>
                             </tr>
                         ))}
@@ -4450,19 +5314,61 @@ function GerenciarUsuarios() {
             {modal && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
-                        <h3 className="text-lg font-semibold mb-4">{modal.mode === 'create' ? 'Novo Usuário' : 'Editar Usuário'}</h3>
+                        <h3 className="text-lg font-semibold mb-4">
+                            {modal.mode === 'create' ? 'Novo Usuário' : 'Editar Usuário'}
+                        </h3>
                         {error && <div className="mb-3 text-sm text-red-600">{error}</div>}
                         <form onSubmit={handleSubmit} className="space-y-3">
-                            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nome" required className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm" />
-                            <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="E-mail" required className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm" />
-                            {modal.mode === 'create' && <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Senha (mín. 8 chars)" required minLength={8} className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm" />}
-                            <select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))} required className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm">
+                            <input
+                                value={form.name}
+                                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                                placeholder="Nome"
+                                required
+                                className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm"
+                            />
+                            <input
+                                type="email"
+                                value={form.email}
+                                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                                placeholder="E-mail"
+                                required
+                                className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm"
+                            />
+                            {modal.mode === 'create' && (
+                                <input
+                                    type="password"
+                                    value={form.password}
+                                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                                    placeholder="Senha (mín. 8 chars)"
+                                    required
+                                    minLength={8}
+                                    className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm"
+                                />
+                            )}
+                            <select
+                                value={form.role_id}
+                                onChange={(e) => setForm((f) => ({ ...f, role_id: e.target.value }))}
+                                required
+                                className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm"
+                            >
                                 <option value="">Selecionar role...</option>
-                                {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                {roles.map((r) => (
+                                    <option key={r.id} value={r.id}>
+                                        {r.name}
+                                    </option>
+                                ))}
                             </select>
                             <div className="flex gap-2 justify-end pt-2">
-                                <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-zinc-300 rounded-md">Cancelar</button>
-                                <button type="submit" className="px-4 py-2 text-sm bg-zinc-900 text-white rounded-md">Salvar</button>
+                                <button
+                                    type="button"
+                                    onClick={() => setModal(null)}
+                                    className="px-4 py-2 text-sm border border-zinc-300 rounded-md"
+                                >
+                                    Cancelar
+                                </button>
+                                <button type="submit" className="px-4 py-2 text-sm bg-zinc-900 text-white rounded-md">
+                                    Salvar
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -4490,17 +5396,31 @@ function GerenciarRoles() {
         setLoading(false)
     }
 
-    useEffect(() => { load() }, [])
+    useEffect(() => {
+        load()
+    }, [])
 
-    const openCreate = () => { setForm({ name: '', permission_codes: [] }); setModal({ mode: 'create' }); setError('') }
-    const openEdit = (r: AdminRole) => { setForm({ name: r.name, permission_codes: (r.permissions || []).map(p => typeof p === 'string' ? p : p.code) }); setModal({ mode: 'edit', role: r }); setError('') }
+    const openCreate = () => {
+        setForm({ name: '', permission_codes: [] })
+        setModal({ mode: 'create' })
+        setError('')
+    }
+    const openEdit = (r: AdminRole) => {
+        setForm({
+            name: r.name,
+            permission_codes: (r.permissions || []).map((p) => (typeof p === 'string' ? p : p.code)),
+        })
+        setModal({ mode: 'edit', role: r })
+        setError('')
+    }
 
-    const togglePerm = (code: string) => setForm(f => ({
-        ...f,
-        permission_codes: f.permission_codes.includes(code)
-            ? f.permission_codes.filter(c => c !== code)
-            : [...f.permission_codes, code],
-    }))
+    const togglePerm = (code: string) =>
+        setForm((f) => ({
+            ...f,
+            permission_codes: f.permission_codes.includes(code)
+                ? f.permission_codes.filter((c) => c !== code)
+                : [...f.permission_codes, code],
+        }))
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -4533,22 +5453,47 @@ function GerenciarRoles() {
         <div className="space-y-4">
             <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">Roles e Permissões</h2>
-                <button onClick={openCreate} className="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700">Nova Role</button>
+                <button
+                    onClick={openCreate}
+                    className="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white hover:bg-zinc-700"
+                >
+                    Nova Role
+                </button>
             </div>
-            {loading ? <div className="text-sm text-zinc-500">Carregando...</div> : (
+            {loading ? (
+                <div className="text-sm text-zinc-500">Carregando...</div>
+            ) : (
                 <table className="w-full text-sm border border-zinc-200 rounded-md overflow-hidden">
                     <thead className="bg-zinc-50 text-zinc-600">
-                        <tr>{['Nome', 'Permissões', 'Usuários', 'Ações'].map(h => <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>)}</tr>
+                        <tr>
+                            {['Nome', 'Permissões', 'Usuários', 'Ações'].map((h) => (
+                                <th key={h} className="px-3 py-2 text-left font-medium">
+                                    {h}
+                                </th>
+                            ))}
+                        </tr>
                     </thead>
                     <tbody>
-                        {roles.map(r => (
+                        {roles.map((r) => (
                             <tr key={r.id} className="border-t border-zinc-100">
                                 <td className="px-3 py-2 font-medium">{r.name}</td>
-                                <td className="px-3 py-2 text-zinc-500 text-xs">{(r.permissions || []).map((p: any) => p.description || p.code || p).join(', ')}</td>
+                                <td className="px-3 py-2 text-zinc-500 text-xs">
+                                    {(r.permissions || []).map((p: any) => p.description || p.code || p).join(', ')}
+                                </td>
                                 <td className="px-3 py-2">{r.users_count}</td>
                                 <td className="px-3 py-2 flex gap-2">
-                                    <button onClick={() => openEdit(r)} className="text-xs text-zinc-600 hover:underline">Editar</button>
-                                    <button onClick={() => handleDelete(r)} className="text-xs text-red-600 hover:underline">Remover</button>
+                                    <button
+                                        onClick={() => openEdit(r)}
+                                        className="text-xs text-zinc-600 hover:underline"
+                                    >
+                                        Editar
+                                    </button>
+                                    <button
+                                        onClick={() => handleDelete(r)}
+                                        className="text-xs text-red-600 hover:underline"
+                                    >
+                                        Remover
+                                    </button>
                                 </td>
                             </tr>
                         ))}
@@ -4558,24 +5503,45 @@ function GerenciarRoles() {
             {modal && (
                 <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
                     <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
-                        <h3 className="text-lg font-semibold mb-4">{modal.mode === 'create' ? 'Nova Role' : 'Editar Role'}</h3>
+                        <h3 className="text-lg font-semibold mb-4">
+                            {modal.mode === 'create' ? 'Nova Role' : 'Editar Role'}
+                        </h3>
                         {error && <div className="mb-3 text-sm text-red-600">{error}</div>}
                         <form onSubmit={handleSubmit} className="space-y-3">
-                            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nome da role" required className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm" />
+                            <input
+                                value={form.name}
+                                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                                placeholder="Nome da role"
+                                required
+                                className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm"
+                            />
                             <div>
                                 <div className="mb-2 text-sm font-medium text-zinc-700">Permissões</div>
                                 <div className="grid grid-cols-2 gap-2">
-                                    {perms.map(p => (
+                                    {perms.map((p) => (
                                         <label key={p.code} className="flex items-center gap-2 text-sm cursor-pointer">
-                                            <input type="checkbox" checked={form.permission_codes.includes(p.code)} onChange={() => togglePerm(p.code)} className="rounded" />
+                                            <input
+                                                type="checkbox"
+                                                checked={form.permission_codes.includes(p.code)}
+                                                onChange={() => togglePerm(p.code)}
+                                                className="rounded"
+                                            />
                                             {p.description}
                                         </label>
                                     ))}
                                 </div>
                             </div>
                             <div className="flex gap-2 justify-end pt-2">
-                                <button type="button" onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-zinc-300 rounded-md">Cancelar</button>
-                                <button type="submit" className="px-4 py-2 text-sm bg-zinc-900 text-white rounded-md">Salvar</button>
+                                <button
+                                    type="button"
+                                    onClick={() => setModal(null)}
+                                    className="px-4 py-2 text-sm border border-zinc-300 rounded-md"
+                                >
+                                    Cancelar
+                                </button>
+                                <button type="submit" className="px-4 py-2 text-sm bg-zinc-900 text-white rounded-md">
+                                    Salvar
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -4607,4 +5573,3 @@ if (rootElement) {
         </React.StrictMode>,
     )
 }
-

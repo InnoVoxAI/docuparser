@@ -3,7 +3,6 @@ import django.db.models.deletion
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("documents", "0006_document_sha256"),
         ("users", "0001_initial"),

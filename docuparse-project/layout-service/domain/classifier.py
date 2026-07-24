@@ -22,7 +22,9 @@ class LayoutClassification:
     requires_human_validation: bool
 
 
-def classify_layout(raw_text: str, document_type: str = "unknown") -> LayoutClassification:
+def classify_layout(
+    raw_text: str, document_type: str = "unknown"
+) -> LayoutClassification:
     text = _normalize(raw_text)
     scores = {
         "nota_fiscal": _score_nota_fiscal(text),
@@ -51,6 +53,7 @@ def _normalize(raw_text: str) -> str:
 
 def _score_nota_fiscal(text: str) -> float:
     import re
+
     score = _weighted_score(
         text,
         {

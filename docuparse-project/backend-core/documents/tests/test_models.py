@@ -23,7 +23,9 @@ from documents.models import (
 class CoreDomainModelTests(TestCase):
     def setUp(self) -> None:
         self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
-        self.user = get_user_model().objects.create_user(username="operator", password="test")
+        self.user = get_user_model().objects.create_user(
+            username="operator", password="test"
+        )
         self.profile = UserProfile.objects.create(
             tenant=self.tenant,
             user=self.user,
@@ -70,7 +72,9 @@ class CoreDomainModelTests(TestCase):
                 payload=payload,
             )
 
-    def test_extraction_validation_and_erp_attempts_are_related_to_document(self) -> None:
+    def test_extraction_validation_and_erp_attempts_are_related_to_document(
+        self,
+    ) -> None:
         extraction = ExtractionResult.objects.create(
             document=self.document,
             schema_id="boleto",

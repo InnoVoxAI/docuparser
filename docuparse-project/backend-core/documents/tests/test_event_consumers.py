@@ -5,7 +5,13 @@ from uuid import uuid4
 
 from django.test import TestCase
 
-from documents.models import Document, DocumentEvent, ERPIntegrationAttempt, ExtractionResult, Tenant
+from documents.models import (
+    Document,
+    DocumentEvent,
+    ERPIntegrationAttempt,
+    ExtractionResult,
+    Tenant,
+)
 from documents.services.event_consumers import (
     consume_document_received,
     consume_erp_failed,
@@ -43,7 +49,9 @@ class CoreEventConsumerTests(TestCase):
             },
         }
 
-    def test_consume_document_received_creates_tenant_document_and_event_idempotently(self) -> None:
+    def test_consume_document_received_creates_tenant_document_and_event_idempotently(
+        self,
+    ) -> None:
         payload = self._document_received_payload()
 
         first = consume_document_received(payload)
@@ -56,7 +64,9 @@ class CoreEventConsumerTests(TestCase):
         assert first.status == Document.Status.RECEIVED
         assert first.file_uri == payload["data"]["file"]["uri"]
 
-    def test_consume_extraction_completed_updates_document_and_is_idempotent(self) -> None:
+    def test_consume_extraction_completed_updates_document_and_is_idempotent(
+        self,
+    ) -> None:
         document = consume_document_received(self._document_received_payload())
         payload = {
             "event_id": str(uuid4()),
@@ -83,7 +93,9 @@ class CoreEventConsumerTests(TestCase):
         document.refresh_from_db()
         assert document.status == Document.Status.VALIDATION_PENDING
         assert ExtractionResult.objects.count() == 1
-        assert DocumentEvent.objects.filter(event_type="extraction.completed").count() == 1
+        assert (
+            DocumentEvent.objects.filter(event_type="extraction.completed").count() == 1
+        )
 
     def test_consume_ocr_completed_updates_document_and_is_idempotent(self) -> None:
         document = consume_document_received(self._document_received_payload())

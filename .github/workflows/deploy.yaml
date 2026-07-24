@@ -91,5 +91,3 @@ jobs:
             git commit -m "Updating the image tag: ${{ inputs.IMAGE_VERSION }}"
             git push
           fi
-
-

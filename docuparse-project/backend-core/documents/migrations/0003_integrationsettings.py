@@ -6,27 +6,62 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('documents', '0002_rename_documents_d_tenant__718ecf_idx_documents_d_tenant__1461e3_idx_and_more'),
+        (
+            "documents",
+            "0002_rename_documents_d_tenant__718ecf_idx_documents_d_tenant__1461e3_idx_and_more",
+        ),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='IntegrationSettings',
+            name="IntegrationSettings",
             fields=[
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('approved_export_enabled', models.BooleanField(default=True)),
-                ('approved_export_dir', models.CharField(blank=True, max_length=1024)),
-                ('approved_export_format', models.CharField(choices=[('json', 'JSON'), ('jsonl', 'JSONL')], default='json', max_length=16)),
-                ('superlogica_base_url', models.URLField(blank=True)),
-                ('superlogica_mode', models.CharField(choices=[('disabled', 'Disabled'), ('mock', 'Mock'), ('sandbox', 'Sandbox')], default='disabled', max_length=32)),
-                ('tenant', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='integration_settings', to='documents.tenant')),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4,
+                        editable=False,
+                        primary_key=True,
+                        serialize=False,
+                    ),
+                ),
+                ("approved_export_enabled", models.BooleanField(default=True)),
+                ("approved_export_dir", models.CharField(blank=True, max_length=1024)),
+                (
+                    "approved_export_format",
+                    models.CharField(
+                        choices=[("json", "JSON"), ("jsonl", "JSONL")],
+                        default="json",
+                        max_length=16,
+                    ),
+                ),
+                ("superlogica_base_url", models.URLField(blank=True)),
+                (
+                    "superlogica_mode",
+                    models.CharField(
+                        choices=[
+                            ("disabled", "Disabled"),
+                            ("mock", "Mock"),
+                            ("sandbox", "Sandbox"),
+                        ],
+                        default="disabled",
+                        max_length=32,
+                    ),
+                ),
+                (
+                    "tenant",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="integration_settings",
+                        to="documents.tenant",
+                    ),
+                ),
             ],
             options={
-                'abstract': False,
+                "abstract": False,
             },
         ),
     ]

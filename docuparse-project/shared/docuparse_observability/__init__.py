@@ -30,4 +30,10 @@ def log_event(
         "event_type": event_type,
         **extra,
     }
-    logger.log(level, json.dumps({key: value for key, value in payload.items() if value is not None}, default=str))
+    logger.log(
+        level,
+        json.dumps(
+            {key: value for key, value in payload.items() if value is not None},
+            default=str,
+        ),
+    )

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from docuparse_events import EventBus, publish_dead_letter, sleep_interval
 from docuparse_observability import log_event
@@ -33,7 +34,9 @@ CORE_EVENT_CONSUMERS: dict[str, EventConsumer] = {
 @dataclass
 class CoreEventStreamWorker:
     event_bus: EventBus
-    consumers: dict[str, EventConsumer] = field(default_factory=lambda: dict(CORE_EVENT_CONSUMERS))
+    consumers: dict[str, EventConsumer] = field(
+        default_factory=lambda: dict(CORE_EVENT_CONSUMERS)
+    )
     poll_seconds: float = 1.0
     batch_size: int = 25
     start_at_latest: bool = True
@@ -47,13 +50,21 @@ class CoreEventStreamWorker:
     def run_once(self) -> int:
         processed_count = 0
         for stream, consumer in self.consumers.items():
-            entries = self.event_bus.consume_entries(stream, self.offsets[stream], count=self.batch_size)
+            entries = self.event_bus.consume_entries(
+                stream, self.offsets[stream], count=self.batch_size
+            )
             for entry in entries:
                 try:
                     consumer(entry.payload)
                     processed_count += 1
                 except Exception as exc:
-                    publish_dead_letter(self.event_bus, stream=stream, entry=entry, error=exc, source="backend-core")
+                    publish_dead_letter(
+                        self.event_bus,
+                        stream=stream,
+                        entry=entry,
+                        error=exc,
+                        source="backend-core",
+                    )
                     log_event(
                         logger,
                         "core event stream processing failed",

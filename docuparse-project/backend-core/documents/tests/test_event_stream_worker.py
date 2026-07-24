@@ -83,7 +83,10 @@ class CoreEventStreamWorkerTests(TestCase):
         self.addCleanup(event_dir.cleanup)
         event_bus = LocalJsonlEventBus(event_dir.name)
         document_id = uuid4()
-        event_bus.publish("ocr.completed", {"event_type": "ocr.completed", "document_id": str(document_id)})
+        event_bus.publish(
+            "ocr.completed",
+            {"event_type": "ocr.completed", "document_id": str(document_id)},
+        )
 
         worker = CoreEventStreamWorker(event_bus=event_bus, start_at_latest=False)
 

@@ -8,6 +8,7 @@ class DocumentsConfig(AppConfig):
     def ready(self) -> None:
         try:
             from documents.startup import ensure_default_schemas
+
             ensure_default_schemas()
         except Exception:
             # DB may not be ready yet (e.g. first run before migrations).

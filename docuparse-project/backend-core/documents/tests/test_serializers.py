@@ -10,7 +10,9 @@ from documents.serializers import DocumentListSerializer
 class DocumentListSerializerDecisionDateTests(TestCase):
     def setUp(self) -> None:
         self.tenant = Tenant.objects.create(slug="tenant-serial", name="Tenant Serial")
-        self.user = get_user_model().objects.create_user(username="serial_op", password="test")
+        self.user = get_user_model().objects.create_user(
+            username="serial_op", password="test"
+        )
         self.document = Document.objects.create(
             tenant=self.tenant,
             status=Document.Status.VALIDATION_PENDING,

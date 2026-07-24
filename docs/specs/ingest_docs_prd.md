@@ -295,7 +295,7 @@ Após aprovação:
 ## 9. 🏗️ Arquitetura
 
 9.1 Separação de Dados (Multi-tenancy)
-Identificação: Cada empresa terá um tenant_id único. Todos os registros no banco de dados (documentos, usuários, logs) devem obrigatoriamente possuir esta chave.  
+Identificação: Cada empresa terá um tenant_id único. Todos os registros no banco de dados (documentos, usuários, logs) devem obrigatoriamente possuir esta chave.
 
 Customização: O Supervisor de cada empresa pode criar seus próprios layouts e schemas sem afetar outras empresas.
 

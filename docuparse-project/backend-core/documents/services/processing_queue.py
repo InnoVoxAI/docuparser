@@ -17,6 +17,7 @@ def submit_document_processing(document_id: int) -> None:
 def _run_processing_safely(document_id: int) -> None:
     try:
         from documents.services.ocr_processor import process_document_ocr
+
         process_document_ocr(document_id)
     except Exception as exc:
         logger.warning(
@@ -32,6 +33,7 @@ def submit_document_langextract(document_id, schema_config_id) -> None:
 def _run_langextract_safely(document_id, schema_config_id) -> None:
     try:
         from documents.services.ocr_processor import run_langextract_for_document
+
         run_langextract_for_document(document_id, schema_config_id)
     except Exception as exc:
         logger.warning(

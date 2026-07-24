@@ -20,12 +20,15 @@ class LoginSerializer(serializers.Serializer):
         if user is None:
             # Distinguish "inactive account" from "wrong credentials"
             from django.contrib.auth import get_user_model
+
             User = get_user_model()
             try:
                 db_user = User.objects.get(username=email)
                 if not db_user.is_active:
                     raise serializers.ValidationError(
-                        {"detail": "Conta inativa. Aguarde ativação pelo administrador."},
+                        {
+                            "detail": "Conta inativa. Aguarde ativação pelo administrador."
+                        },
                         code="inactive",
                     )
             except User.DoesNotExist:
@@ -65,12 +68,11 @@ class UserMeSerializer(serializers.Serializer):
         profile = getattr(obj, "docuparse_profile", None)
         if not profile or not profile.role_ref:
             return []
-        return list(
-            profile.role_ref.permissions.values_list("code", flat=True)
-        )
+        return list(profile.role_ref.permissions.values_list("code", flat=True))
 
 
 # ─── User Management Serializers ─────────────────────────────────────────────
+
 
 class UserListSerializer(serializers.Serializer):
     id = serializers.IntegerField(source="pk")
@@ -110,6 +112,7 @@ class UserCreateSerializer(serializers.Serializer):
 
     def create(self, validated_data: dict) -> Any:
         from documents.models import Tenant, UserProfile
+
         User = get_user_model()
         role: Role = validated_data["role_id"]
         user = User.objects.create_user(
@@ -141,6 +144,7 @@ class UserUpdateSerializer(serializers.Serializer):
 
 # ─── Role Management Serializers ──────────────────────────────────────────────
 
+
 class RoleListSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     name = serializers.CharField()
@@ -154,18 +158,24 @@ class RoleListSerializer(serializers.Serializer):
 
 class RoleCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=128)
-    permission_codes = serializers.ListField(child=serializers.CharField(), min_length=1)
+    permission_codes = serializers.ListField(
+        child=serializers.CharField(), min_length=1
+    )
 
     def validate_name(self, value: str) -> str:
         from users.models import Role
+
         if Role.objects.filter(name=value).exists():
             raise serializers.ValidationError("Já existe uma role com este nome.")
         return value
 
     def validate_permission_codes(self, value: list[str]) -> list[str]:
         from users.models import Permission
+
         if not value:
-            raise serializers.ValidationError("Uma role deve ter ao menos uma permissão.")
+            raise serializers.ValidationError(
+                "Uma role deve ter ao menos uma permissão."
+            )
         for code in value:
             if not Permission.objects.filter(code=code).exists():
                 raise serializers.ValidationError(f"Permissão '{code}' não existe.")
@@ -174,12 +184,17 @@ class RoleCreateSerializer(serializers.Serializer):
 
 class RoleUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=128, required=False)
-    permission_codes = serializers.ListField(child=serializers.CharField(), min_length=1, required=False)
+    permission_codes = serializers.ListField(
+        child=serializers.CharField(), min_length=1, required=False
+    )
 
     def validate_permission_codes(self, value: list[str]) -> list[str]:
         from users.models import Permission
+
         if not value:
-            raise serializers.ValidationError("Uma role deve ter ao menos uma permissão.")
+            raise serializers.ValidationError(
+                "Uma role deve ter ao menos uma permissão."
+            )
         for code in value:
             if not Permission.objects.filter(code=code).exists():
                 raise serializers.ValidationError(f"Permissão '{code}' não existe.")
@@ -187,6 +202,7 @@ class RoleUpdateSerializer(serializers.Serializer):
 
 
 # ─── Register Serializer ──────────────────────────────────────────────────────
+
 
 class RegisterSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150)

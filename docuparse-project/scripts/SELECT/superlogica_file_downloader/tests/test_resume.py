@@ -7,8 +7,10 @@ from superlogica_file_downloader.map_io import MAP_COLUMNS, load_map
 from superlogica_file_downloader.pipeline import run
 
 _PDF = b"%PDF-1.7\ncorpo\n"
+_JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * 20
 _URL_OK = "https://x/publico/downloadarquivo?id=1&hash=h"
 _URL_BAD = "https://x/publico/downloadarquivo?id=2&hash=h"
+_URL_IMG = "https://x/publico/downloadarquivo?id=3&hash=h"
 
 
 class FakeResponse:
@@ -123,3 +125,113 @@ def test_rerun_redownloads_when_file_missing(tmp_path):
 
     assert _URL_OK in session2.calls
     assert (config.downloads_root / "Água" / "a.pdf").exists()
+
+
+# --- Colisão superveniente: remessa nova com arquivo homônimo ---------------
+
+_URL_NOVO = "https://x/publico/downloadarquivo?id=3&hash=h"
+
+
+class AlwaysOkSession:
+    """Entrega PDF para qualquer URL e registra as chamadas."""
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    def get(self, url, timeout=None, stream=False):  # noqa: ANN001
+        self.calls.append(url)
+        return FakeResponse(200, _PDF, {"Content-Type": "application/pdf"})
+
+
+def _append_colliding_row(path):
+    """Acrescenta ao mapa uma linha nova com o MESMO nome/pasta de 'a.pdf'."""
+    rows = _read(path)
+    rows.append({
+        "url_download": _URL_NOVO, "nome_arquivo": "a.pdf", "pasta_destino": "Água",
+        "categoria_bruta": "Água", "hyperlink_origem": "https://x/arquivos?accesskey=k2",
+        "pdf_origem": "remessa2.pdf", "status": "pendente", "fornecedor": "F",
+        "complemento": "",
+    })
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=MAP_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({c: row.get(c, "") for c in MAP_COLUMNS})
+
+
+def test_new_homonym_does_not_redownload_the_already_saved_file(tmp_path):
+    """Regressão: a colisão que só aparece na 2ª remessa mudava o nome calculado
+    de uma linha já baixada, e a Fase B a rebaixava (arquivo órfão + duplicata)."""
+    config = build_config(tmp_path)
+    _write_map(config.map_path)
+    run(config, session=AlwaysOkSession(), sleep=_noop)
+    assert (config.downloads_root / "Água" / "a.pdf").exists()
+
+    _append_colliding_row(config.map_path)
+    session2 = AlwaysOkSession()
+    summary = run(config, session=session2, sleep=_noop)
+
+    # A linha antiga não é rebaixada, mesmo com o nome calculado agora prefixado.
+    assert _URL_OK not in session2.calls
+    assert _URL_NOVO in session2.calls
+
+    # O arquivo antigo fica onde está; o novo entra com o prefixo determinístico.
+    assert (config.downloads_root / "Água" / "a.pdf").exists()
+    assert (config.downloads_root / "Água" / "3_a.pdf").exists()
+    assert not (config.downloads_root / "Água" / "1_a.pdf").exists()  # sem órfão
+
+    # E o CSV final ganha exatamente uma linha nova (sem duplicar a antiga).
+    final = _read(config.final_csv_path)
+    caminhos = [r["caminho_local"] for r in final]
+    assert len(caminhos) == len(set(caminhos))
+    assert sum("a.pdf" in c for c in caminhos) == 2
+    assert summary["pulados"] == 2  # a.pdf e b.pdf (ambas baixadas na 1ª run)
+    assert summary["baixados"] == 1  # só a linha nova
+
+
+# --- Comprovantes em imagem (não-PDF) ---------------------------------------
+
+
+def _write_single(path, nome, url=_URL_IMG):
+    row = {
+        "url_download": url, "nome_arquivo": nome, "pasta_destino": "Administração",
+        "categoria_bruta": "Administração", "hyperlink_origem": "https://x/arquivos?accesskey=k",
+        "pdf_origem": "d.pdf", "status": "pendente", "fornecedor": "F", "complemento": "",
+    }
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=MAP_COLUMNS)
+        writer.writeheader()
+        writer.writerow({c: row.get(c, "") for c in MAP_COLUMNS})
+
+
+class ImgSession:
+    def get(self, url, timeout=None, stream=False):  # noqa: ANN001
+        return FakeResponse(200, _JPEG, {"Content-Type": "image/jpeg"})
+
+
+def test_image_comprovante_is_downloaded_and_named_with_real_extension(tmp_path):
+    """Um comprovante .jpg passa pela validação, é salvo com a extensão real e
+    entra no CSV final — sem virar erro 'assinatura não reconhecida'."""
+    config = build_config(tmp_path)
+    _write_single(config.map_path, "comprovante_21-07-2026.jpg")
+
+    summary = run(config, session=ImgSession(), sleep=_noop)
+
+    assert summary["baixados"] == 1
+    assert summary["erros"] == 0
+    dest = config.downloads_root / "Administração" / "comprovante_21-07-2026.jpg"
+    assert dest.exists()  # extensão real preservada (não .jpg.pdf)
+    assert dest.read_bytes() == _JPEG
+    final = _read(config.final_csv_path)
+    assert final[0]["nome_arquivo"] == "comprovante_21-07-2026.jpg"
+
+
+def test_pdf_only_rejects_image_comprovante(tmp_path):
+    """Com --pdf-only (accept_images=False), a imagem volta a ser rejeitada."""
+    config = build_config(tmp_path, accept_images=False)
+    _write_single(config.map_path, "comprovante.jpg")
+
+    summary = run(config, session=ImgSession(), sleep=_noop)
+
+    assert summary["erros"] == 1
+    assert summary["baixados"] == 0

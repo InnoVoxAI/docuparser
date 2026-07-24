@@ -44,6 +44,9 @@ uv run python -m raw_text_maker --verbose    # loga cada .txt produzido
 | `--engine` | (automático) | Força um engine (`docling`, `tesseract`, `openrouter`) |
 | `--timeout` / `--retries` / `--pause` | `300.0` / `3` / `0.0` | Política de rede |
 | `--formatted` | off | Regrava com texto formatado só os arquivos docling (ver abaixo) |
+| `--reformat-all` | off | Com `--formatted`: ignora o manifesto e reprocessa todos os docling |
+| `--seed-formatted` | off | Marca no manifesto o que já está formatado, sem chamar o backend |
+| `--manifest` | `<destino>/../raw_text_formatted.csv` | Registro do que já foi formatado |
 | `--verbose` | off | Log por documento |
 
 Exit codes: `0` sucesso (mesmo com documentos em erro — fail-soft) · `1` fatal
@@ -96,6 +99,29 @@ sonda errar.
 Requer PyMuPDF no ambiente (já é dependência do projeto). Importa `pymupdf`
 diretamente porque o pacote `fitz` no venv é um stub que sombreia o PyMuPDF real.
 
+### Gate de pendentes (manifesto)
+
+O `.txt` não registra se veio do texto padrão ou do formatado — olhando o arquivo
+não dá para saber. Sem memória, cada remessa nova faria o `--formatted` reenviar a
+árvore **inteira** ao docling só para reescrever, idêntico, o que já estava pronto.
+
+O `raw_text_formatted.csv` (o **manifesto**) resolve isso: cada documento formatado
+com sucesso é registrado ali, e a próxima run com `--formatted` pula o que já
+consta. Só o que é genuinamente novo (ou perdeu o `.txt`) volta ao backend.
+
+```bash
+uv run python -m raw_text_maker --formatted        # processa só o que falta
+uv run python -m raw_text_maker --formatted --reformat-all   # ignora o manifesto, reprocessa tudo
+```
+
+**Migração** (árvore já formatada antes do manifesto existir): semeie de uma vez,
+sem custo de backend — o critério é o mesmo do `--formatted` (camada de texto +
+`.txt` não-vazio):
+
+```bash
+uv run python -m raw_text_maker --seed-formatted
+```
+
 ## Erros
 
 Vão para `raw_text_erros.csv` **conforme acontecem** (append + flush), com
@@ -124,5 +150,6 @@ uvx ruff check raw_text_maker
 | `discovery.py` | Varre a árvore, mapeia documento → `.txt`, separa pendentes (retomada) |
 | `ocr_client.py` | POST no backend-ocr com retry/backoff; espelha o `OCRClient` do backend-core |
 | `outputs.py` | Gravação atômica `.part` → rename + relatório de erros |
+| `manifest.py` | Registro do que já foi formatado (gate de pendentes do `--formatted`) |
 | `pipeline.py` | Orquestração fail-soft + barra de progresso + resumo |
 | `cli.py` | Interface Typer |

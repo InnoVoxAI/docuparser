@@ -23,7 +23,7 @@ from superlogica_file_downloader.map_io import (
     load_map,
     write_map,
 )
-from superlogica_file_downloader.naming import assign_final_paths
+from superlogica_file_downloader.naming import assign_final_paths, base_path, settled_path
 from superlogica_file_downloader.outputs import (
     ErrorRecord,
     ErrorReportWriter,
@@ -79,11 +79,15 @@ def run(
 def _process_row(config, row, dest, session, sleep, final, errs, summary, verbose) -> None:
     """Processa uma linha (fail-soft). Escreve status/CSV final/erro conforme o caso."""
     rel = _relpath(dest, config.work_dir)
-    if row.status == STATUS_BAIXADO and dest.exists():
-        summary["pulados"] += 1  # retomada: já concluído e presente (RN-4/E-12)
-        if verbose:
-            _log(f"  = pulado (já baixado): {rel}")
-        return
+    if row.status == STATUS_BAIXADO:
+        # Aceita também o nome base: uma remessa nova pode ter criado uma colisão
+        # depois que este arquivo já foi baixado, mudando o nome calculado dele.
+        pronto = settled_path(dest, base_path(config, row))
+        if pronto is not None:
+            summary["pulados"] += 1  # retomada: já concluído e presente (RN-4/E-12)
+            if verbose:
+                _log(f"  = pulado (já baixado): {_relpath(pronto, config.work_dir)}")
+            return
 
     outcome = download_file(row.url_download, config, session=session, sleep=sleep)
     sleep(config.http_pause_s)  # pausa entre requisições (E-09)

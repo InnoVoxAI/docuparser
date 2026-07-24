@@ -28,7 +28,15 @@ Flags principais (ver `contracts/cli-and-config.md`):
 | `--final-csv` | `<wd>/relatorio_final.csv` | CSV final (entregável) |
 | `--errors` | `<wd>/fase_b_erros.csv` | Relatório de erros |
 | `--pause` / `--timeout` / `--retries` | `1.0` / `30.0` / `3` | Política de rede |
+| `--pdf-only` | off | Aceitar só PDF (rejeita comprovantes em imagem) |
 | `--verbose` | off | Log linha a linha |
+
+**Tipos aceitos:** por padrão a Fase B aceita **PDF e imagens** (JPEG, PNG, TIFF,
+BMP, WEBP). Comprovantes de pagamento costumam vir fotografados (imagem, não PDF);
+salvá-los deixa a Fase C extrair o texto deles via OCR, igual faz com um scan.
+Páginas HTML de erro/login continuam rejeitadas. Use `--pdf-only` para o
+comportamento antigo (só PDF). A validação é por **assinatura de bytes**, não pela
+extensão do nome.
 
 Exit codes: `0` sucesso (mesmo com linhas em erro — fail-soft) · `1` fatal
 (mapa ausente/ilegível E-01, escrita generalizada E-08) · `2` uso inválido.
@@ -40,6 +48,13 @@ A execução é **retomável e idempotente**. Rode o mesmo comando de novo:
 - linhas `baixado` **com o arquivo presente** são puladas (não rebaixa);
 - linhas `erro` são re-tentadas;
 - o CSV final não ganha duplicatas.
+
+**Colisão superveniente:** quando uma remessa nova acrescenta ao mapa um arquivo
+homônimo (mesmo nome, mesma pasta), o nome calculado de uma linha **já baixada**
+passaria a levar o prefixo anti-colisão `{id}_`. O arquivo antigo, porém, já está
+no disco com o nome sem prefixo — renomeá-lo órfãozaria o `.txt` já produzido dele.
+Por isso a retomada aceita também o arquivo no **nome base**: o antigo fica onde
+está e só o arquivo novo recebe o prefixo.
 
 ## Possível expiração (E-04)
 

@@ -37,9 +37,15 @@ uv run python -m superlogica_download_map --work-dir downloads/fases
 | `--work-dir PATH` | `.` | Raiz de credenciais e saídas |
 | `--recon` | off | Só o inventário de categorias, e para |
 | `--recursive/--no-recursive` | recursive | Varrer subpastas do Drive |
+| `--folder-id ID` | `DRIVE_FOLDER_IDS` | Pasta do Drive a varrer (repetível); só uma remessa nova |
 | `--map-format csv\|json` | csv | Formato do mapa (json = JSON Lines) |
 | `--credentials PATH` | `<work-dir>/credentials.json` | Credencial OAuth |
 | `--verbose` | off | Log em nível debug |
+
+> O mapa cresce por **append**: rodar de novo com uma pasta nova acrescenta só os
+> arquivos inéditos (dedup por `url_download`, que é estável entre execuções) e
+> preserva as linhas já `baixado`. Para processar **só** a remessa nova sem
+> re-resolver as pastas antigas, passe `--folder-id <ID>`.
 
 Exit codes: `0` sucesso · `2` falha fatal de autenticação (apague `token.json` e
 refaça o login) · `1` erro inesperado.

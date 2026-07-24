@@ -18,7 +18,7 @@ import typer
 from raw_text_maker.config import OCR_RETRIES, OCR_TIMEOUT_S, build_config
 from raw_text_maker.discovery import DiscoveryError
 from raw_text_maker.ocr_client import ServiceUnavailable
-from raw_text_maker.pipeline import run
+from raw_text_maker.pipeline import run, seed_formatted_manifest
 from raw_text_maker.textlayer import PyMuPDFUnavailable
 
 app = typer.Typer(
@@ -59,13 +59,36 @@ def main(
         False,
         "--formatted",
         help="Regrava com o texto formatado (layout espacial) só os arquivos docling; "
-        "scans/openrouter ficam intactos.",
+        "scans/openrouter ficam intactos. Pula o que já consta no manifesto.",
+    ),
+    reformat_all: bool = typer.Option(
+        False,
+        "--reformat-all",
+        help="Com --formatted: ignora o manifesto e reprocessa TODOS os documentos "
+        "com camada de texto (comportamento anterior ao gate).",
+    ),
+    seed_formatted: bool = typer.Option(
+        False,
+        "--seed-formatted",
+        help="Marca no manifesto o que já está formatado, sem chamar o backend. "
+        "Migração de uma vez só para árvores anteriores ao manifesto.",
+    ),
+    manifest: Path = typer.Option(
+        None,
+        "--manifest",
+        help="Manifesto de formatados (padrão: <destino>/../raw_text_formatted.csv).",
     ),
     verbose: bool = typer.Option(False, "--verbose", help="Loga cada .txt produzido."),
 ) -> None:
     """Varre a árvore de documentos e produz um .txt de texto bruto para cada um."""
     if retries < 1:
         _err(f"--retries inválido: {retries} (mínimo 1)")
+        raise typer.Exit(2)
+    if reformat_all and not formatted:
+        _err("--reformat-all só faz sentido junto com --formatted.")
+        raise typer.Exit(2)
+    if seed_formatted and formatted:
+        _err("--seed-formatted não pode ser combinado com --formatted (ele não processa nada).")
         raise typer.Exit(2)
 
     config = build_config(
@@ -78,10 +101,15 @@ def main(
         pause=pause,
         engine=engine,
         formatted=formatted,
+        reformat_all=reformat_all,
+        manifest_path=manifest,
     )
 
     try:
-        run(config, verbose=verbose)
+        if seed_formatted:
+            seed_formatted_manifest(config)
+        else:
+            run(config, verbose=verbose)
     except (DiscoveryError, ServiceUnavailable, PyMuPDFUnavailable) as exc:
         _err(f"[FATAL] {exc}")
         raise typer.Exit(1) from exc

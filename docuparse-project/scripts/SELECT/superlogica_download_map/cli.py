@@ -49,6 +49,12 @@ def main(
     credentials: Path | None = typer.Option(
         None, "--credentials", help="Caminho do credentials.json (padrão: no --work-dir)."
     ),
+    folder_id: list[str] = typer.Option(
+        None,
+        "--folder-id",
+        help="ID de pasta do Drive a varrer (repetível). Padrão: todas as pastas "
+        "designadas em DRIVE_FOLDER_IDS. Use para processar só uma remessa nova.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", help="Log em nível debug."),
 ) -> None:
     """Descobre e cataloga os arquivos a baixar na Fase B (não baixa nada aqui)."""
@@ -57,9 +63,14 @@ def main(
         raise typer.Exit(1)
 
     config = build_config(
-        work_dir, map_format=map_format, recursive=recursive, credentials=credentials
+        work_dir,
+        map_format=map_format,
+        recursive=recursive,
+        credentials=credentials,
+        folder_ids=folder_id or None,
     )
     _echo(f"[Fase A] work-dir: {config.work_dir}")
+    _echo(f"[Fase A] pastas do Drive: {len(config.drive_folder_ids)}")
 
     # Autenticação (marco: falha aqui é fatal — E-01).
     try:

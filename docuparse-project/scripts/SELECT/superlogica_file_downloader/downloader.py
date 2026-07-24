@@ -83,7 +83,9 @@ def _attempt(
     head = content[:_HEAD_BYTES] if content else b""
 
     if status == 200:
-        ok, motivo = validate_content(head, ctype, signature=config.pdf_signature)
+        ok, motivo = validate_content(
+            head, ctype, signature=config.pdf_signature, accept_images=config.accept_images
+        )
         if ok:
             return DownloadOutcome(True, content=content, tentativas=tentativas), False, ""
         # Conteúdo estável e inválido: não repetir; pode ser expiração (E-05/E-04).

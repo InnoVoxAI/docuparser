@@ -49,6 +49,11 @@ def main(
     pause: float = typer.Option(1.0, "--pause", help="Pausa (s) entre requisições."),
     timeout: float = typer.Option(30.0, "--timeout", help="Timeout (s) por requisição."),
     retries: int = typer.Option(3, "--retries", help="Tentativas antes de marcar erro."),
+    pdf_only: bool = typer.Option(
+        False,
+        "--pdf-only",
+        help="Aceitar só PDF (rejeita comprovantes em imagem). Padrão: aceita PDF e imagens.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", help="Log linha a linha do progresso."),
 ) -> None:
     """Baixa cada arquivo pendente do mapa e organiza em downloads/<pasta_destino>/."""
@@ -66,6 +71,7 @@ def main(
         pause=pause,
         timeout=timeout,
         retries=retries,
+        accept_images=not pdf_only,
     )
     typer.echo(f"[Fase B] work-dir: {config.work_dir}")
 

@@ -19,6 +19,9 @@ HTTP_BACKOFF_BASE_S = 2.0
 
 # --- Validação de conteúdo (E-05, research D2) ------------------------------
 PDF_SIGNATURE = b"%PDF"
+# Aceitar imagens (JPEG/PNG/…) além de PDF: comprovantes fotografados vêm como
+# imagem e a Fase C extrai o texto deles via OCR. --pdf-only restaura o antigo.
+ACCEPT_IMAGES_DEFAULT = True
 
 MAP_FORMAT_DEFAULT = "csv"
 
@@ -56,6 +59,7 @@ class Config:
     http_retries: int = HTTP_RETRIES
     http_backoff_base_s: float = HTTP_BACKOFF_BASE_S
     pdf_signature: bytes = PDF_SIGNATURE
+    accept_images: bool = ACCEPT_IMAGES_DEFAULT
 
 
 def build_config(
@@ -69,6 +73,7 @@ def build_config(
     pause: float | None = None,
     timeout: float | None = None,
     retries: int | None = None,
+    accept_images: bool = ACCEPT_IMAGES_DEFAULT,
 ) -> Config:
     """Constrói a configuração com caminhos relativos ao ``work_dir`` (FR-015)."""
     wd = Path(work_dir).resolve()
@@ -85,4 +90,5 @@ def build_config(
         http_pause_s=pause if pause is not None else HTTP_PAUSE_S,
         http_timeout_s=timeout if timeout is not None else HTTP_TIMEOUT_S,
         http_retries=retries if retries is not None else HTTP_RETRIES,
+        accept_images=accept_images,
     )

@@ -7,15 +7,21 @@ vivem aqui. Caminhos de saída são resolvidos relativos ao diretório de trabal
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 # --- Google Drive -----------------------------------------------------------
 # Pastas designadas (links fornecidos pelo humano):
 #   https://drive.google.com/drive/folders/<ID>
+#
+# A lista é acumulativa: cada remessa nova entra aqui e o mapa cresce por append
+# (o MapWriter deduplica por url_download, que é estável entre execuções). Para
+# processar só uma pasta sem re-resolver as antigas, use ``--folder-id``.
 DRIVE_FOLDER_IDS: tuple[str, ...] = (
-    "1uJ6cZYbThBxiKcfcMmrlS-9dn-aVJfzr",
-    "13r1wG8rj8YFvYefPoDYhFg-aVESRZMgE",
+    "1uJ6cZYbThBxiKcfcMmrlS-9dn-aVJfzr",  # Itens do plano de contas
+    "13r1wG8rj8YFvYefPoDYhFg-aVESRZMgE",  # Relatório com as despesas individuais classificadas
+    "1qxZn3yINwegQnx3QU79d-Z3GV_ZHTMl8",  # 2ª Remessa de plano de contas (Jeane)
 )
 DRIVE_FOLDER_URLS: tuple[str, ...] = tuple(
     f"https://drive.google.com/drive/folders/{fid}" for fid in DRIVE_FOLDER_IDS
@@ -107,8 +113,13 @@ def build_config(
     map_format: str = MAP_FORMAT_DEFAULT,
     recursive: bool = RECURSIVE_DEFAULT,
     credentials: str | Path | None = None,
+    folder_ids: Sequence[str] | None = None,
 ) -> Config:
-    """Constrói a configuração com caminhos relativos ao ``work_dir`` (FR-018)."""
+    """Constrói a configuração com caminhos relativos ao ``work_dir`` (FR-018).
+
+    ``folder_ids`` sobrescreve :data:`DRIVE_FOLDER_IDS` — útil para varrer só uma
+    remessa nova sem re-resolver os hyperlinks das pastas já mapeadas.
+    """
     wd = Path(work_dir).resolve()
     ext = "json" if map_format == "json" else "csv"
     creds = Path(credentials).resolve() if credentials else wd / "credentials.json"
@@ -122,4 +133,5 @@ def build_config(
         downloads_root=wd / "downloads",
         map_format=map_format,
         recursive=recursive,
+        drive_folder_ids=tuple(folder_ids) if folder_ids else DRIVE_FOLDER_IDS,
     )

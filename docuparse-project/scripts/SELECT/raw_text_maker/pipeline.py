@@ -25,6 +25,7 @@ from rich.progress import (
 )
 
 from raw_text_maker.discovery import Job, discover_jobs, split_pending
+from raw_text_maker.manifest import SEEDED_ENGINE, FormattedManifest, is_pending
 from raw_text_maker.ocr_client import check_service, extract_raw_text
 from raw_text_maker.outputs import ErrorRecord, ErrorReportWriter, save_text_atomic
 from raw_text_maker.textlayer import ensure_available, has_text_layer
@@ -104,61 +105,113 @@ def _run_formatted(config, jobs, colisoes, out, sleep, verbose, session) -> dict
     e só sobrescreve quando o backend confirma docling com formatado não-vazio —
     então os ``.txt`` produzidos via openrouter ficam intactos, mesmo se a sonda
     errar. Ao contrário do modo padrão, aqui **sobrescreve** os ``.txt`` alvo.
+
+    O manifesto (:mod:`raw_text_maker.manifest`) é o segundo gate: documento já
+    formatado numa run anterior não volta ao backend só porque a árvore ganhou
+    arquivos novos. ``--reformat-all`` ignora esse gate.
     """
     ensure_available()  # PyMuPDFUnavailable (fatal) sobe antes de qualquer trabalho
 
-    alvos: list[Job] = []
+    com_texto: list[Job] = []
     mantidos: list[Job] = []  # sem camada de texto → scans (openrouter), não reenvia
     for job in jobs:
-        destino = alvos if has_text_layer(job.source, config.text_layer_min_chars) else mantidos
+        destino = com_texto if has_text_layer(job.source, config.text_layer_min_chars) else mantidos
         destino.append(job)
 
-    summary = {
-        "total": len(jobs),
-        "formatados": 0,
-        "mantidos_scan": len(mantidos),
-        "sem_formatado": 0,  # enviado mas voltou não-docling/vazio → preservado
-        "erros": 0,
-        "colisoes": len(colisoes),
-    }
-    _print_plan_formatted(out, config, summary, len(alvos))
+    with FormattedManifest(config.manifest_path) as manifesto:
+        alvos: list[Job] = []
+        ja_formatados = 0
+        for job in com_texto:
+            if config.reformat_all or is_pending(manifesto, job.rel, job.dest):
+                alvos.append(job)
+            else:
+                ja_formatados += 1
 
-    if not alvos and not colisoes:
-        out.print("[green]Nada a fazer: nenhum documento com camada de texto.[/green]")
-        return summary
+        summary = {
+            "total": len(jobs),
+            "formatados": 0,
+            "ja_formatados": ja_formatados,
+            "mantidos_scan": len(mantidos),
+            "sem_formatado": 0,  # enviado mas voltou não-docling/vazio → preservado
+            "erros": 0,
+            "colisoes": len(colisoes),
+        }
+        _print_plan_formatted(out, config, summary, len(alvos))
 
-    if session is None:
-        import requests
+        if not alvos and not colisoes:
+            out.print("[green]Nada a fazer: todos os formatáveis já estão formatados.[/green]")
+            return summary
 
-        session = requests.Session()
+        if session is None:
+            import requests
 
-    if alvos:
-        engines = check_service(config, session=session)  # ServiceUnavailable (fatal) sobe
-        out.print(
-            f"[dim]backend-ocr ok em {config.ocr_url} — engines: {', '.join(engines)}[/dim]\n"
-        )
+            session = requests.Session()
 
-    with ErrorReportWriter(config.errors_path) as errs:
-        for job in colisoes:
-            _record_collision(job, errs, summary, out)
-
-        with _make_progress(out) as progress:
-            task = progress.add_task(
-                _describe(alvos[0]) if alvos else "concluído", total=len(alvos)
+        if alvos:
+            engines = check_service(config, session=session)  # ServiceUnavailable (fatal) sobe
+            out.print(
+                f"[dim]backend-ocr ok em {config.ocr_url} — engines: {', '.join(engines)}[/dim]\n"
             )
-            for job in alvos:
-                progress.update(task, description=_describe(job))
-                _process_job_formatted(
-                    config, job, session, sleep, errs, summary, progress, verbose
+
+        with ErrorReportWriter(config.errors_path) as errs:
+            for job in colisoes:
+                _record_collision(job, errs, summary, out)
+
+            with _make_progress(out) as progress:
+                task = progress.add_task(
+                    _describe(alvos[0]) if alvos else "concluído", total=len(alvos)
                 )
-                progress.advance(task)
-            progress.update(task, description="concluído")
+                for job in alvos:
+                    progress.update(task, description=_describe(job))
+                    _process_job_formatted(
+                        config, job, session, sleep, errs, summary, progress, verbose, manifesto
+                    )
+                    progress.advance(task)
+                progress.update(task, description="concluído")
 
     _print_summary_formatted(out, config, summary)
     return summary
 
 
-def _process_job_formatted(config, job: Job, session, sleep, errs, summary, progress, verbose):
+def seed_formatted_manifest(config: Config, *, console: Console | None = None) -> dict[str, int]:
+    """Marca como formatado o que já está pronto, **sem** chamar o backend.
+
+    Migração de uma vez só para árvores formatadas antes do manifesto existir: o
+    critério é o mesmo que o ``--formatted`` usaria (camada de texto local) mais a
+    presença de um ``.txt`` não-vazio. Sem isso, a primeira run com o gate
+    reprocessaria tudo — exatamente o que o gate existe para evitar.
+    """
+    out = console or Console()
+    ensure_available()
+    jobs, _ = discover_jobs(config)
+
+    summary = {"total": len(jobs), "semeados": 0, "ja_no_manifesto": 0, "ignorados": 0}
+    with FormattedManifest(config.manifest_path) as manifesto:
+        for job in jobs:
+            tem_texto = has_text_layer(job.source, config.text_layer_min_chars)
+            pronto = job.dest.exists() and job.dest.stat().st_size > 0
+            if not (tem_texto and pronto):
+                summary["ignorados"] += 1  # scan, ou ainda sem .txt
+                continue
+            if manifesto.mark(job.rel, SEEDED_ENGINE, job.dest.stat().st_size):
+                summary["semeados"] += 1
+            else:
+                summary["ja_no_manifesto"] += 1
+
+    out.print("\n[bold]Semeadura do manifesto de formatados[/bold]")
+    out.print(f"  Documentos:        {summary['total']}")
+    out.print(f"  Marcados agora:    {summary['semeados']} → {config.manifest_path}")
+    out.print(f"  Já no manifesto:   {summary['ja_no_manifesto']}")
+    out.print(
+        f"  Ignorados:         {summary['ignorados']} [dim](scan sem camada de texto, "
+        f"ou ainda sem .txt)[/dim]"
+    )
+    return summary
+
+
+def _process_job_formatted(
+    config, job: Job, session, sleep, errs, summary, progress, verbose, manifesto
+):
     """Reprocessa um alvo e sobrescreve o ``.txt`` com o formatado, se for docling puro."""
     outcome = extract_raw_text(job.source, config, session=session, sleep=sleep)
     if config.ocr_pause_s:
@@ -204,6 +257,7 @@ def _process_job_formatted(config, job: Job, session, sleep, errs, summary, prog
         progress.console.print(f"  [red]![/red] {job.rel} — falha de escrita: {exc}")
         return
 
+    manifesto.mark(job.rel, outcome.engine, len(outcome.raw_text_formatted))
     summary["formatados"] += 1
     if verbose:
         progress.console.print(
@@ -323,10 +377,17 @@ def _print_plan_formatted(
     out.print(f"  Destino:     {config.output_root}")
     out.print(f"  Documentos:  {summary['total']}")
     out.print(f"  A formatar:  {alvos} [dim](têm camada de texto → docling)[/dim]")
+    if summary.get("ja_formatados"):
+        out.print(
+            f"  Já formatados: {summary['ja_formatados']} "
+            f"[dim](no manifesto — não reenviados)[/dim]"
+        )
     out.print(
         f"  Mantidos:    {summary['mantidos_scan']} "
         f"[dim](scans/openrouter — .txt preservado, não reenviado)[/dim]"
     )
+    if config.reformat_all:
+        out.print("  [yellow]--reformat-all: ignorando o manifesto[/yellow]")
     if summary["colisoes"]:
         out.print(f"  [yellow]Colisões:    {summary['colisoes']} (ver CSV de erros)[/yellow]")
     out.print("")
@@ -336,6 +397,8 @@ def _print_summary_formatted(out: Console, config: Config, summary: dict[str, in
     out.print("\n[bold]Resumo (formatado):[/bold]")
     out.print(f"  Documentos:        {summary['total']}")
     out.print(f"  Formatados agora:  {summary['formatados']} → {config.output_root}")
+    if summary.get("ja_formatados"):
+        out.print(f"  Já formatados:     {summary['ja_formatados']} (pulados, ver manifesto)")
     out.print(f"  Mantidos (scan):   {summary['mantidos_scan']} (openrouter, intactos)")
     if summary["sem_formatado"]:
         out.print(f"  Enviados sem formatado: {summary['sem_formatado']} (preservados)")

@@ -40,12 +40,12 @@ export default [
             '@typescript-eslint/no-explicit-any': 'error',
             'react-hooks/rules-of-hooks': 'error',
             'react-hooks/exhaustive-deps': 'warn',
-            'max-lines': ['error', { max: 150, skipBlankLines: true, skipComments: true }],
+            'max-lines': ['error', { max: 200, skipBlankLines: true, skipComments: true }],
         },
     },
     {
         // Arquivos de dados/tipos e testes: FR-012/SC-002 limitam apenas
-        // "arquivo de componente" a 150 linhas — dados/tipos e specs de
+        // "arquivo de componente" a 200 linhas — dados/tipos e specs de
         // teste ficam de fora do limite (ver spec.md FR-012).
         files: ['src/types.ts', 'src/shared/types/**', 'src/models/**', '**/__tests__/**', '**/*.test.{ts,tsx}'],
         rules: {

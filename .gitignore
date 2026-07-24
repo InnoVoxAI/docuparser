@@ -257,3 +257,4 @@ tasks/
 .sixth/
 docuparse-project/frontend/node_modules
 .devcontainer/devcontainer-lock.json
+.run

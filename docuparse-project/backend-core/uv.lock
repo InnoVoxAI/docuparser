@@ -25,11 +25,13 @@ name = "atoms"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "boto3" },
     { name = "django" },
     { name = "django-cors-headers" },
     { name = "django-tenants" },
     { name = "djangorestframework" },
     { name = "djangorestframework-simplejwt" },
+    { name = "moto", extra = ["s3"] },
     { name = "psycopg2-binary" },
     { name = "pydantic" },
     { name = "python-decouple" },
@@ -39,19 +41,19 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "boto3" },
-    { name = "moto", extra = ["s3"] },
     { name = "pytest" },
     { name = "pytest-django" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "boto3", specifier = ">=1.34.0" },
     { name = "django", specifier = ">=6.0.7" },
     { name = "django-cors-headers", specifier = ">=4.9.0" },
     { name = "django-tenants", specifier = ">=3.10.2" },
     { name = "djangorestframework", specifier = ">=3.17.1" },
     { name = "djangorestframework-simplejwt", specifier = ">=5.5.1" },
+    { name = "moto", extras = ["s3"], specifier = ">=5.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.12" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "python-decouple", specifier = ">=3.8" },
@@ -61,8 +63,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "boto3", specifier = ">=1.34.0" },
-    { name = "moto", extras = ["s3"], specifier = ">=5.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-django", specifier = ">=4.9.0" },
 ]

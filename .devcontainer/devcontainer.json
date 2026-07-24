@@ -41,6 +41,6 @@
       "version": "3.12"
     }
   },
-
-  "postCreateCommand": "bash .devcontainer/post-create.sh"
+  "updateRemoteUserUID": true,
+  "postCreateCommand": "sudo chown -R vscode:vscode /docuparser && bash .devcontainer/post-create.sh"
 }

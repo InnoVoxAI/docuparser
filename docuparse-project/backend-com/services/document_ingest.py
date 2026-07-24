@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import logging
 import json
+import logging
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from backend_com.config import settings
 from docuparse_events import event_bus_from_env
 from docuparse_observability import log_event
 from docuparse_storage import document_original_key, get_storage
 from events import DocumentReceivedEvent
-
-from backend_com.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,9 @@ def ingest_document(
 
     document_id = uuid4()
     storage = get_storage()
-    stored = storage.put_bytes(document_original_key(tenant_id, str(document_id)), content)
+    stored = storage.put_bytes(
+        document_original_key(tenant_id, str(document_id)), content
+    )
 
     event = DocumentReceivedEvent(
         tenant_id=tenant_id,
@@ -81,8 +82,12 @@ def ingest_document(
         },
     )
     event_payload = event.model_dump(mode="json")
-    event_bus_from_env(settings.local_event_dir).publish("document.received", event_payload)
-    core_sync_status = _sync_document_received_to_core(event_payload, tenant_slug=tenant_slug, skip_auto_process=skip_auto_process)
+    event_bus_from_env(settings.local_event_dir).publish(
+        "document.received", event_payload
+    )
+    core_sync_status = _sync_document_received_to_core(
+        event_payload, tenant_slug=tenant_slug, skip_auto_process=skip_auto_process
+    )
     log_event(
         logger,
         "document.received published",
@@ -107,7 +112,9 @@ def ingest_document(
     }
 
 
-def _sync_document_received_to_core(event_payload: dict, *, tenant_slug: str = "", skip_auto_process: bool = False) -> str:
+def _sync_document_received_to_core(
+    event_payload: dict, *, tenant_slug: str = "", skip_auto_process: bool = False
+) -> str:
     if not settings.backend_core_document_received_url:
         return "disabled"
 

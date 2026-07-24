@@ -50,17 +50,25 @@ def get_storage() -> RoutingStorage:
     """
     backend = _env("DOCUPARSE_STORAGE_BACKEND", "local").lower() or "local"
     if backend not in {"local", "s3"}:
-        raise RuntimeError(f"DOCUPARSE_STORAGE_BACKEND inválido: {backend!r} (use 'local' ou 's3').")
+        raise RuntimeError(
+            f"DOCUPARSE_STORAGE_BACKEND inválido: {backend!r} (use 'local' ou 's3')."
+        )
 
     if backend == "s3":
         # Falha explícita já na construção se a config estiver incompleta.
         s3 = _build_s3_from_env()
-        local = LocalStorage(_env("DOCUPARSE_LOCAL_STORAGE_DIR", DEFAULT_LOCAL_STORAGE_DIR))
+        local = LocalStorage(
+            _env("DOCUPARSE_LOCAL_STORAGE_DIR", DEFAULT_LOCAL_STORAGE_DIR)
+        )
         logger.info("storage.backend_selected", extra={"backend": "s3"})
-        return RoutingStorage(write_scheme="s3", local=local, s3=s3, s3_provider=_build_s3_from_env)
+        return RoutingStorage(
+            write_scheme="s3", local=local, s3=s3, s3_provider=_build_s3_from_env
+        )
 
     local = LocalStorage(_env("DOCUPARSE_LOCAL_STORAGE_DIR", DEFAULT_LOCAL_STORAGE_DIR))
     logger.info("storage.backend_selected", extra={"backend": "local"})
     # Modo local: S3 é construído sob demanda (lazy) apenas se surgir uma URI s3://
     # legada para leitura — assim o modo local não exige boto3.
-    return RoutingStorage(write_scheme="local", local=local, s3=None, s3_provider=_build_s3_from_env)
+    return RoutingStorage(
+        write_scheme="local", local=local, s3=None, s3_provider=_build_s3_from_env
+    )

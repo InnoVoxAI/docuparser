@@ -1,19 +1,19 @@
-from __future__ import annotations
-
 """
 Integration tests for tenant data isolation (US1) and inactive tenant guard.
 Tests marked `tenant_db` require POSTGRES_HOST env var (PostgreSQL with schema routing).
 """
 
-import pytest
+from __future__ import annotations
+
 from unittest.mock import patch
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
+from users.models import Permission, Role
 
 from tenants.models import Tenant, UserProfile
-from users.models import Permission, Role
 
 User = get_user_model()
 
@@ -24,16 +24,25 @@ def _setup_tenant(slug: str, username: str) -> tuple[Tenant, User, str]:
         tenant = Tenant.objects.create(
             slug=slug, name=slug.title(), schema_name=f"tenant_{slug.replace('-', '_')}"
         )
-    perm, _ = Permission.objects.get_or_create(code="inbox.view", defaults={"description": "Inbox"})
+    perm, _ = Permission.objects.get_or_create(
+        code="inbox.view", defaults={"description": "Inbox"}
+    )
     role, _ = Role.objects.get_or_create(name=f"role_{slug}")
     role.permissions.add(perm)
     user = User.objects.create_user(
-        username=f"user@{slug}.com", email=f"user@{slug}.com", password="pw", is_active=True
+        username=f"user@{slug}.com",
+        email=f"user@{slug}.com",
+        password="pw",
+        is_active=True,
     )
     UserProfile.objects.create(user=user, tenant=tenant, role_ref=role)
 
     client = APIClient()
-    resp = client.post("/api/auth/login", {"email": f"user@{slug}.com", "password": "pw"}, format="json")
+    resp = client.post(
+        "/api/auth/login",
+        {"email": f"user@{slug}.com", "password": "pw"},
+        format="json",
+    )
     access_token = resp.json().get("access", "")
     return tenant, user, access_token
 
@@ -42,7 +51,9 @@ class InactiveTenantGuardTest(TestCase):
     """Unit-level test: deactivated tenant → subsequent requests return 403."""
 
     def setUp(self) -> None:
-        self.tenant, self.user, self.token = _setup_tenant("inactive-co", "inactive@co.com")
+        self.tenant, self.user, self.token = _setup_tenant(
+            "inactive-co", "inactive@co.com"
+        )
         self.client = APIClient()
 
     def test_active_tenant_user_can_authenticate(self) -> None:
@@ -56,7 +67,9 @@ class InactiveTenantGuardTest(TestCase):
 
     def test_deactivated_tenant_jwt_carries_inactive_slug(self) -> None:
         """Verify the JWT still has the tenant claim even after deactivation (claim decode, not DB check)."""
-        import base64, json
+        import base64
+        import json
+
         parts = self.token.split(".")
         padded = parts[1] + "=" * (-len(parts[1]) % 4)
         payload = json.loads(base64.urlsafe_b64decode(padded))
@@ -71,13 +84,17 @@ class TenantIsolationTests:
     """
 
     def test_documents_from_tenant_a_are_invisible_to_tenant_b_jwt(self) -> None:
+        from django.urls import reverse
         from django_tenants.utils import schema_context
         from documents.models import Document
-        from django.urls import reverse
 
         slug_a, slug_b = "iso-a", "iso-b"
-        tenant_a = Tenant.objects.create(slug=slug_a, name="A", schema_name=f"tenant_{slug_a}")
-        tenant_b = Tenant.objects.create(slug=slug_b, name="B", schema_name=f"tenant_{slug_b}")
+        tenant_a = Tenant.objects.create(
+            slug=slug_a, name="A", schema_name=f"tenant_{slug_a}"
+        )
+        tenant_b = Tenant.objects.create(
+            slug=slug_b, name="B", schema_name=f"tenant_{slug_b}"
+        )
 
         with schema_context(tenant_a.schema_name):
             doc_a = Document.objects.create(
@@ -94,7 +111,9 @@ class TenantIsolationTests:
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {token_b}")
 
         detail_resp = client.get(reverse("document-detail", args=[doc_a.id]))
-        assert detail_resp.status_code == 404, "Tenant B should not see Tenant A's document"
+        assert detail_resp.status_code == 404, (
+            "Tenant B should not see Tenant A's document"
+        )
 
         inbox_resp = client.get(reverse("documents-inbox"))
         ids = [d["id"] for d in inbox_resp.json()]
@@ -104,11 +123,16 @@ class TenantIsolationTests:
         tenant_b.delete()
 
     def test_request_with_invalid_tenant_jwt_returns_401_or_400(self) -> None:
-        import base64, json
+        import base64
+        import json
 
-        fake_payload = base64.urlsafe_b64encode(
-            json.dumps({"tenant": "does-not-exist", "sub": "99"}).encode()
-        ).rstrip(b"=").decode()
+        fake_payload = (
+            base64.urlsafe_b64encode(
+                json.dumps({"tenant": "does-not-exist", "sub": "99"}).encode()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
         fake_token = f"header.{fake_payload}.sig"
 
         client = APIClient()
@@ -118,11 +142,15 @@ class TenantIsolationTests:
 
     def test_settings_are_isolated_between_tenant_schemas(self) -> None:
         from django_tenants.utils import schema_context
-        from documents.models import OCRSettings, SETTINGS_SINGLETON_ID
+        from documents.models import SETTINGS_SINGLETON_ID, OCRSettings
 
         slug_a, slug_b = "settings-a", "settings-b"
-        tenant_a = Tenant.objects.create(slug=slug_a, name="A", schema_name=f"tenant_{slug_a}")
-        tenant_b = Tenant.objects.create(slug=slug_b, name="B", schema_name=f"tenant_{slug_b}")
+        tenant_a = Tenant.objects.create(
+            slug=slug_a, name="A", schema_name=f"tenant_{slug_a}"
+        )
+        tenant_b = Tenant.objects.create(
+            slug=slug_b, name="B", schema_name=f"tenant_{slug_b}"
+        )
 
         with schema_context(tenant_a.schema_name):
             a_settings, _ = OCRSettings.objects.get_or_create(id=SETTINGS_SINGLETON_ID)

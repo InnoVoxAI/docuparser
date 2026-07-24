@@ -49,7 +49,9 @@ class UserProfile(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="docuparse_profile",
     )
-    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="profiles")
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="profiles"
+    )
     role_ref = models.ForeignKey(
         "users.Role",
         null=True,

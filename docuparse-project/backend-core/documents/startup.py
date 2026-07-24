@@ -26,7 +26,9 @@ def _mask_url_credentials(url: str) -> str:
     netloc = f"{parsed.username or ''}:***@{parsed.hostname or ''}"
     if parsed.port:
         netloc = f"{netloc}:{parsed.port}"
-    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+    return urlunsplit(
+        (parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment)
+    )
 
 
 def log_startup_config() -> None:

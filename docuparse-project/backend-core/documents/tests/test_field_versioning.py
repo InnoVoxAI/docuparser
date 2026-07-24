@@ -5,9 +5,9 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase
+from tenants.models import Tenant
 
 from documents.models import Document, ExtractionFieldVersion, ExtractionResult
-from tenants.models import Tenant
 from documents.services import field_versioning as fv
 
 
@@ -15,7 +15,9 @@ class FieldVersioningServiceTests(TestCase):
     def setUp(self) -> None:
         self.tenant = Tenant.objects.create(slug="t-fv", name="Tenant FV")
         connection.set_tenant(self.tenant)
-        self.user = get_user_model().objects.create_user(username="editor", password="x")
+        self.user = get_user_model().objects.create_user(
+            username="editor", password="x"
+        )
         self.document = Document.objects.create(
             status=Document.Status.EXTRACTION_COMPLETED,
             channel="manual",
@@ -55,7 +57,12 @@ class FieldVersioningServiceTests(TestCase):
         assert self.v1.is_active is False
         assert v2.previous_version_id == self.v1.id
         # exactly one active version
-        assert ExtractionFieldVersion.objects.filter(document=self.document, is_active=True).count() == 1
+        assert (
+            ExtractionFieldVersion.objects.filter(
+                document=self.document, is_active=True
+            ).count()
+            == 1
+        )
 
     def test_changed_field_gets_confidence_one(self) -> None:
         v2 = fv.save_manual_edit(
@@ -101,7 +108,9 @@ class FieldVersioningServiceTests(TestCase):
                 base_version_number=1,  # obsoleta
             )
         assert ctx.exception.active_version_number == 2
-        assert ExtractionFieldVersion.objects.filter(document=self.document).count() == 2
+        assert (
+            ExtractionFieldVersion.objects.filter(document=self.document).count() == 2
+        )
 
     def test_empty_field_list_raises(self) -> None:
         with self.assertRaises(fv.EmptyFieldListError):
@@ -110,7 +119,9 @@ class FieldVersioningServiceTests(TestCase):
                 incoming_fields=[],
                 base_version_number=1,
             )
-        assert ExtractionFieldVersion.objects.filter(document=self.document).count() == 1
+        assert (
+            ExtractionFieldVersion.objects.filter(document=self.document).count() == 1
+        )
 
     def test_no_changes_raises(self) -> None:
         with self.assertRaises(fv.NoChangesError):

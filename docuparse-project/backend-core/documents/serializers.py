@@ -1,19 +1,30 @@
 from __future__ import annotations
 
-from rest_framework import serializers
 import json
 
-from django.conf import settings
 from docuparse_storage import get_storage
+from rest_framework import serializers
 
-from documents.models import Document, EmailSettings, ExtractionFieldVersion, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, ValidationDecision
+from documents.models import (
+    Document,
+    EmailSettings,
+    ExtractionFieldVersion,
+    ExtractionResult,
+    IntegrationSettings,
+    LayoutConfig,
+    OCRSettings,
+    SchemaConfig,
+    ValidationDecision,
+)
 
 
 class ExtractionFieldVersionSerializer(serializers.ModelSerializer):
     previous_version_number = serializers.IntegerField(
         source="previous_version.version_number", read_only=True, default=None
     )
-    created_by = serializers.CharField(source="created_by.username", read_only=True, default=None)
+    created_by = serializers.CharField(
+        source="created_by.username", read_only=True, default=None
+    )
 
     class Meta:
         model = ExtractionFieldVersion
@@ -47,7 +58,8 @@ class ExtractionResultSerializer(serializers.ModelSerializer):
         return {
             key: value
             for key, value in (obj.fields or {}).items()
-            if value not in ("", None, [], {}) and not (key == "retencao" and len(str(value)) > 300)
+            if value not in ("", None, [], {})
+            and not (key == "retencao" and len(str(value)) > 300)
         }
 
 
@@ -83,39 +95,43 @@ class DocumentListSerializer(serializers.ModelSerializer):
         return (obj.metadata or {}).get("metadata_channel") or None
 
     def get_rejection_notes(self, obj: Document) -> str | None:
-        decisions = getattr(obj, '_prefetched_decisions', None)
+        decisions = getattr(obj, "_prefetched_decisions", None)
         if decisions is None:
-            decisions = obj.validation_decisions.filter(
-                decision='rejected'
-            ).order_by('-created_at')
+            decisions = obj.validation_decisions.filter(decision="rejected").order_by(
+                "-created_at"
+            )
             latest = next(iter(decisions), None)
         else:
-            latest = next((d for d in decisions if d.decision == 'rejected'), None)
+            latest = next((d for d in decisions if d.decision == "rejected"), None)
         return latest.notes if latest else None
 
     def get_decision_date(self, obj: Document) -> str | None:
-        decisions = getattr(obj, '_prefetched_decisions', None)
+        decisions = getattr(obj, "_prefetched_decisions", None)
         if decisions is None:
-            decisions = obj.validation_decisions.order_by('-created_at')
+            decisions = obj.validation_decisions.order_by("-created_at")
         latest = next(iter(decisions), None)
         return latest.created_at.isoformat() if latest else None
 
     def get_approved_at(self, obj: Document) -> str | None:
-        decisions = getattr(obj, '_prefetched_decisions', None)
+        decisions = getattr(obj, "_prefetched_decisions", None)
         if decisions is None:
-            decisions = obj.validation_decisions.filter(decision='approved').order_by('-created_at')
+            decisions = obj.validation_decisions.filter(decision="approved").order_by(
+                "-created_at"
+            )
             latest = next(iter(decisions), None)
         else:
-            latest = next((d for d in decisions if d.decision == 'approved'), None)
+            latest = next((d for d in decisions if d.decision == "approved"), None)
         return latest.created_at.isoformat() if latest else None
 
     def get_rejected_at(self, obj: Document) -> str | None:
-        decisions = getattr(obj, '_prefetched_decisions', None)
+        decisions = getattr(obj, "_prefetched_decisions", None)
         if decisions is None:
-            decisions = obj.validation_decisions.filter(decision='rejected').order_by('-created_at')
+            decisions = obj.validation_decisions.filter(decision="rejected").order_by(
+                "-created_at"
+            )
             latest = next(iter(decisions), None)
         else:
-            latest = next((d for d in decisions if d.decision == 'rejected'), None)
+            latest = next((d for d in decisions if d.decision == "rejected"), None)
         return latest.created_at.isoformat() if latest else None
 
 
@@ -160,12 +176,13 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
         if not obj.raw_text_uri:
             return {}
         try:
-            return json.loads(
-                get_storage()
-                .get_bytes(obj.raw_text_uri)
-                .decode("utf-8")
-            )
-        except (FileNotFoundError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            return json.loads(get_storage().get_bytes(obj.raw_text_uri).decode("utf-8"))
+        except (
+            FileNotFoundError,
+            ValueError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ):
             return {}
 
     def get_full_transcription(self, obj: Document) -> str:

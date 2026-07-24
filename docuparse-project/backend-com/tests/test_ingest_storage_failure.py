@@ -19,7 +19,9 @@ def test_storage_write_failure_aborts_without_publishing(monkeypatch, tmp_path) 
             raise RuntimeError("storage unavailable")
 
     # get_storage() passa a devolver um backend que falha na escrita.
-    monkeypatch.setattr(document_ingest, "get_storage", lambda *a, **k: _FailingStorage())
+    monkeypatch.setattr(
+        document_ingest, "get_storage", lambda *a, **k: _FailingStorage()
+    )
 
     with pytest.raises(RuntimeError):
         document_ingest.ingest_document(

@@ -7,10 +7,10 @@ from uuid import uuid4
 from django.db import connection
 from django.test import TestCase
 from docuparse_events import LocalJsonlEventBus
+from tenants.models import Tenant
 
 from documents.models import Document, DocumentEvent
 from documents.services.event_stream_worker import CoreEventStreamWorker
-from tenants.models import Tenant
 
 
 class CoreEventStreamWorkerTests(TestCase):

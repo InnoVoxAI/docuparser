@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
-
 from docuparse_storage import S3Storage
 
 URI = "s3://b/documents/t/d/original"
@@ -38,7 +37,9 @@ def _storage_with_client(exc: Exception) -> S3Storage:
     return storage
 
 
-@pytest.mark.parametrize("code,http", [("NoSuchKey", 404), ("404", 404), ("NoSuchBucket", 404)])
+@pytest.mark.parametrize(
+    "code,http", [("NoSuchKey", 404), ("404", 404), ("NoSuchBucket", 404)]
+)
 def test_not_found_maps_to_filenotfound(code, http):
     storage = _storage_with_client(_client_error(code, http))
     with pytest.raises(FileNotFoundError):
@@ -58,6 +59,8 @@ def test_access_denied_propagates_as_clienterror_not_filenotfound():
 
 
 def test_connection_error_propagates():
-    storage = _storage_with_client(EndpointConnectionError(endpoint_url="http://minio:9000"))
+    storage = _storage_with_client(
+        EndpointConnectionError(endpoint_url="http://minio:9000")
+    )
     with pytest.raises(EndpointConnectionError):
         storage.get_bytes(URI)

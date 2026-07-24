@@ -10,13 +10,18 @@ import boto3
 from django.core.management import call_command
 from django.db import connection
 from django.test import TestCase, override_settings
-from moto import mock_aws
-
 from docuparse_storage import LocalStorage
+from moto import mock_aws
+from tenants.models import Tenant
 
 from documents.models import Document
-from documents.tests._storage_env import create_test_bucket, s3_bucket, s3_region, s3_test_env, s3_uri
-from tenants.models import Tenant
+from documents.tests._storage_env import (
+    create_test_bucket,
+    s3_bucket,
+    s3_region,
+    s3_test_env,
+    s3_uri,
+)
 
 
 class MigrateStorageCommandTests(TestCase):
@@ -36,9 +41,12 @@ class MigrateStorageCommandTests(TestCase):
         return doc
 
     def test_apply_migrates_local_to_s3(self) -> None:
-        with tempfile.TemporaryDirectory() as storage_dir, override_settings(
-            DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir
-        ), mock_aws(), s3_test_env():
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+            mock_aws(),
+            s3_test_env(),
+        ):
             create_test_bucket()
             doc = self._seed_local_document(storage_dir)
             assert doc.file_uri.startswith("local://")
@@ -51,16 +59,22 @@ class MigrateStorageCommandTests(TestCase):
             assert doc.raw_text_uri == s3_uri("documents/t/doc/ocr/raw_text.json")
 
             s3 = boto3.client("s3", region_name=s3_region())
-            keys = {o["Key"] for o in s3.list_objects_v2(Bucket=s3_bucket()).get("Contents", [])}
+            keys = {
+                o["Key"]
+                for o in s3.list_objects_v2(Bucket=s3_bucket()).get("Contents", [])
+            }
             assert "documents/t/doc/original" in keys
             assert "documents/t/doc/ocr/raw_text.json" in keys
             assert "migrados: 1" in out.getvalue()
 
     def test_missing_local_file_is_ignored_not_error(self) -> None:
         """Documento com original perdido no disco: ignorado, sem falhar o comando."""
-        with tempfile.TemporaryDirectory() as storage_dir, override_settings(
-            DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir
-        ), mock_aws(), s3_test_env():
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+            mock_aws(),
+            s3_test_env(),
+        ):
             create_test_bucket()
             doc = Document.objects.create(
                 channel="manual",
@@ -77,9 +91,12 @@ class MigrateStorageCommandTests(TestCase):
             assert "Migração concluída." in output
 
     def test_dry_run_does_not_write(self) -> None:
-        with tempfile.TemporaryDirectory() as storage_dir, override_settings(
-            DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir
-        ), mock_aws(), s3_test_env():
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+            mock_aws(),
+            s3_test_env(),
+        ):
             create_test_bucket()
             doc = self._seed_local_document(storage_dir)
 

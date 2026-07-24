@@ -1,16 +1,26 @@
 from __future__ import annotations
 
-from uuid import uuid4
 import json
 import logging
+from uuid import uuid4
 
 import boto3
 import pytest
-from moto import mock_aws
-
-from docuparse_events import EventMessage, LocalJsonlEventBus, RedisStreamEventBus, event_bus_from_env, publish_dead_letter
+from docuparse_events import (
+    EventMessage,
+    LocalJsonlEventBus,
+    RedisStreamEventBus,
+    event_bus_from_env,
+    publish_dead_letter,
+)
 from docuparse_observability import log_event
-from docuparse_storage import LocalStorage, S3Storage, document_ocr_raw_text_key, document_original_key
+from docuparse_storage import (
+    LocalStorage,
+    S3Storage,
+    document_ocr_raw_text_key,
+    document_original_key,
+)
+from moto import mock_aws
 
 
 def test_local_storage_roundtrip_and_uri_convention(tmp_path) -> None:
@@ -50,7 +60,9 @@ def test_storage_contract_parity_across_backends(tmp_path, backend) -> None:
         with mock_aws():
             boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="parity")
             _assert_contract(
-                S3Storage(bucket="parity", region="us-east-1", access_key="k", secret_key="s"),
+                S3Storage(
+                    bucket="parity", region="us-east-1", access_key="k", secret_key="s"
+                ),
                 "s3://parity/",
             )
 
@@ -101,7 +113,9 @@ def test_redis_stream_event_bus_publish_and_consume() -> None:
 
 def test_publish_dead_letter_records_error_context(tmp_path) -> None:
     bus = LocalJsonlEventBus(tmp_path)
-    entry = EventMessage(id=7, payload={"event_type": "ocr.completed", "event_id": str(uuid4())})
+    entry = EventMessage(
+        id=7, payload={"event_type": "ocr.completed", "event_id": str(uuid4())}
+    )
 
     bus.publish("ocr.completed", entry.payload)
     publish_dead_letter(
@@ -148,13 +162,14 @@ class FakeRedisStreams:
         messages = self.streams.setdefault(stream, [])
         message_id = f"{len(messages) + 1}-0"
         encoded_fields = {
-            key.encode("utf-8"): value.encode("utf-8")
-            for key, value in fields.items()
+            key.encode("utf-8"): value.encode("utf-8") for key, value in fields.items()
         }
         messages.append((message_id, encoded_fields))
         return message_id.encode("utf-8")
 
-    def xread(self, streams: dict[str, str], count: int | None = None) -> list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]:
+    def xread(
+        self, streams: dict[str, str], count: int | None = None
+    ) -> list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]:
         output = []
         for stream, offset in streams.items():
             messages = [
@@ -168,7 +183,9 @@ class FakeRedisStreams:
                 output.append((stream.encode("utf-8"), messages))
         return output
 
-    def xrevrange(self, stream: str, count: int | None = None) -> list[tuple[bytes, dict[bytes, bytes]]]:
+    def xrevrange(
+        self, stream: str, count: int | None = None
+    ) -> list[tuple[bytes, dict[bytes, bytes]]]:
         messages = list(reversed(self.streams.get(stream, [])))
         if count is not None:
             messages = messages[:count]
@@ -176,6 +193,6 @@ class FakeRedisStreams:
 
 
 def _redis_id_gt(left: str, right: str) -> bool:
-    left_ms, left_seq = [int(part) for part in left.split("-", 1)]
-    right_ms, right_seq = [int(part) for part in right.split("-", 1)]
+    left_ms, left_seq = (int(part) for part in left.split("-", 1))
+    right_ms, right_seq = (int(part) for part in right.split("-", 1))
     return (left_ms, left_seq) > (right_ms, right_seq)

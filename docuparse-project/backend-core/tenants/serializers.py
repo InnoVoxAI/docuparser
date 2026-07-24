@@ -26,7 +26,9 @@ class TenantCreateSerializer(serializers.Serializer):
                 "Slug must contain only lowercase letters, digits, and hyphens."
             )
         if Tenant.objects.filter(slug=value).exists():
-            raise serializers.ValidationError(f"A tenant with slug '{value}' already exists.")
+            raise serializers.ValidationError(
+                f"A tenant with slug '{value}' already exists."
+            )
         return value
 
 

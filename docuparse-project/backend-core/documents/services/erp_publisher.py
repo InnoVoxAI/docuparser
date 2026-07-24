@@ -96,6 +96,7 @@ def _canonical_payload(document: Document) -> dict:
 
 def _integration_settings(document: Document) -> IntegrationSettings:
     from documents.models import SETTINGS_SINGLETON_ID
+
     settings_obj, _ = IntegrationSettings.objects.get_or_create(
         id=SETTINGS_SINGLETON_ID,
         defaults={

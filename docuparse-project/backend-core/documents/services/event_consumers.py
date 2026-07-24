@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from django.db import transaction
-
+from docuparse_observability import log_event
 from events import (
     DocumentReceivedEvent,
     ERPFailedEvent,
@@ -13,7 +13,6 @@ from events import (
     OCRCompletedEvent,
     OCRFailedEvent,
 )
-from docuparse_observability import log_event
 
 from documents.models import (
     Document,
@@ -134,7 +133,15 @@ def consume_ocr_completed(payload: dict[str, Any]) -> Document:
                 "metadata": event.data.metadata,
             },
         }
-        document.save(update_fields=["raw_text_uri", "document_type", "status", "metadata", "updated_at"])
+        document.save(
+            update_fields=[
+                "raw_text_uri",
+                "document_type",
+                "status",
+                "metadata",
+                "updated_at",
+            ]
+        )
         existing_event.document = document
         existing_event.save(update_fields=["document", "updated_at"])
         log_event(
@@ -244,7 +251,9 @@ def _record_event_once(event: object) -> tuple[DocumentEvent, bool]:
     return (
         DocumentEvent.objects.create(
             event_id=event.event_id,
-            document_id=event.document_id if Document.objects.filter(id=event.document_id).exists() else None,
+            document_id=event.document_id
+            if Document.objects.filter(id=event.document_id).exists()
+            else None,
             event_type=event.event_type,
             event_version=event.event_version,
             correlation_id=event.correlation_id,

@@ -277,7 +277,9 @@ def _tenant_slug_from_jwt(token: str) -> str:
     if not token:
         return ""
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            token, settings.secret_key, algorithms=[settings.jwt_algorithm]
+        )
         return str(payload.get("tenant") or "")
     except jwt.PyJWTError:
         return ""

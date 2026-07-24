@@ -6,10 +6,10 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
-
-from documents.models import Document, ExtractionResult, ValidationDecision
 from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
+
+from documents.models import Document, ExtractionResult, ValidationDecision
 
 
 class ValidationViewGuardTests(TestCase):
@@ -18,7 +18,9 @@ class ValidationViewGuardTests(TestCase):
         self.tenant = Tenant.objects.create(slug="tenant-test", name="Tenant Test")
         connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="op", password="test")
-        permission = Permission.objects.create(code="documents.validate", description="Validate")
+        permission = Permission.objects.create(
+            code="documents.validate", description="Validate"
+        )
         role = Role.objects.create(name="Validador")
         role.permissions.add(permission)
         UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)

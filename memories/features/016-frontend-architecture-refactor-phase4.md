@@ -1,11 +1,11 @@
 ---
-title: 016 Frontend Architecture Refactor — Phase 4 (US2) progress
+title: 016 Frontend Architecture Refactor — Phase 4 (US2) / Phase 5 (US3) progress
 type: note
 permalink: features/016-frontend-architecture-refactor-phase4
 tags: [frontend, refactor, 016]
 ---
 
-# 016 Frontend Architecture Refactor — Phase 4 (US2) progress
+# 016 Frontend Architecture Refactor — Phase 4 (US2) / Phase 5 (US3) progress
 
 Written by an agent session that was interrupted mid-task ("vou continuar com
 outro agente para evitar drift"). Full detail lives in
@@ -26,7 +26,10 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
   applied to newly-migrated code, `src/main.tsx` **deleted**). All gates
   green (typecheck/lint/test/build) at each step. **`src/main.tsx` no longer
   exists** — Phase 4 checkpoint ("arquitetura-alvo integralmente implantada")
-  reached. Next up: Phase 5 (T047-T050, module-boundary lint enforcement).
+  reached. **Phase 5 (T047-T050, module-boundary lint enforcement + CI gate)
+  is also done now** — see "State update (2026-07-25, Phase 5 / US3 —
+  T047-T050 done)" section below. Remaining: Phase 6 (T051-T052, retrospective
+  commit-history check) and Phase 7 (Polish, T053-T056).
 - **4h** was the simplest sub-phase so far: `UploadView` (91 lines) had no
   TanStack Query conversion, no size-limit split, and no `AppOutletContext`
   surprises — moved verbatim into `modules/upload/components/`, one
@@ -93,6 +96,63 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
   (4i-specific)" below for the two real gotchas: where `TenantsView` ended
   up, and a module-boundary trap in `AppOutletContext`/`navPath` that would
   have poisoned T047 (Phase 5) if left as originally planned.
+
+## State update (2026-07-25, Phase 5 / US3 — T047-T050 done)
+
+Phase 4i's uncommitted work (T043-T046, `src/main.tsx` deletion) got committed
+as `0a585b2` at some point during this session (not by this agent — noticed
+because `git status` unexpectedly went from a long uncommitted list to just
+`eslint.config.js` mid-session; verified via `git log` that the commit message
+matches T043-T046's description, so nothing was lost). Phase 5 itself (T047-
+T050) was executed on top of that commit; only `eslint.config.js` (T047) and
+the new `.github/workflows/frontend-ci.yaml` (T050) are this session's actual
+changes — see per-task `Resultado` notes in `tasks.md` for full detail. The two
+things worth remembering that aren't obvious from the config diff alone:
+
+1. **`eslint-plugin-boundaries` v7.1.0's default import resolver silently
+   resolves nothing for this project** unless `settings['import/resolver'] =
+   { node: { extensions: ['.js','.jsx','.ts','.tsx'] } }` is set explicitly —
+   without it, every local `.ts`/`.tsx` import is classified "unknown", and
+   since `checkUnknownLocals` defaults to `false`, the `boundaries/dependencies`
+   rule silently checks *nothing* (0 errors, but not because the code is
+   compliant — because the rule never evaluated a single real dependency).
+   `npm run lint` reporting clean is **not sufficient proof** the boundary
+   rule works; verify with `ESLINT_PLUGIN_BOUNDARIES_DEBUG=1 npx eslint
+   <file>` and check `to.file.path` isn't `null` for a known-existing target
+   before trusting a clean run. If this project's ESLint or plugin version
+   ever bumps, re-verify this resolver setting is still needed/correct.
+2. **The plugin's "internal" dependency exemption (auto-skipped, no policy
+   needed) only covers files in the exact same directory** — `_isInternal`
+   compares `element.path` (the file's *dirname*, not its captured module
+   name) for equality. Two files in the same module but different
+   subfolders (e.g. `modules/settings/routes/SettingsRoute.tsx` importing
+   `modules/settings/components/SettingsView.tsx`) are **not** "internal" and
+   fall straight into ordinary policy evaluation. This project's module
+   element uses `capture: ['moduleName']`, so an explicit policy was added
+   using the (currently non-deprecated) legacy template syntax
+   `captured: { moduleName: '{{from.moduleName}}' }` to allow any file within
+   the same module to import any other file in that module regardless of
+   subfolder — without this, T047 reported ~65 false-positive errors across
+   every module's own `routes/index.tsx` → `components/*` and similar
+   same-module, different-folder imports. If a new module is added later and
+   T047's rule starts erroring on its own internal cross-folder imports,
+   this is almost certainly why — the exception rule (last policy in
+   `eslint.config.js`'s `boundaries/dependencies` policies array) must stay
+   *after* the generic "module can only be entered via index.ts" disallow
+   rule for last-write-wins ordering to work.
+3. **T050's CI gate needs `npm ci --legacy-peer-deps`, not plain `npm ci`** —
+   confirmed by running `npm ci` from a clean `node_modules` locally: it fails
+   on the same `@testing-library/react@14` (peer `react@^18`) vs. React 19
+   conflict documented since T010/T011. `.github/workflows/frontend-ci.yaml`
+   passes the flag explicitly; don't drop it when touching that workflow.
+4. **`.github/workflows/ci.yaml` is a backend-only *deploy* pipeline** (image
+   build/push for the 4 backends) that has excluded
+   `docuparse-project/frontend/**` from its trigger paths since `a6c2235` —
+   T050 did **not** touch that file. A brand-new, separate workflow
+   (`frontend-ci.yaml`) was added instead, triggered on its own
+   `docuparse-project/frontend/**` path filter (push to main/staging +
+   pull_request). If someone later wants a single unified CI file, that's a
+   deliberate decision to make, not a default.
 
 ## Things that will bite you (4d-specific)
 

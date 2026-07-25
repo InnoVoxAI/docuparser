@@ -1,0 +1,1 @@
+export { UploadRoutes } from './routes'

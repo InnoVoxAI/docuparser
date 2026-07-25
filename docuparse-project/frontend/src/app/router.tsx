@@ -1,30 +1,18 @@
-import { Navigate, createBrowserRouter, useOutletContext } from 'react-router'
+import { Navigate, createBrowserRouter } from 'react-router'
 import { useAuth, PermissionGuard, AcessoNaoAutorizado } from '../modules/auth'
 import { DocumentsRoutes } from '../modules/documents'
 import { OperationsRoutes } from '../modules/operations'
 import { SettingsRoutes } from '../modules/settings'
 import { AdminRoutes } from '../modules/admin'
+import { UploadRoutes } from '../modules/upload'
 import { ErrorBoundary } from '../shared/components'
-import { AppLayout, NAV_ITEMS, navPath, UploadView, TenantsView, type AppOutletContext } from '../main'
-
-function useAppContext(): AppOutletContext {
-    return useOutletContext<AppOutletContext>()
-}
+import { AppLayout, NAV_ITEMS, navPath, TenantsView } from '../main'
 
 /** Landing em "/" — mesma regra do antigo estado inicial de `activeView` no monólito. */
 function IndexRedirect() {
     const { hasPermission } = useAuth()
     const target = NAV_ITEMS.find((item) => hasPermission(item.permission))?.id ?? 'dashboard'
     return <Navigate to={navPath(target)} replace />
-}
-
-function UploadRoute() {
-    const { refreshData } = useAppContext()
-    return (
-        <PermissionGuard code="documents.send" fallback={<AcessoNaoAutorizado />}>
-            <UploadView onUploaded={refreshData} />
-        </PermissionGuard>
-    )
 }
 
 function TenantsRoute() {
@@ -50,7 +38,7 @@ export function createAppRouter() {
             children: [
                 { index: true, element: <IndexRedirect /> },
                 ...DocumentsRoutes,
-                { path: 'upload', element: <UploadRoute />, errorElement: <ErrorBoundary /> },
+                ...UploadRoutes,
                 ...OperationsRoutes,
                 ...SettingsRoutes,
                 ...AdminRoutes,

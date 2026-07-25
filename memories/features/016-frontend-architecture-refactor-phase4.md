@@ -12,7 +12,7 @@ outro agente para evitar drift"). Full detail lives in
 `docs/specs/016-frontend-architecture-refactor/tasks.md` (per-task `Resultado`
 notes) — this note is a pointer + the non-obvious things worth remembering.
 
-## State (updated 2026-07-24, after Phase 4g)
+## State (updated 2026-07-25, after Phase 4h)
 
 - Branch: `016-frontend-architecture-refactor`.
 - Sub-phases done: **4a** (`86585ae`, shared UI primitives), **4b**
@@ -20,8 +20,33 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
   (`42d9c9e`, `modules/documents` + TanStack Query — T026-T033), **4e**
   (`cba0358`, `modules/operations` + TanStack Query — T034-T035), **4f**
   (`9c55ef4`, `modules/settings` + RHF/Zod — T036-T040), **4g**
-  (uncommitted at write time, `modules/admin` + TanStack Query — T041). All
-  gates green (typecheck/lint/test/build) at each step.
+  (`20e01cd`, `modules/admin` + TanStack Query — T041), **4h** (`e68a841`,
+  `modules/upload` — T042). All gates green (typecheck/lint/test/build) at
+  each step.
+- **4h** was the simplest sub-phase so far: `UploadView` (91 lines) had no
+  TanStack Query conversion, no size-limit split, and no `AppOutletContext`
+  surprises — moved verbatim into `modules/upload/components/`, one
+  `UploadRoute.tsx` (same `PermissionGuard`/`useOutletContext<AppOutletContext>`
+  pattern as `modules/documents`' routes, since it still needs `refreshData`
+  from the not-yet-removed `main.tsx` context), barrel only exports
+  `UploadRoutes` (module has no server state of its own). `router.tsx` lost
+  its last inline route component (`useAppContext`/`useOutletContext` are now
+  gone from that file entirely — every route is `...XRoutes` spread). Only
+  orphaned imports in `main.tsx` this round: `EmptyState`/`Field`/`FileText`/
+  `comApi`. `main.tsx`: 712 → 687 lines.
+- **Pre-commit `--no-verify` used again for 4h** (`e68a841`) — same
+  documented, expected-until-T046 `main.tsx` max-lines failure. Asked the
+  user explicitly before bypassing (per the standing note below to not
+  assume authorization carries forward); user confirmed yes.
+- **Also caught this round**: `prettier --write` (part of the pre-commit
+  hook) reformatted two *unrelated* already-committed files
+  (`modules/admin/components/UserFormModal.tsx`/`UserTable.tsx`, pre-existing
+  formatting drift from 4g, not touched by 4h's diff) when the failing
+  `frontend-eslint` hook ran first and the commit was retried. Reverted both
+  with `git checkout --` before committing, per `CLAUDE.md`'s "keep unrelated
+  formatting changes out of the patch" guardrail. **Worth checking `git
+  status` for drive-by reformats any time a hook with `--write`/`--fix` runs
+  and the commit doesn't succeed on the first try.**
 - **4g** extracted `GerenciarUsuarios`/`GerenciarRoles` into `modules/admin`,
   converted the 5 manual axios calls (`/users` GET, `/roles` GET/POST/PATCH/
   DELETE, `/permissions` GET) to `useUsersQuery`/`useRolesQuery`/
@@ -57,8 +82,11 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
   `OperationsView` was fully self-contained (no `AppOutletContext`
   dependency, no shared-but-unlisted components like the 4d
   `DocumentBlobPreview`/`EmailMetadataModal` surprise).
-- Remaining: 4h through 4i (T042-T046) — `modules/upload`, Zustand/cleanup,
-  remove `main.tsx`.
+- Remaining: 4i only (T043-T046) — Zustand residual review, `LoginPage`
+  RHF+Zod, formalize `shared/utils/errorMessages.ts`, remove `main.tsx`. **4i
+  will hit the unresolved `TenantsView` gap from 4g** (see that section
+  below) — no task currently owns moving it, but T046 can't delete `main.tsx`
+  while it's still there.
 
 ## Things that will bite you (4d-specific)
 
@@ -174,6 +202,24 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
 3. Same `isFetching`-not-`isLoading` and per-list-key-invalidation choices as
    4e's `OperationsView`/`operationsKeys` — see that section below, same
    reasoning applies verbatim to `adminKeys.users()`/`adminKeys.roles()`.
+
+## Things that will bite you (4h-specific)
+
+1. **Not every sub-phase has hidden gaps** — 4h was a clean, uneventful
+   extraction: no `data-model.md` surprises (unlike 4d's
+   `DocumentBlobPreview`/`EmailMetadataModal`), no size-limit split needed
+   (unlike 4d/4e/4g's container+presentational splits), no TanStack Query
+   conversion (module has zero server-list state — a bare `POST`, no
+   `useQuery`). Don't assume every remaining sub-phase needs the same
+   depth of investigation; check the actual component first, the way 4e's
+   note about "no `AppOutletContext` dependency this time" already
+   established.
+2. **`router.tsx` no longer has any inline route component** after this
+   task — the last one (`UploadRoute`) is gone, along with the
+   `useAppContext()`/`useOutletContext` helper that only it used. If you're
+   touching `router.tsx` for 4i/T046, expect it to be just imports +
+   `createAppRouter()` + `IndexRedirect` + `TenantsRoute` (the latter still
+   there because of the unresolved 4g gap above).
 
 ## New finding from 4c: router singleton + jsdom test bleed
 

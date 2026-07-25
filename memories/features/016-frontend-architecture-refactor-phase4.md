@@ -14,6 +14,35 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
 
 ## State (updated 2026-07-25, after Phase 4i — Phase 4 / US2 fully complete)
 
+## State update (2026-07-25, Phase 6 / US4 — T051-T052 done)
+
+Phase 6 is a pure retrospective/documentation phase (no code changes). T051
+audited `git log main..016-frontend-architecture-refactor` and confirmed
+T018/T020/T025/T032/T035/T039/T041/T042/T046/T047 are each an isolated commit
+scoped to exactly one sub-phase, with green-gate evidence already in each
+task's own `tasks.md` "Resultado" note — no big-bang commit spanning multiple
+sub-phases anywhere. **One real deviation found**: T010 (React 18→19) and
+T011 (Tailwind v3→v4) each say "commit isolado" in their own task text, but
+both landed inside the single Phase 2 commit (`125e788`) together with
+T004-T009. The safety property (gate green before proceeding) held — T010/T011
+each have their own documented green-gate note — only the commit-granularity
+instruction wasn't followed literally for those two. Not corrected
+retroactively (rewriting history already built on top of would be riskier
+than documenting the exception).
+
+T052 drafted the incremental-delivery PR description (commit → sub-phase
+table, the T010/T011 finding, review guide) at
+`docs/specs/016-frontend-architecture-refactor/pr-description.md`. **Branch
+still not pushed to `origin`, no PR open** — asked the user how to handle
+"document in the PR" given there's no PR yet and `gh` isn't installed in this
+environment; user chose "just draft the content, don't push/open a PR". Copy
+`pr-description.md`'s content into the PR body whenever the branch does get
+pushed.
+
+Remaining: **Phase 7 (Polish, T053-T056)** — quickstart.md touch-ups, tightening
+`any`/`unknown` escapes in shared types + DLQ types, final production build,
+one last full manual regression pass.
+
 - Branch: `016-frontend-architecture-refactor`.
 - Sub-phases done: **4a** (`86585ae`, shared UI primitives), **4b**
   (`8322754`, `modules/auth`), **4c** (`156ff46`, routing — T022-T025), **4d**

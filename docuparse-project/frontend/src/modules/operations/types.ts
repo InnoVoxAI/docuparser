@@ -1,5 +1,8 @@
-// Os eventos/streams de DLQ têm forma dinâmica (payloads de workers diversos);
-// campos ad-hoc são renderizados diretamente, por isso o índice permissivo.
+// `payload` é o corpo original do evento que falhou em um worker — formato
+// heterogêneo por natureza (varia por origem/worker), por isso `unknown`. Os
+// demais campos são os únicos efetivamente lidos pela UI (DlqEventsTable/
+// DlqEventDetail/DlqStreamSummary); nenhum consumidor lê chave dinâmica, então
+// o índice permissivo do nível do evento/stream foi removido (T054).
 export interface DlqEvent {
     id?: string
     original_stream?: string
@@ -10,14 +13,12 @@ export interface DlqEvent {
     occurred_at?: string | number | Date | null
     event_type?: string
     event_id?: string
-    [key: string]: unknown
 }
 
 export interface DlqStream {
     stream: string
     count: number
     latest?: DlqEvent
-    [key: string]: unknown
 }
 
 export interface DlqSummary {

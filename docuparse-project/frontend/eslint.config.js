@@ -84,34 +84,48 @@ export default [
             'boundaries/files': [{ category: 'types', pattern: 'src/types.ts' }],
         },
         rules: {
-            'boundaries/dependencies': ['error', {
-                default: 'disallow',
-                policies: [
-                    { from: { element: { type: 'app' } }, allow: { to: { element: { type: ['module', 'shared', 'models'] } } } },
-                    { from: { element: { type: 'app' } }, allow: { to: { file: { categories: 'types' } } } },
-                    { from: { element: { type: 'module' } }, allow: { to: { element: { type: ['module', 'shared', 'models'] } } } },
-                    { from: { element: { type: 'module' } }, allow: { to: { file: { categories: 'types' } } } },
-                    // Testes de a11y dentro de um módulo (`modules/*/__tests__`)
-                    // reaproveitam helpers/mocks do harness global de testes.
-                    { from: { element: { type: 'module' } }, allow: { to: { element: { type: 'test' } } } },
-                    { from: { element: { type: 'shared' } }, allow: { to: { element: { type: ['shared'] } } } },
-                    { from: { element: { type: 'shared' } }, allow: { to: { file: { categories: 'types' } } } },
-                    { from: { element: { type: 'models' } }, allow: { to: { file: { categories: 'types' } } } },
-                    { from: { element: { type: 'test' } }, allow: { to: { element: { type: ['app', 'module', 'shared', 'models'] } } } },
-                    { from: { element: { type: 'test' } }, allow: { to: { file: { categories: 'types' } } } },
-                    // Um módulo só pode ser importado de fora pelo seu barrel
-                    // (`index.ts`). "Internal" (mesmo diretório) já é ignorado
-                    // automaticamente pela regra, mas arquivos do mesmo módulo
-                    // em diretórios irmãos (ex.: routes/ -> components/) não
-                    // contam como "internal" para o plugin — por isso a
-                    // exceção explícita abaixo, via captured.moduleName.
-                    { disallow: { to: { element: { type: 'module', fileInternalPath: '!(index.ts)' } } } },
-                    {
-                        from: { element: { type: 'module' } },
-                        allow: { to: { element: { type: 'module', captured: { moduleName: '{{from.moduleName}}' } } } },
-                    },
-                ],
-            }],
+            'boundaries/dependencies': [
+                'error',
+                {
+                    default: 'disallow',
+                    policies: [
+                        {
+                            from: { element: { type: 'app' } },
+                            allow: { to: { element: { type: ['module', 'shared', 'models'] } } },
+                        },
+                        { from: { element: { type: 'app' } }, allow: { to: { file: { categories: 'types' } } } },
+                        {
+                            from: { element: { type: 'module' } },
+                            allow: { to: { element: { type: ['module', 'shared', 'models'] } } },
+                        },
+                        { from: { element: { type: 'module' } }, allow: { to: { file: { categories: 'types' } } } },
+                        // Testes de a11y dentro de um módulo (`modules/*/__tests__`)
+                        // reaproveitam helpers/mocks do harness global de testes.
+                        { from: { element: { type: 'module' } }, allow: { to: { element: { type: 'test' } } } },
+                        { from: { element: { type: 'shared' } }, allow: { to: { element: { type: ['shared'] } } } },
+                        { from: { element: { type: 'shared' } }, allow: { to: { file: { categories: 'types' } } } },
+                        { from: { element: { type: 'models' } }, allow: { to: { file: { categories: 'types' } } } },
+                        {
+                            from: { element: { type: 'test' } },
+                            allow: { to: { element: { type: ['app', 'module', 'shared', 'models'] } } },
+                        },
+                        { from: { element: { type: 'test' } }, allow: { to: { file: { categories: 'types' } } } },
+                        // Um módulo só pode ser importado de fora pelo seu barrel
+                        // (`index.ts`). "Internal" (mesmo diretório) já é ignorado
+                        // automaticamente pela regra, mas arquivos do mesmo módulo
+                        // em diretórios irmãos (ex.: routes/ -> components/) não
+                        // contam como "internal" para o plugin — por isso a
+                        // exceção explícita abaixo, via captured.moduleName.
+                        { disallow: { to: { element: { type: 'module', fileInternalPath: '!(index.ts)' } } } },
+                        {
+                            from: { element: { type: 'module' } },
+                            allow: {
+                                to: { element: { type: 'module', captured: { moduleName: '{{from.moduleName}}' } } },
+                            },
+                        },
+                    ],
+                },
+            ],
         },
     },
 ]

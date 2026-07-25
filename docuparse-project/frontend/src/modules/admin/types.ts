@@ -3,20 +3,23 @@ export interface AdminRoleRef {
     name: string
 }
 
+// Usuários/roles/permissões vêm de serializers RBAC de schema fixo (não de um
+// payload de worker/documento variável) — os índices permissivos aqui não
+// tinham nenhum consumidor de chave dinâmica (verificado: UserTable/
+// RoleTable/RoleFormModal/GerenciarUsuarios/GerenciarRoles só leem os campos
+// nomeados abaixo), então foram removidos (T054).
 export interface AdminUser {
     id: string
     name: string
     email: string
     role?: AdminRoleRef | null
     is_active?: boolean
-    [key: string]: unknown
 }
 
 export interface AdminPermission {
     code: string
     name?: string
     description?: string
-    [key: string]: unknown
 }
 
 export interface AdminRole {
@@ -24,7 +27,6 @@ export interface AdminRole {
     name: string
     permissions?: Array<AdminPermission | string>
     users_count?: number
-    [key: string]: unknown
 }
 
 /** Usuário de um tenant específico (tela Tenants) — mesmo shape de `role` de `AdminRoleRef`. */

@@ -450,3 +450,74 @@ across tests.
    **Resolved (2026-07-24, during T041): NOT folded into `modules/admin`** —
    see "Things that will bite you (4g-specific)" point 1 above for why, and
    for what this defers onto T046.
+
+## State update (2026-07-25, Phase 7 — Polish, T053-T056) — **feature COMPLETE**
+
+All 56 tasks in `tasks.md` are now `[X]`. This was the final phase (Setup →
+Foundational → US1 → US2 → US3 → US4 → Polish), no work remains against the
+016 spec. Ran via `/speckit-implement` in a fresh session (no continuation
+context from earlier Phase 4/5/6 sessions — reconstructed state entirely by
+reading `tasks.md`'s per-task `Resultado` notes and this file, confirming the
+"don't trust old checkmarks blindly" lesson from point 3 above still holds:
+this session verified Phase 7 was genuinely unstarted, not just re-derived
+from a stale note).
+
+1. **T054** (tighten `[key: string]: unknown` escapes): `src/shared/types/`
+   turned out to be empty — `data-model.md` planned domain types to live
+   there, but they ended up in `src/types.ts` at the root (already known,
+   see point above re: `TenantsView`). Audited every permissive index
+   signature in the codebase against its actual consumers (grep for the
+   type name across `modules/*/components`) rather than guessing: found
+   **zero** dynamic-key reads anywhere. Removed the index signature from
+   `modules/operations/types.ts` (`DlqEvent`/`DlqStream` — explicitly named
+   by the task) and, by the same criterion, from `modules/admin/types.ts`
+   (`AdminUser`/`AdminPermission`/`AdminRole` — fixed-schema RBAC serializers,
+   no heterogeneity comment, same "no consumer reads it" finding). Left
+   `src/types.ts`'s `Document`/`SchemaDefinition`/`SchemaConfig`/`LayoutConfig`
+   untouched — each already has an explicit code comment justifying real
+   cross-serializer/cross-schema variance; tightening those would need a
+   backend-side audit out of scope for a "tighten what's stable" polish task.
+2. **T053** (quickstart.md touch-ups): added a "Armadilhas conhecidas" section
+   distilling the 6 sharpest non-obvious pitfalls from Phases 2-6 (Vite
+   entrypoint must be updated in `index.html` when the bootstrap file moves;
+   `eslint-plugin-boundaries` is a **silent no-op** without an explicit
+   `import/resolver` — first lint run can pass clean while checking nothing;
+   the plugin's "internal" exemption is same-*directory*, not same-*module*;
+   `createBrowserRouter` is a `window.location`-bound singleton that leaks
+   state across tests in one file without a per-test factory; React 19 +
+   Tailwind v4 reinstalls can de-hoist `@testing-library/dom`; no
+   browser/screenshot tool exists in this devcontainer, full stop). Also
+   added a "Estado final" block describing the actual `app/modules/shared`
+   tree reached, since the doc previously only described the plan, not the
+   landing.
+3. **T055** (production build): `npm run build` green, same pre-existing
+   >500kB chunk warning since T025 (not addressed — no task asked for
+   code-splitting). Served the real `dist/` via `vite preview` and rendered
+   it with headless Chromium — confirmed the built bundle boots (LoginPage
+   renders, zero console/page errors), which specifically exercises the
+   T024 entrypoint wiring (`index.html` → `src/app/main.tsx`) in a way
+   `npm run build`'s typecheck+bundle step alone doesn't.
+4. **T056** (final manual regression): this session had `sudo` and could
+   `apt-get install redis-server`, so — unlike every Phase-4/5/6 integration
+   task since T015, which only had mocked-API Playwright checks available —
+   it was able to reproduce T015's full real-backend setup end to end
+   (`start_backend.sh` + `DOCUPARSE_LOCAL_STORAGE_DIR` workaround for the
+   `backend-com/config.py` `parents[3]` bug + Redis). Result: **23/23
+   scripted checks, zero console/page errors**, including a real PDF upload
+   (UI confirms receipt) and a physical reload on `/operations` (proof of
+   real routing). **The exact same DB gap T015 found is still there**:
+   `documents_documentevent` doesn't exist in Postgres despite the migration
+   showing as applied, so the OCR/extraction pipeline still can't run
+   end-to-end here — Validação/Aprovados/Rejeitados remain untestable
+   manually in this sandbox, covered only by the automated suite. This is a
+   pre-existing infra issue outside this frontend feature's scope, not a
+   regression; flagged again (third time now, across T015/T056) as worth a
+   separate investigation. All ad-hoc processes (4 backends, Redis, Vite dev
+   server, Vite preview) and scratch files were stopped/deleted before
+   finishing — nothing left running, nothing left uncommitted beyond the
+   intended diff (`tasks.md`, `quickstart.md`, `operations/types.ts`,
+   `admin/types.ts`).
+
+**Not yet done** (explicitly out of scope for `/speckit-implement`, deferred
+to the user): pushing the branch to origin and opening the PR — `pr-description.md`
+(T052) is still just a draft on disk, per the user's earlier explicit choice.

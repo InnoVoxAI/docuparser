@@ -1,26 +1,19 @@
 import { Navigate, createBrowserRouter } from 'react-router'
-import { useAuth, PermissionGuard, AcessoNaoAutorizado } from '../modules/auth'
+import { useAuth } from '../modules/auth'
 import { DocumentsRoutes } from '../modules/documents'
 import { OperationsRoutes } from '../modules/operations'
 import { SettingsRoutes } from '../modules/settings'
 import { AdminRoutes } from '../modules/admin'
 import { UploadRoutes } from '../modules/upload'
 import { ErrorBoundary } from '../shared/components'
-import { AppLayout, NAV_ITEMS, navPath, TenantsView } from '../main'
+import { AppLayout } from './AppLayout'
+import { NAV_ITEMS, navPath } from './navigation'
 
 /** Landing em "/" — mesma regra do antigo estado inicial de `activeView` no monólito. */
 function IndexRedirect() {
     const { hasPermission } = useAuth()
     const target = NAV_ITEMS.find((item) => hasPermission(item.permission))?.id ?? 'dashboard'
     return <Navigate to={navPath(target)} replace />
-}
-
-function TenantsRoute() {
-    return (
-        <PermissionGuard code="tenants.manage" fallback={<AcessoNaoAutorizado />}>
-            <TenantsView />
-        </PermissionGuard>
-    )
 }
 
 /**
@@ -42,7 +35,6 @@ export function createAppRouter() {
                 ...OperationsRoutes,
                 ...SettingsRoutes,
                 ...AdminRoutes,
-                { path: 'tenants', element: <TenantsRoute />, errorElement: <ErrorBoundary /> },
                 { path: '*', element: <Navigate to="/" replace /> },
             ],
         },

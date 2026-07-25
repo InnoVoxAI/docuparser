@@ -1,6 +1,7 @@
 import { useNavigate, useOutletContext } from 'react-router'
 import { PermissionGuard, AcessoNaoAutorizado } from '../../auth'
-import { navPath, type AppOutletContext } from '../../../main'
+import { navPath } from '../../../shared/utils'
+import type { AppOutletContext } from '../../../types'
 import { InboxView } from '../components/InboxView'
 
 export function InboxRoute() {

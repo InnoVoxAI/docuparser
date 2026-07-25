@@ -35,10 +35,7 @@ export function UserTable({ users, onEdit, onToggleActive }: UserTableProps) {
                             <button onClick={() => onEdit(u)} className="text-xs text-zinc-600 hover:underline">
                                 Editar
                             </button>
-                            <button
-                                onClick={() => onToggleActive(u)}
-                                className="text-xs text-zinc-600 hover:underline"
-                            >
+                            <button onClick={() => onToggleActive(u)} className="text-xs text-zinc-600 hover:underline">
                                 {u.is_active ? 'Desativar' : 'Ativar'}
                             </button>
                         </td>

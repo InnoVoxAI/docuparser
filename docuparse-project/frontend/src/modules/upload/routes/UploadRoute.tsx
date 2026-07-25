@@ -1,6 +1,6 @@
 import { useOutletContext } from 'react-router'
 import { PermissionGuard, AcessoNaoAutorizado } from '../../auth'
-import type { AppOutletContext } from '../../../main'
+import type { AppOutletContext } from '../../../types'
 import { UploadView } from '../components/UploadView'
 
 export function UploadRoute() {

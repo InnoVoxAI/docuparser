@@ -3,7 +3,7 @@ export { documentKeys, useDocumentsQuery, useDocumentCount, useDocumentMutations
 export type { ValidateDocumentInput } from './hooks'
 // Não roteadas hoje (achado T012: "approved"/"rejected" não estão em NAV_ITEMS
 // nem alcançáveis por navegação real) — exportadas para uso direto (testes,
-// AppLayout ainda em `src/main.tsx`).
+// `RejectedDocumentModal` consumido por `app/AppLayout.tsx`).
 export { ApprovedView } from './components/ApprovedView'
 export { RejectedView } from './components/RejectedView'
 export { RejectedDocumentModal } from './components/RejectedDocumentModal'

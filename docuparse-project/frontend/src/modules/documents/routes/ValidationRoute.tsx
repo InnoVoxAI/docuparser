@@ -1,7 +1,8 @@
 import { useNavigate, useOutletContext } from 'react-router'
 import { PermissionGuard, AcessoNaoAutorizado } from '../../auth'
 import { useSchemasQuery } from '../../settings'
-import { navPath, type AppOutletContext } from '../../../main'
+import { navPath } from '../../../shared/utils'
+import type { AppOutletContext } from '../../../types'
 import { ValidationView } from '../components/ValidationView'
 
 /**

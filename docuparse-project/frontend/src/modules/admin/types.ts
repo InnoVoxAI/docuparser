@@ -26,3 +26,12 @@ export interface AdminRole {
     users_count?: number
     [key: string]: unknown
 }
+
+/** Usuário de um tenant específico (tela Tenants) — mesmo shape de `role` de `AdminRoleRef`. */
+export interface TenantUser {
+    id: number
+    name: string
+    email: string
+    is_active: boolean
+    role: AdminRoleRef | null
+}

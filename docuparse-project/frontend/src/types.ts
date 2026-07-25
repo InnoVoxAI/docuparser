@@ -275,3 +275,22 @@ export type ActiveView =
     | 'users'
     | 'roles'
     | 'tenants'
+
+/**
+ * Estado/handlers de nível de app (documento selecionado/ações de documento)
+ * expostos por `app/AppLayout.tsx` via `<Outlet context={...} />` e lidos
+ * pelas rotas de `modules/documents`/`modules/upload` com `useOutletContext`.
+ * Vive em `types.ts` (não em `app/`) porque é consumido por módulos de
+ * domínio — `shared/*` é a única fronteira que um módulo pode importar
+ * diretamente, conforme `contracts/module-boundaries.md` (FR-001/T046).
+ */
+export interface AppOutletContext {
+    selectedDocumentId: string
+    selectedDocument: Document | null
+    refreshSignal: number
+    refreshData: (silent?: boolean) => Promise<void>
+    navigateToValidation: (documentId: string) => void
+    handleReprocessDocument: (id: string) => Promise<void>
+    handleDeleteDocument: (id: string) => Promise<void>
+    onSelectRejected: (doc: Document | null) => void
+}

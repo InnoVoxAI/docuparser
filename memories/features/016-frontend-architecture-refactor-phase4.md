@@ -12,7 +12,7 @@ outro agente para evitar drift"). Full detail lives in
 `docs/specs/016-frontend-architecture-refactor/tasks.md` (per-task `Resultado`
 notes) — this note is a pointer + the non-obvious things worth remembering.
 
-## State (updated 2026-07-25, after Phase 4h)
+## State (updated 2026-07-25, after Phase 4i — Phase 4 / US2 fully complete)
 
 - Branch: `016-frontend-architecture-refactor`.
 - Sub-phases done: **4a** (`86585ae`, shared UI primitives), **4b**
@@ -21,8 +21,12 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
   (`cba0358`, `modules/operations` + TanStack Query — T034-T035), **4f**
   (`9c55ef4`, `modules/settings` + RHF/Zod — T036-T040), **4g**
   (`20e01cd`, `modules/admin` + TanStack Query — T041), **4h** (`e68a841`,
-  `modules/upload` — T042). All gates green (typecheck/lint/test/build) at
-  each step.
+  `modules/upload` — T042), **4i** (uncommitted as of this note —
+  T043-T046: Zustand review/skip, `LoginPage` RHF+Zod, `errorMessages.ts`
+  applied to newly-migrated code, `src/main.tsx` **deleted**). All gates
+  green (typecheck/lint/test/build) at each step. **`src/main.tsx` no longer
+  exists** — Phase 4 checkpoint ("arquitetura-alvo integralmente implantada")
+  reached. Next up: Phase 5 (T047-T050, module-boundary lint enforcement).
 - **4h** was the simplest sub-phase so far: `UploadView` (91 lines) had no
   TanStack Query conversion, no size-limit split, and no `AppOutletContext`
   surprises — moved verbatim into `modules/upload/components/`, one
@@ -82,11 +86,13 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
   `OperationsView` was fully self-contained (no `AppOutletContext`
   dependency, no shared-but-unlisted components like the 4d
   `DocumentBlobPreview`/`EmailMetadataModal` surprise).
-- Remaining: 4i only (T043-T046) — Zustand residual review, `LoginPage`
-  RHF+Zod, formalize `shared/utils/errorMessages.ts`, remove `main.tsx`. **4i
-  will hit the unresolved `TenantsView` gap from 4g** (see that section
-  below) — no task currently owns moving it, but T046 can't delete `main.tsx`
-  while it's still there.
+- **4i (T043-T046) is done** — Zustand review found nothing to do (skipped,
+  as the task explicitly allows), `LoginPage` converted to RHF+Zod,
+  `errorMessages.ts` verified already-formalized since T019, and
+  `src/main.tsx` deleted for good. See "Things that will bite you
+  (4i-specific)" below for the two real gotchas: where `TenantsView` ended
+  up, and a module-boundary trap in `AppOutletContext`/`navPath` that would
+  have poisoned T047 (Phase 5) if left as originally planned.
 
 ## Things that will bite you (4d-specific)
 
@@ -220,6 +226,77 @@ notes) — this note is a pointer + the non-obvious things worth remembering.
    touching `router.tsx` for 4i/T046, expect it to be just imports +
    `createAppRouter()` + `IndexRedirect` + `TenantsRoute` (the latter still
    there because of the unresolved 4g gap above).
+
+## Things that will bite you (4i-specific)
+
+1. **`TenantsView` landed in `modules/admin`, not a new `modules/tenants`** —
+   the 4g note above explicitly flagged this as "worth a deliberate call, not
+   a default" and leaned toward a separate module. Decided `admin` instead:
+   tenant provisioning is permission-gated platform administration exactly
+   like users/roles (`PermissionGuard code="tenants.manage"`, same shape as
+   `users.manage`/`roles.manage`), it already depended on `AdminRole` before
+   this move, and it has zero server-state hooks of its own (plain axios
+   calls, no TanStack Query conversion asked for by any task) — spinning up
+   a whole new module shape (`hooks/`, `services/`, `store/`, barrel) for one
+   screen with no query layer felt disproportionate to what T046 actually
+   asked for. `TenantsView` (222 lines) was split into a container +
+   `TenantCreateForm`/`TenantsTable`/`TenantRow` (+ `TenantUsersPanel`/
+   `CopySlugButton`, each their own file) to clear the 200-line/file limit.
+   The `AdminRole` type export that the `admin` barrel carried *only* for
+   `main.tsx`'s benefit (4g finding #2) is gone now — `TenantsView` imports
+   `AdminRoleRef`/`TenantUser` (new type, `modules/admin/types.ts`) from
+   inside the module, no cross-module export needed for it anymore.
+2. **The real trap wasn't `TenantsView`, it was `AppOutletContext`/`navPath`**:
+   both were still imported from `../main` by `modules/documents`' and
+   `modules/upload`'s route files (`InboxRoute`/`DashboardRoute`/
+   `ValidationRoute`/`UploadRoute`). The "obvious" move — relocate both into
+   `src/app/` alongside `AppLayout` — would have made those domain-module
+   route files import from `app/*`, which `contracts/module-boundaries.md`
+   explicitly forbids ("app → modules, never the inverse") and which T047
+   (Phase 5, module-boundary lint) would enforce as an error on its very
+   first run. Fixed by moving `AppOutletContext` into `src/types.ts` (next to
+   `Document`/`Tenant` — already a `shared/*`-equivalent file every module
+   imports from directly) and `navPath` into `shared/utils/navPath.ts`
+   (`app/navigation.ts` re-exports it so nothing inside `app/` had to change
+   its own imports). **If T047 ever reports a boundary violation pointing at
+   `app/AppLayout` or `app/navigation` from inside a `modules/*` route file,
+   this is the pattern that regressed** — check `types.ts`/`shared/utils`
+   still own these before assuming something new broke.
+3. **`AppLayout`'s original ~180-line JSX + the `AppOutletContext` interface
+   would have blown the 200-line/file limit as a single file** once moved out
+   of `main.tsx` (where the limit was already the one documented "expected"
+   error, exempt by virtue of the whole file being scheduled for deletion).
+   Split into `navigation.ts` (pure data: `NAV_ITEMS`/`activeViewForPath`/
+   `viewTitle`), `NavButton.tsx`, `AppSidebar.tsx`, `MobileNav.tsx`,
+   `AppHeader.tsx`, and a much smaller `AppLayout.tsx` container (~140
+   lines). The "Atualizar" button's `refreshData as unknown as
+   MouseEventHandler` cast (a pre-existing quirk — clicking it always calls
+   `refreshData` with the click event as a truthy `silent` arg, so it never
+   shows the loading banner) was preserved verbatim in `AppHeader.tsx` with a
+   comment explaining why — don't "fix" this without checking whether the
+   silent-refresh behavior on manual click is actually relied upon anywhere.
+4. **First sub-phase where a real browser check was possible**: Playwright
+   was already installed in `node_modules` (unlike 4c/4d/etc. where it had to
+   be installed ad-hoc and wasn't always available) — used to drive
+   `npm run dev` headlessly with `page.route()` mocking `/api/auth/me`,
+   `/api/admin/tenants/`, `/api/admin/tenants/acme/users/`, `/api/ocr/roles`,
+   plus a forged JWT in `localStorage` to bypass real login. Confirmed the
+   authenticated shell, sidebar nav to `/tenants`, the tenants table, the
+   per-tenant users panel (row expand), and a **real page reload on
+   `/tenants`** all work with zero console errors — the one console error
+   that did show up (`pattern="[a-z0-9-]+"` invalid-regex warning on the
+   tenant-slug inputs) was confirmed pre-existing via `git show
+   HEAD:.../main.tsx` before this task touched anything, so left alone as
+   out-of-scope for a move-only task. Worth fixing in a future pass (probably
+   dropping the `pattern` attribute or switching to `\-` escaping) but not
+   folded into T046.
+5. **`errorMessages.ts` (T045) was already fully formalized since T019** — a
+   grep across the repo for `err as {` and `response?.status` outside
+   `shared/utils` found exactly one remaining offender: the `TenantsView`/
+   `TenantUsersPanel` code this same task was about to move. So T045's actual
+   work was verification + a small fix folded into T046's migration, not a
+   standalone refactor — don't expect a separate diff for T045 if you go
+   looking for one in the commit history.
 
 ## New finding from 4c: router singleton + jsdom test bleed
 

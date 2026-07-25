@@ -1,6 +1,6 @@
 import { useOutletContext } from 'react-router'
 import { PermissionGuard, AcessoNaoAutorizado } from '../../auth'
-import type { AppOutletContext } from '../../../main'
+import type { AppOutletContext } from '../../../types'
 import { Dashboard } from '../components/Dashboard'
 
 export function DashboardRoute() {

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-
-from api.schemas import ExtractRequest, ExtractResponse
 from application.extraction_event_worker import start_worker_thread_from_env
 from domain.extractor import extract_fields
 from domain.llm_extractor import extract_with_llm
+from fastapi import FastAPI
+
+from api.schemas import ExtractRequest, ExtractResponse
 
 
 @asynccontextmanager
@@ -49,7 +49,9 @@ async def extract_endpoint(request: ExtractRequest) -> ExtractResponse:
             tenant_id=str(request.metadata.get("tenant_id", "unknown")),
         )
     else:
-        extracted = extract_fields(request.raw_text, request.layout, request.document_type)
+        extracted = extract_fields(
+            request.raw_text, request.layout, request.document_type
+        )
 
     return ExtractResponse(
         schema_id=extracted.schema_id,

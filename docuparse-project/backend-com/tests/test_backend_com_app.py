@@ -3,26 +3,33 @@ from __future__ import annotations
 import base64
 from email.message import EmailMessage
 
-from fastapi.testclient import TestClient
-
-from backend_com.api.app import app
+from api.app import app
 from docuparse_events import LocalJsonlEventBus
 from docuparse_storage import LocalStorage
 from events import validate_event
+from fastapi.testclient import TestClient
 
 
 def test_health_and_ready() -> None:
     client = TestClient(app)
 
-    assert client.get("/health").json() == {"status": "healthy", "service": "docuparse-backend-com"}
-    assert client.get("/ready").json() == {"status": "ready", "service": "docuparse-backend-com"}
+    assert client.get("/health").json() == {
+        "status": "healthy",
+        "service": "docuparse-backend-com",
+    }
+    assert client.get("/ready").json() == {
+        "status": "ready",
+        "service": "docuparse-backend-com",
+    }
 
 
-def test_manual_upload_stores_document_and_publishes_document_received(monkeypatch, tmp_path) -> None:
+def test_manual_upload_stores_document_and_publishes_document_received(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setenv("DOCUPARSE_LOCAL_STORAGE_DIR", str(tmp_path / "objects"))
     monkeypatch.setenv("DOCUPARSE_LOCAL_EVENT_DIR", str(tmp_path / "events"))
-    from backend_com import config
-    from backend_com.services import document_ingest
+    import config
+    from services import document_ingest
 
     config.settings.local_storage_dir = tmp_path / "objects"
     config.settings.local_event_dir = tmp_path / "events"
@@ -46,7 +53,9 @@ def test_manual_upload_stores_document_and_publishes_document_received(monkeypat
     body = response.json()
     assert body["event_type"] == "document.received"
     assert body["core_sync_status"] == "disabled"
-    assert LocalStorage(tmp_path / "objects").get_bytes(body["file_uri"]) == b"%PDF fake"
+    assert (
+        LocalStorage(tmp_path / "objects").get_bytes(body["file_uri"]) == b"%PDF fake"
+    )
 
     events = LocalJsonlEventBus(tmp_path / "events").consume("document.received")
     assert len(events) == 1
@@ -67,10 +76,12 @@ def test_manual_upload_rejects_unsupported_mime() -> None:
     assert "unsupported content_type" in response.json()["detail"]
 
 
-def test_manual_upload_requires_internal_token_when_configured(monkeypatch, tmp_path) -> None:
+def test_manual_upload_requires_internal_token_when_configured(
+    monkeypatch, tmp_path
+) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.api import app as app_module
+    import config
+    from api import app as app_module
 
     config.settings.internal_service_token = "secret"
     app_module.settings.internal_service_token = "secret"
@@ -92,16 +103,19 @@ def test_manual_upload_requires_internal_token_when_configured(monkeypatch, tmp_
     assert accepted.status_code == 200
 
 
-def test_manual_upload_accepts_user_jwt_and_rejects_invalid(monkeypatch, tmp_path) -> None:
+def test_manual_upload_accepts_user_jwt_and_rejects_invalid(
+    monkeypatch, tmp_path
+) -> None:
     # Dual-auth: com o token interno configurado, o backend-com aceita tanto o
     # JWT do usuario (verificado pela SECRET_KEY compartilhada) quanto o token
     # interno de servico; e rejeita JWT expirado / assinado com outra chave.
-    import jwt as pyjwt
     from datetime import datetime, timedelta, timezone
 
+    import jwt as pyjwt
+
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.api import app as app_module
+    import config
+    from api import app as app_module
 
     SECRET = "shared-secret-key"
     for s in (config.settings, app_module.settings):
@@ -136,20 +150,26 @@ def test_manual_upload_accepts_user_jwt_and_rejects_invalid(monkeypatch, tmp_pat
     for s in (config.settings, app_module.settings):
         s.internal_service_token = ""
 
-    assert valid_jwt.status_code == 200   # JWT do usuario aceito
-    assert service.status_code == 200     # token interno ainda aceito (servico)
-    assert expired.status_code == 401     # JWT expirado rejeitado
-    assert wrong_key.status_code == 401   # JWT de outra SECRET_KEY rejeitado
-    assert no_auth.status_code == 401     # sem credencial rejeitado
+    assert valid_jwt.status_code == 200  # JWT do usuario aceito
+    assert service.status_code == 200  # token interno ainda aceito (servico)
+    assert expired.status_code == 401  # JWT expirado rejeitado
+    assert wrong_key.status_code == 401  # JWT de outra SECRET_KEY rejeitado
+    assert no_auth.status_code == 401  # sem credencial rejeitado
 
 
-def test_manual_upload_reports_failed_core_sync_without_failing_upload(monkeypatch, tmp_path) -> None:
+def test_manual_upload_reports_failed_core_sync_without_failing_upload(
+    monkeypatch, tmp_path
+) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.services import document_ingest
+    import config
+    from services import document_ingest
 
-    config.settings.backend_core_document_received_url = "http://127.0.0.1:1/api/ocr/events/document-received"
-    document_ingest.settings.backend_core_document_received_url = "http://127.0.0.1:1/api/ocr/events/document-received"
+    config.settings.backend_core_document_received_url = (
+        "http://127.0.0.1:1/api/ocr/events/document-received"
+    )
+    document_ingest.settings.backend_core_document_received_url = (
+        "http://127.0.0.1:1/api/ocr/events/document-received"
+    )
     client = TestClient(app)
 
     response = client.post(
@@ -163,7 +183,9 @@ def test_manual_upload_reports_failed_core_sync_without_failing_upload(monkeypat
     assert response.json()["core_sync_status"] == "failed"
 
 
-def test_email_webhook_with_zero_attachments_generates_no_events(monkeypatch, tmp_path) -> None:
+def test_email_webhook_with_zero_attachments_generates_no_events(
+    monkeypatch, tmp_path
+) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
     client = TestClient(app)
 
@@ -177,7 +199,9 @@ def test_email_webhook_with_zero_attachments_generates_no_events(monkeypatch, tm
     assert LocalJsonlEventBus(tmp_path / "events").consume("document.received") == []
 
 
-def test_email_webhook_with_multiple_attachments_generates_one_event_per_attachment(monkeypatch, tmp_path) -> None:
+def test_email_webhook_with_multiple_attachments_generates_one_event_per_attachment(
+    monkeypatch, tmp_path
+) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
     client = TestClient(app)
 
@@ -202,7 +226,9 @@ def test_email_webhook_with_multiple_attachments_generates_one_event_per_attachm
     assert len(events) == 2
     assert {event["data"]["file"]["filename"] for event in events} == {"a.pdf", "b.png"}
     assert all(event["data"]["channel"] == "email" for event in events)
-    assert all(validate_event(event).event_type == "document.received" for event in events)
+    assert all(
+        validate_event(event).event_type == "document.received" for event in events
+    )
 
 
 def test_email_messages_rejects_invalid_attachment(monkeypatch, tmp_path) -> None:
@@ -220,8 +246,8 @@ def test_email_messages_rejects_invalid_attachment(monkeypatch, tmp_path) -> Non
 
 def test_email_webhook_signature_when_configured(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.api import app as app_module
+    import config
+    from api import app as app_module
 
     config.settings.email_webhook_token = "secret"
     app_module.settings.email_webhook_token = "secret"
@@ -245,7 +271,10 @@ def test_email_webhook_signature_when_configured(monkeypatch, tmp_path) -> None:
 
 def test_imap_poll_ingests_accepted_attachments(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com.services.imap_polling import email_settings_from_payload, poll_imap_once
+    from services.imap_polling import (
+        email_settings_from_payload,
+        poll_imap_once,
+    )
 
     result = poll_imap_once(
         email_settings=email_settings_from_payload(
@@ -262,15 +291,17 @@ def test_imap_poll_ingests_accepted_attachments(monkeypatch, tmp_path) -> None:
             }
         ),
         password="app-password",
-        client_factory=lambda host, port: FakeImapClient([
-            _email_with_attachment(
-                sender="sender@example.test",
-                subject="Documentos",
-                filename="invoice.pdf",
-                content=b"%PDF imap",
-                content_type="application/pdf",
-            )
-        ]),
+        client_factory=lambda host, port: FakeImapClient(
+            [
+                _email_with_attachment(
+                    sender="sender@example.test",
+                    subject="Documentos",
+                    filename="invoice.pdf",
+                    content=b"%PDF imap",
+                    content_type="application/pdf",
+                )
+            ]
+        ),
     )
 
     assert result["status"] == "ok"
@@ -285,7 +316,10 @@ def test_imap_poll_ingests_accepted_attachments(monkeypatch, tmp_path) -> None:
 
 def test_imap_poll_skips_blocked_sender_and_invalid_mime(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com.services.imap_polling import email_settings_from_payload, poll_imap_once
+    from services.imap_polling import (
+        email_settings_from_payload,
+        poll_imap_once,
+    )
 
     result = poll_imap_once(
         email_settings=email_settings_from_payload(
@@ -302,22 +336,24 @@ def test_imap_poll_skips_blocked_sender_and_invalid_mime(monkeypatch, tmp_path) 
             }
         ),
         password="app-password",
-        client_factory=lambda host, port: FakeImapClient([
-            _email_with_attachment(
-                sender="blocked@example.test",
-                subject="blocked",
-                filename="invoice.pdf",
-                content=b"%PDF blocked",
-                content_type="application/pdf",
-            ),
-            _email_with_attachment(
-                sender="sender@example.test",
-                subject="bad mime",
-                filename="notes.txt",
-                content=b"hello",
-                content_type="text/plain",
-            ),
-        ]),
+        client_factory=lambda host, port: FakeImapClient(
+            [
+                _email_with_attachment(
+                    sender="blocked@example.test",
+                    subject="blocked",
+                    filename="invoice.pdf",
+                    content=b"%PDF blocked",
+                    content_type="application/pdf",
+                ),
+                _email_with_attachment(
+                    sender="sender@example.test",
+                    subject="bad mime",
+                    filename="notes.txt",
+                    content=b"hello",
+                    content_type="text/plain",
+                ),
+            ]
+        ),
     )
 
     assert result["status"] == "ok"
@@ -328,7 +364,10 @@ def test_imap_poll_skips_blocked_sender_and_invalid_mime(monkeypatch, tmp_path) 
 
 
 def test_imap_poll_requires_password() -> None:
-    from backend_com.services.imap_polling import email_settings_from_payload, poll_imap_once
+    from services.imap_polling import (
+        email_settings_from_payload,
+        poll_imap_once,
+    )
 
     try:
         poll_imap_once(
@@ -351,7 +390,9 @@ def test_imap_poll_requires_password() -> None:
         raise AssertionError("expected ValueError")
 
 
-def test_whatsapp_webhook_with_zero_media_generates_no_events(monkeypatch, tmp_path) -> None:
+def test_whatsapp_webhook_with_zero_media_generates_no_events(
+    monkeypatch, tmp_path
+) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
     client = TestClient(app)
 
@@ -368,7 +409,9 @@ def test_whatsapp_webhook_with_zero_media_generates_no_events(monkeypatch, tmp_p
     assert response.json() == {"accepted_count": 0, "documents": []}
 
 
-def test_whatsapp_webhook_with_multiple_inline_media_generates_events(monkeypatch, tmp_path) -> None:
+def test_whatsapp_webhook_with_multiple_inline_media_generates_events(
+    monkeypatch, tmp_path
+) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
     client = TestClient(app)
 
@@ -393,7 +436,10 @@ def test_whatsapp_webhook_with_multiple_inline_media_generates_events(monkeypatc
     events = LocalJsonlEventBus(tmp_path / "events").consume("document.received")
     assert len(events) == 2
     assert all(event["data"]["channel"] == "whatsapp" for event in events)
-    assert {event["data"]["file"]["filename"] for event in events} == {"doc.pdf", "foto.jpg"}
+    assert {event["data"]["file"]["filename"] for event in events} == {
+        "doc.pdf",
+        "foto.jpg",
+    }
 
 
 def test_whatsapp_webhook_rejects_invalid_mime(monkeypatch, tmp_path) -> None:
@@ -418,8 +464,8 @@ def test_whatsapp_webhook_rejects_invalid_mime(monkeypatch, tmp_path) -> None:
 
 def test_whatsapp_webhook_signature_when_configured(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
-    from backend_com import config
-    from backend_com.api import app as app_module
+    import config
+    from api import app as app_module
 
     config.settings.whatsapp_webhook_token = "secret"
     app_module.settings.whatsapp_webhook_token = "secret"
@@ -444,8 +490,8 @@ def test_whatsapp_webhook_signature_when_configured(monkeypatch, tmp_path) -> No
 def _point_backend_com_to_tmp(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("DOCUPARSE_LOCAL_STORAGE_DIR", str(tmp_path / "objects"))
     monkeypatch.setenv("DOCUPARSE_LOCAL_EVENT_DIR", str(tmp_path / "events"))
-    from backend_com import config
-    from backend_com.services import document_ingest
+    import config
+    from services import document_ingest
 
     config.settings.local_storage_dir = tmp_path / "objects"
     config.settings.local_event_dir = tmp_path / "events"
@@ -460,7 +506,9 @@ def _point_backend_com_to_tmp(monkeypatch, tmp_path) -> None:
     document_ingest.settings.backend_core_document_received_url = ""
 
 
-def _email_with_attachment(*, sender: str, subject: str, filename: str, content: bytes, content_type: str) -> bytes:
+def _email_with_attachment(
+    *, sender: str, subject: str, filename: str, content: bytes, content_type: str
+) -> bytes:
     message = EmailMessage()
     message["From"] = sender
     message["To"] = "docs@example.test"
@@ -468,7 +516,9 @@ def _email_with_attachment(*, sender: str, subject: str, filename: str, content:
     message["Message-ID"] = f"<{filename}@example.test>"
     message.set_content("Segue anexo.")
     maintype, subtype = content_type.split("/", 1)
-    message.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
+    message.add_attachment(
+        content, maintype=maintype, subtype=subtype, filename=filename
+    )
     return message.as_bytes()
 
 
@@ -484,7 +534,9 @@ class FakeImapClient:
         return "OK", [str(len(self.messages)).encode("ascii")]
 
     def search(self, charset, criterion: str):
-        ids = b" ".join(str(index).encode("ascii") for index in range(1, len(self.messages) + 1))
+        ids = b" ".join(
+            str(index).encode("ascii") for index in range(1, len(self.messages) + 1)
+        )
         return "OK", [ids]
 
     def fetch(self, message_id: bytes, query: str):

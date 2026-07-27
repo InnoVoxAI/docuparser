@@ -4,30 +4,29 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('documents', '0001_initial'),
+        ("documents", "0001_initial"),
     ]
 
     operations = [
         migrations.RenameIndex(
-            model_name='document',
-            new_name='documents_d_tenant__1461e3_idx',
-            old_name='documents_d_tenant__718ecf_idx',
+            model_name="document",
+            new_name="documents_d_tenant__1461e3_idx",
+            old_name="documents_d_tenant__718ecf_idx",
         ),
         migrations.RenameIndex(
-            model_name='document',
-            new_name='documents_d_tenant__35a2b9_idx',
-            old_name='documents_d_tenant__5cdd99_idx',
+            model_name="document",
+            new_name="documents_d_tenant__35a2b9_idx",
+            old_name="documents_d_tenant__5cdd99_idx",
         ),
         migrations.RenameIndex(
-            model_name='documentevent',
-            new_name='documents_d_tenant__3a4754_idx',
-            old_name='documents_d_tenant__2b6fe7_idx',
+            model_name="documentevent",
+            new_name="documents_d_tenant__3a4754_idx",
+            old_name="documents_d_tenant__2b6fe7_idx",
         ),
         migrations.RenameIndex(
-            model_name='documentevent',
-            new_name='documents_d_documen_76e2b7_idx',
-            old_name='documents_d_documen_10c14b_idx',
+            model_name="documentevent",
+            new_name="documents_d_documen_76e2b7_idx",
+            old_name="documents_d_documen_10c14b_idx",
         ),
     ]

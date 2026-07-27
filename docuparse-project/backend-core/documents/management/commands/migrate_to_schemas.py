@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 One-shot command to migrate existing Document/Settings rows into the
 correct PostgreSQL tenant schema for each tenant.
@@ -20,6 +18,8 @@ public-schema rows into *every* active tenant, which is almost never what
 you want once more than one real tenant exists — pass --tenant-slug to scope
 it to the single legacy/default tenant.
 """
+
+from __future__ import annotations
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
@@ -81,29 +81,43 @@ class Command(BaseCommand):
         tenants = list(tenants_qs)
 
         if not tenants:
-            self.stdout.write(self.style.WARNING("No matching active tenant(s) found. Nothing to migrate."))
+            self.stdout.write(
+                self.style.WARNING(
+                    "No matching active tenant(s) found. Nothing to migrate."
+                )
+            )
             return
 
         if len(tenants) > 1:
-            self.stdout.write(self.style.WARNING(
-                f"Migrating {len(tenants)} tenants — each will receive a full copy of the "
-                "legacy public-schema rows. Pass --tenant-slug to scope this to a single "
-                "tenant if that isn't what you want."
-            ))
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Migrating {len(tenants)} tenants — each will receive a full copy of the "
+                    "legacy public-schema rows. Pass --tenant-slug to scope this to a single "
+                    "tenant if that isn't what you want."
+                )
+            )
 
         self.stdout.write(f"Found {len(tenants)} matching tenant(s).")
 
         for tenant in tenants:
-            self.stdout.write(f"\n→ Tenant: {tenant.slug} (schema: {tenant.schema_name})")
+            self.stdout.write(
+                f"\n→ Tenant: {tenant.slug} (schema: {tenant.schema_name})"
+            )
             if dry_run:
                 for table, _ in _COPY_TABLES:
                     count = self._count("public", table)
-                    self.stdout.write(self.style.WARNING(f"  [DRY RUN] would copy {count} row(s) from public.{table}"))
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"  [DRY RUN] would copy {count} row(s) from public.{table}"
+                        )
+                    )
                 continue
 
             from django.core.management import call_command
 
-            call_command("migrate_schemas", "--tenant", schema=tenant.schema_name, verbosity=0)
+            call_command(
+                "migrate_schemas", "--tenant", schema=tenant.schema_name, verbosity=0
+            )
 
             with transaction.atomic():
                 for table, order_by in _COPY_TABLES:
@@ -123,12 +137,18 @@ class Command(BaseCommand):
                     after = self._count(tenant.schema_name, table)
                     self.stdout.write(f"  {table}: {before} -> {after} row(s)")
 
-            self.stdout.write(self.style.SUCCESS(f"  ✓ Schema migrated: {tenant.schema_name}"))
+            self.stdout.write(
+                self.style.SUCCESS(f"  ✓ Schema migrated: {tenant.schema_name}")
+            )
 
         if dry_run:
-            self.stdout.write(self.style.WARNING("\n[DRY RUN] No changes were written."))
+            self.stdout.write(
+                self.style.WARNING("\n[DRY RUN] No changes were written.")
+            )
         else:
-            self.stdout.write(self.style.SUCCESS("\nAll tenant schemas migrated successfully."))
+            self.stdout.write(
+                self.style.SUCCESS("\nAll tenant schemas migrated successfully.")
+            )
 
     @staticmethod
     def _count(schema: str, table: str) -> int:

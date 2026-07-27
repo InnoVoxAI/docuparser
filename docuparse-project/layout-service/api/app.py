@@ -3,13 +3,12 @@ from __future__ import annotations
 import json
 from contextlib import asynccontextmanager
 
+from application.layout_event_worker import start_worker_thread_from_env
+from docuparse_storage import get_storage
+from domain.classifier import classify_layout
 from fastapi import FastAPI
 
-from docuparse_storage import get_storage
-
 from api.schemas import ClassifyLayoutRequest, ClassifyLayoutResponse
-from application.layout_event_worker import start_worker_thread_from_env
-from domain.classifier import classify_layout
 
 
 def _resolve_raw_text(request: ClassifyLayoutRequest) -> str:
@@ -56,7 +55,9 @@ async def readiness_check():
 
 
 @app.post("/api/v1/classify-layout", response_model=ClassifyLayoutResponse)
-async def classify_layout_endpoint(request: ClassifyLayoutRequest) -> ClassifyLayoutResponse:
+async def classify_layout_endpoint(
+    request: ClassifyLayoutRequest,
+) -> ClassifyLayoutResponse:
     classification = classify_layout(_resolve_raw_text(request), request.document_type)
     return ClassifyLayoutResponse(
         layout=classification.layout,

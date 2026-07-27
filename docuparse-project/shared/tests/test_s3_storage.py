@@ -6,9 +6,8 @@ import hashlib
 
 import boto3
 import pytest
-from moto import mock_aws
-
 from docuparse_storage import S3Storage, StoredObject
+from moto import mock_aws
 
 BUCKET = "docuparse-test"
 KEY = "documents/tenant-x/doc-1/original"
@@ -18,7 +17,9 @@ KEY = "documents/tenant-x/doc-1/original"
 def s3_backend():
     with mock_aws():
         boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
-        yield S3Storage(bucket=BUCKET, region="us-east-1", access_key="test", secret_key="test")
+        yield S3Storage(
+            bucket=BUCKET, region="us-east-1", access_key="test", secret_key="test"
+        )
 
 
 def test_put_returns_stored_object_with_s3_uri_and_hash(s3_backend):

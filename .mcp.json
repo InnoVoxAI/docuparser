@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "basic-memory": {
+      "type": "stdio",
+      "command": "basic-memory",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    },
+    "task-master": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "task-master-ai"
+      ],
+      "env": {
+        "MODEL": "claude-code"
+      }
+    }
+  }
+}

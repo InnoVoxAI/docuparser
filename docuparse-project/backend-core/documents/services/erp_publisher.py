@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from django.conf import settings
-
 from docuparse_events import event_bus_from_env
 from docuparse_observability import log_event
 from events import ERPIntegrationRequestedEvent
@@ -16,7 +15,9 @@ from documents.services.approved_exporter import export_approved_document_json
 logger = logging.getLogger(__name__)
 
 
-def publish_erp_integration_requested(document: Document, connector: str = "mock") -> dict:
+def publish_erp_integration_requested(
+    document: Document, connector: str = "mock"
+) -> dict:
     idempotency_key = f"{document.tenant.slug}:{document.id}:erp:v1"
     attempt, _ = ERPIntegrationAttempt.objects.get_or_create(
         idempotency_key=idempotency_key,
@@ -61,7 +62,9 @@ def publish_erp_integration_requested(document: Document, connector: str = "mock
         },
     ).model_dump(mode="json")
 
-    event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR).publish("erp.integration.requested", event)
+    event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR).publish(
+        "erp.integration.requested", event
+    )
     document.transition_to(Document.Status.ERP_INTEGRATION_REQUESTED)
     log_event(
         logger,
@@ -93,6 +96,7 @@ def _canonical_payload(document: Document) -> dict:
 
 def _integration_settings(document: Document) -> IntegrationSettings:
     from documents.models import SETTINGS_SINGLETON_ID
+
     settings_obj, _ = IntegrationSettings.objects.get_or_create(
         id=SETTINGS_SINGLETON_ID,
         defaults={

@@ -25,6 +25,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+
 def _load_project_env() -> None:
     env_path = Path(__file__).resolve().parents[2] / ".env"
     if not env_path.exists():
@@ -42,14 +43,14 @@ def _load_project_env() -> None:
 
 _load_project_env()
 
-from api.routes.document import router as document_router
-from application.ocr_event_worker import start_worker_thread_from_env
-from domain.engine_resolver import ENGINE_DEFAULTS
+from application.ocr_event_worker import start_worker_thread_from_env  # noqa: E402
+from domain.engine_resolver import ENGINE_DEFAULTS  # noqa: E402
+
+from api.routes.document import router as document_router  # noqa: E402
 
 # Configurar logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -81,18 +82,17 @@ app = FastAPI(
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_csv_env("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"),
+    allow_origins=_csv_env(
+        "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Registrar routers
-app.include_router(
-    document_router,
-    prefix="/api/v1",
-    tags=["documents"]
-)
+app.include_router(document_router, prefix="/api/v1", tags=["documents"])
+
 
 # Health check endpoint
 @app.get("/health")
@@ -137,8 +137,8 @@ async def root():
             "POST /api/v1/process": "Processar documento OCR",
             "GET /api/v1/engines": "Listar engines disponíveis",
             "GET /health": "Health check",
-            "GET /ready": "Readiness check"
-        }
+            "GET /ready": "Readiness check",
+        },
     }
 
 
@@ -151,18 +151,13 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={
             "error": "Internal server error",
-            "detail": str(exc) if app.debug else "An unexpected error occurred"
-        }
+            "detail": str(exc) if app.debug else "An unexpected error occurred",
+        },
     )
 
 
 # Configurar modo debug se necessário
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "api.app:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+
+    uvicorn.run("api.app:app", host="0.0.0.0", port=8000, reload=True, log_level="info")

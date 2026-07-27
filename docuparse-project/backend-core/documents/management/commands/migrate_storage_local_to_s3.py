@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-
 from docuparse_storage import LocalStorage
 from docuparse_storage.factory import _build_s3_from_env
 from docuparse_storage.migration import migrate_documents
@@ -19,7 +18,9 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser) -> None:
         group = parser.add_mutually_exclusive_group(required=True)
-        group.add_argument("--dry-run", action="store_true", help="apenas relata, não grava")
+        group.add_argument(
+            "--dry-run", action="store_true", help="apenas relata, não grava"
+        )
         group.add_argument("--apply", action="store_true", help="executa a migração")
 
     def handle(self, *args, **options) -> None:
@@ -53,7 +54,9 @@ class Command(BaseCommand):
         if stats.errors:
             for err in stats.errors:
                 self.stdout.write(self.style.ERROR(f"  erro: {err}"))
-            raise CommandError(f"Migração terminou com {len(stats.errors)} erro(s) inesperado(s).")
+            raise CommandError(
+                f"Migração terminou com {len(stats.errors)} erro(s) inesperado(s)."
+            )
 
         if not dry_run:
             self.stdout.write(self.style.SUCCESS("Migração concluída."))

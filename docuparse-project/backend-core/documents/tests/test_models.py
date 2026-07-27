@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, connection
 from django.test import TestCase
 from django.utils import timezone
+from tenants.models import Tenant
 
 from documents.models import (
     Document,
@@ -16,14 +17,15 @@ from documents.models import (
     SchemaConfig,
     ValidationDecision,
 )
-from tenants.models import Tenant
 
 
 class CoreDomainModelTests(TestCase):
     def setUp(self) -> None:
         self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
         connection.set_tenant(self.tenant)
-        self.user = get_user_model().objects.create_user(username="operator", password="test")
+        self.user = get_user_model().objects.create_user(
+            username="operator", password="test"
+        )
         self.document = Document.objects.create(
             channel="manual",
             file_uri="local://documents/tenant-demo/doc/original",
@@ -62,7 +64,9 @@ class CoreDomainModelTests(TestCase):
                 payload=payload,
             )
 
-    def test_extraction_validation_and_erp_attempts_are_related_to_document(self) -> None:
+    def test_extraction_validation_and_erp_attempts_are_related_to_document(
+        self,
+    ) -> None:
         extraction = ExtractionResult.objects.create(
             document=self.document,
             schema_id="boleto",

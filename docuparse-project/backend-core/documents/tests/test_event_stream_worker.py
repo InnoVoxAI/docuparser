@@ -6,12 +6,11 @@ from uuid import uuid4
 
 from django.db import connection
 from django.test import TestCase
-
 from docuparse_events import LocalJsonlEventBus
+from tenants.models import Tenant
 
 from documents.models import Document, DocumentEvent
 from documents.services.event_stream_worker import CoreEventStreamWorker
-from tenants.models import Tenant
 
 
 class CoreEventStreamWorkerTests(TestCase):
@@ -89,7 +88,10 @@ class CoreEventStreamWorkerTests(TestCase):
         self.addCleanup(event_dir.cleanup)
         event_bus = LocalJsonlEventBus(event_dir.name)
         document_id = uuid4()
-        event_bus.publish("ocr.completed", {"event_type": "ocr.completed", "document_id": str(document_id)})
+        event_bus.publish(
+            "ocr.completed",
+            {"event_type": "ocr.completed", "document_id": str(document_id)},
+        )
 
         worker = CoreEventStreamWorker(event_bus=event_bus, start_at_latest=False)
 

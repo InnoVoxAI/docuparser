@@ -4,15 +4,16 @@ import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-
 from api.app import app
-from application.extraction_event_worker import ExtractionWorker, handle_layout_classified_event
+from application.extraction_event_worker import (
+    ExtractionWorker,
+    handle_layout_classified_event,
+)
 from docuparse_events import LocalJsonlEventBus
 from docuparse_storage import LocalStorage
 from domain.extractor import extract_fields
 from events import validate_event
-
+from fastapi.testclient import TestClient
 
 BOLETO_TEXT = (
     "Beneficiario: ACME LTDA Vencimento 10/05/2026 Valor R$ 123,45 "
@@ -23,8 +24,14 @@ BOLETO_TEXT = (
 def test_health_and_ready() -> None:
     client = TestClient(app)
 
-    assert client.get("/health").json() == {"status": "healthy", "service": "docuparse-langextract-service"}
-    assert client.get("/ready").json() == {"status": "ready", "service": "docuparse-langextract-service"}
+    assert client.get("/health").json() == {
+        "status": "healthy",
+        "service": "docuparse-langextract-service",
+    }
+    assert client.get("/ready").json() == {
+        "status": "ready",
+        "service": "docuparse-langextract-service",
+    }
 
 
 def test_extract_endpoint_for_boleto() -> None:
@@ -49,7 +56,10 @@ def test_extract_endpoint_for_boleto() -> None:
 
 def test_versioned_extractors_for_initial_schemas() -> None:
     boleto = extract_fields(BOLETO_TEXT, "boleto_caixa")
-    fatura = extract_fields("Unidade 42 consumo 150 kWh vencimento 11/05/2026 total R$ 222,10", "fatura_energia")
+    fatura = extract_fields(
+        "Unidade 42 consumo 150 kWh vencimento 11/05/2026 total R$ 222,10",
+        "fatura_energia",
+    )
 
     assert boleto.schema_id == "boleto"
     assert boleto.schema_version == "v1"
@@ -124,7 +134,9 @@ def test_extraction_worker_consumes_layout_classified_stream(tmp_path) -> None:
         },
     )
 
-    worker = ExtractionWorker(storage=storage, event_bus=event_bus, start_at_latest=False)
+    worker = ExtractionWorker(
+        storage=storage, event_bus=event_bus, start_at_latest=False
+    )
 
     assert worker.run_once() == 1
     outputs = event_bus.consume("extraction.completed")
@@ -135,9 +147,14 @@ def test_extraction_worker_consumes_layout_classified_stream(tmp_path) -> None:
 def test_extraction_worker_sends_invalid_event_to_dlq(tmp_path) -> None:
     storage = LocalStorage(tmp_path / "objects")
     event_bus = LocalJsonlEventBus(tmp_path / "events")
-    event_bus.publish("layout.classified", {"event_type": "layout.classified", "document_id": str(uuid4())})
+    event_bus.publish(
+        "layout.classified",
+        {"event_type": "layout.classified", "document_id": str(uuid4())},
+    )
 
-    worker = ExtractionWorker(storage=storage, event_bus=event_bus, start_at_latest=False)
+    worker = ExtractionWorker(
+        storage=storage, event_bus=event_bus, start_at_latest=False
+    )
 
     assert worker.run_once() == 1
     dlq = event_bus.consume("layout.classified.dlq")

@@ -7,8 +7,8 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
-
 from tenants.models import Tenant, UserProfile
+
 from users.models import Role
 
 User = get_user_model()
@@ -30,13 +30,20 @@ class JWTTenantClaimTest(TestCase):
             )
         self.role = Role.objects.create(name="admin")
         self.user = User.objects.create_user(
-            username="user@acme.com", email="user@acme.com", password="pw", is_active=True
+            username="user@acme.com",
+            email="user@acme.com",
+            password="pw",
+            is_active=True,
         )
-        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=self.role)
+        UserProfile.objects.create(
+            user=self.user, tenant=self.tenant, role_ref=self.role
+        )
 
     def test_login_access_token_contains_tenant_slug(self) -> None:
         response = self.client.post(
-            "/api/auth/login", {"email": "user@acme.com", "password": "pw"}, format="json"
+            "/api/auth/login",
+            {"email": "user@acme.com", "password": "pw"},
+            format="json",
         )
         assert response.status_code == 200
         payload = _decode_payload(response.json()["access"])
@@ -44,18 +51,25 @@ class JWTTenantClaimTest(TestCase):
 
     def test_login_refresh_token_contains_tenant_slug(self) -> None:
         response = self.client.post(
-            "/api/auth/login", {"email": "user@acme.com", "password": "pw"}, format="json"
+            "/api/auth/login",
+            {"email": "user@acme.com", "password": "pw"},
+            format="json",
         )
         assert response.status_code == 200
         payload = _decode_payload(response.json()["refresh"])
         assert payload.get("tenant") == "acme"
 
     def test_user_without_profile_gets_token_without_tenant_claim(self) -> None:
-        orphan = User.objects.create_user(
-            username="orphan@acme.com", email="orphan@acme.com", password="pw", is_active=True
+        User.objects.create_user(
+            username="orphan@acme.com",
+            email="orphan@acme.com",
+            password="pw",
+            is_active=True,
         )
         response = self.client.post(
-            "/api/auth/login", {"email": "orphan@acme.com", "password": "pw"}, format="json"
+            "/api/auth/login",
+            {"email": "orphan@acme.com", "password": "pw"},
+            format="json",
         )
         assert response.status_code == 200
         payload = _decode_payload(response.json()["access"])

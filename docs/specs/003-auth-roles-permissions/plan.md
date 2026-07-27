@@ -216,7 +216,7 @@ Step 4: RemoveField role (CharField antigo)
 class HasDocuparsePermission(BasePermission):
     """Verifica se o usuário JWT tem a permissão requerida via UserProfile.role_ref."""
     required_permission: str  # definido na subclasse ou via kwargs
-    
+
     def has_permission(self, request, view) -> bool:
         if not request.user or not request.user.is_authenticated:
             return False
@@ -248,7 +248,7 @@ const AuthContext = createContext(null)
 function AuthProvider({ children }) {
     const [user, setUser] = useState(null)      // {id, name, email, role, permissions}
     const [loading, setLoading] = useState(true)
-    
+
     // Interceptors axios para JWT
     // useEffect para verificar token existente no mount
     // login(email, password) → POST /api/auth/login → setUser

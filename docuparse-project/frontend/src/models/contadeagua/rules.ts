@@ -9,17 +9,8 @@ export const CONTA_AGUA_DEFAULT_RULES: SchemaRules = {
         thousand_separator: '.',
         min: 0,
         max: 9999999,
-        context_priority: [
-            'total a pagar',
-            'vencimento',
-            'codigo de barras',
-        ],
-        avoid_contexts: [
-            'minimo',
-            'tarifa minima',
-            'base de calculo',
-            'historico de consumo',
-        ],
+        context_priority: ['total a pagar', 'vencimento', 'codigo de barras'],
+        avoid_contexts: ['minimo', 'tarifa minima', 'base de calculo', 'historico de consumo'],
     },
     tarifa_minima: {
         type: 'decimal',
@@ -153,19 +144,19 @@ export const CONTA_AGUA_DEFAULT_RULES: SchemaRules = {
             'não medido': 'minimo_fixo',
             'min fixad': 'minimo_fixo',
             'minimo fixo': 'minimo_fixo',
-            'estimado': 'estimado',
-            'medido': 'medido',
+            estimado: 'estimado',
+            medido: 'medido',
         },
     },
     categoria: {
         type: 'enum',
         allowed: ['residencial', 'comercial', 'industrial', 'publico'],
         mapping: {
-            'residencial': 'residencial',
-            'comercial': 'comercial',
-            'industrial': 'industrial',
-            'público': 'publico',
-            'publico': 'publico',
+            residencial: 'residencial',
+            comercial: 'comercial',
+            industrial: 'industrial',
+            público: 'publico',
+            publico: 'publico',
         },
     },
     segment_document: {
@@ -173,42 +164,23 @@ export const CONTA_AGUA_DEFAULT_RULES: SchemaRules = {
         sections: [
             {
                 name: 'fatura',
-                anchors: [
-                    'total a pagar',
-                    'vencimento',
-                    'codigo de barras',
-                    'autenticacao mecanica',
-                ],
+                anchors: ['total a pagar', 'vencimento', 'codigo de barras', 'autenticacao mecanica'],
             },
             {
                 name: 'descricao_servicos',
-                anchors: [
-                    'descricao dos servicos e tarifas',
-                    'consumo por faixa',
-                ],
+                anchors: ['descricao dos servicos e tarifas', 'consumo por faixa'],
             },
             {
                 name: 'tributos',
-                anchors: [
-                    'tributos',
-                    'base de calculo',
-                    'percentual',
-                    'valor do imposto',
-                ],
+                anchors: ['tributos', 'base de calculo', 'percentual', 'valor do imposto'],
             },
             {
                 name: 'historico_consumo',
-                anchors: [
-                    'historico de consumo',
-                    'referencia/consumo',
-                ],
+                anchors: ['historico de consumo', 'referencia/consumo'],
             },
             {
                 name: 'dados_cliente',
-                anchors: [
-                    'dados do cliente',
-                    'matricula',
-                ],
+                anchors: ['dados do cliente', 'matricula'],
             },
         ],
     },

@@ -6,10 +6,10 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
-
-from documents.models import Document, ExtractionResult, ValidationDecision
 from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
+
+from documents.models import Document, ExtractionResult, ValidationDecision
 
 
 def _jwt_for(user, tenant) -> str:
@@ -23,13 +23,19 @@ class DocumentsInboxViewApprovedFilterTests(TestCase):
         self.client = APIClient()
         self.tenant = Tenant.objects.create(slug="tenant-inbox", name="Tenant Inbox")
         connection.set_tenant(self.tenant)
-        self.user = get_user_model().objects.create_user(username="inbox_op", password="test")
+        self.user = get_user_model().objects.create_user(
+            username="inbox_op", password="test"
+        )
         # feature 009: o endpoint exige JWT do usuário com permissão "inbox.view".
-        permission = Permission.objects.create(code="inbox.view", description="Inbox view")
+        permission = Permission.objects.create(
+            code="inbox.view", description="Inbox view"
+        )
         role = Role.objects.create(name="Operador")
         role.permissions.add(permission)
         UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
-        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {_jwt_for(self.user, self.tenant)}")
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {_jwt_for(self.user, self.tenant)}"
+        )
 
         self.approved_doc = Document.objects.create(
             status=Document.Status.APPROVED,

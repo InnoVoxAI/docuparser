@@ -1,0 +1,37 @@
+[project]
+name = "atoms"
+version = "0.1.0"
+description = "Backend Core"
+readme = "README.md"
+license = { text = "MIT" }
+authors = []
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.139.2",
+    "pydantic>=2.13.4",
+    "redis>=8.0.1",
+    "uvicorn[standard]>=0.51.0",
+]
+
+
+# ------------------------------
+# 🔁 Versioning and Release Management
+# ------------------------------
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "./__init__.py"
+
+[tool.hatch.build.targets.sdist]
+include = [".", "README.md"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]

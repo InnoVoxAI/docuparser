@@ -37,7 +37,6 @@
 import type { SchemaExample } from '../../types'
 
 export const CONTA_AGUA_DEFAULT_EXAMPLES: SchemaExample[] = [
-
     // — Exemplo 1: identificacao e emissora —
     {
         field: 'tipo_documento',
@@ -156,5 +155,4 @@ export const CONTA_AGUA_DEFAULT_EXAMPLES: SchemaExample[] = [
         expected: 'INTERNET',
         source: 'Emitido por: INTERNET Emitido em: 18/03/2026',
     },
-
 ]

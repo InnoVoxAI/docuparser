@@ -6,9 +6,8 @@ from __future__ import annotations
 
 import boto3
 import pytest
-from moto import mock_aws
-
 from docuparse_storage import LocalStorage, RoutingStorage, S3Storage
+from moto import mock_aws
 
 BUCKET = "docuparse-test"
 K1 = "documents/tenant-x/doc-1/original"
@@ -48,7 +47,9 @@ def test_local_iter_keys_empty_root(tmp_path):
 def s3_backend():
     with mock_aws():
         boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
-        yield S3Storage(bucket=BUCKET, region="us-east-1", access_key="test", secret_key="test")
+        yield S3Storage(
+            bucket=BUCKET, region="us-east-1", access_key="test", secret_key="test"
+        )
 
 
 def test_s3_exists_true_false(s3_backend):
@@ -72,7 +73,9 @@ def test_s3_iter_keys_with_prefix(s3_backend):
 def test_routing_exists_dispatches_by_scheme(tmp_path):
     with mock_aws():
         boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
-        s3 = S3Storage(bucket=BUCKET, region="us-east-1", access_key="test", secret_key="test")
+        s3 = S3Storage(
+            bucket=BUCKET, region="us-east-1", access_key="test", secret_key="test"
+        )
         local = LocalStorage(tmp_path)
         routing = RoutingStorage(write_scheme="local", local=local, s3=s3)
 
@@ -80,7 +83,7 @@ def test_routing_exists_dispatches_by_scheme(tmp_path):
         s3_obj = s3.put_bytes(K2, b"s3-bytes")
 
         assert routing.exists(local_obj.uri) is True  # local://... → local
-        assert routing.exists(s3_obj.uri) is True      # s3://...    → s3
+        assert routing.exists(s3_obj.uri) is True  # s3://...    → s3
         assert routing.exists("local://documents/x/missing") is False
 
 

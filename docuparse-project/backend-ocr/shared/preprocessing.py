@@ -14,9 +14,10 @@
 # Regra: nenhum import de api/, application/, domain/ ou infrastructure/ aqui.
 # =============================================================================
 
+from typing import Any
+
 import cv2
 import numpy as np
-from typing import Any, Dict, List
 
 
 def decode_image(image_bytes: Any) -> np.ndarray:
@@ -71,7 +72,12 @@ def _four_point_transform(image: np.ndarray, points: np.ndarray) -> np.ndarray:
         return image
 
     dst = np.array(
-        [[0, 0], [max_width - 1, 0], [max_width - 1, max_height - 1], [0, max_height - 1]],
+        [
+            [0, 0],
+            [max_width - 1, 0],
+            [max_width - 1, max_height - 1],
+            [0, max_height - 1],
+        ],
         dtype="float32",
     )
 
@@ -222,8 +228,12 @@ def enhance_blue_ink_light(image: np.ndarray) -> np.ndarray:
     h_channel, s_channel, v_channel = cv2.split(hsv)
 
     blue_mask = ((h_channel >= 80) & (h_channel <= 135)).astype(np.uint8)
-    s_channel = np.where(blue_mask > 0, np.clip(s_channel.astype(np.int16) + 35, 0, 255), s_channel).astype(np.uint8)
-    v_channel = np.where(blue_mask > 0, np.clip(v_channel.astype(np.int16) + 10, 0, 255), v_channel).astype(np.uint8)
+    s_channel = np.where(
+        blue_mask > 0, np.clip(s_channel.astype(np.int16) + 35, 0, 255), s_channel
+    ).astype(np.uint8)
+    v_channel = np.where(
+        blue_mask > 0, np.clip(v_channel.astype(np.int16) + 10, 0, 255), v_channel
+    ).astype(np.uint8)
 
     boosted = cv2.merge((h_channel, s_channel, v_channel))
     return cv2.cvtColor(boosted, cv2.COLOR_HSV2BGR)
@@ -242,7 +252,9 @@ def _ensure_bgr(image: np.ndarray) -> np.ndarray:
     return image
 
 
-def _resize_min_side_keep_ratio(image: np.ndarray, min_side: int = 384, max_side: int = 2048) -> np.ndarray:
+def _resize_min_side_keep_ratio(
+    image: np.ndarray, min_side: int = 384, max_side: int = 2048
+) -> np.ndarray:
     h, w = image.shape[:2]
     current_min = min(h, w)
     if current_min <= 0:
@@ -274,7 +286,9 @@ def preprocess_for_trocr_region(region_image: np.ndarray) -> np.ndarray:
     return image
 
 
-def preprocess_for_trocr_engine(image_bytes: Any, classification: str = "") -> tuple[bytes, dict]:
+def preprocess_for_trocr_engine(
+    image_bytes: Any, classification: str = ""
+) -> tuple[bytes, dict]:
     image = decode_image(image_bytes)
     image = preprocess_for_trocr_region(image)
 
@@ -290,15 +304,26 @@ def preprocess_for_trocr_engine(image_bytes: Any, classification: str = "") -> t
     }
 
 
-def _boxes_overlap_or_close(box_a: tuple[int, int, int, int], box_b: tuple[int, int, int, int], margin: int = 12) -> bool:
+def _boxes_overlap_or_close(
+    box_a: tuple[int, int, int, int], box_b: tuple[int, int, int, int], margin: int = 12
+) -> bool:
     ax, ay, aw, ah = box_a
     bx, by, bw, bh = box_b
-    a_left, a_top, a_right, a_bottom = ax - margin, ay - margin, ax + aw + margin, ay + ah + margin
+    a_left, a_top, a_right, a_bottom = (
+        ax - margin,
+        ay - margin,
+        ax + aw + margin,
+        ay + ah + margin,
+    )
     b_left, b_top, b_right, b_bottom = bx, by, bx + bw, by + bh
-    return not (a_right < b_left or b_right < a_left or a_bottom < b_top or b_bottom < a_top)
+    return not (
+        a_right < b_left or b_right < a_left or a_bottom < b_top or b_bottom < a_top
+    )
 
 
-def _merge_two_boxes(box_a: tuple[int, int, int, int], box_b: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+def _merge_two_boxes(
+    box_a: tuple[int, int, int, int], box_b: tuple[int, int, int, int]
+) -> tuple[int, int, int, int]:
     ax, ay, aw, ah = box_a
     bx, by, bw, bh = box_b
     x0 = min(ax, bx)
@@ -308,7 +333,9 @@ def _merge_two_boxes(box_a: tuple[int, int, int, int], box_b: tuple[int, int, in
     return x0, y0, x1 - x0, y1 - y0
 
 
-def _merge_candidate_boxes(boxes: List[tuple[int, int, int, int]]) -> List[tuple[int, int, int, int]]:
+def _merge_candidate_boxes(
+    boxes: list[tuple[int, int, int, int]],
+) -> list[tuple[int, int, int, int]]:
     if not boxes:
         return []
 
@@ -316,7 +343,7 @@ def _merge_candidate_boxes(boxes: List[tuple[int, int, int, int]]) -> List[tuple
     changed = True
     while changed:
         changed = False
-        next_boxes: List[tuple[int, int, int, int]] = []
+        next_boxes: list[tuple[int, int, int, int]] = []
         while merged:
             base = merged.pop(0)
             idx = 0
@@ -349,8 +376,12 @@ def _is_signature_like(region_gray: np.ndarray, binary_inv: np.ndarray) -> bool:
     # Signatures have few, larger irregular strokes — typically 1–4 per 100px of width.
     # This is the key discriminator: a text line "Valor: R$ 150,00" at scan resolution
     # will have ~8+ components/100px; a cursive signature will have ~1–3.
-    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_inv, connectivity=8)
-    valid_components = sum(1 for i in range(1, num_labels) if stats[i, cv2.CC_STAT_AREA] >= 12)
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(
+        binary_inv, connectivity=8
+    )
+    valid_components = sum(
+        1 for i in range(1, num_labels) if stats[i, cv2.CC_STAT_AREA] >= 12
+    )
     components_per_100px = float(valid_components) / max(1.0, w / 100.0)
 
     return (
@@ -383,13 +414,15 @@ def _classify_region(region_image: np.ndarray) -> str:
     edge_variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
     # Heurística inicial para manuscrito: maior irregularidade e densidade de bordas.
-    if (edge_variance >= 90.0 and edge_density >= 0.08) or (ink_density >= 0.22 and edge_variance >= 70.0):
+    if (edge_variance >= 90.0 and edge_density >= 0.08) or (
+        ink_density >= 0.22 and edge_variance >= 70.0
+    ):
         return "handwritten"
 
     return "printed"
 
 
-def segment_handwritten_regions(image: np.ndarray) -> List[Dict[str, Any]]:
+def segment_handwritten_regions(image: np.ndarray) -> list[dict[str, Any]]:
     # PASSO CRÍTICO: segmenta regiões para aplicar OCR especializado por tipo.
     source = _ensure_bgr(image)
     gray = cv2.cvtColor(source, cv2.COLOR_BGR2GRAY)
@@ -406,13 +439,15 @@ def segment_handwritten_regions(image: np.ndarray) -> List[Dict[str, Any]]:
     connected = cv2.morphologyEx(binary_inv, cv2.MORPH_CLOSE, kernel, iterations=1)
     connected = cv2.dilate(connected, np.ones((3, 3), dtype=np.uint8), iterations=1)
 
-    contours, _ = cv2.findContours(connected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(
+        connected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
 
     image_area = float(source.shape[0] * source.shape[1])
     min_area = max(220.0, image_area * 0.0009)
     max_area = image_area * 0.95
 
-    raw_boxes: List[tuple[int, int, int, int]] = []
+    raw_boxes: list[tuple[int, int, int, int]] = []
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
         area = float(w * h)
@@ -425,7 +460,7 @@ def segment_handwritten_regions(image: np.ndarray) -> List[Dict[str, Any]]:
     merged_boxes = _merge_candidate_boxes(raw_boxes)
     merged_boxes = sorted(merged_boxes, key=lambda box: (box[1], box[0]))[:80]
 
-    regions: List[Dict[str, Any]] = []
+    regions: list[dict[str, Any]] = []
     for idx, (x, y, w, h) in enumerate(merged_boxes):
         x0 = max(0, x - 4)
         y0 = max(0, y - 4)
@@ -469,7 +504,9 @@ def segment_handwritten_regions(image: np.ndarray) -> List[Dict[str, Any]]:
     ]
 
 
-def segment_text_lines(region_image: np.ndarray, min_line_height: int = 8, gap_threshold: int = 2) -> List[np.ndarray]:
+def segment_text_lines(
+    region_image: np.ndarray, min_line_height: int = 8, gap_threshold: int = 2
+) -> list[np.ndarray]:
     """Split a region into individual line crops via horizontal projection for line-level OCR."""
     image = _ensure_bgr(region_image)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -481,7 +518,7 @@ def segment_text_lines(region_image: np.ndarray, min_line_height: int = 8, gap_t
     smoothed = np.convolve(h_proj, np.ones(kernel_size) / kernel_size, mode="same")
     in_text = smoothed > gap_threshold
 
-    line_slices: List[tuple] = []
+    line_slices: list[tuple] = []
     start = None
     for row_idx in range(len(in_text)):
         if in_text[row_idx] and start is None:
@@ -496,7 +533,7 @@ def segment_text_lines(region_image: np.ndarray, min_line_height: int = 8, gap_t
     if not line_slices:
         return [image]
 
-    lines: List[np.ndarray] = []
+    lines: list[np.ndarray] = []
     for y0, y1 in line_slices:
         margin = 3
         y0_m = max(0, y0 - margin)
@@ -508,7 +545,9 @@ def segment_text_lines(region_image: np.ndarray, min_line_height: int = 8, gap_t
     return lines if lines else [image]
 
 
-def upscale_if_low_resolution(image: np.ndarray, min_side: int = 1200, max_scale: float = 2.0) -> np.ndarray:
+def upscale_if_low_resolution(
+    image: np.ndarray, min_side: int = 1200, max_scale: float = 2.0
+) -> np.ndarray:
     h, w = image.shape[:2]
     current_min = min(h, w)
 
@@ -529,16 +568,12 @@ def upscale_if_low_resolution(image: np.ndarray, min_side: int = 1200, max_scale
 # PIPELINES ESPECÍFICOS
 # -------------------------------
 
+
 def preprocess_scanned(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     denoised = cv2.fastNlMeansDenoising(gray, None, 20, 7, 21)
     thresh = cv2.adaptiveThreshold(
-        denoised,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        31,
-        2
+        denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 2
     )
     return thresh
 
@@ -547,12 +582,7 @@ def preprocess_photo(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     denoised = cv2.fastNlMeansDenoising(gray, None, 30, 7, 21)
     thresh = cv2.adaptiveThreshold(
-        denoised,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        31,
-        2
+        denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 2
     )
 
     coords = np.column_stack(np.where(thresh > 0))
@@ -581,7 +611,7 @@ def preprocess_handwritten(image: np.ndarray) -> np.ndarray:
         cv2.ADAPTIVE_THRESH_MEAN_C,
         cv2.THRESH_BINARY_INV,  # invertido funciona melhor para manuscrito
         25,
-        10
+        10,
     )
     return thresh
 
@@ -592,7 +622,9 @@ def preprocess_digital_pdf(image: np.ndarray) -> np.ndarray:
     return gray
 
 
-def preprocess_for_paddle_engine(image_bytes: Any, classification: str = "") -> tuple[bytes, dict]:
+def preprocess_for_paddle_engine(
+    image_bytes: Any, classification: str = ""
+) -> tuple[bytes, dict]:
     image = decode_image(image_bytes)
 
     if classification in {"handwritten_complex", "handwritten"}:
@@ -642,7 +674,9 @@ def preprocess_for_paddle_engine(image_bytes: Any, classification: str = "") -> 
     }
 
 
-def preprocess_for_easyocr_engine(image_bytes: Any, classification: str = "") -> tuple[bytes, dict]:
+def preprocess_for_easyocr_engine(
+    image_bytes: Any, classification: str = ""
+) -> tuple[bytes, dict]:
     image = decode_image(image_bytes)
 
     if classification in {"handwritten_complex", "handwritten"}:
@@ -688,7 +722,9 @@ def preprocess_for_easyocr_engine(image_bytes: Any, classification: str = "") ->
     }
 
 
-def preprocess_for_deepseek_engine(image_bytes: Any, classification: str = "") -> tuple[bytes, dict]:
+def preprocess_for_deepseek_engine(
+    image_bytes: Any, classification: str = ""
+) -> tuple[bytes, dict]:
     image = decode_image(image_bytes)
     image = warp_perspective_if_photo(image)
     image = deskew_simple(image)
@@ -711,7 +747,9 @@ def preprocess_for_deepseek_engine(image_bytes: Any, classification: str = "") -
     }
 
 
-def preprocess_for_docling_engine(image_bytes: Any, classification: str = "") -> tuple[bytes, dict]:
+def preprocess_for_docling_engine(
+    image_bytes: Any, classification: str = ""
+) -> tuple[bytes, dict]:
     image = decode_image(image_bytes)
     image = deskew_simple(image)
     image = crop_margins_light(image)
@@ -726,7 +764,9 @@ def preprocess_for_docling_engine(image_bytes: Any, classification: str = "") ->
     }
 
 
-def preprocess_for_llamaparse_engine(image_bytes: Any, classification: str = "") -> tuple[bytes, dict]:
+def preprocess_for_llamaparse_engine(
+    image_bytes: Any, classification: str = ""
+) -> tuple[bytes, dict]:
     image = decode_image(image_bytes)
     image = deskew_simple(image)
     image = crop_margins_light(image)

@@ -9,16 +9,8 @@ export const BOLETO_DEFAULT_RULES: SchemaRules = {
         thousand_separator: '.',
         min: 0,
         max: 99999999,
-        context_priority: [
-            'recibo do pagador',
-            'linha digitavel',
-            'pagavel preferencialmente',
-        ],
-        avoid_contexts: [
-            'demonstrativo de receitas e despesas',
-            'total de receitas',
-            'saldo',
-        ],
+        context_priority: ['recibo do pagador', 'linha digitavel', 'pagavel preferencialmente'],
+        avoid_contexts: ['demonstrativo de receitas e despesas', 'total de receitas', 'saldo'],
     },
     linha_digitavel: {
         type: 'boleto_linha_digitavel',
@@ -74,44 +66,26 @@ export const BOLETO_DEFAULT_RULES: SchemaRules = {
         pattern: '(\\d{1,3})\\/(\\d{1,3})',
     },
     beneficiario_nome: {
-        aliases: [
-            'beneficiario',
-            'cedente',
-            'condominio',
-            'administradora',
-        ],
+        aliases: ['beneficiario', 'cedente', 'condominio', 'administradora'],
     },
     segment_document: {
         enabled: true,
         sections: [
             {
                 name: 'boleto',
-                anchors: [
-                    'recibo do pagador',
-                    'linha digitavel',
-                    'pagavel preferencialmente',
-                ],
+                anchors: ['recibo do pagador', 'linha digitavel', 'pagavel preferencialmente'],
             },
             {
                 name: 'composicao_cobranca',
-                anchors: [
-                    'composição da cobrança',
-                ],
+                anchors: ['composição da cobrança'],
             },
             {
                 name: 'demonstrativo_financeiro',
-                anchors: [
-                    'demonstrativo de receitas e despesas',
-                    'total de receitas',
-                    'total de despesas',
-                ],
+                anchors: ['demonstrativo de receitas e despesas', 'total de receitas', 'total de despesas'],
             },
             {
                 name: 'bloco_postal',
-                anchors: [
-                    'para uso dos correios',
-                    'remetente',
-                ],
+                anchors: ['para uso dos correios', 'remetente'],
             },
         ],
     },

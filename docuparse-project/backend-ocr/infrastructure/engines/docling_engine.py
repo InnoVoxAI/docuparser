@@ -18,7 +18,7 @@ import io
 import logging
 import re
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 from infrastructure.engines.base_engine import BaseOCREngine
 
@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 
 class DoclingEngine(BaseOCREngine):
-
     @property
     def name(self) -> str:
         return "docling"
@@ -39,21 +38,21 @@ class DoclingEngine(BaseOCREngine):
             "document_number": re.compile(r"\b\d{6,}\b"),
         }
 
-    def _read_pdf_text_by_page(self, pdf_bytes: bytes) -> List[str]:
+    def _read_pdf_text_by_page(self, pdf_bytes: bytes) -> list[str]:
         try:
             page_texts = self._read_pdf_text_by_page_pdfium(pdf_bytes)
             self._text_reader = "pypdfium2"
             return page_texts
-        except Exception:
+        except (ImportError, OSError, RuntimeError):
             page_texts = self._read_pdf_text_by_page_pymupdf(pdf_bytes)
             self._text_reader = "pymupdf"
             return page_texts
 
-    def _read_pdf_text_by_page_pdfium(self, pdf_bytes: bytes) -> List[str]:
+    def _read_pdf_text_by_page_pdfium(self, pdf_bytes: bytes) -> list[str]:
         import pypdfium2 as pdfium
 
         pdf = pdfium.PdfDocument(pdf_bytes)
-        page_texts: List[str] = []
+        page_texts: list[str] = []
 
         for idx in range(len(pdf)):
             page = pdf.get_page(idx)
@@ -62,13 +61,13 @@ class DoclingEngine(BaseOCREngine):
 
         return page_texts
 
-    def _read_pdf_text_by_page_pymupdf(self, pdf_bytes: bytes) -> List[str]:
+    def _read_pdf_text_by_page_pymupdf(self, pdf_bytes: bytes) -> list[str]:
         import fitz
 
         with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
             return [(page.get_text("text") or "").strip() for page in document]
 
-    def _extract_formatted_text_by_page(self, pdf_bytes: bytes) -> List[str]:
+    def _extract_formatted_text_by_page(self, pdf_bytes: bytes) -> list[str]:
         """
         Extrai texto preservando o layout espacial original do documento.
 
@@ -88,10 +87,10 @@ class DoclingEngine(BaseOCREngine):
         """
         import fitz
 
-        CHARS_PER_LINE = 120   # largura da grade de caracteres
-        LINE_TOLERANCE = 4     # tolerância em pontos para agrupar palavras na mesma linha
+        CHARS_PER_LINE = 120  # largura da grade de caracteres
+        LINE_TOLERANCE = 4  # tolerância em pontos para agrupar palavras na mesma linha
 
-        page_texts: List[str] = []
+        page_texts: list[str] = []
 
         with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
             for page in document:
@@ -108,17 +107,19 @@ class DoclingEngine(BaseOCREngine):
                     continue
 
                 # Agrupa palavras por linha (bucket de Y arredondado)
-                line_buckets: Dict[int, List[tuple]] = {}
+                line_buckets: dict[int, list[tuple]] = {}
                 for word_info in words:
                     x0, y0, _x1, _y1, word_str, *_ = word_info
-                    bucket_key = int(round(float(y0) / LINE_TOLERANCE)) * LINE_TOLERANCE
-                    line_buckets.setdefault(bucket_key, []).append((float(x0), word_str))
+                    bucket_key = round(float(y0) / LINE_TOLERANCE) * LINE_TOLERANCE
+                    line_buckets.setdefault(bucket_key, []).append(
+                        (float(x0), word_str)
+                    )
 
-                formatted_lines: List[str] = []
+                formatted_lines: list[str] = []
                 for _y_key in sorted(line_buckets.keys()):
                     sorted_words = sorted(line_buckets[_y_key], key=lambda w: w[0])
 
-                    line_chars: List[str] = []
+                    line_chars: list[str] = []
                     for x_pos, word_str in sorted_words:
                         char_col = int(x_pos * scale)
                         # Preenche espaços até a coluna alvo antes de inserir a palavra
@@ -135,7 +136,7 @@ class DoclingEngine(BaseOCREngine):
 
         return page_texts
 
-    def _extract_structured_blocks(self, page_texts: List[str]) -> Dict[str, Any]:
+    def _extract_structured_blocks(self, page_texts: list[str]) -> dict[str, Any]:
         blocks = []
         tables = []
 
@@ -172,7 +173,7 @@ class DoclingEngine(BaseOCREngine):
             "tables": tables,
         }
 
-    def _validate_required_signals(self, raw_text: str) -> Dict[str, bool]:
+    def _validate_required_signals(self, raw_text: str) -> dict[str, bool]:
         return {
             key: bool(pattern.search(raw_text))
             for key, pattern in self.required_patterns.items()
@@ -196,12 +197,16 @@ class DoclingEngine(BaseOCREngine):
 
         raise ValueError("DoclingEngine expected PDF bytes or file path")
 
-    def process_with_classification(self, pdf_bytes: bytes, classification: str) -> Dict[str, Any]:
+    def process_with_classification(
+        self, pdf_bytes: bytes, classification: str
+    ) -> dict[str, Any]:
         # Mantemos assinatura compatível com o padrão dos demais engines.
         result = self.process(pdf_bytes, metadata={"doc_type": classification})
         return result
 
-    def process(self, content: Any, metadata: dict[str, Any] | None = None) -> Dict[str, Any]:
+    def process(
+        self, content: Any, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         metadata: quando presente, 'doc_type' é registrado nos _meta do resultado.
 
@@ -225,7 +230,10 @@ class DoclingEngine(BaseOCREngine):
 
         # Score heurístico: mais caracteres e sinais válidos indicam melhor qualidade estrutural.
         text_score = min(100.0, len(full_text) / 40.0)
-        signal_score = (sum(1 for value in required_signals.values() if value) / len(required_signals)) * 100.0
+        signal_score = (
+            sum(1 for value in required_signals.values() if value)
+            / len(required_signals)
+        ) * 100.0
         avg_confidence = round((text_score * 0.4) + (signal_score * 0.6), 2)
 
         fallback_recommended = missing_fields or avg_confidence < 70.0
@@ -237,7 +245,8 @@ class DoclingEngine(BaseOCREngine):
         try:
             formatted_pages = self._extract_formatted_text_by_page(pdf_bytes)
             raw_text_formatted = "\n\n".join(p for p in formatted_pages if p).strip()
-        except Exception as exc:
+        except (ImportError, RuntimeError, OSError, ValueError) as exc:
+            # Capture only expected failures from the formatted extraction
             logger.warning(
                 "DoclingEngine: falha na extração formatada; raw_text_formatted ficará vazio. "
                 "Erro: %s",
@@ -255,7 +264,7 @@ class DoclingEngine(BaseOCREngine):
 
         elapsed = time.perf_counter() - process_start
 
-        meta: Dict[str, Any] = {
+        meta: dict[str, Any] = {
             "engine": "docling",
             "document_type": "digital_pdf",
             "avg_confidence": avg_confidence,

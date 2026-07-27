@@ -4,7 +4,6 @@ export const CONTA_AGUA_DEFAULT_SCHEMA_ID = 'conta_agua_default'
 export const CONTA_AGUA_DEFAULT_MODEL_NAME = 'CONTA AGUA DEFAULT'
 
 export const CONTA_AGUA_DEFAULT_FIELDS: SchemaField[] = [
-
     // =========================================================
     // IDENTIFICACAO DO DOCUMENTO
     // =========================================================
@@ -391,9 +390,7 @@ export const CONTA_AGUA_DEFAULT_FIELDS: SchemaField[] = [
         required: false,
         rule: 'Situacao da ligacao de esgoto: ligado, cortado, suprimido.',
     },
-
 ]
-
 
 function scoreContaAguaText(rawText: string): number {
     if (!rawText) {

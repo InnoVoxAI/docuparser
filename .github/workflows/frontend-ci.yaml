@@ -1,0 +1,45 @@
+name: "Frontend CI"
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+    paths:
+      - "docuparse-project/frontend/**"
+  pull_request:
+    paths:
+      - "docuparse-project/frontend/**"
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docuparse-project/frontend
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: docuparse-project/frontend/package-lock.json
+
+      - name: Install dependencies
+        # --legacy-peer-deps: @testing-library/react@14 declara peer react@^18,
+        # mas o projeto está em React 19 (compatível na prática — ver
+        # research.md §10). Mesma flag já usada localmente desde a Fase 2 (T010/T011).
+        run: npm ci --legacy-peer-deps
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test:run

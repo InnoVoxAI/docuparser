@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
-
 from tenants.models import Tenant, UserProfile
+
 from users.models import Permission, Role
-from unittest.mock import patch
 
 User = get_user_model()
 
@@ -48,10 +49,12 @@ def _make_user(
 class LoginViewTest(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
-        Permission.objects.bulk_create([
-            Permission(code="inbox.view", description="Visualizar Inbox"),
-            Permission(code="documents.validate", description="Validar Documentos"),
-        ])
+        Permission.objects.bulk_create(
+            [
+                Permission(code="inbox.view", description="Visualizar Inbox"),
+                Permission(code="documents.validate", description="Validar Documentos"),
+            ]
+        )
         self.role = _make_role("Operador", ["inbox.view", "documents.validate"])
         self.user = _make_user("op@test.com", "senha123", role=self.role)
 

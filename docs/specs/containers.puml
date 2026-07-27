@@ -31,4 +31,3 @@ Rel(langextract, core, "json estruturado")
 Rel(core, db, "persistência isolada")
 Rel(core, superlogica, "integração via credenciais do tenant")
 @enduml
-

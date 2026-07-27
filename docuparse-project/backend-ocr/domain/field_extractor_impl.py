@@ -1,8 +1,7 @@
-from typing import Any, Dict, List, Tuple
+import logging
 import re
 import unicodedata
-import logging
-
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +115,7 @@ def _validate_cnpj(cnpj: str | None) -> bool:
     if len(set(digits)) == 1:
         return False
 
-    def _calc_digit(base: str, weights: List[int]) -> str:
+    def _calc_digit(base: str, weights: list[int]) -> str:
         total = sum(int(num) * weight for num, weight in zip(base, weights))
         remainder = total % 11
         digit = 0 if remainder < 2 else 11 - remainder
@@ -128,11 +127,11 @@ def _validate_cnpj(cnpj: str | None) -> bool:
     return digits[-2:] == f"{first}{second}"
 
 
-def _get_raw_text(data: Dict[str, Any]) -> str:
+def _get_raw_text(data: dict[str, Any]) -> str:
     return str(data.get("raw_text") or data.get("raw_text_fallback") or "")
 
 
-def _extract_line_value_by_labels(raw_text: str, labels: List[str]) -> str:
+def _extract_line_value_by_labels(raw_text: str, labels: list[str]) -> str:
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
     for line in lines:
         lowered = line.lower()
@@ -144,7 +143,7 @@ def _extract_line_value_by_labels(raw_text: str, labels: List[str]) -> str:
             for label in labels:
                 idx = lowered.find(label)
                 if idx >= 0:
-                    candidate = line[idx + len(label):].strip(" :-")
+                    candidate = line[idx + len(label) :].strip(" :-")
                     if candidate:
                         return candidate
 
@@ -166,10 +165,23 @@ def _is_header_like_value(value: str) -> bool:
             return True
 
     # Ajuste semântico: linha curta e com tokens de metadado tende a ser cabeçalho.
-    header_tokens = ["serviço", "servico", "cnpj", "cpf", "nif", "emissão", "tributação", "municipal"]
+    header_tokens = [
+        "serviço",
+        "servico",
+        "cnpj",
+        "cpf",
+        "nif",
+        "emissão",
+        "tributação",
+        "municipal",
+    ]
     token_hits = sum(1 for token in header_tokens if token in lowered)
     words = lowered.split()
-    if len(words) <= 6 and token_hits >= 2 and not re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", cleaned):
+    if (
+        len(words) <= 6
+        and token_hits >= 2
+        and not re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", cleaned)
+    ):
         return True
 
     return False
@@ -214,9 +226,9 @@ def _find_first_cnpj(value: str) -> str:
     return match.group(0) if match else ""
 
 
-def _unique_preserve_order(values: List[str]) -> List[str]:
+def _unique_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
-    result: List[str] = []
+    result: list[str] = []
     for item in values:
         cleaned = _clean_line(item)
         if not cleaned:
@@ -228,12 +240,14 @@ def _unique_preserve_order(values: List[str]) -> List[str]:
     return result
 
 
-def _extract_regex_candidates(raw_text: str, pattern: str, group: int | None = None) -> List[str]:
+def _extract_regex_candidates(
+    raw_text: str, pattern: str, group: int | None = None
+) -> list[str]:
     if not raw_text:
         return []
 
     regex = re.compile(pattern, flags=re.IGNORECASE)
-    candidates: List[str] = []
+    candidates: list[str] = []
     for match in regex.finditer(raw_text):
         if group is None:
             candidates.append(match.group(0))
@@ -243,7 +257,7 @@ def _extract_regex_candidates(raw_text: str, pattern: str, group: int | None = N
     return _unique_preserve_order(candidates)
 
 
-def _extract_currency_candidates(raw_text: str) -> List[str]:
+def _extract_currency_candidates(raw_text: str) -> list[str]:
     if not raw_text:
         return []
 
@@ -253,7 +267,7 @@ def _extract_currency_candidates(raw_text: str) -> List[str]:
         flags=re.IGNORECASE,
     )
 
-    candidates: List[str] = []
+    candidates: list[str] = []
     for match in regex.finditer(raw_text):
         currency_symbol = match.group(1)
         value = str(match.group(2) or "").strip().replace(" ", "")
@@ -273,7 +287,7 @@ def _extract_currency_candidates(raw_text: str) -> List[str]:
     return _unique_preserve_order(candidates)
 
 
-def _extract_cnpj_candidates(raw_text: str) -> List[str]:
+def _extract_cnpj_candidates(raw_text: str) -> list[str]:
     candidates = _extract_regex_candidates(
         raw_text,
         r"(\d{2}[\.\s]?\d{3}[\.\s]?\d{3}/?\d{4}-?\d{2}|\b\d{14}\b)",
@@ -283,14 +297,16 @@ def _extract_cnpj_candidates(raw_text: str) -> List[str]:
     return _unique_preserve_order(valid or candidates)
 
 
-def _extract_labeled_line_candidates(raw_text: str, label_patterns: List[str], max_items: int = 8) -> List[str]:
+def _extract_labeled_line_candidates(
+    raw_text: str, label_patterns: list[str], max_items: int = 8
+) -> list[str]:
     if not raw_text:
         return []
 
     lines = [_clean_line(line) for line in raw_text.splitlines() if _clean_line(line)]
     compiled = [re.compile(pattern, flags=re.IGNORECASE) for pattern in label_patterns]
 
-    results: List[str] = []
+    results: list[str] = []
     for line in lines:
         if not any(regex.search(line) for regex in compiled):
             continue
@@ -306,7 +322,7 @@ def _extract_labeled_line_candidates(raw_text: str, label_patterns: List[str], m
             matched = regex.search(line)
             if not matched:
                 continue
-            candidate = line[matched.end():].strip(" :-–—")
+            candidate = line[matched.end() :].strip(" :-–—")
             if candidate:
                 results.append(candidate)
             break
@@ -317,7 +333,7 @@ def _extract_labeled_line_candidates(raw_text: str, label_patterns: List[str], m
     return _unique_preserve_order(results)
 
 
-def _extract_probable_name_candidates(raw_text: str, max_items: int = 6) -> List[str]:
+def _extract_probable_name_candidates(raw_text: str, max_items: int = 6) -> list[str]:
     lines = [_clean_line(line) for line in raw_text.splitlines() if _clean_line(line)]
     if not lines:
         return []
@@ -335,7 +351,7 @@ def _extract_probable_name_candidates(raw_text: str, max_items: int = 6) -> List
         "nfs-e",
     }
 
-    candidates: List[Tuple[str, float]] = []
+    candidates: list[tuple[str, float]] = []
     for line in lines[:40]:
         lowered = line.lower()
         if any(token in lowered for token in stop_tokens):
@@ -350,7 +366,9 @@ def _extract_probable_name_candidates(raw_text: str, max_items: int = 6) -> List
     return _unique_preserve_order([line for line, _ in candidates[:max_items]])
 
 
-def extract_fields_candidates(raw_text: str, max_candidates_per_field: int = 8) -> Dict[str, List[str]]:
+def extract_fields_candidates(
+    raw_text: str, max_candidates_per_field: int = 8
+) -> dict[str, list[str]]:
     """Extrai candidatos de campos críticos via regex + heurísticas sobre raw_text."""
     text = str(raw_text or "")
     if not text.strip():
@@ -379,12 +397,20 @@ def extract_fields_candidates(raw_text: str, max_candidates_per_field: int = 8) 
         r"\bobserva[çc][aã]o\b",
     ]
 
-    fornecedor_candidates = _extract_labeled_line_candidates(text, fornecedor_labels, max_items=max_candidates_per_field)
-    tomador_candidates = _extract_labeled_line_candidates(text, tomador_labels, max_items=max_candidates_per_field)
-    descricao_candidates = _extract_labeled_line_candidates(text, descricao_labels, max_items=max_candidates_per_field)
+    fornecedor_candidates = _extract_labeled_line_candidates(
+        text, fornecedor_labels, max_items=max_candidates_per_field
+    )
+    tomador_candidates = _extract_labeled_line_candidates(
+        text, tomador_labels, max_items=max_candidates_per_field
+    )
+    descricao_candidates = _extract_labeled_line_candidates(
+        text, descricao_labels, max_items=max_candidates_per_field
+    )
 
     if not fornecedor_candidates or not tomador_candidates:
-        names = _extract_probable_name_candidates(text, max_items=min(6, max_candidates_per_field))
+        names = _extract_probable_name_candidates(
+            text, max_items=min(6, max_candidates_per_field)
+        )
         if not fornecedor_candidates:
             fornecedor_candidates = names
         if not tomador_candidates:
@@ -392,9 +418,15 @@ def extract_fields_candidates(raw_text: str, max_candidates_per_field: int = 8) 
 
     if not descricao_candidates:
         lines = [_clean_line(line) for line in text.splitlines() if _clean_line(line)]
-        long_lines = [line for line in lines if 60 <= len(line) <= 600 and not _is_header_like_value(line)]
+        long_lines = [
+            line
+            for line in lines
+            if 60 <= len(line) <= 600 and not _is_header_like_value(line)
+        ]
         long_lines.sort(key=len, reverse=True)
-        descricao_candidates = _unique_preserve_order(long_lines[: min(3, max_candidates_per_field)])
+        descricao_candidates = _unique_preserve_order(
+            long_lines[: min(3, max_candidates_per_field)]
+        )
 
     cnpj_candidates = _extract_cnpj_candidates(text)
 
@@ -404,11 +436,12 @@ def extract_fields_candidates(raw_text: str, max_candidates_per_field: int = 8) 
         r"\bn[úu]mero\b\s*[:\-–—]?\s*([0-9]{4,})",
         r"\brecibo\b\s*(?:n[º°o]?|numero)?\s*[:\-–—]?\s*([0-9]{4,})",
     ]
-    numero_nf_candidates: List[str] = []
+    numero_nf_candidates: list[str] = []
     for pattern in numero_nf_patterns:
         numero_nf_candidates.extend(_extract_regex_candidates(text, pattern, group=1))
     numero_nf_candidates = [
-        value for value in _unique_preserve_order(numero_nf_candidates)
+        value
+        for value in _unique_preserve_order(numero_nf_candidates)
         if 4 <= len(_normalize_digits(value)) <= 12
     ][:max_candidates_per_field]
 
@@ -418,12 +451,21 @@ def extract_fields_candidates(raw_text: str, max_candidates_per_field: int = 8) 
         r"\breten[cç][aã]o\b\s*[:\-–—]?\s*(?:R\$\s*)?(\d+[\.,]\d{2}|0[\.,]00)\b",
         r"\biss\b\s*(?:retido)?\s*[:\-–—]?\s*(?:R\$\s*)?(\d+[\.,]\d{2}|0[\.,]00)\b",
     ]
-    retencao_candidates: List[str] = []
+    retencao_candidates: list[str] = []
     for pattern in retencao_patterns:
         retencao_candidates.extend(_extract_regex_candidates(text, pattern, group=1))
 
     lowered = text.lower()
-    if any(token in lowered for token in ["sem retenção", "sem retencao", "nao retido", "não retido", "isento"]):
+    if any(
+        token in lowered
+        for token in [
+            "sem retenção",
+            "sem retencao",
+            "nao retido",
+            "não retido",
+            "isento",
+        ]
+    ):
         retencao_candidates.append("0,00")
 
     retencao_candidates = _unique_preserve_order(retencao_candidates)
@@ -441,11 +483,15 @@ def extract_fields_candidates(raw_text: str, max_candidates_per_field: int = 8) 
     }
 
 
-def _nfse_lines(raw_text: str) -> List[str]:
-    return [_clean_line(line) for line in (raw_text or "").splitlines() if _clean_line(line)]
+def _nfse_lines(raw_text: str) -> list[str]:
+    return [
+        _clean_line(line) for line in (raw_text or "").splitlines() if _clean_line(line)
+    ]
 
 
-def _slice_block(lines: List[str], start_pattern: str, end_patterns: List[str]) -> List[str]:
+def _slice_block(
+    lines: list[str], start_pattern: str, end_patterns: list[str]
+) -> list[str]:
     start_idx = -1
     for idx, line in enumerate(lines):
         if re.search(start_pattern, line, flags=re.IGNORECASE):
@@ -457,28 +503,53 @@ def _slice_block(lines: List[str], start_pattern: str, end_patterns: List[str]) 
 
     end_idx = len(lines)
     for idx in range(start_idx + 1, len(lines)):
-        if any(re.search(pattern, lines[idx], flags=re.IGNORECASE) for pattern in end_patterns):
+        if any(
+            re.search(pattern, lines[idx], flags=re.IGNORECASE)
+            for pattern in end_patterns
+        ):
             end_idx = idx
             break
 
     return lines[start_idx:end_idx]
 
 
-def _extract_nfse_structured_context(raw_text: str) -> Dict[str, Any]:
+def _extract_nfse_structured_context(raw_text: str) -> dict[str, Any]:
     lines = _nfse_lines(raw_text)
     if not lines:
         return {}
 
     full_text = "\n".join(lines).lower()
-    if "nfs-e" not in full_text and "danfse" not in full_text and "nfse" not in full_text:
+    if (
+        "nfs-e" not in full_text
+        and "danfse" not in full_text
+        and "nfse" not in full_text
+    ):
         return {}
 
     # Ajuste por bloco: separa regiões semânticas da NFS-e para reduzir captura genérica.
-    emitente_block = _slice_block(lines, r"emitente\s+da\s+nfs-?e", [r"tomador\s+do\s+servi[çc]o", r"intermedi[áa]rio"])
-    tomador_block = _slice_block(lines, r"tomador\s+do\s+servi[çc]o", [r"intermedi[áa]rio", r"servi[çc]o\s+prestado"])
-    servico_block = _slice_block(lines, r"servi[çc]o\s+prestado", [r"tributa[çc][ãa]o\s+municipal", r"tributa[çc][ãa]o\s+federal"])
-    municipal_block = _slice_block(lines, r"tributa[çc][ãa]o\s+municipal", [r"tributa[çc][ãa]o\s+federal", r"informa[çc][õo]es\s+complementares"])
-    federal_block = _slice_block(lines, r"tributa[çc][ãa]o\s+federal", [r"informa[çc][õo]es\s+complementares"])
+    emitente_block = _slice_block(
+        lines,
+        r"emitente\s+da\s+nfs-?e",
+        [r"tomador\s+do\s+servi[çc]o", r"intermedi[áa]rio"],
+    )
+    tomador_block = _slice_block(
+        lines,
+        r"tomador\s+do\s+servi[çc]o",
+        [r"intermedi[áa]rio", r"servi[çc]o\s+prestado"],
+    )
+    servico_block = _slice_block(
+        lines,
+        r"servi[çc]o\s+prestado",
+        [r"tributa[çc][ãa]o\s+municipal", r"tributa[çc][ãa]o\s+federal"],
+    )
+    municipal_block = _slice_block(
+        lines,
+        r"tributa[çc][ãa]o\s+municipal",
+        [r"tributa[çc][ãa]o\s+federal", r"informa[çc][õo]es\s+complementares"],
+    )
+    federal_block = _slice_block(
+        lines, r"tributa[çc][ãa]o\s+federal", [r"informa[çc][õo]es\s+complementares"]
+    )
 
     return {
         "lines": lines,
@@ -514,7 +585,7 @@ def _score_name_candidate(value: str) -> float:
     return max(0.0, min(1.0, score))
 
 
-def _extract_party_name_from_block(block: List[str], role: str) -> Tuple[str, float]:
+def _extract_party_name_from_block(block: list[str], role: str) -> tuple[str, float]:
     if not block:
         return "", 0.0
 
@@ -524,7 +595,9 @@ def _extract_party_name_from_block(block: List[str], role: str) -> Tuple[str, fl
             if re.search(r"nome\s*/\s*nome\s*empresarial", line, flags=re.IGNORECASE):
                 for offset in range(1, 4):
                     probe_idx = idx + offset
-                    if probe_idx < len(block) and _is_probable_name_line(block[probe_idx]):
+                    if probe_idx < len(block) and _is_probable_name_line(
+                        block[probe_idx]
+                    ):
                         candidate = block[probe_idx]
                         return candidate, max(0.92, _score_name_candidate(candidate))
 
@@ -562,7 +635,7 @@ def _extract_party_name_from_block(block: List[str], role: str) -> Tuple[str, fl
     return "", 0.0
 
 
-def _extract_party_cnpj_from_block(block: List[str]) -> str:
+def _extract_party_cnpj_from_block(block: list[str]) -> str:
     if not block:
         return ""
 
@@ -574,21 +647,23 @@ def _extract_party_cnpj_from_block(block: List[str]) -> str:
     return ""
 
 
-def _extract_numero_nf_structured(lines: List[str]) -> str:
+def _extract_numero_nf_structured(lines: list[str]) -> str:
     for idx, line in enumerate(lines):
         if re.search(r"n[úu]mero\s+da\s+nfs-?e", line, flags=re.IGNORECASE):
             for probe_idx in range(idx + 1, min(len(lines), idx + 4)):
                 probe = lines[probe_idx]
-                if re.fullmatch(r"[A-Za-z0-9./-]{1,25}", probe) and not _is_header_like_value(probe):
+                if re.fullmatch(
+                    r"[A-Za-z0-9./-]{1,25}", probe
+                ) and not _is_header_like_value(probe):
                     return probe
     return ""
 
 
-def _extract_descricao_servico_structured(servico_block: List[str]) -> str:
+def _extract_descricao_servico_structured(servico_block: list[str]) -> str:
     if not servico_block:
         return ""
 
-    collected: List[str] = []
+    collected: list[str] = []
     in_description = False
     for line in servico_block:
         if re.search(r"descri[çc][ãa]o\s+do\s+servi[çc]o", line, flags=re.IGNORECASE):
@@ -599,7 +674,11 @@ def _extract_descricao_servico_structured(servico_block: List[str]) -> str:
             continue
 
         # Ajuste por bloco: para no próximo cabeçalho semântico para evitar poluir descrição.
-        if re.search(r"tributa[çc][ãa]o|valor\s+do\s+servi[çc]o|valor\s+total", line, flags=re.IGNORECASE):
+        if re.search(
+            r"tributa[çc][ãa]o|valor\s+do\s+servi[çc]o|valor\s+total",
+            line,
+            flags=re.IGNORECASE,
+        ):
             break
 
         if _is_header_like_value(line):
@@ -612,7 +691,9 @@ def _extract_descricao_servico_structured(servico_block: List[str]) -> str:
     return " ".join(collected).strip()
 
 
-def _extract_valor_nf_structured(municipal_block: List[str], all_lines: List[str]) -> str:
+def _extract_valor_nf_structured(
+    municipal_block: list[str], all_lines: list[str]
+) -> str:
     candidate_lines = [*municipal_block, *all_lines]
     labels = [
         r"valor\s+total\s+da\s+nfs-?e",
@@ -625,22 +706,30 @@ def _extract_valor_nf_structured(municipal_block: List[str], all_lines: List[str
             joined = line
             if idx + 1 < len(candidate_lines):
                 joined = f"{line} {candidate_lines[idx + 1]}"
-            match = re.search(r"R\$\s*([\d\.]+,\d{2}|\d+\.\d{2}|\d+)", joined, flags=re.IGNORECASE)
+            match = re.search(
+                r"R\$\s*([\d\.]+,\d{2}|\d+\.\d{2}|\d+)", joined, flags=re.IGNORECASE
+            )
             if match:
                 return match.group(1).strip()
 
     return ""
 
 
-def _extract_retencao_structured(municipal_block: List[str], federal_block: List[str]) -> str:
+def _extract_retencao_structured(
+    municipal_block: list[str], federal_block: list[str]
+) -> str:
     if not municipal_block and not federal_block:
         return ""
 
-    evidences: List[str] = []
+    evidences: list[str] = []
     lines = [*municipal_block, *federal_block]
     for idx, line in enumerate(lines):
         lowered = line.lower()
-        if "reten" not in lowered and "retido" not in lowered and "issqn" not in lowered:
+        if (
+            "reten" not in lowered
+            and "retido" not in lowered
+            and "issqn" not in lowered
+        ):
             continue
 
         # Ajuste semântico: evita duplicar linha de status isolada (ex.: "Não Retido").
@@ -654,11 +743,19 @@ def _extract_retencao_structured(municipal_block: List[str], federal_block: List
         if idx + 1 < len(lines):
             next_line = lines[idx + 1]
             # Ajuste por bloco: evita anexar próximo cabeçalho ao valor de retenção.
-            if not re.search(r"^tributa[çc][ãa]o|^informa[çc][õo]es\s+complementares", next_line, flags=re.IGNORECASE):
+            if not re.search(
+                r"^tributa[çc][ãa]o|^informa[çc][õo]es\s+complementares",
+                next_line,
+                flags=re.IGNORECASE,
+            ):
                 joined = f"{line} {next_line}"
 
         # Ajuste semântico: só guarda evidência quando há status/valor associado.
-        if re.search(r"n[ãa]o\s+retido|retido|R\$\s*[\d\.]+,\d{2}|\d+,\d{2}", joined, flags=re.IGNORECASE):
+        if re.search(
+            r"n[ãa]o\s+retido|retido|R\$\s*[\d\.]+,\d{2}|\d+,\d{2}",
+            joined,
+            flags=re.IGNORECASE,
+        ):
             evidences.append(_clean_line(joined))
 
     return " | ".join(evidences[:3]).strip()
@@ -671,7 +768,7 @@ def _semantic_value_or_empty(value: str) -> str:
     return cleaned
 
 
-def _extract_cnpj_from_text(raw_text: str, preferred_labels: List[str]) -> str:
+def _extract_cnpj_from_text(raw_text: str, preferred_labels: list[str]) -> str:
     cnpj_pattern = re.compile(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}|\d{14}")
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
 
@@ -686,7 +783,7 @@ def _extract_cnpj_from_text(raw_text: str, preferred_labels: List[str]) -> str:
     return match.group(0) if match else ""
 
 
-def _extract_numero_nf(raw_text: str, document_info: Dict[str, Any]) -> str:
+def _extract_numero_nf(raw_text: str, document_info: dict[str, Any]) -> str:
     doc_number = str(document_info.get("number") or "").strip()
     if doc_number:
         return doc_number
@@ -704,7 +801,7 @@ def _extract_numero_nf(raw_text: str, document_info: Dict[str, Any]) -> str:
     return ""
 
 
-def _extract_valor_nf(raw_text: str, totals: Dict[str, Any]) -> str:
+def _extract_valor_nf(raw_text: str, totals: dict[str, Any]) -> str:
     grand_total = totals.get("grand_total")
     if grand_total not in (None, ""):
         return str(grand_total)
@@ -740,7 +837,9 @@ def _extract_descricao_servico(raw_text: str) -> str:
 def _extract_retencao(raw_text: str) -> str:
     retention_terms = ["reten", "iss", "inss", "pis", "cofins", "csll", "irrf"]
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
-    retention_lines = [line for line in lines if any(term in line.lower() for term in retention_terms)]
+    retention_lines = [
+        line for line in lines if any(term in line.lower() for term in retention_terms)
+    ]
     if retention_lines:
         return " | ".join(retention_lines[:4])
 
@@ -748,16 +847,18 @@ def _extract_retencao(raw_text: str) -> str:
 
 
 def _normalize_ocr_numeric_noise(value: str) -> str:
-    table = str.maketrans({
-        "O": "0",
-        "o": "0",
-        "I": "1",
-        "l": "1",
-        "S": "5",
-        "s": "5",
-        "B": "8",
-        "Q": "0",
-    })
+    table = str.maketrans(
+        {
+            "O": "0",
+            "o": "0",
+            "I": "1",
+            "l": "1",
+            "S": "5",
+            "s": "5",
+            "B": "8",
+            "Q": "0",
+        }
+    )
     return str(value or "").translate(table)
 
 
@@ -767,11 +868,13 @@ def _format_cnpj_from_digits(digits: str) -> str:
     return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
 
 
-def _extract_valid_cnpjs_from_text(value: str) -> List[str]:
+def _extract_valid_cnpjs_from_text(value: str) -> list[str]:
     raw = _normalize_ocr_numeric_noise(value)
-    candidates: List[str] = []
+    candidates: list[str] = []
 
-    punct_pattern = re.compile(r"\b\d{2}[\./\s-]?\d{3}[\./\s-]?\d{3}[\./\s-]?\d{4}[\./\s-]?\d{2}\b")
+    punct_pattern = re.compile(
+        r"\b\d{2}[\./\s-]?\d{3}[\./\s-]?\d{3}[\./\s-]?\d{4}[\./\s-]?\d{2}\b"
+    )
     for match in punct_pattern.findall(raw):
         digits = _normalize_digits(match)
         if len(digits) == 14 and _validate_cnpj(digits):
@@ -790,17 +893,23 @@ def _extract_valid_cnpjs_from_text(value: str) -> List[str]:
     return candidates
 
 
-def _extract_noisy_name_from_lines(lines: List[str], label_patterns: List[str]) -> str:
+def _extract_noisy_name_from_lines(lines: list[str], label_patterns: list[str]) -> str:
     for idx, line in enumerate(lines):
         lowered = line.lower()
-        if not any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in label_patterns):
+        if not any(
+            re.search(pattern, lowered, flags=re.IGNORECASE)
+            for pattern in label_patterns
+        ):
             continue
 
         for probe_idx in range(idx, min(len(lines), idx + 4)):
             probe = _clean_line(lines[probe_idx])
             if not probe:
                 continue
-            if any(re.search(pattern, probe, flags=re.IGNORECASE) for pattern in label_patterns):
+            if any(
+                re.search(pattern, probe, flags=re.IGNORECASE)
+                for pattern in label_patterns
+            ):
                 probe = re.sub(r"^.*?(?:[:\-])\s*", "", probe).strip()
             if _is_probable_name_line(probe):
                 return probe
@@ -812,13 +921,16 @@ def _extract_noisy_name_from_lines(lines: List[str], label_patterns: List[str]) 
     return ""
 
 
-def _extract_noisy_cnpj_by_labels(lines: List[str], label_patterns: List[str]) -> str:
+def _extract_noisy_cnpj_by_labels(lines: list[str], label_patterns: list[str]) -> str:
     for idx, line in enumerate(lines):
         lowered = line.lower()
-        if not any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in label_patterns):
+        if not any(
+            re.search(pattern, lowered, flags=re.IGNORECASE)
+            for pattern in label_patterns
+        ):
             continue
 
-        window = " ".join(lines[idx:min(len(lines), idx + 3)])
+        window = " ".join(lines[idx : min(len(lines), idx + 3)])
         candidates = _extract_valid_cnpjs_from_text(window)
         if candidates:
             return candidates[0]
@@ -826,7 +938,9 @@ def _extract_noisy_cnpj_by_labels(lines: List[str], label_patterns: List[str]) -
     return ""
 
 
-def _extract_noisy_numero_documento(lines: List[str], raw_text: str, document_info: Dict[str, Any]) -> str:
+def _extract_noisy_numero_documento(
+    lines: list[str], raw_text: str, document_info: dict[str, Any]
+) -> str:
     doc_number = str(document_info.get("number") or "").strip()
     if doc_number:
         return doc_number
@@ -866,7 +980,7 @@ def _extract_noisy_numero_documento(lines: List[str], raw_text: str, document_in
     return ""
 
 
-def _extract_noisy_valor_nf(raw_text: str, totals: Dict[str, Any]) -> str:
+def _extract_noisy_valor_nf(raw_text: str, totals: dict[str, Any]) -> str:
     grand_total = totals.get("grand_total")
     if grand_total not in (None, ""):
         return str(grand_total)
@@ -889,7 +1003,9 @@ def _extract_noisy_valor_nf(raw_text: str, totals: Dict[str, Any]) -> str:
         score = float(amount)
         if re.search(r"(?:r\$|rs|r5)", context, flags=re.IGNORECASE):
             score += 10000.0
-        if any(token in context for token in ["importancia", "valor", "reembolso", "total"]):
+        if any(
+            token in context for token in ["importancia", "valor", "reembolso", "total"]
+        ):
             score += 2500.0
         if any(token in context for token in ["cpf", "pix", "celular", "telefone"]):
             score -= 9000.0
@@ -901,7 +1017,7 @@ def _extract_noisy_valor_nf(raw_text: str, totals: Dict[str, Any]) -> str:
     return best_candidate
 
 
-def _extract_noisy_descricao(raw_text: str, lines: List[str]) -> str:
+def _extract_noisy_descricao(raw_text: str, lines: list[str]) -> str:
     normalized_text = _clean_line(raw_text)
     if not normalized_text:
         return ""
@@ -925,11 +1041,25 @@ def _extract_noisy_descricao(raw_text: str, lines: List[str]) -> str:
 
     for line in lines:
         lowered = line.lower()
-        if any(token in lowered for token in ["reembolso", "indeniza", "manutenc", "prest", "servi"]):
+        if any(
+            token in lowered
+            for token in ["reembolso", "indeniza", "manutenc", "prest", "servi"]
+        ):
             token_idx = min(
-                [idx for idx in [lowered.find("reembolso"), lowered.find("indeniza"), lowered.find("manutenc"), lowered.find("prest"), lowered.find("servi")] if idx >= 0] or [0]
+                [
+                    idx
+                    for idx in [
+                        lowered.find("reembolso"),
+                        lowered.find("indeniza"),
+                        lowered.find("manutenc"),
+                        lowered.find("prest"),
+                        lowered.find("servi"),
+                    ]
+                    if idx >= 0
+                ]
+                or [0]
             )
-            candidate = _clean_line(line[max(0, token_idx - 20):token_idx + 260])
+            candidate = _clean_line(line[max(0, token_idx - 20) : token_idx + 260])
             if len(candidate) >= 20 and sum(ch.isalpha() for ch in candidate) >= 12:
                 return candidate[:420].strip()
 
@@ -951,9 +1081,18 @@ def _extract_noisy_descricao(raw_text: str, lines: List[str]) -> str:
     return best_line[:420].strip()
 
 
-def _extract_noisy_retencao(raw_text: str, lines: List[str]) -> str:
-    retention_terms = ["reten", "retido", "iss", "inss", "pis", "cofins", "csll", "irrf"]
-    evidences: List[str] = []
+def _extract_noisy_retencao(raw_text: str, lines: list[str]) -> str:
+    retention_terms = [
+        "reten",
+        "retido",
+        "iss",
+        "inss",
+        "pis",
+        "cofins",
+        "csll",
+        "irrf",
+    ]
+    evidences: list[str] = []
     for line in lines:
         lowered = line.lower()
         if not any(term in lowered for term in retention_terms):
@@ -962,7 +1101,9 @@ def _extract_noisy_retencao(raw_text: str, lines: List[str]) -> str:
         if not cleaned:
             continue
         if len(cleaned) > 240:
-            match = re.search(r"((?:n[ãa]o\s+retido|retido).{0,120})", cleaned, flags=re.IGNORECASE)
+            match = re.search(
+                r"((?:n[ãa]o\s+retido|retido).{0,120})", cleaned, flags=re.IGNORECASE
+            )
             if match:
                 cleaned = _clean_line(match.group(1))
         evidences.append(cleaned)
@@ -981,19 +1122,31 @@ def _extract_noisy_retencao(raw_text: str, lines: List[str]) -> str:
 
 def _extract_noisy_fields_for_scanned_or_handwritten(
     raw_text: str,
-    entities: Dict[str, Any],
-    document_info: Dict[str, Any],
-    totals: Dict[str, Any],
-) -> Tuple[Dict[str, str], Dict[str, float]]:
+    entities: dict[str, Any],
+    document_info: dict[str, Any],
+    totals: dict[str, Any],
+) -> tuple[dict[str, str], dict[str, float]]:
     lines = [_clean_line(line) for line in raw_text.splitlines() if _clean_line(line)]
 
     fornecedor_name = _extract_noisy_name_from_lines(
         lines,
-        label_patterns=[r"fornecedor", r"prestador", r"emitente", r"benefici[áa]rio", r"empresa"],
+        label_patterns=[
+            r"fornecedor",
+            r"prestador",
+            r"emitente",
+            r"benefici[áa]rio",
+            r"empresa",
+        ],
     )
     tomador_name = _extract_noisy_name_from_lines(
         lines,
-        label_patterns=[r"tomador", r"destinat[áa]rio", r"cliente", r"pagador", r"favorecido"],
+        label_patterns=[
+            r"tomador",
+            r"destinat[áa]rio",
+            r"cliente",
+            r"pagador",
+            r"favorecido",
+        ],
     )
 
     cnpj_fornecedor = _extract_noisy_cnpj_by_labels(
@@ -1013,15 +1166,25 @@ def _extract_noisy_fields_for_scanned_or_handwritten(
                 cnpj_tomador = cnpj_tomador or all_cnpjs[1]
 
     if not tomador_name:
-        condominio_match = re.search(r"(condom[íi]nio[^,\n]{5,140})", raw_text, flags=re.IGNORECASE)
+        condominio_match = re.search(
+            r"(condom[íi]nio[^,\n]{5,140})", raw_text, flags=re.IGNORECASE
+        )
         if condominio_match:
             tomador_name = _clean_line(condominio_match.group(1))
 
     fields = {
-        "fornecedor": fornecedor_name or str(entities.get("fornecedor") or entities.get("issuer") or "").strip(),
-        "tomador": tomador_name or str(entities.get("tomador") or entities.get("recipient") or "").strip(),
-        "cnpj_fornecedor": cnpj_fornecedor or str(entities.get("cnpj_fornecedor") or entities.get("issuer_cnpj") or "").strip(),
-        "cnpj_tomador": cnpj_tomador or str(entities.get("cnpj_tomador") or entities.get("recipient_cnpj") or "").strip(),
+        "fornecedor": fornecedor_name
+        or str(entities.get("fornecedor") or entities.get("issuer") or "").strip(),
+        "tomador": tomador_name
+        or str(entities.get("tomador") or entities.get("recipient") or "").strip(),
+        "cnpj_fornecedor": cnpj_fornecedor
+        or str(
+            entities.get("cnpj_fornecedor") or entities.get("issuer_cnpj") or ""
+        ).strip(),
+        "cnpj_tomador": cnpj_tomador
+        or str(
+            entities.get("cnpj_tomador") or entities.get("recipient_cnpj") or ""
+        ).strip(),
         "numero_nf": _extract_noisy_numero_documento(lines, raw_text, document_info),
         "descricao_servico": _extract_noisy_descricao(raw_text, lines),
         "valor_nf": _extract_noisy_valor_nf(raw_text, totals),
@@ -1035,7 +1198,9 @@ def _extract_noisy_fields_for_scanned_or_handwritten(
         "cnpj_tomador": 0.88 if _validate_cnpj(fields["cnpj_tomador"]) else 0.0,
         "numero_nf": 0.64 if fields["numero_nf"] else 0.0,
         "descricao_servico": 0.62 if len(fields["descricao_servico"]) > 10 else 0.0,
-        "valor_nf": 0.86 if _parse_currency(fields["valor_nf"]) not in (None, 0.0) else 0.0,
+        "valor_nf": 0.86
+        if _parse_currency(fields["valor_nf"]) not in (None, 0.0)
+        else 0.0,
         "retencao": 0.58 if fields["retencao"] else 0.0,
     }
 
@@ -1051,7 +1216,9 @@ def _is_noisy_extraction_context(classification: str, engine_name: str) -> bool:
     )
 
 
-def _is_low_quality_ocr_text(value: str, min_alpha: int = 10, min_alpha_ratio: float = 0.45) -> bool:
+def _is_low_quality_ocr_text(
+    value: str, min_alpha: int = 10, min_alpha_ratio: float = 0.45
+) -> bool:
     cleaned = _clean_line(value)
     if not cleaned:
         return True
@@ -1069,15 +1236,15 @@ def _is_low_quality_ocr_text(value: str, min_alpha: int = 10, min_alpha_ratio: f
 
 
 def _apply_noisy_field_enrichment(
-    fields: Dict[str, str],
-    field_confidence: Dict[str, float],
+    fields: dict[str, str],
+    field_confidence: dict[str, float],
     raw_text: str,
-    entities: Dict[str, Any],
-    document_info: Dict[str, Any],
-    totals: Dict[str, Any],
+    entities: dict[str, Any],
+    document_info: dict[str, Any],
+    totals: dict[str, Any],
     classification: str,
     engine_name: str,
-) -> Tuple[Dict[str, str], Dict[str, float]]:
+) -> tuple[dict[str, str], dict[str, float]]:
     if not _is_noisy_extraction_context(classification, engine_name):
         return fields, field_confidence
 
@@ -1093,20 +1260,25 @@ def _apply_noisy_field_enrichment(
         noisy_value = str(noisy_fields.get(field_name) or "").strip()
 
         should_replace = False
-        if not current_value:
+        if not current_value or _is_header_like_value(current_value):
             should_replace = bool(noisy_value)
-        elif _is_header_like_value(current_value):
-            should_replace = bool(noisy_value)
-        elif field_name in {"cnpj_fornecedor", "cnpj_tomador"} and not _validate_cnpj(current_value):
+        elif field_name in {"cnpj_fornecedor", "cnpj_tomador"} and not _validate_cnpj(
+            current_value
+        ):
             should_replace = bool(noisy_value and _validate_cnpj(noisy_value))
-        elif field_name == "retencao" and len(current_value) > 240:
-            should_replace = bool(noisy_value)
-        elif field_name == "descricao_servico" and _is_low_quality_ocr_text(current_value):
+        elif (
+            field_name == "retencao"
+            and len(current_value) > 240
+            or field_name == "descricao_servico"
+            and _is_low_quality_ocr_text(current_value)
+        ):
             should_replace = bool(noisy_value)
         elif field_name == "valor_nf":
             current_amount = _parse_currency(current_value)
             noisy_amount = _parse_currency(noisy_value)
-            if noisy_amount is not None and (current_amount is None or noisy_amount > current_amount):
+            if noisy_amount is not None and (
+                current_amount is None or noisy_amount > current_amount
+            ):
                 should_replace = True
 
         if should_replace:
@@ -1126,7 +1298,7 @@ def _apply_noisy_field_enrichment(
     return fields, field_confidence
 
 
-def _parse_currency(value: str | float | int | None) -> float | None:
+def _parse_currency(value: str | float | None) -> float | None:
     if value is None:
         return None
 
@@ -1149,7 +1321,7 @@ def _parse_currency(value: str | float | int | None) -> float | None:
         return None
 
 
-def _pick_best_candidate(candidates: List[Tuple[str, float]]) -> Tuple[str, float]:
+def _pick_best_candidate(candidates: list[tuple[str, float]]) -> tuple[str, float]:
     for value, confidence in candidates:
         normalized = _semantic_value_or_empty(value)
         if normalized:
@@ -1159,7 +1331,9 @@ def _pick_best_candidate(candidates: List[Tuple[str, float]]) -> Tuple[str, floa
 
 def _normalize_dynamic_field_key(label: str) -> str:
     normalized = unicodedata.normalize("NFD", str(label or "").lower())
-    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = "".join(
+        char for char in normalized if unicodedata.category(char) != "Mn"
+    )
     normalized = re.sub(r"[^a-z0-9]+", "_", normalized)
     normalized = re.sub(r"_+", "_", normalized).strip("_")
 
@@ -1195,7 +1369,7 @@ def _is_dynamic_label_candidate(label: str) -> bool:
     return True
 
 
-def _insert_dynamic_field(result: Dict[str, str], key: str, value: str) -> None:
+def _insert_dynamic_field(result: dict[str, str], key: str, value: str) -> None:
     if key not in result:
         result[key] = value
         return
@@ -1236,8 +1410,10 @@ def _is_dynamic_value_plausible(field_key: str, field_value: str) -> bool:
     return True
 
 
-def _extract_dynamic_fields_from_raw_text(raw_text: str, max_fields: int) -> Dict[str, str]:
-    extracted: Dict[str, str] = {}
+def _extract_dynamic_fields_from_raw_text(
+    raw_text: str, max_fields: int
+) -> dict[str, str]:
+    extracted: dict[str, str] = {}
     if not raw_text.strip():
         return extracted
 
@@ -1287,12 +1463,14 @@ def _extract_dynamic_fields_from_raw_text(raw_text: str, max_fields: int) -> Dic
 
 def _normalize_search_text(value: str) -> str:
     normalized = unicodedata.normalize("NFD", str(value or "").lower())
-    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = "".join(
+        char for char in normalized if unicodedata.category(char) != "Mn"
+    )
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized.strip()
 
 
-def _extract_nfse_access_key(lines: List[str], start_idx: int) -> str:
+def _extract_nfse_access_key(lines: list[str], start_idx: int) -> str:
     for probe_idx in range(start_idx, min(len(lines), start_idx + 5)):
         digits = _normalize_digits(lines[probe_idx])
         if len(digits) >= 44:
@@ -1324,8 +1502,10 @@ def _is_probable_multiline_label(label: str) -> bool:
     return True
 
 
-def _extract_dynamic_fields_for_docling_digital_pdf(raw_text: str, max_fields: int) -> Dict[str, str]:
-    extracted: Dict[str, str] = {}
+def _extract_dynamic_fields_for_docling_digital_pdf(
+    raw_text: str, max_fields: int
+) -> dict[str, str]:
+    extracted: dict[str, str] = {}
     lines = [_clean_line(line) for line in raw_text.splitlines() if _clean_line(line)]
     if not lines:
         return extracted
@@ -1335,7 +1515,9 @@ def _extract_dynamic_fields_for_docling_digital_pdf(raw_text: str, max_fields: i
             break
 
         normalized_line = _normalize_search_text(line)
-        if "chave de acesso" in normalized_line and ("nfs-e" in normalized_line or "nfse" in normalized_line):
+        if "chave de acesso" in normalized_line and (
+            "nfs-e" in normalized_line or "nfse" in normalized_line
+        ):
             access_key = _extract_nfse_access_key(lines, idx)
             if access_key:
                 _insert_dynamic_field(extracted, "chave_de_acesso_da_nfs_e", access_key)
@@ -1380,8 +1562,10 @@ def _extract_dynamic_fields_for_docling_digital_pdf(raw_text: str, max_fields: i
     return extracted
 
 
-def _extract_dynamic_fields_from_structured_sources(data: Dict[str, Any], max_fields: int) -> Dict[str, str]:
-    extracted: Dict[str, str] = {}
+def _extract_dynamic_fields_from_structured_sources(
+    data: dict[str, Any], max_fields: int
+) -> dict[str, str]:
+    extracted: dict[str, str] = {}
 
     for source_name in ["document_info", "entities", "totals"]:
         source_data = data.get(source_name)
@@ -1411,13 +1595,13 @@ def _extract_dynamic_fields_from_structured_sources(data: Dict[str, Any], max_fi
 
 
 def extract_dynamic_document_fields(
-    data: Dict[str, Any],
-    base_fields: Dict[str, str] | None = None,
+    data: dict[str, Any],
+    base_fields: dict[str, str] | None = None,
     classification: str | None = None,
     engine_name: str | None = None,
     max_fields: int = 120,
-) -> Dict[str, str]:
-    dynamic_fields: Dict[str, str] = {}
+) -> dict[str, str]:
+    dynamic_fields: dict[str, str] = {}
 
     if isinstance(base_fields, dict):
         for field_name, field_value in base_fields.items():
@@ -1429,7 +1613,9 @@ def extract_dynamic_document_fields(
     raw_text = _get_raw_text(data)
 
     meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
-    resolved_classification = str(classification or meta.get("document_type") or "").strip().lower()
+    resolved_classification = (
+        str(classification or meta.get("document_type") or "").strip().lower()
+    )
     resolved_engine_name = str(engine_name or meta.get("engine") or "").strip().lower()
 
     if resolved_classification == "digital_pdf" and resolved_engine_name == "docling":
@@ -1461,79 +1647,160 @@ def extract_dynamic_document_fields(
     return dynamic_fields
 
 
-def extract_critical_fields(data: Dict[str, Any]) -> Dict[str, str]:
+def extract_critical_fields(data: dict[str, Any]) -> dict[str, str]:
     fields, _ = extract_critical_fields_with_confidence(data)
     return fields
 
 
-def extract_critical_fields_with_confidence(data: Dict[str, Any]) -> Tuple[Dict[str, str], Dict[str, float]]:
+def extract_critical_fields_with_confidence(
+    data: dict[str, Any],
+) -> tuple[dict[str, str], dict[str, float]]:
     raw_text = _get_raw_text(data)
     entities = data.get("entities") if isinstance(data.get("entities"), dict) else {}
-    document_info = data.get("document_info") if isinstance(data.get("document_info"), dict) else {}
+    document_info = (
+        data.get("document_info") if isinstance(data.get("document_info"), dict) else {}
+    )
     totals = data.get("totals") if isinstance(data.get("totals"), dict) else {}
-    meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
-    resolved_classification = str(meta.get("document_type") or meta.get("classification") or "").strip().lower()
-    resolved_engine_name = str(meta.get("engine") or "").strip().lower()
 
     # Ajuste por contexto: em NFS-e usamos blocos semânticos para priorizar valor real do campo.
     structured = _extract_nfse_structured_context(raw_text)
     lines = structured.get("lines", []) if isinstance(structured, dict) else []
-    emitente_block = structured.get("emitente_block", []) if isinstance(structured, dict) else []
-    tomador_block = structured.get("tomador_block", []) if isinstance(structured, dict) else []
-    servico_block = structured.get("servico_block", []) if isinstance(structured, dict) else []
-    municipal_block = structured.get("municipal_block", []) if isinstance(structured, dict) else []
-    federal_block = structured.get("federal_block", []) if isinstance(structured, dict) else []
+    emitente_block = (
+        structured.get("emitente_block", []) if isinstance(structured, dict) else []
+    )
+    tomador_block = (
+        structured.get("tomador_block", []) if isinstance(structured, dict) else []
+    )
+    servico_block = (
+        structured.get("servico_block", []) if isinstance(structured, dict) else []
+    )
+    municipal_block = (
+        structured.get("municipal_block", []) if isinstance(structured, dict) else []
+    )
+    federal_block = (
+        structured.get("federal_block", []) if isinstance(structured, dict) else []
+    )
 
-    emitente_name, emitente_name_conf = _extract_party_name_from_block(emitente_block, role="emitente")
-    fornecedor, fornecedor_conf = _pick_best_candidate([
-        (emitente_name, emitente_name_conf),
-        (str(entities.get("issuer") or entities.get("fornecedor") or entities.get("prestador") or ""), 0.84),
-        (_extract_line_value_by_labels(raw_text, ["fornecedor", "prestador", "emitente", "emissor"]), 0.58),
-    ])
+    emitente_name, emitente_name_conf = _extract_party_name_from_block(
+        emitente_block, role="emitente"
+    )
+    fornecedor, fornecedor_conf = _pick_best_candidate(
+        [
+            (emitente_name, emitente_name_conf),
+            (
+                str(
+                    entities.get("issuer")
+                    or entities.get("fornecedor")
+                    or entities.get("prestador")
+                    or ""
+                ),
+                0.84,
+            ),
+            (
+                _extract_line_value_by_labels(
+                    raw_text, ["fornecedor", "prestador", "emitente", "emissor"]
+                ),
+                0.58,
+            ),
+        ]
+    )
 
-    tomador_name, tomador_name_conf = _extract_party_name_from_block(tomador_block, role="tomador")
-    tomador, tomador_conf = _pick_best_candidate([
-        (tomador_name, tomador_name_conf),
-        (str(entities.get("recipient") or entities.get("tomador") or entities.get("destinatario") or ""), 0.84),
-        (_extract_line_value_by_labels(raw_text, ["tomador", "destinatário", "destinatario", "cliente"]), 0.58),
-    ])
+    tomador_name, tomador_name_conf = _extract_party_name_from_block(
+        tomador_block, role="tomador"
+    )
+    tomador, tomador_conf = _pick_best_candidate(
+        [
+            (tomador_name, tomador_name_conf),
+            (
+                str(
+                    entities.get("recipient")
+                    or entities.get("tomador")
+                    or entities.get("destinatario")
+                    or ""
+                ),
+                0.84,
+            ),
+            (
+                _extract_line_value_by_labels(
+                    raw_text, ["tomador", "destinatário", "destinatario", "cliente"]
+                ),
+                0.58,
+            ),
+        ]
+    )
 
-    cnpj_fornecedor, cnpj_fornecedor_conf = _pick_best_candidate([
-        (_extract_party_cnpj_from_block(emitente_block), 0.97),
-        (str(entities.get("cnpj_fornecedor") or entities.get("issuer_cnpj") or ""), 0.88),
-        (_extract_cnpj_from_text(raw_text, ["fornecedor", "prestador", "emitente", "emissor"]), 0.56),
-    ])
+    cnpj_fornecedor, cnpj_fornecedor_conf = _pick_best_candidate(
+        [
+            (_extract_party_cnpj_from_block(emitente_block), 0.97),
+            (
+                str(
+                    entities.get("cnpj_fornecedor") or entities.get("issuer_cnpj") or ""
+                ),
+                0.88,
+            ),
+            (
+                _extract_cnpj_from_text(
+                    raw_text, ["fornecedor", "prestador", "emitente", "emissor"]
+                ),
+                0.56,
+            ),
+        ]
+    )
 
-    cnpj_tomador, cnpj_tomador_conf = _pick_best_candidate([
-        (_extract_party_cnpj_from_block(tomador_block), 0.97),
-        (str(entities.get("cnpj_tomador") or entities.get("recipient_cnpj") or ""), 0.88),
-        (_extract_cnpj_from_text(raw_text, ["tomador", "destinatário", "destinatario", "cliente"]), 0.56),
-    ])
+    cnpj_tomador, cnpj_tomador_conf = _pick_best_candidate(
+        [
+            (_extract_party_cnpj_from_block(tomador_block), 0.97),
+            (
+                str(
+                    entities.get("cnpj_tomador") or entities.get("recipient_cnpj") or ""
+                ),
+                0.88,
+            ),
+            (
+                _extract_cnpj_from_text(
+                    raw_text, ["tomador", "destinatário", "destinatario", "cliente"]
+                ),
+                0.56,
+            ),
+        ]
+    )
 
-    if cnpj_fornecedor and cnpj_tomador and _normalize_digits(cnpj_fornecedor) == _normalize_digits(cnpj_tomador):
+    if (
+        cnpj_fornecedor
+        and cnpj_tomador
+        and _normalize_digits(cnpj_fornecedor) == _normalize_digits(cnpj_tomador)
+    ):
         cnpj_tomador = ""
 
-    numero_nf, numero_nf_conf = _pick_best_candidate([
-        (_extract_numero_nf_structured(lines), 0.94),
-        (str(document_info.get("number") or ""), 0.86),
-        (_extract_numero_nf(raw_text, document_info), 0.60),
-    ])
+    numero_nf, numero_nf_conf = _pick_best_candidate(
+        [
+            (_extract_numero_nf_structured(lines), 0.94),
+            (str(document_info.get("number") or ""), 0.86),
+            (_extract_numero_nf(raw_text, document_info), 0.60),
+        ]
+    )
 
-    descricao_servico, descricao_conf = _pick_best_candidate([
-        (_extract_descricao_servico_structured(servico_block), 0.92),
-        (_extract_descricao_servico(raw_text), 0.62),
-    ])
+    descricao_servico, descricao_conf = _pick_best_candidate(
+        [
+            (_extract_descricao_servico_structured(servico_block), 0.92),
+            (_extract_descricao_servico(raw_text), 0.62),
+        ]
+    )
 
-    valor_nf, valor_nf_conf = _pick_best_candidate([
-        (_extract_valor_nf_structured(municipal_block, lines), 0.92),
-        (str(totals.get("grand_total") or ""), 0.86),
-        (_extract_valor_nf(raw_text, totals), 0.58),
-    ])
+    valor_nf, valor_nf_conf = _pick_best_candidate(
+        [
+            (_extract_valor_nf_structured(municipal_block, lines), 0.92),
+            (str(totals.get("grand_total") or ""), 0.86),
+            (_extract_valor_nf(raw_text, totals), 0.58),
+        ]
+    )
 
-    retencao, retencao_conf = _pick_best_candidate([
-        (_extract_retencao_structured(municipal_block, federal_block), 0.82),
-        (_extract_retencao(raw_text), 0.48),
-    ])
+    retencao, retencao_conf = _pick_best_candidate(
+        [
+            (_extract_retencao_structured(municipal_block, federal_block), 0.82),
+            (_extract_retencao(raw_text), 0.48),
+        ]
+    )
 
     fields = {
         "fornecedor": fornecedor,
@@ -1570,7 +1837,7 @@ def extract_critical_fields_with_confidence(data: Dict[str, Any]) -> Tuple[Dict[
     return fields, field_confidence
 
 
-def validate_fields(fields: Dict[str, str]) -> Dict[str, bool]:
+def validate_fields(fields: dict[str, str]) -> dict[str, bool]:
     fornecedor = str(fields.get("fornecedor") or "").strip()
     tomador = str(fields.get("tomador") or "").strip()
     cnpj_fornecedor = str(fields.get("cnpj_fornecedor") or "").strip()
@@ -1587,7 +1854,8 @@ def validate_fields(fields: Dict[str, str]) -> Dict[str, bool]:
         "cnpj_fornecedor_valido": _validate_cnpj(cnpj_fornecedor),
         "cnpj_tomador_valido": _validate_cnpj(cnpj_tomador) if cnpj_tomador else False,
         "numero_nf_valido": bool(numero_nf) and not _is_header_like_value(numero_nf),
-        "descricao_ok": len(descricao_servico) > 10 and not _is_header_like_value(descricao_servico),
+        "descricao_ok": len(descricao_servico) > 10
+        and not _is_header_like_value(descricao_servico),
         "valor_valido": valor_nf is not None and valor_nf > 0,
         "retencao_ok": len(retencao) > 0 and not _is_header_like_value(retencao),
     }
@@ -1601,7 +1869,7 @@ def validate_fields(fields: Dict[str, str]) -> Dict[str, bool]:
     return validation
 
 
-def extract_avg_confidence(data: Dict[str, Any]) -> float | None:
+def extract_avg_confidence(data: dict[str, Any]) -> float | None:
     if not isinstance(data, dict):
         return None
 
@@ -1630,7 +1898,7 @@ def extract_avg_confidence(data: Dict[str, Any]) -> float | None:
     return None
 
 
-def _normalize_confidence_ratio(confidence: float | int | str | None) -> float:
+def _normalize_confidence_ratio(confidence: float | str | None) -> float:
     try:
         value = float(confidence or 0.0)
     except (TypeError, ValueError):
@@ -1642,7 +1910,9 @@ def _normalize_confidence_ratio(confidence: float | int | str | None) -> float:
     return max(0.0, min(1.0, value))
 
 
-def compute_field_score(field_name: str, value: str, confidence: float, validation: bool) -> float:
+def compute_field_score(
+    field_name: str, value: str, confidence: float, validation: bool
+) -> float:
     _ = field_name
     score = 0.0
 
@@ -1658,13 +1928,13 @@ def compute_field_score(field_name: str, value: str, confidence: float, validati
 
 
 def get_low_confidence_critical_fields(
-    fields: Dict[str, str],
-    field_confidence: Dict[str, float],
-    validation: Dict[str, Any],
+    fields: dict[str, str],
+    field_confidence: dict[str, float],
+    validation: dict[str, Any],
     threshold: float = LOW_CONFIDENCE_THRESHOLD,
-) -> Tuple[Dict[str, str], Dict[str, float]]:
-    low_conf_fields: Dict[str, str] = {}
-    field_scores: Dict[str, float] = {}
+) -> tuple[dict[str, str], dict[str, float]]:
+    low_conf_fields: dict[str, str] = {}
+    field_scores: dict[str, float] = {}
 
     for field_name in REQUIRED_FIELDS:
         validation_key = FIELD_VALIDATION_KEYS.get(field_name, "")
@@ -1683,24 +1953,16 @@ def get_low_confidence_critical_fields(
     return low_conf_fields, field_scores
 
 
-def should_run_llm(low_conf_fields: Dict[str, str]) -> bool:
+def should_run_llm(low_conf_fields: dict[str, str]) -> bool:
     return bool(low_conf_fields)
 
 
 def compute_field_pipeline_quality(
-    data: Dict[str, Any],
-    override_fields: Dict[str, str] | None = None,
+    data: dict[str, Any],
+    override_fields: dict[str, str] | None = None,
     override_ocr_confidence: float | None = None,
-    override_field_confidence: Dict[str, float] | None = None,
-) -> Dict[str, Any]:
-    meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
-    resolved_classification = str(meta.get("document_type") or meta.get("classification") or "").strip().lower()
-    resolved_engine_name = str(meta.get("engine") or "").strip().lower()
-    raw_text = _get_raw_text(data)
-    entities = data.get("entities") if isinstance(data.get("entities"), dict) else {}
-    document_info = data.get("document_info") if isinstance(data.get("document_info"), dict) else {}
-    totals = data.get("totals") if isinstance(data.get("totals"), dict) else {}
-
+    override_field_confidence: dict[str, float] | None = None,
+) -> dict[str, Any]:
     if override_fields:
         fields = override_fields
         field_confidence = dict(override_field_confidence or {})
@@ -1733,7 +1995,9 @@ def compute_field_pipeline_quality(
         for key, value in validation.items()
         if key != "required_fields_present" and isinstance(value, bool)
     ]
-    field_score = (sum(validation_flags) / len(validation_flags)) if validation_flags else 0.0
+    field_score = (
+        (sum(validation_flags) / len(validation_flags)) if validation_flags else 0.0
+    )
 
     detected_ocr_confidence = extract_avg_confidence(data)
     # Ajuste de robustez: quando engine não retorna confiança média, usa média de confiança por campo.
@@ -1742,13 +2006,17 @@ def compute_field_pipeline_quality(
     elif detected_ocr_confidence is not None:
         ocr_confidence_pct = detected_ocr_confidence
     else:
-        ocr_confidence_pct = (sum(field_confidence.values()) / max(1, len(field_confidence))) * 100.0
+        ocr_confidence_pct = (
+            sum(field_confidence.values()) / max(1, len(field_confidence))
+        ) * 100.0
 
     ocr_confidence = max(0.0, min(100.0, float(ocr_confidence_pct))) / 100.0
     final_score = (0.4 * ocr_confidence) + (0.6 * field_score)
 
     required_present = validation.get("required_fields_present", {})
-    missing_required = any(not bool(required_present.get(field_name)) for field_name in REQUIRED_FIELDS)
+    missing_required = any(
+        not bool(required_present.get(field_name)) for field_name in REQUIRED_FIELDS
+    )
     critical_invalid = any(
         not bool(validation.get(key))
         for key in ["cnpj_fornecedor_valido", "valor_valido", "numero_nf_valido"]
@@ -1757,7 +2025,8 @@ def compute_field_pipeline_quality(
     low_confidence_fields = [
         field_name
         for field_name in [*REQUIRED_FIELDS, "cnpj_tomador"]
-        if float(field_confidence.get(field_name, 0.0)) < float(FIELD_CONFIDENCE_THRESHOLDS.get(field_name, 0.55))
+        if float(field_confidence.get(field_name, 0.0))
+        < float(FIELD_CONFIDENCE_THRESHOLDS.get(field_name, 0.55))
     ]
     critical_low_confidence = any(
         field_name in low_confidence_fields
@@ -1782,7 +2051,9 @@ def compute_field_pipeline_quality(
 
     return {
         "fields": fields,
-        "field_confidence": {k: round(float(v), 4) for k, v in field_confidence.items()},
+        "field_confidence": {
+            k: round(float(v), 4) for k, v in field_confidence.items()
+        },
         "low_confidence_fields": low_confidence_fields,
         "critical_field_scores": field_scores,
         "low_confidence_critical_fields": low_conf_critical_fields,
@@ -1792,17 +2063,20 @@ def compute_field_pipeline_quality(
         "ocr_confidence": round(ocr_confidence, 4),
         "field_score": round(field_score, 4),
         "final_score": round(final_score, 4),
-        "fallback_needed": critical_invalid or missing_required or critical_low_confidence or final_score < 0.85,
+        "fallback_needed": critical_invalid
+        or missing_required
+        or critical_low_confidence
+        or final_score < 0.85,
     }
 
 
 def merge_fields_by_validation(
-    primary_fields: Dict[str, str],
-    fallback_fields: Dict[str, str],
-    fallback_validation: Dict[str, Any],
-) -> Tuple[Dict[str, str], List[str]]:
+    primary_fields: dict[str, str],
+    fallback_fields: dict[str, str],
+    fallback_validation: dict[str, Any],
+) -> tuple[dict[str, str], list[str]]:
     merged = dict(primary_fields)
-    fields_from_fallback: List[str] = []
+    fields_from_fallback: list[str] = []
 
     for field_name, validation_key in FIELD_VALIDATION_KEYS.items():
         fallback_value = str(fallback_fields.get(field_name) or "").strip()
@@ -1819,20 +2093,24 @@ def merge_fields_by_validation(
     for field_name in REQUIRED_FIELDS:
         merged.setdefault(field_name, "")
 
-    merged.setdefault("cnpj_tomador", str(primary_fields.get("cnpj_tomador") or "").strip())
+    merged.setdefault(
+        "cnpj_tomador", str(primary_fields.get("cnpj_tomador") or "").strip()
+    )
     return merged, fields_from_fallback
 
 
 def merge_field_confidence(
-    primary_confidence: Dict[str, float],
-    fallback_confidence: Dict[str, float],
-    fields_from_fallback: List[str],
-) -> Dict[str, float]:
+    primary_confidence: dict[str, float],
+    fallback_confidence: dict[str, float],
+    fields_from_fallback: list[str],
+) -> dict[str, float]:
     merged = dict(primary_confidence or {})
 
     # Ajuste de fallback por campo: usa confiança do fallback só para campos efetivamente substituídos.
     for field_name in fields_from_fallback:
-        merged[field_name] = float(fallback_confidence.get(field_name, merged.get(field_name, 0.0)))
+        merged[field_name] = float(
+            fallback_confidence.get(field_name, merged.get(field_name, 0.0))
+        )
 
     for field_name in [*REQUIRED_FIELDS, "cnpj_tomador"]:
         merged.setdefault(field_name, 0.0)
@@ -1840,7 +2118,9 @@ def merge_field_confidence(
     return merged
 
 
-def resolve_field_fallback_engine(classification: str, primary_engine: str) -> str | None:
+def resolve_field_fallback_engine(
+    classification: str, primary_engine: str
+) -> str | None:
     preferred = {
         "digital_pdf": "llamaparse",
         "scanned_image": "easyocr",

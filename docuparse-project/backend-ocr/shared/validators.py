@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 
 def normalize_digits(value: str) -> str:
@@ -45,7 +45,7 @@ def validate_cnpj(cnpj: str | None) -> bool:
     if len(set(digits)) == 1:
         return False
 
-    def _calc_digit(base: str, weights: List[int]) -> str:
+    def _calc_digit(base: str, weights: list[int]) -> str:
         total = sum(int(num) * weight for num, weight in zip(base, weights))
         remainder = total % 11
         digit = 0 if remainder < 2 else 11 - remainder
@@ -152,7 +152,7 @@ HEADER_VALUE_PATTERNS = [
 ]
 
 
-def _get_raw_text(data: Dict[str, Any]) -> str:
+def _get_raw_text(data: dict[str, Any]) -> str:
     """Extrai texto bruto dos dados OCR."""
     return str(data.get("raw_text") or data.get("raw_text_fallback") or "")
 
@@ -174,10 +174,23 @@ def _is_header_like_value(value: str) -> bool:
             return True
 
     # Ajuste semântico: linha curta e com tokens de metadado tende a ser cabeçalho.
-    header_tokens = ["serviço", "servico", "cnpj", "cpf", "nif", "emissão", "tributação", "municipal"]
+    header_tokens = [
+        "serviço",
+        "servico",
+        "cnpj",
+        "cpf",
+        "nif",
+        "emissão",
+        "tributação",
+        "municipal",
+    ]
     token_hits = sum(1 for token in header_tokens if token in lowered)
     words = lowered.split()
-    if len(words) <= 6 and token_hits >= 2 and not re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", cleaned):
+    if (
+        len(words) <= 6
+        and token_hits >= 2
+        and not re.search(r"\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}", cleaned)
+    ):
         return True
 
     return False

@@ -83,7 +83,7 @@ OCR concluído (document.status = OCR_COMPLETED)
 
 **Rationale**: A infraestrutura já existe: `rejection_notes` e `decision_date` já são retornados pelo serializer. Os handlers `handleReprocessDocument` e `handleDeleteDocument` já existem no `App`. O modal segue o padrão já usado no `GerenciarUsuarios` e `GerenciarRoles` (div com `fixed inset-0 bg-black/40`).
 
-**Changes**: 
+**Changes**:
 - `Dashboard` recebe props `onReprocess`, `onDelete` do `App`.
 - Adicionar `DocumentTable` clickable para documentos REJECTED.
 - Modal com: nome do arquivo, motivo (ou "Motivo não informado"), data/hora, botão Reprocessar, botão Excluir.

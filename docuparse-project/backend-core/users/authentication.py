@@ -23,8 +23,10 @@ class DocuparseAuthentication(JWTAuthentication):
         # Fall back to static service token
         auth_header = request.META.get("HTTP_AUTHORIZATION", "")
         if auth_header.startswith("Bearer "):
-            token = auth_header[len("Bearer "):]
-            internal_token = getattr(settings, "DOCUPARSE_INTERNAL_SERVICE_TOKEN", "").strip()
+            token = auth_header[len("Bearer ") :]
+            internal_token = getattr(
+                settings, "DOCUPARSE_INTERNAL_SERVICE_TOKEN", ""
+            ).strip()
             if internal_token and token == internal_token:
                 return (AnonymousUser(), "service_token")
 

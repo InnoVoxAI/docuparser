@@ -125,7 +125,7 @@ Remover os três `<Field>` elements:
 ```jsx
 // Antes
 <Field label="Schema">
-// Depois  
+// Depois
 <Field label="Schema (Campos)">
 ```
 

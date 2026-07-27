@@ -45,6 +45,7 @@ htmlcov/
 .cache
 nosetests.xml
 coverage.xml
+docuparse-project/frontend/coverage/
 *.cover
 *.py.cover
 .hypothesis/
@@ -184,9 +185,9 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
+#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
+#  and can be added to the global gitignore or merged into this file. However, if you prefer,
 #  you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 
@@ -234,6 +235,9 @@ yarn-error.log*
 dev-debug.log
 # Dependency directories
 /docuparse-project/frontend/node_modules/
+# `lib/` above is a Python venv/build-artifact pattern; it also matches the
+# frontend's src/shared/lib/ (TS source, not a build artifact) — un-ignore it.
+!/docuparse-project/frontend/src/shared/lib/
 # Environment variables
 # Editor directories and files
 .idea
@@ -247,8 +251,10 @@ dev-debug.log
 
 # Task files
 tasks.json
-tasks/ 
+tasks/
 
 .taskmaster/
 .sixth/
 docuparse-project/frontend/node_modules
+.devcontainer/devcontainer-lock.json
+.run

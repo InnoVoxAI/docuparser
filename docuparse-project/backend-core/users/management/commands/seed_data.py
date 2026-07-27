@@ -4,8 +4,19 @@ import os
 
 from django.core.management.base import BaseCommand, CommandError
 
-from users.management.commands.seed_permissions import PERMISSIONS
 from users.models import Permission, Role
+
+PERMISSIONS: list[tuple[str, str]] = [
+    ("inbox.view", "Visualizar Inbox"),
+    ("documents.send", "Enviar Documentos"),
+    ("documents.validate", "Validar Documentos"),
+    ("models.create", "Criar Modelos"),
+    ("models.edit", "Editar Modelos"),
+    ("operations.access", "Acessar Operações"),
+    ("users.manage", "Gerenciar Usuários"),
+    ("roles.manage", "Gerenciar Roles"),
+    ("tenants.manage", "Gerenciar Tenants"),
+]
 
 
 class Command(BaseCommand):

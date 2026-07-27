@@ -62,9 +62,9 @@ class Settings:
         "BACKEND_CORE_EMAIL_SETTINGS_URL",
         "http://127.0.0.1:8000/api/ocr/settings/email",
     )
-    imap_password = _env("DOCUPARSE_IMAP_PASSWORD") or _env("imap_reader_password")
-    imap_poll_limit = int(_env("DOCUPARSE_IMAP_POLL_LIMIT", "10"))
-    imap_mark_as_read = _env("DOCUPARSE_IMAP_MARK_AS_READ", "false").lower() in {
+    imap_password = _env("imap_reader_password")
+    imap_poll_limit = int(_env("imap_reader_poll_limit", "10"))
+    imap_mark_as_read = _env("imap_reader_mark_as_read", "false").lower() in {
         "1",
         "true",
         "yes",

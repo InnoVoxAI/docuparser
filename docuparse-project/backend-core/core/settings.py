@@ -13,7 +13,7 @@ for local_package_dir in (PROJECT_DIR / "contracts", PROJECT_DIR / "shared"):
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-test-key")
 
-DEBUG = True
+DEBUG = os.environ.get("DEBUG", True)
 
 ALLOWED_HOSTS = ["*"]
 

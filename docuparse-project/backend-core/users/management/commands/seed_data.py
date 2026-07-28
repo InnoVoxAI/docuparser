@@ -37,10 +37,12 @@ class Command(BaseCommand):
             )
         self.stdout.write("seed_data: permissions ready")
 
-        role, _ = Role.objects.get_or_create(name="admin")
-        role.permissions.set(Permission.objects.all())
-        role.save()
-        self.stdout.write("seed_data: admin role ready")
+        role, role_created = Role.objects.get_or_create(name="admin")
+        if role_created:
+            role.permissions.set(Permission.objects.all())
+            self.stdout.write("seed_data: admin role created")
+        else:
+            self.stdout.write("seed_data: admin role already exists")
 
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@docuparse.com")
         admin_password = os.environ.get("ADMIN_PASSWORD")
@@ -84,6 +86,7 @@ class Command(BaseCommand):
                     "email": tenant_admin_email,
                     "is_active": True,
                     "is_staff": True,
+                    "is_superuser": tenant_admin_email == admin_email,
                 },
             )
             if created:
@@ -97,13 +100,13 @@ class Command(BaseCommand):
                     f"seed_data [{t.slug}]: admin user {tenant_admin_email} already exists"
                 )
 
-            profile, _ = UserProfile.objects.get_or_create(
-                user=user, defaults={"tenant": t}
+            _, profile_created = UserProfile.objects.get_or_create(
+                user=user, defaults={"tenant": t, "role_ref": role}
             )
-            profile.role_ref = role
-            profile.tenant = t
-            profile.save()
-            self.stdout.write(f"seed_data [{t.slug}]: admin profile ready")
+            if profile_created:
+                self.stdout.write(f"seed_data [{t.slug}]: admin profile created")
+            else:
+                self.stdout.write(f"seed_data [{t.slug}]: admin profile already exists")
 
         # ── Per-tenant schema: SchemaConfig and LayoutConfig ──────────────────
         # SchemaConfig / LayoutConfig are tenant-app models — must use schema_context.

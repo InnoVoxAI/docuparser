@@ -57,6 +57,9 @@ class DocumentsAPITests(TestCase):
                 Permission.objects.create(
                     code="models.edit", description="Models edit"
                 ),
+                Permission.objects.create(
+                    code="operations.access", description="Operations access"
+                ),
             ]
         )
         UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
@@ -614,6 +617,27 @@ class DocumentsAPITests(TestCase):
         assert requeued_events[0]["event_id"] == "event-1"
         assert invalid.status_code == 400
         assert invalid_requeue.status_code == 400
+
+    def test_dlq_endpoints_require_operations_access(self) -> None:
+        role = Role.objects.create(name="SemOperacoes")
+        role.permissions.set([Permission.objects.get(code="inbox.view")])
+        user = get_user_model().objects.create_user(username="viewer", password="test")
+        UserProfile.objects.create(user=user, tenant=self.tenant, role_ref=role)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {_jwt_for(user, self.tenant)}"
+        )
+
+        summary = self.client.get(reverse("dlq-summary"))
+        events = self.client.get(reverse("dlq-events"), {"stream": "ocr.completed.dlq"})
+        requeue = self.client.post(
+            reverse("dlq-requeue"),
+            {"stream": "ocr.completed.dlq", "id": "1", "execute": False},
+            format="json",
+        )
+
+        assert summary.status_code == 403
+        assert events.status_code == 403
+        assert requeue.status_code == 403
 
     def test_rejection_notes_in_document_list(self) -> None:
         ValidationDecision.objects.create(

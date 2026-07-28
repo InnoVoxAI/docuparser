@@ -24,6 +24,8 @@ docuparse-project/frontend
 
 No arquivo docuparse-project/frontend/frontend_rules.md poderá encontrar regras a seguir para criar ou modificar código no frontend.
 
+You can use run_script.sh with arguments to run any command to test the backend, as it injects enviroment variables.
+
 ## Geração de código
 Para geração de código estamos utilizando speckit, que lê as instruções abaixo:
 

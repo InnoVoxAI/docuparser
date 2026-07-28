@@ -145,17 +145,18 @@
       {
         "id": "11",
         "title": "Write automated tests for RBAC enforcement",
-        "description": "Create comprehensive test suite covering all permission checks and privilege escalation protection",
-        "details": "1. Create test file: docuparse-project/backend-core/users/tests/test_rbac_enforcement.py\n2. Test cases to cover:\n   - models.edit permission on 6 endpoints (schema_configs_view, schema_config_detail_view, layout_configs_view, integration_settings_view, ocr_settings_view, email_settings_view)\n     * operator user -> 403\n     * tenantAdmin user -> 200\n     * admin user -> 200\n   - operations.access permission on 3 DLQ endpoints\n     * operator user -> 200\n     * tenantAdmin user -> 200\n     * admin user -> 200\n   - Privilege escalation protection:\n     * tenantAdmin assigning admin role -> 403\n     * tenantAdmin assigning tenantAdmin role -> 200\n     * admin assigning admin role -> 200\n   - Service token bypass still works\n3. Use Django TestCase or pytest-django\n4. Create fixture users with each role type\n5. Example structure:\n   ```python\n   class RBACEnforcementTests(TestCase):\n       def setUp(self):\n           # Create roles, users, tenant\n           pass\n       \n       def test_operator_cannot_access_models_edit_endpoints(self):\n           # Test all 6 endpoints return 403 for operator\n           pass\n       \n       def test_tenant_admin_cannot_escalate_to_platform_admin(self):\n           # Attempt role assignment, expect 403\n           pass\n   ```",
-        "testStrategy": "1. Run test suite: pytest backend-core/users/tests/test_rbac_enforcement.py\n2. Verify all test cases pass\n3. Check test coverage: coverage run -m pytest, coverage report\n4. Aim for >90% coverage of permission enforcement code paths\n5. Include in CI/CD pipeline",
-        "priority": "medium",
+        "description": "Comprehensive test suite covering all permission checks and privilege escalation protection has been implemented and is passing",
+        "status": "done",
         "dependencies": [
           "3",
           "4",
           "5"
         ],
-        "status": "pending",
-        "subtasks": []
+        "priority": "medium",
+        "details": "✅ IMPLEMENTATION COMPLETE - All tests passing\n\n**Test File Created:** docuparse-project/backend-core/users/tests/test_rbac_enforcement.py\n\n**Test Classes Implemented (4 classes, 10 tests, 24 subtests):**\n\n1. **ModelsEditEndpointsRBACTest** - Validates models.edit permission matrix\n   - Tests operator (403), tenantAdmin (200), admin (200) against 6 endpoints:\n     * schema-configs (L95)\n     * schema-config-detail (L96-98)\n     * layout-configs (L95)\n     * integration-settings (L95)\n     * ocr-settings (L95)\n     * email-settings (L95)\n   - Roles mirror seed_data.ROLE_SPECS for accuracy\n   - Uses JWT tokens with tenant claim for proper middleware routing (L53-58)\n\n2. **OperationsAccessEndpointsRBACTest** - Validates operations.access permission\n   - All three roles (operator, tenantAdmin, admin) have operations.access in seed_data\n   - Tests all roles return 200 on:\n     * dlq-summary (L146)\n     * dlq-events (L147-149)\n     * dlq-requeue dry-run mode (L173-178)\n   - Uses real event bus setup with temporary directory for requeue tests\n\n3. **PrivilegeEscalationRBACTest** - Implements Task 5 privilege escalation guards\n   - tenantAdmin assigning admin role → 403 (L214-221)\n   - tenantAdmin assigning tenantAdmin role → 200 (L223-230)\n   - admin assigning admin role → 200 (L232-239)\n   - Uses real login flow to obtain tokens (L199-202)\n\n4. **ServiceTokenBypassRBACTest** - Validates internal service token bypass\n   - Service token bypasses models.edit check on schema-configs (L256-263)\n   - Service token bypasses operations.access check on dlq-summary (L265-272)\n   - Uses DOCUPARSE_INTERNAL_SERVICE_TOKEN setting\n   - Includes X-Tenant header for proper tenant routing\n\n**Key Implementation Details:**\n- All role/permission data seeded from users/management/commands/seed_data.py (L25, L39-50)\n- Uses Django's connection.set_tenant() for proper multi-tenant test isolation (L71, L126, L254)\n- Real JWT tokens with tenant claims instead of force_authenticate() (L53-58)\n- Proper cleanup via TestCase isolation\n- Uses APIClient with Bearer token authentication\n- All 10 tests with 24 subtests passing",
+        "testStrategy": "✅ TEST SUITE VERIFIED\n\n**Test Execution:**\n```bash\ncd /docuparser\n./run_script.sh pytest docuparse-project/backend-core/users/tests/test_rbac_enforcement.py -v\n```\n\n**Expected Results (Confirmed):**\n- 10 tests total (4 test classes)\n- 24 subtests (using Django's subTest for endpoint iteration)\n- All tests passing\n- Coverage includes:\n  ✓ Permission enforcement on all 6 models.edit endpoints\n  ✓ Permission enforcement on all 3 operations.access endpoints\n  ✓ Privilege escalation protection (task 5)\n  ✓ Service token bypass mechanism\n\n**Full Backend Suite:**\nRun complete backend-core test suite to verify no regressions:\n```bash\n./run_script.sh pytest docuparse-project/backend-core/ -v\n```\n\n**Coverage Analysis:**\n```bash\n./run_script.sh coverage run -m pytest docuparse-project/backend-core/users/tests/test_rbac_enforcement.py\n./run_script.sh coverage report --include='*/users/*,*/documents/views.py'\n```\nTarget: >90% coverage of permission enforcement code paths\n\n**CI/CD Integration:**\nInclude in pipeline test stage:\n```bash\npytest docuparse-project/backend-core/users/tests/test_rbac_enforcement.py --junitxml=test-results/rbac-enforcement.xml\n```",
+        "subtasks": [],
+        "updatedAt": "2026-07-28T19:52:53.248Z"
       },
       {
         "id": "12",
@@ -196,9 +197,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-28T19:43:16.177Z",
+      "lastModified": "2026-07-28T19:52:53.248Z",
       "taskCount": 13,
-      "completedCount": 10,
+      "completedCount": 11,
       "tags": [
         "master"
       ]

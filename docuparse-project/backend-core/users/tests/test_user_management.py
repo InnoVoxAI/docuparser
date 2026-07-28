@@ -213,3 +213,14 @@ class PrivilegeEscalationTest(TestCase):
             format="json",
         )
         self.assertEqual(r.status_code, 200)
+
+    def test_list_users_role_includes_is_platform_role(self) -> None:
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {self.platform_admin_token}"
+        )
+        r = self.client.get("/api/ocr/users")
+        self.assertEqual(r.status_code, 200)
+        by_email = {u["email"]: u["role"]["is_platform_role"] for u in r.data}
+        self.assertTrue(by_email["padmin@t.com"])
+        self.assertFalse(by_email["tadmin@t.com"])
+        self.assertFalse(by_email["op2@t.com"])

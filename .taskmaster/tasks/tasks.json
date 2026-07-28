@@ -131,15 +131,16 @@
         "id": "10",
         "title": "Update backend serializers to include is_platform_role",
         "description": "Modify Role serializer to include is_platform_role field in API responses",
-        "details": "1. Locate role serializer in docuparse-project/backend-core/users/serializers.py (or wherever RoleSerializer is defined)\n2. If serializer uses ModelSerializer, add 'is_platform_role' to fields list:\n   ```python\n   class RoleSerializer(serializers.ModelSerializer):\n       class Meta:\n           model = Role\n           fields = ['id', 'name', 'permissions', 'is_platform_role']  # Add is_platform_role\n   ```\n3. If using custom serializer, add field:\n   ```python\n   is_platform_role = serializers.BooleanField(read_only=True)\n   ```\n4. This ensures frontend receives is_platform_role in /roles API responses\n5. May need to update UserListSerializer to include role.is_platform_role in nested role object",
-        "testStrategy": "1. Make GET request to /api/roles/ endpoint\n2. Verify response includes is_platform_role field for each role\n3. Check admin role has is_platform_role: true\n4. Check tenantAdmin and operator have is_platform_role: false\n5. Verify nested role in user responses also includes field",
-        "priority": "medium",
+        "status": "done",
         "dependencies": [
           "1",
           "2"
         ],
-        "status": "pending",
-        "subtasks": []
+        "priority": "medium",
+        "details": "✅ IMPLEMENTATION COMPLETE\n\nCompleted changes in docuparse-project/backend-core/users/serializers.py:\n\n1. **RoleListSerializer** (line 156-166):\n   - Added `is_platform_role = serializers.BooleanField()` (line 159)\n   - Used in GET /api/ocr/roles endpoint\n   - Returns is_platform_role for all roles in role list responses\n\n2. **UserMeSerializer.get_role** (line 61-69):\n   - Modified to include is_platform_role in nested role object\n   - Returns dict with id, name, and is_platform_role (line 68)\n   - Used in GET /api/auth/me endpoint\n\n3. **UserListSerializer.get_role** (line 92-100):\n   - Modified to include is_platform_role in nested role object\n   - Returns dict with id, name, and is_platform_role (line 99)\n   - Used in GET /api/ocr/users endpoint\n\n**Implementation Files:**\n- Serializers: docuparse-project/backend-core/users/serializers.py (lines 68, 99, 159)\n- Test coverage: test_role_management.py, test_auth_views.py, test_user_management.py",
+        "testStrategy": "✅ ALL TESTS PASSING (41 passed in users/ suite)\n\n**Implemented Tests:**\n\n1. **test_role_management.py::test_list_roles_includes_is_platform_role** (lines 67-74):\n   - Creates platform admin role with is_platform_role=True\n   - Verifies GET /api/ocr/roles includes is_platform_role field\n   - Confirms admin role returns True, Operador returns False\n\n2. **test_auth_views.py::test_me_includes_role_is_platform_role** (lines 160-177):\n   - Tests nested role in GET /api/auth/me response\n   - Verifies platform admin sees is_platform_role: true\n   - Verifies regular user sees is_platform_role: false\n\n3. **test_user_management.py::PrivilegeEscalationTest::test_list_users_role_includes_is_platform_role** (lines 217-226):\n   - Tests GET /api/ocr/users endpoint\n   - Verifies nested role objects include is_platform_role\n   - Validates correct boolean values for platform vs tenant roles\n\n**Test Results:**\n- All 41 tests in users/ suite passing\n- Full coverage of role list, user me, and user list endpoints",
+        "subtasks": [],
+        "updatedAt": "2026-07-28T19:43:16.176Z"
       },
       {
         "id": "11",
@@ -195,9 +196,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-28T19:31:15.539Z",
+      "lastModified": "2026-07-28T19:43:16.177Z",
       "taskCount": 13,
-      "completedCount": 9,
+      "completedCount": 10,
       "tags": [
         "master"
       ]

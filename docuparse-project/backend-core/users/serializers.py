@@ -62,7 +62,11 @@ class UserMeSerializer(serializers.Serializer):
         profile = getattr(obj, "docuparse_profile", None)
         if not profile or not profile.role_ref:
             return None
-        return {"id": str(profile.role_ref.id), "name": profile.role_ref.name}
+        return {
+            "id": str(profile.role_ref.id),
+            "name": profile.role_ref.name,
+            "is_platform_role": profile.role_ref.is_platform_role,
+        }
 
     def get_permissions(self, obj: Any) -> list[str]:
         profile = getattr(obj, "docuparse_profile", None)
@@ -89,7 +93,11 @@ class UserListSerializer(serializers.Serializer):
         profile = getattr(obj, "docuparse_profile", None)
         if not profile or not profile.role_ref:
             return None
-        return {"id": str(profile.role_ref.id), "name": profile.role_ref.name}
+        return {
+            "id": str(profile.role_ref.id),
+            "name": profile.role_ref.name,
+            "is_platform_role": profile.role_ref.is_platform_role,
+        }
 
 
 class UserCreateSerializer(serializers.Serializer):
@@ -148,6 +156,7 @@ class UserUpdateSerializer(serializers.Serializer):
 class RoleListSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     name = serializers.CharField()
+    is_platform_role = serializers.BooleanField()
     permissions = serializers.SerializerMethodField()
     users_count = serializers.IntegerField(read_only=True)
     created_at = serializers.DateTimeField()

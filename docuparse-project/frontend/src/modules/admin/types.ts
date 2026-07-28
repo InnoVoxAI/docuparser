@@ -1,6 +1,7 @@
 export interface AdminRoleRef {
     id: string
     name: string
+    is_platform_role?: boolean
 }
 
 // Usuários/roles/permissões vêm de serializers RBAC de schema fixo (não de um
@@ -25,6 +26,7 @@ export interface AdminPermission {
 export interface AdminRole {
     id: string
     name: string
+    is_platform_role?: boolean
     permissions?: Array<AdminPermission | string>
     users_count?: number
 }

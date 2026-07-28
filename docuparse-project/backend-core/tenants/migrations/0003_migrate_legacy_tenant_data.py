@@ -22,8 +22,13 @@ def migrate_legacy_tenant_data(apps, schema_editor):
     # tables simply don't exist) crashes with a ProgrammingError instead of
     # taking the no-op path below.
     with schema_editor.connection.cursor() as cursor:
-        existing_tables = set(schema_editor.connection.introspection.table_names(cursor))
-    if "documents_tenant" not in existing_tables or "documents_userprofile" not in existing_tables:
+        existing_tables = set(
+            schema_editor.connection.introspection.table_names(cursor)
+        )
+    if (
+        "documents_tenant" not in existing_tables
+        or "documents_userprofile" not in existing_tables
+    ):
         return  # Fresh install, nothing to consolidate.
 
     LegacyTenant = apps.get_model("documents", "Tenant")
@@ -81,7 +86,6 @@ def reverse_noop(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("tenants", "0002_populate_schema_name_and_domain"),
         ("documents", "0010_backfill_field_versions"),

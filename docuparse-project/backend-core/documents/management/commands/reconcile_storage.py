@@ -4,9 +4,7 @@ import json
 import uuid
 from dataclasses import asdict, dataclass, field
 
-from django.conf import settings
 from django.core.management.base import BaseCommand
-
 from docuparse_storage import get_storage
 
 from documents.models import Document
@@ -72,20 +70,32 @@ class Command(BaseCommand):
             self._check_db_to_storage(storage, report, limit=options["limit"])
         if direction in ("both", "storage-to-db"):
             self._check_storage_to_db(
-                storage, report, prefix=options["prefix"], delete=options["delete_orphans"]
+                storage,
+                report,
+                prefix=options["prefix"],
+                delete=options["delete_orphans"],
             )
 
         self._emit(report, as_json=options["json"])
 
     # -- banco → storage ---------------------------------------------------
 
-    def _check_db_to_storage(self, storage, report: ReconcileReport, *, limit: int) -> None:
-        qs = Document.objects.all().only("id", "file_uri", "raw_text_uri").order_by("received_at")
+    def _check_db_to_storage(
+        self, storage, report: ReconcileReport, *, limit: int
+    ) -> None:
+        qs = (
+            Document.objects.all()
+            .only("id", "file_uri", "raw_text_uri")
+            .order_by("received_at")
+        )
         if limit > 0:
             qs = qs[:limit]
         for doc in qs.iterator():
             report.checked_documents += 1
-            for kind, uri in (("file_uri", doc.file_uri), ("raw_text_uri", doc.raw_text_uri)):
+            for kind, uri in (
+                ("file_uri", doc.file_uri),
+                ("raw_text_uri", doc.raw_text_uri),
+            ):
                 if not uri:
                     continue
                 try:
@@ -95,12 +105,19 @@ class Command(BaseCommand):
                         )
                 except Exception as exc:  # noqa: BLE001 - conexão/credencial/backend ausente
                     report.errors.append(
-                        {"document_id": str(doc.id), "field": kind, "uri": uri, "error": repr(exc)}
+                        {
+                            "document_id": str(doc.id),
+                            "field": kind,
+                            "uri": uri,
+                            "error": repr(exc),
+                        }
                     )
 
     # -- storage → banco ---------------------------------------------------
 
-    def _check_storage_to_db(self, storage, report: ReconcileReport, *, prefix: str, delete: bool) -> None:
+    def _check_storage_to_db(
+        self, storage, report: ReconcileReport, *, prefix: str, delete: bool
+    ) -> None:
         for key in storage.iter_keys(prefix):
             report.checked_objects += 1
             document_id = self._document_id_from_key(key)
@@ -134,17 +151,29 @@ class Command(BaseCommand):
 
     def _emit(self, report: ReconcileReport, *, as_json: bool) -> None:
         if as_json:
-            self.stdout.write(json.dumps(asdict(report), ensure_ascii=False, indent=2, sort_keys=True))
+            self.stdout.write(
+                json.dumps(asdict(report), ensure_ascii=False, indent=2, sort_keys=True)
+            )
             return
 
         self.stdout.write(
             f"Documentos checados: {report.checked_documents} | objetos checados: {report.checked_objects}"
         )
-        self.stdout.write(self.style.WARNING(f"Referências pendentes (banco → storage): {len(report.dangling_refs)}"))
+        self.stdout.write(
+            self.style.WARNING(
+                f"Referências pendentes (banco → storage): {len(report.dangling_refs)}"
+            )
+        )
         for item in report.dangling_refs:
-            self.stdout.write(f"  {item['document_id']} {item['field']} -> {item['uri']} (objeto ausente)")
+            self.stdout.write(
+                f"  {item['document_id']} {item['field']} -> {item['uri']} (objeto ausente)"
+            )
 
-        self.stdout.write(self.style.WARNING(f"Objetos órfãos (storage → banco): {len(report.orphan_objects)}"))
+        self.stdout.write(
+            self.style.WARNING(
+                f"Objetos órfãos (storage → banco): {len(report.orphan_objects)}"
+            )
+        )
         for key in report.orphan_objects:
             marker = "removido" if key in report.deleted_objects else "sem dono"
             self.stdout.write(f"  {key} ({marker})")
@@ -155,4 +184,6 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {err}")
 
         if not report.dangling_refs and not report.orphan_objects and not report.errors:
-            self.stdout.write(self.style.SUCCESS("Consistente: banco e storage reconciliados."))
+            self.stdout.write(
+                self.style.SUCCESS("Consistente: banco e storage reconciliados.")
+            )

@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
 from django.db import transaction
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
-
 from docuparse_storage import get_storage
 
 from documents.models import Document
@@ -14,7 +12,11 @@ from documents.models import Document
 logger = logging.getLogger(__name__)
 
 
-@receiver(post_delete, sender=Document, dispatch_uid="documents.delete_document_storage_objects")
+@receiver(
+    post_delete,
+    sender=Document,
+    dispatch_uid="documents.delete_document_storage_objects",
+)
 def delete_document_storage_objects(sender, instance: Document, **kwargs) -> None:
     """Remove os objetos do storage (binário + ``raw_text.json``) quando um
     ``Document`` é apagado, evitando objetos órfãos no MinIO/disco.

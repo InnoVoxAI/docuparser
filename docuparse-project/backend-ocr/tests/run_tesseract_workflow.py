@@ -10,7 +10,6 @@ from ..agent.classifier import classify_document
 from ..engines.tesseract_engine import TesseractEngine
 from ..main import app
 
-
 client = TestClient(app)
 
 
@@ -74,7 +73,9 @@ def run_workflow(
     classification = classify_document(input_path.name, original_bytes)
 
     engine = TesseractEngine()
-    preprocessed = engine.preprocess_for_classification(image_bytes=image_bytes, classification=classification)
+    preprocessed = engine.preprocess_for_classification(
+        image_bytes=image_bytes, classification=classification
+    )
 
     if save_preprocessed:
         output_img = input_path.with_name(f"{input_path.stem}_preprocessed.png")
@@ -84,7 +85,9 @@ def run_workflow(
 
     api_result = None
     if also_test_api:
-        mime_type = "application/pdf" if input_path.suffix.lower() == ".pdf" else "image/png"
+        mime_type = (
+            "application/pdf" if input_path.suffix.lower() == ".pdf" else "image/png"
+        )
         with input_path.open("rb") as file_handle:
             response = client.post(
                 "/process",
@@ -143,7 +146,7 @@ def main() -> None:
     # if args.input_path:
     #     input_path = Path(args.input_path).expanduser().resolve()
     # else:
-        
+
     input_path = Path(
         "/home/gpcmoura/Documents/Work/InnoVox/Repositories/docuparser/docuparse-project/backend-ocr/tests/pdf/Recibo  digitalizado com manuscrito assinatura.pdf"
     )

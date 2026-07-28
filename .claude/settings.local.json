@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks)",
+      "Bash(node -e \"const p = require\\('/docuparser/docuparse-project/frontend/node_modules/eslint-plugin-react-hooks'\\); console.log\\(Object.keys\\(p\\)\\); console.log\\(Object.keys\\(p.configs||{}\\)\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(.specify/extensions/git/scripts/bash/auto-commit.sh after_implement)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(npx eslint *)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(npx tsc *)",
+      "Bash(grep -n \"trailing\\\\|,$\" src/types.ts)",
+      "Bash(npm run *)",
+      "Bash(npx prettier *)",
+      "Bash(npm install *)",
+      "Bash(npm view *)",
+      "Read(//home/vscode/**)",
+      "Bash(npm config *)",
+      "Bash(npm ls *)",
+      "Bash(npm dedupe *)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(jobs)",
+      "Bash(git status *)",
+      "Bash(git check-ignore *)"
+    ]
+  }
+}

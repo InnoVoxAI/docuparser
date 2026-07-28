@@ -206,9 +206,9 @@ services:
     build:
       context: .
       dockerfile: backend-com/Dockerfile
-    command: uvicorn backend_com.api.app:app --host 0.0.0.0 --port 8070 --reload
+    command: uvicorn api.app:app --host 0.0.0.0 --port 8070 --reload
     volumes:
-      - ./backend-com/src:/app/src
+      - ./backend-com:/app
       - ./contracts:/contracts:ro
       - ./shared:/shared:ro
       - docuparse-storage:/data/storage
@@ -218,7 +218,7 @@ services:
     ports:
       - "8070:8070"
     environment:
-      PYTHONPATH: /app/src:/contracts:/shared
+      PYTHONPATH: /app:/contracts:/shared
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage

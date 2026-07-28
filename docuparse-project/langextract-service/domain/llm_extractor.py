@@ -28,6 +28,7 @@ Environment variables:
     OPENROUTER_BASE_URL  — OpenRouter base URL (optional)
     OPENROUTER_TIMEOUT   — request timeout in seconds (optional)
 """
+
 from __future__ import annotations
 
 import json
@@ -64,7 +65,9 @@ def extract_with_llm(
     schema_id = schema_definition.get("schema_id") or "generic"
     schema_version = schema_definition.get("version") or "v1"
     fields_spec: list[dict] = schema_definition.get("fields") or []
-    instructions: str = (schema_definition.get("prompt") or {}).get("instructions") or ""
+    instructions: str = (schema_definition.get("prompt") or {}).get(
+        "instructions"
+    ) or ""
     examples: list[dict] = schema_definition.get("examples") or []
 
     field_names = [f["name"] for f in fields_spec if f.get("name")]
@@ -72,7 +75,8 @@ def extract_with_llm(
     if not field_names:
         logger.warning(
             "langextract.llm_extractor.no_fields_defined | schema_id=%s tenant=%s",
-            schema_id, tenant_id,
+            schema_id,
+            tenant_id,
         )
         return ExtractedDocument(
             schema_id=schema_id,
@@ -92,14 +96,20 @@ def extract_with_llm(
         logger.info(
             "langextract.llm_extractor.llm_call_success | schema_id=%s tenant=%s "
             "fields_returned=%d",
-            schema_id, tenant_id, len(extracted_fields),
+            schema_id,
+            tenant_id,
+            len(extracted_fields),
         )
     except Exception as exc:
         logger.error(
             "langextract.llm_extractor.llm_call_failed | schema_id=%s tenant=%s error=%s",
-            schema_id, tenant_id, exc,
+            schema_id,
+            tenant_id,
+            exc,
         )
-        extracted_fields = {name: {"value": None, "confidence": 0.0} for name in field_names}
+        extracted_fields = {
+            name: {"value": None, "confidence": 0.0} for name in field_names
+        }
 
     # Replace missing/null values with EXTRACTION_NOT_FOUND so each field appears in the UI
     for name in field_names:
@@ -131,6 +141,7 @@ def extract_with_llm(
 # Prompt construction
 # ---------------------------------------------------------------------------
 
+
 def _build_extraction_prompt(
     raw_text: str,
     instructions: str,
@@ -140,7 +151,7 @@ def _build_extraction_prompt(
     """Compose the user-facing extraction prompt sent to the LLM."""
 
     # Describe each field (name, type, required flag, extraction rule)
-    ### TEST 
+    ### TEST
     print("Fields spec:", fields_spec)
     fields_lines = []
     for f in fields_spec:
@@ -162,12 +173,17 @@ def _build_extraction_prompt(
             field = ex.get("field", "")
             expected = ex.get("expected", "")
             source = ex.get("source", "")
-            ex_lines.append(f'  - campo "{field}": valor "{expected}" extraído de "{source}"')
+            ex_lines.append(
+                f'  - campo "{field}": valor "{expected}" extraído de "{source}"'
+            )
         examples_block = "\n\nExemplos anotados:\n" + "\n".join(ex_lines)
 
     # Expected JSON template with per-field value and confidence
     json_template = json.dumps(
-        {name: {"value": "<valor extraído ou null>", "confidence": 0.0} for name in [f["name"] for f in fields_spec if f.get("name")]},
+        {
+            name: {"value": "<valor extraído ou null>", "confidence": 0.0}
+            for name in [f["name"] for f in fields_spec if f.get("name")]
+        },
         ensure_ascii=False,
         indent=2,
     )
@@ -210,6 +226,7 @@ Retorne APENAS um objeto JSON válido com o seguinte formato, sem qualquer texto
 # OpenRouter HTTP call
 # ---------------------------------------------------------------------------
 
+
 def _call_openrouter(user_prompt: str) -> str:
     """Call the OpenRouter chat-completions API and return the assistant message."""
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
@@ -219,7 +236,7 @@ def _call_openrouter(user_prompt: str) -> str:
     # baidu/qianfan-ocr-fast:free) that rejects text chat-completion requests.
     # The hardcoded default ensures a capable text model is always available even
     # when the container hasn't picked up the env var yet.
-    
+
     model = os.getenv("LANGEXTRACT_MODEL")
     base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").strip()
     timeout = int(os.getenv("OPENROUTER_TIMEOUT", "60"))
@@ -276,9 +293,13 @@ def _call_openrouter(user_prompt: str) -> str:
             pass
         logger.error(
             "langextract.llm_extractor.openrouter_http_error | model=%s status=%s body=%s",
-            model, http_err.code, error_body[:500],
+            model,
+            http_err.code,
+            error_body[:500],
         )
-        raise RuntimeError(f"OpenRouter HTTP {http_err.code}: {error_body[:200]}") from http_err
+        raise RuntimeError(
+            f"OpenRouter HTTP {http_err.code}: {error_body[:200]}"
+        ) from http_err
 
     choices = body.get("choices") or []
     if not choices:
@@ -295,6 +316,7 @@ def _call_openrouter(user_prompt: str) -> str:
 # ---------------------------------------------------------------------------
 # JSON response parsing
 # ---------------------------------------------------------------------------
+
 
 def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, Any]:
     """Parse LLM response into {field: {value, confidence}} structure.
@@ -324,7 +346,9 @@ def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, 
         if not isinstance(parsed, dict):
             raise ValueError("LLM response is not a JSON object")
 
-        result = {name: _normalize_field_entry(parsed.get(name)) for name in field_names}
+        result = {
+            name: _normalize_field_entry(parsed.get(name)) for name in field_names
+        }
         logger.info(
             "langextract.llm_extractor.parsed_fields | fields=%s", list(result.keys())
         )
@@ -332,7 +356,8 @@ def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, 
     except (json.JSONDecodeError, ValueError) as exc:
         logger.warning(
             "langextract.llm_extractor.json_parse_failed | error=%s raw=%.300s",
-            exc, raw_response,
+            exc,
+            raw_response,
         )
 
     # Attempt 2: regex-based partial recovery for truncated responses
@@ -341,11 +366,14 @@ def _parse_llm_response(raw_response: str, field_names: list[str]) -> dict[str, 
     if found > 0:
         logger.info(
             "langextract.llm_extractor.partial_recovery_success | fields_recovered=%d/%d",
-            found, len(field_names),
+            found,
+            len(field_names),
         )
         return result
 
-    logger.warning("langextract.llm_extractor.recovery_failed | returning all fields as None")
+    logger.warning(
+        "langextract.llm_extractor.recovery_failed | returning all fields as None"
+    )
     return {name: None for name in field_names}
 
 
@@ -393,7 +421,9 @@ def _recover_partial_fields(text: str, field_names: list[str]) -> dict[str, Any]
     for m in flat_null_re.finditer(text):
         name = m.group(1)
         if result[name] is None:
-            result[name] = None  # explicit null keeps as None → becomes placeholder later
+            result[name] = (
+                None  # explicit null keeps as None → becomes placeholder later
+            )
 
     return result
 
@@ -401,6 +431,7 @@ def _recover_partial_fields(text: str, field_names: list[str]) -> dict[str, Any]
 # ---------------------------------------------------------------------------
 # Confidence calculation
 # ---------------------------------------------------------------------------
+
 
 def _calculate_confidence(
     fields: dict[str, Any],
@@ -410,7 +441,9 @@ def _calculate_confidence(
 
     Falls back to all fields when no required fields are defined.
     """
-    required_names = [f["name"] for f in fields_spec if f.get("required") and f.get("name")]
+    required_names = [
+        f["name"] for f in fields_spec if f.get("required") and f.get("name")
+    ]
     target_names = required_names or [f["name"] for f in fields_spec if f.get("name")]
 
     if not target_names:
@@ -422,7 +455,9 @@ def _calculate_confidence(
         return entry
 
     present = sum(
-        1 for name in target_names
-        if _get_field_value(fields.get(name)) and _get_field_value(fields.get(name)) != EXTRACTION_NOT_FOUND
+        1
+        for name in target_names
+        if _get_field_value(fields.get(name))
+        and _get_field_value(fields.get(name)) != EXTRACTION_NOT_FOUND
     )
     return round(present / len(target_names), 2)

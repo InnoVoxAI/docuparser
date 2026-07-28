@@ -1,5 +1,5 @@
-from fastapi.testclient import TestClient
 from api.app import app
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
@@ -16,5 +16,6 @@ def test_list_engines():
     data = response.json()
     assert isinstance(data["engines"], list)
     assert data["total_count"] == len(data["engines"])
+
 
 # Note: Integration tests with DeepSeek require a running Ollama instance and are mocked here or manual.

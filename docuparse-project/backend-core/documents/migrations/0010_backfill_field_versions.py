@@ -30,7 +30,6 @@ def remove_backfilled_versions(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("documents", "0009_extractionfieldversion_and_more"),
     ]

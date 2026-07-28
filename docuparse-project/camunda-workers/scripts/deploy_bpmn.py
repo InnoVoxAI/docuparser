@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from pyzeebe import ZeebeClient, create_insecure_channel  # noqa: E402
+from pyzeebe import ZeebeClient, create_insecure_channel
 
 ZEEBE_ADDRESS = os.getenv("ZEEBE_ADDRESS", "localhost:26500")
 BPMN_DIR = pathlib.Path(__file__).parent.parent / "bpmn"

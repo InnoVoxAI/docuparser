@@ -1,7 +1,7 @@
 # Fases 2 e 3 — Shared e Domain
 
-**Data:** 2026-04-29  
-**Status:** Concluídas  
+**Data:** 2026-04-29
+**Status:** Concluídas
 **Branch:** `fix/architeture-refactor`
 
 ---

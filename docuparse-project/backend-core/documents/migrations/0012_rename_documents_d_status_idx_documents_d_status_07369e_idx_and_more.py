@@ -4,25 +4,24 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('documents', '0011_remove_tenant_fk'),
+        ("documents", "0011_remove_tenant_fk"),
     ]
 
     operations = [
         migrations.RenameIndex(
-            model_name='document',
-            new_name='documents_d_status_07369e_idx',
-            old_name='documents_d_status_idx',
+            model_name="document",
+            new_name="documents_d_status_07369e_idx",
+            old_name="documents_d_status_idx",
         ),
         migrations.RenameIndex(
-            model_name='document',
-            new_name='documents_d_receive_af36ad_idx',
-            old_name='documents_d_received_at_idx',
+            model_name="document",
+            new_name="documents_d_receive_af36ad_idx",
+            old_name="documents_d_received_at_idx",
         ),
         migrations.RenameIndex(
-            model_name='documentevent',
-            new_name='documents_d_event_t_55c71b_idx',
-            old_name='documents_d_event_type_idx',
+            model_name="documentevent",
+            new_name="documents_d_event_t_55c71b_idx",
+            old_name="documents_d_event_type_idx",
         ),
     ]

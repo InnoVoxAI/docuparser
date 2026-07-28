@@ -26,7 +26,6 @@ def reverse_populate(apps: object, schema_editor: object) -> None:
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("tenants", "0001_initial"),
     ]

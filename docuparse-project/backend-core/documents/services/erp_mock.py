@@ -8,8 +8,7 @@ from events import ERPIntegrationRequestedEvent, ERPSentEvent
 
 
 class EventPublisher(Protocol):
-    def publish(self, stream: str, event: dict[str, Any]) -> int:
-        ...
+    def publish(self, stream: str, event: dict[str, Any]) -> int: ...
 
 
 def handle_erp_integration_requested_event(

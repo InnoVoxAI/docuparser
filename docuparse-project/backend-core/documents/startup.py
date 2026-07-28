@@ -26,7 +26,9 @@ def _mask_url_credentials(url: str) -> str:
     netloc = f"{parsed.username or ''}:***@{parsed.hostname or ''}"
     if parsed.port:
         netloc = f"{netloc}:{parsed.port}"
-    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
+    return urlunsplit(
+        (parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment)
+    )
 
 
 def log_startup_config() -> None:
@@ -63,13 +65,16 @@ def log_startup_config() -> None:
 
 
 def ensure_default_schemas() -> None:
-    from documents.models import SchemaConfig, Tenant
-    import models.nota_fiscal.definition as _nf_def
     import models.contadeagua.definition as _agua_def
+    import models.nota_fiscal.definition as _nf_def
+
+    from documents.models import SchemaConfig, Tenant
 
     tenant = Tenant.objects.filter(name="default").first()
     if tenant is None:
-        logger.warning("startup: default tenant not found — skipping default schema creation")
+        logger.warning(
+            "startup: default tenant not found — skipping default schema creation"
+        )
         return
 
     specs = [

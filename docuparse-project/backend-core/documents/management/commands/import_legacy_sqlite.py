@@ -9,9 +9,9 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from tenants.models import Tenant
 
 from documents.models import Document, DocumentEvent, ExtractionResult
-from tenants.models import Tenant
 
 
 def _uuid(value: str) -> uuid.UUID:
@@ -70,9 +70,19 @@ class Command(BaseCommand):
             tenants[row["id"]] = tenant
 
         # Phase 2: import per-tenant data inside each tenant's schema
-        all_document_rows = list(connection.execute("select * from documents_document order by created_at"))
-        all_result_rows = list(connection.execute("select * from documents_extractionresult order by created_at"))
-        all_event_rows = list(connection.execute("select * from documents_documentevent order by created_at"))
+        all_document_rows = list(
+            connection.execute("select * from documents_document order by created_at")
+        )
+        all_result_rows = list(
+            connection.execute(
+                "select * from documents_extractionresult order by created_at"
+            )
+        )
+        all_event_rows = list(
+            connection.execute(
+                "select * from documents_documentevent order by created_at"
+            )
+        )
 
         for tenant_legacy_id, tenant in tenants.items():
             with schema_context(tenant.schema_name):
@@ -118,7 +128,9 @@ class Command(BaseCommand):
                                 "schema_version": row["schema_version"],
                                 "fields": _json(row["fields"]),
                                 "confidence": row["confidence"],
-                                "requires_human_validation": bool(row["requires_human_validation"]),
+                                "requires_human_validation": bool(
+                                    row["requires_human_validation"]
+                                ),
                             },
                         )
                         ExtractionResult.objects.filter(id=result.id).update(
@@ -134,7 +146,9 @@ class Command(BaseCommand):
                         event_id = _uuid(row["event_id"])
                         if DocumentEvent.objects.filter(event_id=event_id).exists():
                             continue
-                        document_id = _uuid(row["document_id"]) if row["document_id"] else None
+                        document_id = (
+                            _uuid(row["document_id"]) if row["document_id"] else None
+                        )
                         event = DocumentEvent.objects.create(
                             id=_uuid(row["id"]),
                             event_id=event_id,

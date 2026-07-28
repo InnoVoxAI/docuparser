@@ -1,7 +1,7 @@
 # PRD — Reestruturação de Arquitetura: DocuParser Backend OCR
 
-**Versão:** 1.0  
-**Data:** 2026-04-29  
+**Versão:** 1.0
+**Data:** 2026-04-29
 **Status:** Planejamento
 
 ---
@@ -299,16 +299,16 @@ Todo engine deve respeitar este contrato:
 from abc import ABC, abstractmethod
 
 class BaseOCREngine(ABC):
-    
+
     @abstractmethod
     def process(self, file_bytes: bytes, metadata: dict) -> dict:
         """
         Executa OCR no arquivo recebido.
-        
+
         Args:
             file_bytes: Bytes do arquivo (PDF ou imagem)
             metadata:   Informações do documento (doc_type, filename, etc.)
-        
+
         Returns:
             {
                 "raw_text": str,
@@ -318,7 +318,7 @@ class BaseOCREngine(ABC):
             }
         """
         ...
-    
+
     @property
     @abstractmethod
     def name(self) -> str:

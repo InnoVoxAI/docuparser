@@ -25,9 +25,12 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any
 
-from domain.classifier import classify_document, get_engine_preprocessing_hints_for_class
+from domain.classifier import (
+    classify_document,
+    get_engine_preprocessing_hints_for_class,
+)
 from domain.engine_resolver import resolver as engine_resolver
 from infrastructure.engines.base_engine import BaseOCREngine
 from infrastructure.engines.deepseek_engine import DeepSeekEngine
@@ -38,13 +41,13 @@ from infrastructure.engines.openrouter_engine import OpenRouterOCREngine
 from infrastructure.engines.paddle_engine import PaddleOCREngine
 from infrastructure.engines.tesseract_engine import TesseractEngine
 from infrastructure.engines.trocr_engine import TrOCREngine
-from infrastructure.fallback.fallback_handler import merge_fallback_result, should_trigger_fallback
-from shared.preprocessing import decode_image
+from infrastructure.fallback.fallback_handler import merge_fallback_result
 
 logger = logging.getLogger(__name__)
 
 # Registry de engines disponíveis — lazy loading para evitar falhas de import
-ENGINE_REGISTRY: Dict[str, BaseOCREngine] = {}
+ENGINE_REGISTRY: dict[str, BaseOCREngine] = {}
+
 
 def _register_engine(name: str, engine_class):
     """Registra um engine de forma lazy, tratando erros de dependências."""
@@ -54,6 +57,7 @@ def _register_engine(name: str, engine_class):
     except Exception as e:
         logger.warning(f"Engine '{name}' não pôde ser registrado: {e}")
         # Engine fica indisponível mas não quebra a aplicação
+
 
 # Registrar engines disponíveis
 _register_engine("deepseek", lambda: DeepSeekEngine())
@@ -72,7 +76,7 @@ def process_document(
     selected_engine: str | None = None,
     timeout_s: int = 120,
     legacy_extraction: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Serviço principal: processa um documento através do pipeline OCR completo.
 
@@ -113,7 +117,9 @@ def process_document(
         engine = ENGINE_REGISTRY["tesseract"]  # fallback mais seguro
         engine_name = "tesseract"
 
-    classification_engine_preprocessing_hints = get_engine_preprocessing_hints_for_class(doc_type)
+    classification_engine_preprocessing_hints = (
+        get_engine_preprocessing_hints_for_class(doc_type)
+    )
     preprocessing_hint = classification_engine_preprocessing_hints.get(engine_name, "")
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -171,7 +177,9 @@ def process_document(
         and engine_meta.get("fallback_recommended")
         and not ocr_result.get("raw_text", "").strip()
     ):
-        image_fallback_name = "openrouter" if "openrouter" in ENGINE_REGISTRY else "tesseract"
+        image_fallback_name = (
+            "openrouter" if "openrouter" in ENGINE_REGISTRY else "tesseract"
+        )
         if image_fallback_name in ENGINE_REGISTRY:
             try:
                 logger.info(
@@ -180,7 +188,9 @@ def process_document(
                 )
                 image_fallback_engine = ENGINE_REGISTRY[image_fallback_name]
                 fallback_metadata = {**metadata, "doc_type": "scanned_image"}
-                fallback_result = image_fallback_engine.process(file_bytes, fallback_metadata)
+                fallback_result = image_fallback_engine.process(
+                    file_bytes, fallback_metadata
+                )
                 ocr_result = merge_fallback_result(
                     ocr_result,
                     fallback_result,
@@ -189,7 +199,9 @@ def process_document(
                 )
                 engine_name = f"docling_with_{image_fallback_name}_fallback"
                 doc_type = "scanned_image"
-                logger.info(f"Fallback por texto vazio bem-sucedido: engine={engine_name}")
+                logger.info(
+                    f"Fallback por texto vazio bem-sucedido: engine={engine_name}"
+                )
             except Exception as fallback_e:
                 logger.warning(f"Fallback por texto vazio falhou: {fallback_e}")
 
@@ -206,11 +218,9 @@ def process_document(
         "final_score": 0.0,
         "field_confidence": {},
         "low_confidence_fields": [],
-
         "raw_text": ocr_result.get("raw_text", ""),
         "raw_text_fallback": ocr_result.get("raw_text_fallback", ""),
         "raw_text_formatted": ocr_result.get("raw_text_formatted", ""),
-
         "document_type": doc_type,
         "engine_used": engine_name,
         "preprocessing_hint": preprocessing_hint,
@@ -218,19 +228,17 @@ def process_document(
         "processing_time_seconds": round(processing_time, 2),
         "filename": filename,
         "semantic_extraction_enabled": False,
-
         "document_info": ocr_result.get("document_info", {}),
         "entities": ocr_result.get("entities", {}),
         "tables": ocr_result.get("tables", []),
         "totals": ocr_result.get("totals", {}),
-
         "debug": {
             "classification": doc_type,
             "engine_used": engine_name,
             "preprocessing_hint": preprocessing_hint,
             "classification_engine_preprocessing_hints": classification_engine_preprocessing_hints,
             "engine_meta": ocr_result.get("_meta", {}),
-        }
+        },
     }
 
     logger.info(f"Processamento concluído em {processing_time:.2f}s")

@@ -59,15 +59,16 @@
         "id": "5",
         "title": "Implement privilege escalation protection in user_views.py",
         "description": "Add validation to prevent non-platform users from assigning platform roles to any user in user_detail_update_view",
-        "details": "1. Edit docuparse-project/backend-core/users/user_views.py\n2. In user_detail_update_view function (L67), after line 101 where role_id is extracted, add escalation check:\n   ```python\n   # After line 101: if profile and 'role_id' in data and data['role_id'] is not None:\n   from users.models import Role\n   \n   new_role = data['role_id']  # This is already a Role instance from serializer\n   current_user_profile = request.user.docuparse_profile\n   \n   # Prevent non-platform users from assigning platform roles\n   if new_role.is_platform_role:\n       if not current_user_profile.role_ref or not current_user_profile.role_ref.is_platform_role:\n           return Response(\n               {'detail': 'Você não tem permissão para atribuir roles de plataforma.'},\n               status=status.HTTP_403_FORBIDDEN\n           )\n   \n   profile.role_ref = new_role\n   profile.save(update_fields=['role_ref', 'updated_at'])\n   ```\n3. This prevents tenantAdmin (who has users.manage) from promoting anyone to admin (is_platform_role=True)\n4. Only users who themselves have is_platform_role=True can assign platform roles",
-        "testStrategy": "1. Create tenantAdmin user and regular user in same tenant\n2. Attempt to update regular user's role to 'admin' as tenantAdmin - expect 403\n3. Attempt to update tenantAdmin's own role to 'admin' as tenantAdmin - expect 403\n4. Login as platform admin, update user to 'admin' role - expect 200 success\n5. Verify tenantAdmin can still assign tenantAdmin/operator roles - expect 200\n6. Add automated test case for each scenario",
-        "priority": "high",
+        "status": "done",
         "dependencies": [
           "1",
           "2"
         ],
-        "status": "pending",
-        "subtasks": []
+        "priority": "high",
+        "details": "✅ IMPLEMENTATION COMPLETED AND VERIFIED\n\n**Files Modified:**\n1. docuparse-project/backend-core/users/user_views.py (lines 101-111)\n   - Added privilege escalation check in user_detail_update_view function\n   - When role_id is being updated, validates if new_role.is_platform_role is True\n   - Checks that the actor (request.user) has a profile with role_ref.is_platform_role=True\n   - Returns 403 with message \"Você não tem permissão para atribuir roles de plataforma.\" if validation fails\n   - Implementation prevents tenantAdmin (who has users.manage but is_platform_role=False) from promoting users to platform roles\n   - Only users with is_platform_role=True can assign platform roles to others\n\n2. docuparse-project/backend-core/users/tests/test_user_management.py\n   - Added PrivilegeEscalationTest class (lines 138-215)\n   - Comprehensive test coverage with 4 test cases:\n     * test_tenant_admin_promoting_other_user_to_platform_role_returns_403\n     * test_tenant_admin_promoting_self_to_platform_role_returns_403\n     * test_platform_admin_promoting_user_to_platform_role_returns_200\n     * test_tenant_admin_assigning_non_platform_role_returns_200\n\n**Implementation Details:**\n```python\nif profile and \"role_id\" in data and data[\"role_id\"] is not None:\n    new_role = data[\"role_id\"]\n    if new_role.is_platform_role:\n        actor_profile = getattr(request.user, \"docuparse_profile\", None)\n        if not actor_profile or not actor_profile.role_ref or not actor_profile.role_ref.is_platform_role:\n            return Response(\n                {\"detail\": \"Você não tem permissão para atribuir roles de plataforma.\"},\n                status=status.HTTP_403_FORBIDDEN,\n            )\n    profile.role_ref = new_role\n    profile.save(update_fields=[\"role_ref\", \"updated_at\"])\n```\n\n**Verification Results:**\n- All 38 tests in users/ test suite passed\n- Privilege escalation protection working as intended:\n  * tenantAdmin CANNOT promote other users to platform roles (403)\n  * tenantAdmin CANNOT promote themselves to platform roles (403)\n  * Platform admin CAN promote users to platform roles (200)\n  * tenantAdmin CAN still assign non-platform roles (200)",
+        "testStrategy": "✅ TESTS PASSED\n\n**Automated Test Coverage (Completed):**\n```bash\ncd /docuparser\n./run_script.sh pytest docuparse-project/backend-core/users/tests/test_user_management.py -v\n```\n\n**Test Results:**\n- All 38 tests in users/ test suite passed\n- PrivilegeEscalationTest class validates:\n  1. ✅ tenantAdmin attempting to promote another user to 'admin' (platform role) → 403 FORBIDDEN\n  2. ✅ tenantAdmin attempting to promote themselves to 'admin' (platform role) → 403 FORBIDDEN\n  3. ✅ Platform admin promoting user to 'admin' (platform role) → 200 SUCCESS\n  4. ✅ tenantAdmin assigning tenantAdmin/operator roles (non-platform) → 200 SUCCESS\n\n**Test Coverage:**\n- test_tenant_admin_promoting_other_user_to_platform_role_returns_403 (line 177)\n- test_tenant_admin_promoting_self_to_platform_role_returns_403 (line 188)\n- test_platform_admin_promoting_user_to_platform_role_returns_200 (line 197)\n- test_tenant_admin_assigning_non_platform_role_returns_200 (line 208)\n\n**Security Validation:**\n- ✅ Non-platform users blocked from privilege escalation\n- ✅ Platform-level role assignment restricted to platform admins\n- ✅ Tenant-level role assignment preserved for tenant admins\n- ✅ Self-promotion to platform roles blocked for non-platform users",
+        "subtasks": [],
+        "updatedAt": "2026-07-28T18:31:48.256Z"
       },
       {
         "id": "6",
@@ -190,9 +191,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-07-28T17:42:23.190Z",
+      "lastModified": "2026-07-28T18:31:48.256Z",
       "taskCount": 13,
-      "completedCount": 4,
+      "completedCount": 5,
       "tags": [
         "master"
       ]

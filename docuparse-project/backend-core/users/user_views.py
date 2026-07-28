@@ -99,7 +99,21 @@ def user_detail_update_view(request: Request, user_id: int) -> Response:
 
     profile = getattr(user, "docuparse_profile", None)
     if profile and "role_id" in data and data["role_id"] is not None:
-        profile.role_ref = data["role_id"]
+        new_role = data["role_id"]
+        if new_role.is_platform_role:
+            actor_profile = getattr(request.user, "docuparse_profile", None)
+            if (
+                not actor_profile
+                or not actor_profile.role_ref
+                or not actor_profile.role_ref.is_platform_role
+            ):
+                return Response(
+                    {
+                        "detail": "Você não tem permissão para atribuir roles de plataforma."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        profile.role_ref = new_role
         profile.save(update_fields=["role_ref", "updated_at"])
 
     user.refresh_from_db()

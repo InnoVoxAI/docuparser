@@ -54,6 +54,7 @@ from .services.dlq_inspector import (
     inspect_dlq_streams,
     requeue_dlq_entry,
 )
+from .services.erp_publisher import publish_erp_integration_requested
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.langextract_client import LangExtractClient
 from .services.ocr_client import OCRClient
@@ -463,6 +464,7 @@ def document_validation_view(request, document_id):
 
     if decision == ValidationDecision.Decision.APPROVED:
         document.transition_to(Document.Status.APPROVED)
+        publish_erp_integration_requested(document)
     elif decision == ValidationDecision.Decision.REJECTED:
         document.transition_to(Document.Status.REJECTED)
     else:

@@ -16,6 +16,7 @@ const ALL_PERMISSIONS = [
     'operations.access',
     'roles.manage',
     'users.manage',
+    'models.edit',
 ]
 
 function mockSession(documents: unknown[] = []) {

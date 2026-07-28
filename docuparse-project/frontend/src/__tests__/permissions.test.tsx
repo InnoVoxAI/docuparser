@@ -39,4 +39,17 @@ describe('Permissões e navegação', () => {
         expect((await screen.findAllByText('Roles')).length).toBeGreaterThan(0)
         expect(screen.queryAllByText('Usuários').length).toBeGreaterThan(0)
     })
+
+    it('oculta "Configurações" para operador (sem models.edit)', async () => {
+        mockMe(['inbox.view', 'documents.validate', 'operations.access'])
+        renderApp()
+        expect((await screen.findAllByText('Operações')).length).toBeGreaterThan(0)
+        expect(screen.queryAllByText('Configurações')).toHaveLength(0)
+    })
+
+    it('exibe "Configurações" quando o usuário tem models.edit', async () => {
+        mockMe(['inbox.view', 'models.edit'])
+        renderApp()
+        expect((await screen.findAllByText('Configurações')).length).toBeGreaterThan(0)
+    })
 })

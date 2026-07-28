@@ -18,7 +18,7 @@ export const NAV_ITEMS: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'inbox.view' },
     { id: 'validation', label: 'Validação', icon: ClipboardCheck, permission: 'documents.validate' },
     { id: 'operations', label: 'Operações', icon: AlertTriangle, permission: 'operations.access' },
-    { id: 'settings', label: 'Configurações', icon: Settings, permission: 'roles.manage' },
+    { id: 'settings', label: 'Configurações', icon: Settings, permission: 'models.edit' },
     { id: 'users', label: 'Usuários', icon: Settings, permission: 'users.manage' },
     { id: 'roles', label: 'Roles', icon: Settings, permission: 'roles.manage' },
     { id: 'tenants', label: 'Tenants', icon: Building2, permission: 'tenants.manage' },

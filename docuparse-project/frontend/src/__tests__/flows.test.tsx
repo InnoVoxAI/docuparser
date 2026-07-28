@@ -222,6 +222,70 @@ describe('Usuários (CRUD)', () => {
 
         await waitFor(() => expect(created).toBe(true))
     })
+
+    it('esconde roles de plataforma do seletor quando o usuário logado não é admin de plataforma', async () => {
+        server.use(
+            http.get('/api/ocr/users', () =>
+                HttpResponse.json([
+                    {
+                        id: 'u1',
+                        name: 'Admin',
+                        email: 'admin@docuparse.local',
+                        role: { id: 'r-tenant', name: 'tenantAdmin', is_platform_role: false },
+                        is_active: true,
+                    },
+                ]),
+            ),
+            http.get('/api/ocr/roles', () =>
+                HttpResponse.json([
+                    { id: 'r-platform', name: 'admin', is_platform_role: true },
+                    { id: 'r-tenant', name: 'tenantAdmin', is_platform_role: false },
+                ]),
+            ),
+        )
+        mockSession([])
+        const user = await navigate('Usuários')
+
+        await user.click(screen.getByRole('button', { name: /Novo Usuário/i }))
+        expect(await screen.findByRole('heading', { name: /Novo Usuário/i })).toBeInTheDocument()
+
+        const options = screen.getAllByRole('option') as HTMLOptionElement[]
+        const optionValues = options.map((o) => o.value)
+        expect(optionValues).toContain('r-tenant')
+        expect(optionValues).not.toContain('r-platform')
+    })
+
+    it('exibe roles de plataforma no seletor quando o usuário logado é admin de plataforma', async () => {
+        server.use(
+            http.get('/api/ocr/users', () =>
+                HttpResponse.json([
+                    {
+                        id: 'u1',
+                        name: 'Admin',
+                        email: 'admin@docuparse.local',
+                        role: { id: 'r-platform', name: 'admin', is_platform_role: true },
+                        is_active: true,
+                    },
+                ]),
+            ),
+            http.get('/api/ocr/roles', () =>
+                HttpResponse.json([
+                    { id: 'r-platform', name: 'admin', is_platform_role: true },
+                    { id: 'r-tenant', name: 'tenantAdmin', is_platform_role: false },
+                ]),
+            ),
+        )
+        mockSession([])
+        const user = await navigate('Usuários')
+
+        await user.click(screen.getByRole('button', { name: /Novo Usuário/i }))
+        expect(await screen.findByRole('heading', { name: /Novo Usuário/i })).toBeInTheDocument()
+
+        const options = screen.getAllByRole('option') as HTMLOptionElement[]
+        const optionValues = options.map((o) => o.value)
+        expect(optionValues).toContain('r-tenant')
+        expect(optionValues).toContain('r-platform')
+    })
 })
 
 describe('Roles (CRUD)', () => {

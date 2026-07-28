@@ -651,10 +651,9 @@ def document_langextract_view(request, document_id):
 
 
 @api_view(["GET", "POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def schema_configs_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     if request.method == "GET":
         queryset = SchemaConfig.objects.all().order_by("schema_id", "version")
         return Response(SchemaConfigSerializer(queryset, many=True).data)
@@ -677,10 +676,9 @@ PROTECTED_SCHEMA_IDS = ["nota_fiscal_default", "conta_agua_default"]
 
 
 @api_view(["GET", "PATCH", "DELETE"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def schema_config_detail_view(request, schema_id):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     config = get_object_or_404(SchemaConfig, id=schema_id)
     if request.method == "GET":
         return Response(SchemaConfigSerializer(config).data)
@@ -713,10 +711,9 @@ def schema_config_detail_view(request, schema_id):
 
 
 @api_view(["GET", "POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def layout_configs_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     if request.method == "GET":
         queryset = LayoutConfig.objects.select_related("schema_config").order_by(
             "layout"
@@ -738,10 +735,9 @@ def layout_configs_view(request):
 
 
 @api_view(["GET", "PATCH"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def integration_settings_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     config, _ = IntegrationSettings.objects.get_or_create(
         id=SETTINGS_SINGLETON_ID,
         defaults={
@@ -776,10 +772,9 @@ def integration_settings_view(request):
 
 
 @api_view(["GET", "PATCH"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def ocr_settings_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     config, _ = OCRSettings.objects.get_or_create(id=SETTINGS_SINGLETON_ID)
     if request.method == "GET":
         return Response(OCRSettingsSerializer(config).data)
@@ -817,10 +812,9 @@ def ocr_settings_view(request):
 
 
 @api_view(["GET", "PATCH"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def email_settings_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     config, _ = EmailSettings.objects.get_or_create(id=SETTINGS_SINGLETON_ID)
     if request.method == "GET":
         return Response(EmailSettingsSerializer(config).data)
@@ -860,10 +854,9 @@ def email_settings_view(request):
 
 
 @api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
 def dlq_summary_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     limit = _positive_int(request.query_params.get("limit"), default=50, maximum=500)
     report = inspect_dlq_streams(
         event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
@@ -886,10 +879,9 @@ def dlq_summary_view(request):
 
 
 @api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
 def dlq_events_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     stream = request.query_params.get("stream") or "ocr.completed.dlq"
     if stream not in DEFAULT_DLQ_STREAMS:
         return Response(
@@ -905,10 +897,9 @@ def dlq_events_view(request):
 
 
 @api_view(["POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
 def dlq_requeue_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     stream = request.data.get("stream")
     entry_id = request.data.get("id") or request.data.get("entry_id")
     if not stream or not entry_id:

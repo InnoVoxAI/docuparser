@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import os
+from typing import TypedDict
 
 from django.core.management.base import BaseCommand, CommandError
 
 from users.models import Permission, Role
+
+
+class RoleSpec(TypedDict):
+    name: str
+    is_platform_role: bool
+    permissions: list[str]
+
 
 PERMISSIONS: list[tuple[str, str]] = [
     ("inbox.view", "Visualizar Inbox"),
@@ -16,6 +24,47 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("users.manage", "Gerenciar Usuários"),
     ("roles.manage", "Gerenciar Roles"),
     ("tenants.manage", "Gerenciar Tenants"),
+]
+
+ROLE_SPECS: list[RoleSpec] = [
+    {
+        "name": "admin",
+        "is_platform_role": True,
+        "permissions": [
+            "inbox.view",
+            "documents.send",
+            "documents.validate",
+            "models.create",
+            "models.edit",
+            "operations.access",
+            "users.manage",
+            "roles.manage",
+            "tenants.manage",
+        ],
+    },
+    {
+        "name": "tenantAdmin",
+        "is_platform_role": False,
+        "permissions": [
+            "inbox.view",
+            "documents.send",
+            "documents.validate",
+            "models.create",
+            "models.edit",
+            "operations.access",
+            "users.manage",
+        ],
+    },
+    {
+        "name": "operator",
+        "is_platform_role": False,
+        "permissions": [
+            "inbox.view",
+            "documents.send",
+            "documents.validate",
+            "operations.access",
+        ],
+    },
 ]
 
 
@@ -37,12 +86,24 @@ class Command(BaseCommand):
             )
         self.stdout.write("seed_data: permissions ready")
 
-        role, role_created = Role.objects.get_or_create(name="admin")
-        if role_created:
-            role.permissions.set(Permission.objects.all())
-            self.stdout.write("seed_data: admin role created")
-        else:
-            self.stdout.write("seed_data: admin role already exists")
+        roles_by_name: dict[str, Role] = {}
+        for spec in ROLE_SPECS:
+            role, role_created = Role.objects.get_or_create(
+                name=spec["name"],
+                defaults={"is_platform_role": spec["is_platform_role"]},
+            )
+            if role_created or role.permissions.count() != len(spec["permissions"]):
+                role.permissions.set(
+                    Permission.objects.filter(code__in=spec["permissions"])
+                )
+            role.is_platform_role = spec["is_platform_role"]
+            role.save()
+            roles_by_name[spec["name"]] = role
+            self.stdout.write(
+                f"seed_data: {'created' if role_created else 'updated'} role {spec['name']}"
+            )
+
+        role = roles_by_name["admin"]
 
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@docuparse.com")
         admin_password = os.environ.get("ADMIN_PASSWORD")

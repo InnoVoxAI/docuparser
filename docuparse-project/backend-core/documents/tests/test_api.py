@@ -54,6 +54,9 @@ class DocumentsAPITests(TestCase):
                 Permission.objects.create(
                     code="documents.validate", description="Validate"
                 ),
+                Permission.objects.create(
+                    code="models.edit", description="Models edit"
+                ),
             ]
         )
         UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
@@ -660,6 +663,11 @@ class InternalServiceTokenGateTests(TestCase):
     o usuário autenticado via JWT precisa ser aceito (antes era rejeitado), e o
     caller serviço↔serviço com o token interno também. Só requisições sem
     credencial válida devem receber 401.
+
+    `schema-configs` agora também exige a permissão `models.edit`
+    (HasDocuparsePermission), então o usuário JWT do teste precisa dessa
+    permissão para exercitar os cenários de sucesso; o bypass por
+    `service_token` continua incondicional.
     """
 
     TOKEN = "staging-token-123"
@@ -669,6 +677,11 @@ class InternalServiceTokenGateTests(TestCase):
         self.tenant = Tenant.objects.create(slug="tenant-gate", name="Tenant Gate")
         connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="op", password="x")
+        role = Role.objects.create(name="GateTester")
+        role.permissions.set(
+            [Permission.objects.create(code="models.edit", description="Models edit")]
+        )
+        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
         self.jwt = _jwt_for(self.user, self.tenant)
 
     def test_token_configured_accepts_authenticated_user_jwt(self) -> None:

@@ -112,7 +112,7 @@ def poll_imap_once(
     if not email_settings.username.strip():
         raise ValueError("username is required")
     if not password.strip():
-        raise ValueError("DOCUPARSE_IMAP_PASSWORD is required")
+        raise ValueError("imap_reader_password is required")
 
     factory = client_factory or (
         lambda host, port: imaplib.IMAP4_SSL(

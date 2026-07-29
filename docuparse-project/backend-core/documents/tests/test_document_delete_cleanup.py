@@ -50,7 +50,17 @@ class DocumentDeleteCleanupTests(TestCase):
     def test_delete_removes_storage_objects(self) -> None:
         with (
             tempfile.TemporaryDirectory() as storage_dir,
-            mock.patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            # get_storage() reads DOCUPARSE_STORAGE_BACKEND from the process
+            # environment, not Django settings: overriding just the local dir
+            # is not enough to escape the real S3/MinIO backend the
+            # devcontainer's .env pins by default.
+            mock.patch.dict(
+                os.environ,
+                {
+                    "DOCUPARSE_STORAGE_BACKEND": "local",
+                    "DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir,
+                },
+            ),
             override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
         ):
             document, storage, original, raw = _new_document(storage_dir)
@@ -67,7 +77,17 @@ class DocumentDeleteCleanupTests(TestCase):
     def test_delete_without_uris_is_noop(self) -> None:
         with (
             tempfile.TemporaryDirectory() as storage_dir,
-            mock.patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            # get_storage() reads DOCUPARSE_STORAGE_BACKEND from the process
+            # environment, not Django settings: overriding just the local dir
+            # is not enough to escape the real S3/MinIO backend the
+            # devcontainer's .env pins by default.
+            mock.patch.dict(
+                os.environ,
+                {
+                    "DOCUPARSE_STORAGE_BACKEND": "local",
+                    "DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir,
+                },
+            ),
             override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
         ):
             document = Document.objects.create(
@@ -88,7 +108,17 @@ class ReconcileStorageCommandTests(TestCase):
         """Document aponta para um objeto que não existe no storage."""
         with (
             tempfile.TemporaryDirectory() as storage_dir,
-            mock.patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            # get_storage() reads DOCUPARSE_STORAGE_BACKEND from the process
+            # environment, not Django settings: overriding just the local dir
+            # is not enough to escape the real S3/MinIO backend the
+            # devcontainer's .env pins by default.
+            mock.patch.dict(
+                os.environ,
+                {
+                    "DOCUPARSE_STORAGE_BACKEND": "local",
+                    "DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir,
+                },
+            ),
             override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
         ):
             Document.objects.create(
@@ -107,7 +137,17 @@ class ReconcileStorageCommandTests(TestCase):
         """Objeto no storage cujo document_id não existe no banco."""
         with (
             tempfile.TemporaryDirectory() as storage_dir,
-            mock.patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            # get_storage() reads DOCUPARSE_STORAGE_BACKEND from the process
+            # environment, not Django settings: overriding just the local dir
+            # is not enough to escape the real S3/MinIO backend the
+            # devcontainer's .env pins by default.
+            mock.patch.dict(
+                os.environ,
+                {
+                    "DOCUPARSE_STORAGE_BACKEND": "local",
+                    "DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir,
+                },
+            ),
             override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
         ):
             storage = get_storage()
@@ -131,7 +171,17 @@ class ReconcileStorageCommandTests(TestCase):
     def test_clean_state_reports_consistent(self) -> None:
         with (
             tempfile.TemporaryDirectory() as storage_dir,
-            mock.patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            # get_storage() reads DOCUPARSE_STORAGE_BACKEND from the process
+            # environment, not Django settings: overriding just the local dir
+            # is not enough to escape the real S3/MinIO backend the
+            # devcontainer's .env pins by default.
+            mock.patch.dict(
+                os.environ,
+                {
+                    "DOCUPARSE_STORAGE_BACKEND": "local",
+                    "DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir,
+                },
+            ),
             override_settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
         ):
             out = StringIO()

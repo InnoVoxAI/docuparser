@@ -104,7 +104,7 @@ export function EmailSettingsPanel() {
             {message ? <Alert>{message}</Alert> : null}
             <ConfigIntro
                 title="Email"
-                text="Configure como documentos chegam por email. A senha/app password continua fora do banco e deve estar em DOCUPARSE_IMAP_PASSWORD no servidor."
+                text="Configure como documentos chegam por email. A senha/app password continua fora do banco e deve estar em imap_reader_password no servidor."
             />
             <div className="flex flex-wrap justify-end gap-2">
                 <button

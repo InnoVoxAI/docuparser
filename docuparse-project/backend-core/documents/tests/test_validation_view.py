@@ -54,7 +54,10 @@ class ValidationViewGuardTests(TestCase):
         self.document.refresh_from_db()
 
         assert response.status_code == 201
-        assert self.document.status == Document.Status.APPROVED
+        # Approval synchronously requests ERP integration (see
+        # documents.services.erp_publisher.publish_erp_integration_requested),
+        # which is the next status past APPROVED.
+        assert self.document.status == Document.Status.ERP_INTEGRATION_REQUESTED
         assert ValidationDecision.objects.filter(
             document=self.document, decision="approved"
         ).exists()

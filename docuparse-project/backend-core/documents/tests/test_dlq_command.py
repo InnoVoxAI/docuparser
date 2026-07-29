@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 from io import StringIO
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from django.core.management import call_command
 from django.test import TestCase
@@ -25,7 +27,14 @@ class InspectDLQCommandTests(TestCase):
         )
         output = StringIO()
 
-        with self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir.name):
+        # event_bus_from_env() reads DOCUPARSE_EVENT_BUS straight from the process
+        # environment (not Django settings), so self.settings() alone can't force
+        # local mode when the environment pins the bus to Redis (as the
+        # devcontainer's .env does) — patch os.environ too.
+        with (
+            mock.patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
+            self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir.name),
+        ):
             call_command(
                 "inspect_dlq",
                 "--stream",
@@ -51,7 +60,14 @@ class InspectDLQCommandTests(TestCase):
         )
         output = StringIO()
 
-        with self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir.name):
+        # event_bus_from_env() reads DOCUPARSE_EVENT_BUS straight from the process
+        # environment (not Django settings), so self.settings() alone can't force
+        # local mode when the environment pins the bus to Redis (as the
+        # devcontainer's .env does) — patch os.environ too.
+        with (
+            mock.patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
+            self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir.name),
+        ):
             call_command(
                 "inspect_dlq",
                 "--stream",
@@ -80,7 +96,14 @@ class InspectDLQCommandTests(TestCase):
         )
         output = StringIO()
 
-        with self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir.name):
+        # event_bus_from_env() reads DOCUPARSE_EVENT_BUS straight from the process
+        # environment (not Django settings), so self.settings() alone can't force
+        # local mode when the environment pins the bus to Redis (as the
+        # devcontainer's .env does) — patch os.environ too.
+        with (
+            mock.patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
+            self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir.name),
+        ):
             call_command(
                 "requeue_dlq",
                 "--stream",
@@ -110,7 +133,14 @@ class InspectDLQCommandTests(TestCase):
         )
         output = StringIO()
 
-        with self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir.name):
+        # event_bus_from_env() reads DOCUPARSE_EVENT_BUS straight from the process
+        # environment (not Django settings), so self.settings() alone can't force
+        # local mode when the environment pins the bus to Redis (as the
+        # devcontainer's .env does) — patch os.environ too.
+        with (
+            mock.patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
+            self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir.name),
+        ):
             call_command(
                 "requeue_dlq",
                 "--stream",

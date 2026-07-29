@@ -54,6 +54,12 @@ class DocumentsAPITests(TestCase):
                 Permission.objects.create(
                     code="documents.validate", description="Validate"
                 ),
+                Permission.objects.create(
+                    code="models.edit", description="Models edit"
+                ),
+                Permission.objects.create(
+                    code="operations.access", description="Operations access"
+                ),
             ]
         )
         UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
@@ -121,7 +127,7 @@ class DocumentsAPITests(TestCase):
         from uuid import uuid4
 
         document_id = uuid4()
-        with patch("documents.views.start_document_ocr_thread") as start_thread:
+        with patch("documents.views.submit_document_processing") as start_thread:
             response = self.client.post(
                 reverse("document-received-event"),
                 {
@@ -174,7 +180,11 @@ class DocumentsAPITests(TestCase):
         assert response.status_code == 200
         assert b"".join(response.streaming_content) == b"%PDF original"
 
-    def test_process_ocr_endpoint_updates_extraction_result(self) -> None:
+    def test_process_ocr_endpoint_without_schema_stores_raw_text_only(self) -> None:
+        """No LayoutConfig/SchemaConfig matches this document, so OCR completes
+        (raw text stored) but auto_extract_after_ocr() has nothing to extract
+        with and leaves the document at OCR_COMPLETED without an ExtractionResult.
+        """
         with (
             tempfile.TemporaryDirectory() as storage_dir,
             patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
@@ -188,11 +198,68 @@ class DocumentsAPITests(TestCase):
             self.document.save(update_fields=["file_uri"])
             with patch("documents.services.ocr_processor.OCRClient") as client_class:
                 client_class.return_value.process_document.return_value = {
-                    "fields": {"valor": "R$ 123,45"},
-                    "final_score": 0.82,
+                    "raw_text": "texto sem schema correspondente",
+                    "document_type": "scanned_image",
+                    "engine_used": "mock",
+                }
+
+                response = self.client.post(
+                    reverse("document-process-ocr", args=[self.document.id])
+                )
+
+        self.document.refresh_from_db()
+        assert response.status_code == 200
+        assert self.document.status == Document.Status.OCR_COMPLETED
+        assert not hasattr(self.document, "extraction_result")
+        assert (
+            response.json()["full_transcription"] == "texto sem schema correspondente"
+        )
+        assert response.json()["ocr_metadata"] == {
+            "engine_used": "mock",
+            "classification": "scanned_image",
+            "preprocessing_hint": "",
+            "classification_engine_preprocessing_hints": {},
+        }
+
+    def test_process_ocr_endpoint_auto_extracts_with_matching_layout(self) -> None:
+        """document.layout resolves a LayoutConfig -> SchemaConfig (highest
+        priority in _resolve_schema_for_extraction), so auto_extract_after_ocr()
+        runs LangExtract and creates the ExtractionResult synchronously."""
+        schema = SchemaConfig.objects.create(
+            schema_id="boleto", version="v1", definition={"fields": ["valor"]}
+        )
+        LayoutConfig.objects.create(
+            layout="boleto_padrao", document_type="", schema_config=schema
+        )
+        self.document.layout = "boleto_padrao"
+        self.document.save(update_fields=["layout"])
+
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
+            stored = LocalStorage(storage_dir).put_bytes(
+                document_original_key(self.tenant.slug, str(self.document.id)),
+                b"%PDF original",
+            )
+            self.document.file_uri = stored.uri
+            self.document.save(update_fields=["file_uri"])
+            with (
+                patch("documents.services.ocr_processor.OCRClient") as client_class,
+                patch(
+                    "documents.services.ocr_processor.LangExtractClient"
+                ) as langextract_class,
+            ):
+                client_class.return_value.process_document.return_value = {
                     "raw_text": "valor R$ 123,45",
                     "document_type": "scanned_image",
                     "engine_used": "mock",
+                }
+                langextract_class.return_value.extract_with_schema.return_value = {
+                    "fields": {"valor": "R$ 123,45"},
+                    "confidence": 0.82,
+                    "requires_human_validation": False,
                 }
 
                 response = self.client.post(
@@ -203,20 +270,22 @@ class DocumentsAPITests(TestCase):
         extraction = self.document.extraction_result
         assert response.status_code == 200
         assert self.document.status == Document.Status.VALIDATION_PENDING
+        assert extraction.schema_id == "boleto"
         assert extraction.fields == {"valor": "R$ 123,45"}
         assert extraction.confidence == 0.82
-        assert response.json()["full_transcription"] == "valor R$ 123,45"
-        assert response.json()["ocr_metadata"] == {
-            "engine_used": "mock",
-            "classification": "scanned_image",
-            "preprocessing_hint": "",
-            "classification_engine_preprocessing_hints": {},
-        }
 
     def test_reprocess_ocr_endpoint_replaces_existing_extraction_result(self) -> None:
+        schema = SchemaConfig.objects.create(
+            schema_id="boleto", version="v1", definition={"fields": ["valor"]}
+        )
+        LayoutConfig.objects.create(
+            layout="boleto_padrao", document_type="", schema_config=schema
+        )
+        self.document.layout = "boleto_padrao"
+        self.document.save(update_fields=["layout"])
         ExtractionResult.objects.create(
             document=self.document,
-            schema_id="legacy_ocr",
+            schema_id="boleto",
             schema_version="v1",
             fields={"valor": "antigo"},
             confidence=0.1,
@@ -233,13 +302,21 @@ class DocumentsAPITests(TestCase):
             )
             self.document.file_uri = stored.uri
             self.document.save(update_fields=["file_uri"])
-            with patch("documents.services.ocr_processor.OCRClient") as client_class:
+            with (
+                patch("documents.services.ocr_processor.OCRClient") as client_class,
+                patch(
+                    "documents.services.ocr_processor.LangExtractClient"
+                ) as langextract_class,
+            ):
                 client_class.return_value.process_document.return_value = {
-                    "fields": {"valor": "novo"},
-                    "final_score": 0.77,
                     "raw_text": "valor novo",
                     "document_type": "digital_pdf",
                     "engine_used": "docling",
+                }
+                langextract_class.return_value.extract_with_schema.return_value = {
+                    "fields": {"valor": "novo"},
+                    "confidence": 0.77,
+                    "requires_human_validation": False,
                 }
 
                 response = self.client.post(
@@ -317,6 +394,11 @@ class DocumentsAPITests(TestCase):
         with (
             tempfile.TemporaryDirectory() as event_dir,
             tempfile.TemporaryDirectory() as export_dir,
+            # event_bus_from_env() reads DOCUPARSE_EVENT_BUS from the process
+            # environment, not Django settings — self.settings() alone can't
+            # force local mode when the environment pins the bus to Redis (as
+            # the devcontainer's .env does).
+            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
             self.settings(
                 DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
                 DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
@@ -355,6 +437,11 @@ class DocumentsAPITests(TestCase):
         with (
             tempfile.TemporaryDirectory() as event_dir,
             tempfile.TemporaryDirectory() as export_dir,
+            # event_bus_from_env() reads DOCUPARSE_EVENT_BUS from the process
+            # environment, not Django settings — self.settings() alone can't
+            # force local mode when the environment pins the bus to Redis (as
+            # the devcontainer's .env does).
+            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
             self.settings(
                 DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
                 DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
@@ -382,8 +469,14 @@ class DocumentsAPITests(TestCase):
 
         extraction.refresh_from_db()
         assert response.status_code == 201
-        assert extraction.fields == {"valor": "R$ 999,99"}
-        assert events[0]["data"]["payload"]["fields"] == {"valor": "R$ 999,99"}
+        # field_versioning.save_manual_edit() (feature 007) syncs ExtractionResult.fields
+        # to the active version's {value, confidence} snapshot — edited fields get
+        # confidence 1.0 per FR-025/FR-027 — rather than the flat dict OCR/LangExtract
+        # write directly.
+        assert extraction.fields == {"valor": {"value": "R$ 999,99", "confidence": 1.0}}
+        assert events[0]["data"]["payload"]["fields"] == {
+            "valor": {"value": "R$ 999,99", "confidence": 1.0}
+        }
 
     def test_integration_settings_endpoint_persists_non_secret_fields(self) -> None:
         response = self.client.get(
@@ -411,7 +504,13 @@ class DocumentsAPITests(TestCase):
         assert config.superlogica_base_url == "https://sandbox.superlogica.example"
 
     def test_approval_respects_disabled_json_export_setting(self) -> None:
+        # erp_publisher._integration_settings() looks up the singleton row by
+        # SETTINGS_SINGLETON_ID; without it this create() is invisible to that
+        # lookup (IntegrationSettings.id defaults to a random uuid4) and
+        # get_or_create() silently falls back to its approved_export_enabled=True
+        # default instead of the row this test just made.
         IntegrationSettings.objects.create(
+            id=SETTINGS_SINGLETON_ID,
             approved_export_enabled=False,
             approved_export_dir="/tmp/ignored",
             approved_export_format=IntegrationSettings.ExportFormat.JSON,
@@ -419,6 +518,11 @@ class DocumentsAPITests(TestCase):
         with (
             tempfile.TemporaryDirectory() as event_dir,
             tempfile.TemporaryDirectory() as export_dir,
+            # event_bus_from_env() reads DOCUPARSE_EVENT_BUS from the process
+            # environment, not Django settings — self.settings() alone can't
+            # force local mode when the environment pins the bus to Redis (as
+            # the devcontainer's .env does).
+            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
             self.settings(
                 DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
                 DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
@@ -557,6 +661,7 @@ class DocumentsAPITests(TestCase):
     def test_dlq_operation_endpoints(self) -> None:
         with (
             tempfile.TemporaryDirectory() as event_dir,
+            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
             self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir),
         ):
             bus = LocalJsonlEventBus(event_dir)
@@ -612,6 +717,27 @@ class DocumentsAPITests(TestCase):
         assert invalid.status_code == 400
         assert invalid_requeue.status_code == 400
 
+    def test_dlq_endpoints_require_operations_access(self) -> None:
+        role = Role.objects.create(name="SemOperacoes")
+        role.permissions.set([Permission.objects.get(code="inbox.view")])
+        user = get_user_model().objects.create_user(username="viewer", password="test")
+        UserProfile.objects.create(user=user, tenant=self.tenant, role_ref=role)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {_jwt_for(user, self.tenant)}"
+        )
+
+        summary = self.client.get(reverse("dlq-summary"))
+        events = self.client.get(reverse("dlq-events"), {"stream": "ocr.completed.dlq"})
+        requeue = self.client.post(
+            reverse("dlq-requeue"),
+            {"stream": "ocr.completed.dlq", "id": "1", "execute": False},
+            format="json",
+        )
+
+        assert summary.status_code == 403
+        assert events.status_code == 403
+        assert requeue.status_code == 403
+
     def test_rejection_notes_in_document_list(self) -> None:
         ValidationDecision.objects.create(
             document=self.document,
@@ -660,6 +786,11 @@ class InternalServiceTokenGateTests(TestCase):
     o usuário autenticado via JWT precisa ser aceito (antes era rejeitado), e o
     caller serviço↔serviço com o token interno também. Só requisições sem
     credencial válida devem receber 401.
+
+    `schema-configs` agora também exige a permissão `models.edit`
+    (HasDocuparsePermission), então o usuário JWT do teste precisa dessa
+    permissão para exercitar os cenários de sucesso; o bypass por
+    `service_token` continua incondicional.
     """
 
     TOKEN = "staging-token-123"
@@ -669,6 +800,11 @@ class InternalServiceTokenGateTests(TestCase):
         self.tenant = Tenant.objects.create(slug="tenant-gate", name="Tenant Gate")
         connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="op", password="x")
+        role = Role.objects.create(name="GateTester")
+        role.permissions.set(
+            [Permission.objects.create(code="models.edit", description="Models edit")]
+        )
+        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
         self.jwt = _jwt_for(self.user, self.tenant)
 
     def test_token_configured_accepts_authenticated_user_jwt(self) -> None:

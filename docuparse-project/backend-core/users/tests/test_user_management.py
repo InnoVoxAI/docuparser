@@ -26,6 +26,12 @@ def _make_admin_role() -> Role:
     return role
 
 
+def _make_platform_admin_role() -> Role:
+    role = Role.objects.create(name="admin", is_platform_role=True)
+    role.permissions.set(Permission.objects.all())
+    return role
+
+
 def _make_op_role() -> Role:
     role = Role.objects.create(name="Operador")
     role.permissions.set(
@@ -127,3 +133,94 @@ class UserManagementTest(TestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.op_token}")
         r = self.client.get("/api/ocr/users")
         self.assertEqual(r.status_code, 403)
+
+
+class PrivilegeEscalationTest(TestCase):
+    def setUp(self) -> None:
+        self.client = APIClient()
+        _seed_permissions()
+        self.tenant = _make_tenant()
+        self.platform_admin_role = _make_platform_admin_role()
+        self.tenant_admin_role = _make_admin_role()
+        self.op_role = _make_op_role()
+
+        platform_admin = User.objects.create_user(
+            username="padmin@t.com",
+            email="padmin@t.com",
+            password="pw",
+            is_active=True,
+        )
+        UserProfile.objects.create(
+            user=platform_admin, tenant=self.tenant, role_ref=self.platform_admin_role
+        )
+        self.platform_admin_token = _login(self.client, "padmin@t.com", "pw")
+
+        tenant_admin = User.objects.create_user(
+            username="tadmin@t.com",
+            email="tadmin@t.com",
+            password="pw",
+            is_active=True,
+        )
+        UserProfile.objects.create(
+            user=tenant_admin, tenant=self.tenant, role_ref=self.tenant_admin_role
+        )
+        self.tenant_admin_token = _login(self.client, "tadmin@t.com", "pw")
+
+        op = User.objects.create_user(
+            username="op2@t.com", email="op2@t.com", password="pw", is_active=True
+        )
+        UserProfile.objects.create(user=op, tenant=self.tenant, role_ref=self.op_role)
+        self.op_user = op
+
+        self.tenant_admin_user = tenant_admin
+
+    def test_tenant_admin_promoting_other_user_to_platform_role_returns_403(
+        self,
+    ) -> None:
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.tenant_admin_token}")
+        r = self.client.patch(
+            f"/api/ocr/users/{self.op_user.id}",
+            {"role_id": str(self.platform_admin_role.id)},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_tenant_admin_promoting_self_to_platform_role_returns_403(self) -> None:
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.tenant_admin_token}")
+        r = self.client.patch(
+            f"/api/ocr/users/{self.tenant_admin_user.id}",
+            {"role_id": str(self.platform_admin_role.id)},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_platform_admin_promoting_user_to_platform_role_returns_200(self) -> None:
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {self.platform_admin_token}"
+        )
+        r = self.client.patch(
+            f"/api/ocr/users/{self.op_user.id}",
+            {"role_id": str(self.platform_admin_role.id)},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_tenant_admin_assigning_non_platform_role_returns_200(self) -> None:
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.tenant_admin_token}")
+        r = self.client.patch(
+            f"/api/ocr/users/{self.op_user.id}",
+            {"role_id": str(self.tenant_admin_role.id)},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200)
+
+    def test_list_users_role_includes_is_platform_role(self) -> None:
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {self.platform_admin_token}"
+        )
+        r = self.client.get("/api/ocr/users")
+        self.assertEqual(r.status_code, 200)
+        by_email = {u["email"]: u["role"]["is_platform_role"] for u in r.data}
+        self.assertTrue(by_email["padmin@t.com"])
+        self.assertFalse(by_email["tadmin@t.com"])
+        self.assertFalse(by_email["op2@t.com"])

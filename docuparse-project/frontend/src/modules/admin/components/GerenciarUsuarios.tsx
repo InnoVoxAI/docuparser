@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { asApiError } from '../../../shared/utils'
+import { useAuth } from '../../auth'
 import { useUsersQuery } from '../hooks/useUsersQuery'
 import { useRolesQuery } from '../hooks/useRolesQuery'
 import { useUserMutations } from '../hooks/useUserMutations'
@@ -10,9 +11,15 @@ import { UserFormModal, type UserFormValues } from './UserFormModal'
 const EMPTY_FORM: UserFormValues = { name: '', email: '', password: '', role_id: '' }
 
 export function GerenciarUsuarios() {
+    const { user: authUser } = useAuth()
     const usersQuery = useUsersQuery()
     const rolesQuery = useRolesQuery()
     const { createUser, updateUser, toggleUserActive } = useUserMutations()
+    // A lista de usuários já traz o role aninhado (incluindo is_platform_role);
+    // localizamos o próprio usuário autenticado nela em vez de depender de /me.
+    const currentUserIsPlatformAdmin = Boolean(
+        usersQuery.data.find((u) => u.email === authUser?.email)?.role?.is_platform_role,
+    )
     const [modal, setModal] = useState<{ mode: 'create' | 'edit'; user?: AdminUser } | null>(null)
     const [form, setForm] = useState<UserFormValues>(EMPTY_FORM)
     const [error, setError] = useState('')
@@ -82,6 +89,7 @@ export function GerenciarUsuarios() {
                     form={form}
                     roles={rolesQuery.data}
                     error={error}
+                    currentUserIsPlatformAdmin={currentUserIsPlatformAdmin}
                     onChange={setForm}
                     onSubmit={handleSubmit}
                     onClose={() => setModal(null)}

@@ -29,6 +29,7 @@ class Role(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=128, unique=True)
     permissions = models.ManyToManyField(Permission, related_name="roles", blank=True)
+    is_platform_role = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["name"]

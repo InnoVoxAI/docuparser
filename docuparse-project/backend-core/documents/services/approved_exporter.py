@@ -13,11 +13,12 @@ def export_approved_document_json(
     document: Document,
     payload: dict,
     *,
+    tenant_slug: str,
     export_root: str | Path | None = None,
     export_format: str = "json",
 ) -> Path:
     export_root = Path(export_root or settings.DOCUPARSE_APPROVED_EXPORT_DIR)
-    target_dir = export_root / document.tenant.slug
+    target_dir = export_root / tenant_slug
     target_dir.mkdir(parents=True, exist_ok=True)
     suffix = "jsonl" if export_format == "jsonl" else "json"
     target_path = target_dir / f"{document.id}.{suffix}"
@@ -25,7 +26,7 @@ def export_approved_document_json(
     export_payload = {
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "document_id": str(document.id),
-        "tenant_id": document.tenant.slug,
+        "tenant_id": tenant_slug,
         "status": document.status,
         "correlation_id": str(document.correlation_id),
         "payload": payload,

@@ -84,6 +84,8 @@ Quando um convite de usuário expira, é perdido, ou o email não chega, o tenan
 - **FR-012**: O sistema DEVE impedir que uma pessoa não autenticada, de posse de um link de convite de usuário de outro tenant, ative ou altere contas que não sejam a associada àquele token específico.
 - **FR-013**: O sistema DEVE registrar (log) envio, sucesso ou falha de entrega de convites de usuário, sem expor senha ou dados sensíveis do convite em texto claro.
 - **FR-014**: A infraestrutura de convite (modelo de dados, geração/validação de token, expiração, endpoint de ativação, envio de email) introduzida na feature 017 para convite de administrador DEVE ser reaproveitada/generalizada para servir também o convite de usuário comum, evitando um segundo mecanismo paralelo e duplicado — a forma exata da generalização é uma decisão técnica a ser detalhada na fase de planejamento.
+- **FR-015**: O sistema DEVE corrigir o defeito pré-existente em que a criação direta de usuário pela tela de gestão do tenant admin associava o novo usuário sempre ao primeiro tenant cadastrado no sistema em vez de ao tenant de quem está criando — o novo usuário DEVE sempre ser vinculado ao tenant de quem o convida.
+- **FR-016**: O ponto de criação de usuário usado pelo operador de plataforma na tela de administração de tenants (hoje já rotulado como "convite" na interface, mas que na prática cria a conta com senha em texto informada pelo operador, sem enviar nenhum convite) DEVE passar a usar o mesmo mecanismo de convite por email desta feature, eliminando a divergência entre o rótulo exibido e o comportamento real.
 
 ### Key Entities *(include if feature involves data)*
 

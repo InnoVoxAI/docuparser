@@ -132,6 +132,35 @@ Mesmo endpoint da feature 017 (`tenants/views.py::invite_activate_view`) — nen
 
 ---
 
+## POST /api/admin/tenants/{slug}/users/ (alterado — FR-016)
+
+Cria (convida) um usuário num tenant específico, usado pela tela de administração de tenants do **operador de plataforma** (`TenantUsersPanel.tsx`). Mesmo defeito do `POST /api/users/` (senha em texto fornecida por terceiro) corrigido da mesma forma — a diferença é o ator (`tenants.manage`, não `users.manage`) e que o `tenant` já vem do `slug` da URL, não de `request.tenant`.
+
+**Authentication**: JWT — caller must have `tenants.manage` permission (inalterado).
+
+### Request
+
+```json
+{
+  "name": "Maria Silva",
+  "email": "maria.silva@acme.com",
+  "role_id": "8f14e45f-ceea-467e-adde-3fb5f2b0e6a1"
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `name` | string | yes | 1–150 chars (inalterado) |
+| `email` | string | yes | formato de email válido; não pode já existir (inalterado) |
+| `role_id` | UUID | yes | deve existir — **sem** a restrição `is_platform_role=False` do `POST /api/users/`; o operador de plataforma pode legitimamente atribuir a role `admin`/`tenantAdmin` do tenant (ex.: recriar um admin perdido) |
+| ~~`password`~~ | — | — | **removido** |
+
+### Response 201 Created / 400 / 409 / 500
+
+Mesmo formato de `POST /api/users/` acima (`meta.invite_sent`, `INVITE_DELIVERY_FAILED`, `USER_EXISTS`), trocando apenas o escopo de permissão.
+
+---
+
 ## Endpoints inalterados (apenas o model interno mudou de nome)
 
 - `POST /api/admin/tenants/{slug}/invites/resend/` (017) — contrato de request/response idêntico; internamente passa a chamar a versão generalizada de reenvio com o `user_id` do admin do tenant.

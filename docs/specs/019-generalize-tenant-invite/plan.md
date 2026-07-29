@@ -6,7 +6,7 @@
 
 ## Summary
 
-Generalizar o mecanismo de convite por email introduzido na feature 017 (`TenantAdminInvite`) para que o tenant admin possa convidar usuários comuns para seu próprio tenant, sem digitar/compartilhar senha — o convidado define a senha ao ativar o link recebido, e a conta já nasce aprovada com o papel escolhido no convite. O modelo é renomeado `TenantAdminInvite` → `Invite` (nenhum campo novo — o papel já vive em `UserProfile.role_ref`, não no convite) e a lógica de emissão/reenvio/ativação em `tenants/invites.py` é generalizada para aceitar qualquer papel não-plataforma. O endpoint `POST /api/users/` (`users/user_views.py::users_list_create_view`) troca o campo `password` por emissão de convite, e corrige de passagem um bug pré-existente onde o tenant do novo usuário era sempre `Tenant.objects.first()` em vez de `request.tenant` (ver research.md R3). O fluxo de auto-cadastro (`register_view`) e sua aprovação manual (`user_detail_update_view`) permanecem intocados.
+Generalizar o mecanismo de convite por email introduzido na feature 017 (`TenantAdminInvite`) para que o tenant admin possa convidar usuários comuns para seu próprio tenant, sem digitar/compartilhar senha — o convidado define a senha ao ativar o link recebido, e a conta já nasce aprovada com o papel escolhido no convite. O modelo é renomeado `TenantAdminInvite` → `Invite` (nenhum campo novo — o papel já vive em `UserProfile.role_ref`, não no convite) e a lógica de emissão/reenvio/ativação em `tenants/invites.py` é generalizada para aceitar qualquer papel. O endpoint `POST /api/users/` (`users/user_views.py::users_list_create_view`) troca o campo `password` por emissão de convite, e corrige de passagem um bug pré-existente onde o tenant do novo usuário era sempre `Tenant.objects.first()` em vez de `request.tenant` (FR-015, research.md R3). O fluxo de auto-cadastro (`register_view`) e sua aprovação manual (`user_detail_update_view`) permanecem intocados. Adicionalmente (FR-016, escopo ampliado a pedido do usuário em 2026-07-29), o mesmo anti-padrão de senha em texto é corrigido também em `tenant_users_view` (`tenants/views.py`, tela de administração de tenants do operador de plataforma — este endpoint já resolve o tenant corretamente pelo `slug` da URL, não sofre do bug do FR-015) — hoje já rotulada como "Convidar" na UI (`TenantUsersPanel.tsx`) sem de fato enviar convite algum.
 
 ## Technical Context
 
@@ -33,7 +33,7 @@ Generalizar o mecanismo de convite por email introduzido na feature 017 (`Tenant
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 - **I. Code Quality** — PASS. `tenants/invites.py` já é um módulo isolado (criado na 017 justamente para manter `views.py` dentro do limite de 400 linhas); a generalização (renomear funções, parametrizar por role/user_id) não deve crescer o arquivo além do limite — se aproximar, extrair `invites.py` em `invites/service.py` + `invites/email.py` é a divisão natural. Type hints obrigatórios (padrão já seguido no arquivo). Nenhuma vulnerabilidade nova: token continua gerado com `secrets` (CSPRNG) e hasheado antes de persistir; `role_id` é validado no servidor contra `is_platform_role=False`, não confiando em nada vindo do frontend além do ID.
-- **II. Testing Standards** — PASS, com ação: o fluxo de convite de usuário é uma extensão do fluxo de autenticação/provisionamento (mesma classificação da 017) e por isso REQUER teste de integração (convite → ativação → login, e resend → invalidação do link antigo). O bug do `Tenant.objects.first()` (research.md R3) exige um teste de regressão explícito (criar usuário como admin de um tenant que não é o primeiro do banco, confirmar que o `UserProfile` vai para o tenant correto) — sem esse teste, o bug poderia reaparecer silenciosamente.
+- **II. Testing Standards** — PASS, com ação: o fluxo de convite de usuário é uma extensão do fluxo de autenticação/provisionamento (mesma classificação da 017) e por isso REQUER teste de integração (convite → ativação → login, e resend → invalidação do link antigo). O bug do `Tenant.objects.first()` (FR-015, research.md R3) exige um teste de regressão explícito (criar usuário como admin de um tenant que não é o primeiro do banco, confirmar que o `UserProfile` vai para o tenant correto) — sem esse teste, o bug poderia reaparecer silenciosamente. O reaproveitamento em `tenant_users_view` (FR-016, research.md R4) exige teste de regressão equivalente confirmando que o usuário criado pelo operador de plataforma recebe convite por email em vez de senha em texto.
 - **III. User Experience Consistency** — PASS. Endpoints seguem o envelope `{ "data", "error", "meta" }` já padronizado (ver `contracts/user-invite-api.md`). Mensagens em português, sem stack trace. `UserFormModal.tsx` troca o campo de senha por um select de role já existente (nenhuma tela nova é necessária — o modal já existe, só muda o campo obrigatório).
 - **IV. Performance Requirements** — PASS, mesma decisão e mesma justificativa da 017 (envio síncrono aceitável no volume esperado; isolado numa função só para permitir mover para fila depois sem reescrever lógica de negócio).
 
@@ -69,7 +69,9 @@ docuparse-project/backend-core/
 │   │                               #   versão genérica com o user_id do admin); activate_invite
 │   │                               #   inalterado (já é genérico, ver research.md R6)
 │   ├── views.py                   # invite_activate_view inalterado; invite_resend_view (017)
-│   │                               #   passa a delegar para resend_invite genérico
+│   │                               #   passa a delegar para resend_invite genérico;
+│   │                               #   tenant_users_view (POST) passa a chamar create_invite
+│   │                               #   em vez de criar usuário com password do request (FR-016)
 │   ├── templates/tenants/emails/  # rename admin_invite_subject/body.txt -> invite_subject/body.txt;
 │   │                               #   + variável role_display_name no contexto
 │   └── tests/
@@ -90,7 +92,9 @@ docuparse-project/backend-core/
 
 docuparse-project/frontend/src/modules/admin/
 ├── components/
-│   └── UserFormModal.tsx          # modo 'create' perde o campo de senha
+│   ├── UserFormModal.tsx          # modo 'create' perde o campo de senha
+│   └── TenantUsersPanel.tsx       # form "Convidar" perde o campo de senha (FR-016) —
+│   │                               #   rótulo passa a corresponder ao comportamento real
 ├── hooks/
 │   └── useUserMutations.ts        # CreateUserInput perde `password`; + useResendInviteMutation
 └── routes/

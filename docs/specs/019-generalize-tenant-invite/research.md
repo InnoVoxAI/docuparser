@@ -22,12 +22,13 @@
 - **Decision**: Corrigir como parte desta feature — a nova lógica baseada em convite passa a receber `tenant=request.tenant` explicitamente (o mesmo padrão já usado no branch GET da view), eliminando o bug como efeito colateral necessário da própria mudança (não dá para gerar convite de usuário corretamente sem saber o tenant certo).
 - **Rationale**: É impossível implementar convite de usuário corretamente sem consertar isso — o bug e a feature são o mesmo ponto de código.
 
-## R4: Achado relacionado, fora de escopo — `TenantUsersPanel.tsx` já rotula seu formulário como "Convidar", mas não envia convite nenhum
+## R4: `TenantUsersPanel.tsx` já rotula seu formulário como "Convidar", mas não envia convite nenhum — trazido para dentro do escopo (FR-016)
 
-`docuparse-project/frontend/src/modules/admin/components/TenantUsersPanel.tsx:100-146` (usado na tela de administração de tenants pelo operador de plataforma, permissão `tenants.manage`) já tem um botão "Convidar" e um campo de senha em texto — mas o POST vai para `tenants/views.py::tenant_users_view`, que cria o usuário com senha em texto puro fornecida pelo operador (sem token, sem email, sem ativação). O rótulo "Convidar" é enganoso hoje.
+`docuparse-project/frontend/src/modules/admin/components/TenantUsersPanel.tsx:100-146` (usado na tela de administração de tenants pelo operador de plataforma, permissão `tenants.manage`) já tem um botão "Convidar" e um campo de senha em texto — mas o POST vai para `tenants/views.py::tenant_users_view`, que cria o usuário com senha em texto puro fornecida pelo operador (sem token, sem email, sem ativação). O rótulo "Convidar" é enganoso hoje — é o mesmo anti-padrão do FR-015/`UserCreateSerializer`, só que num ator diferente (operador de plataforma, não tenant admin).
 
-- **Decision**: Fora de escopo desta feature. O ator dessa tela é o operador de plataforma agindo sobre qualquer tenant (`tenants.manage`), não o tenant admin agindo sobre o próprio tenant — é uma superfície diferente da descrita no spec (User Story 1 é explicitamente sobre o tenant admin). Registrado aqui para não ser esquecido, não para ser resolvido agora.
-- **Rationale**: Resolver os dois pontos juntos ampliaria o escopo além do pedido original e misturaria dois atores/permissões diferentes numa só entrega. Fica como candidato a uma feature futura de cleanup, citado explicitamente (não como "cleanup genérico" — ver convenção de tasks explícitas já usada na feature 017).
+- **Decision (revisado 2026-07-29, a pedido do usuário)**: **Dentro do escopo desta feature** (FR-016). `tenant_users_view` (POST) passa a chamar a mesma `tenants.invites.create_invite(tenant, name, email, role)` generalizada (R1/R2), em vez de criar o usuário com senha vinda do request. `tenant` já é resolvido pelo `slug` da URL (inalterado); `role` continua vindo de `role_id` no corpo, sem a restrição `is_platform_role=False` do FR-003 — esse endpoint é operado por um operador de plataforma (`admin`, `is_platform_role=True`), que legitimamente pode precisar atribuir a role `admin`/`tenantAdmin` de um tenant (ex.: recriar um admin perdido), diferente do tenant admin convidando dentro do próprio tenant.
+- **Rationale**: Ambos os pontos de criação de usuário (tenant admin e operador de plataforma) sofrem do mesmo defeito de fundo — pedir para um terceiro inventar e transmitir uma senha em vez de deixar o próprio usuário defini-la. Consertar só um deixaria o outro com um "convite" que mente sobre o que faz. O reaproveitamento de `create_invite` é direto (mesma função, `tenant` já vem resolvido pela URL em vez de por `request.tenant`).
+- **Consequência no frontend**: `TenantUsersPanel.tsx` perde o campo de senha (igual a `UserFormModal.tsx`, FR-001), mantendo os campos nome/email/role já existentes — o rótulo "Convidar" passa a corresponder ao comportamento real.
 
 ## R5: Templates de email já são parametrizáveis por contexto — só precisam de uma variável a mais
 
@@ -50,6 +51,6 @@
 | R1 | `RenameModel` `TenantAdminInvite` → `Invite`, sem novos campos | 1 migração |
 | R2 | Generalizar reenvio para `resend_invite(tenant, user_id)` | Refactor pequeno em `invites.py` |
 | R3 | Corrigir `UserCreateSerializer`/`users_list_create_view` para usar `request.tenant` | Corrigido como parte da troca senha→convite |
-| R4 | `TenantUsersPanel.tsx` (operador de plataforma) fica fora de escopo | Nenhum — só registrado |
+| R4 | `TenantUsersPanel.tsx`/`tenant_users_view` (operador de plataforma) também migra para `create_invite` | Reaproveita a mesma função de serviço; sem restrição de role de plataforma |
 | R5 | Renomear templates de email e parametrizar por role | Rename + 1 variável de contexto |
 | R6 | Endpoint de ativação pública reaproveitado sem mudança de rota | Nenhum |

@@ -14,6 +14,7 @@ const ALL_PERMISSIONS = [
     'operations.access',
     'roles.manage',
     'users.manage',
+    'models.edit',
 ]
 
 describe('Telas / navegação (smoke)', () => {

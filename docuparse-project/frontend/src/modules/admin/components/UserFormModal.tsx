@@ -13,12 +13,23 @@ interface UserFormModalProps {
     form: UserFormValues
     roles: AdminRole[]
     error: string
+    currentUserIsPlatformAdmin: boolean
     onChange: (form: UserFormValues) => void
     onSubmit: (e: FormEvent) => void
     onClose: () => void
 }
 
-export function UserFormModal({ mode, form, roles, error, onChange, onSubmit, onClose }: UserFormModalProps) {
+export function UserFormModal({
+    mode,
+    form,
+    roles,
+    error,
+    currentUserIsPlatformAdmin,
+    onChange,
+    onSubmit,
+    onClose,
+}: UserFormModalProps) {
+    const selectableRoles = roles.filter((r) => currentUserIsPlatformAdmin || !r.is_platform_role)
     return (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg">
@@ -58,7 +69,7 @@ export function UserFormModal({ mode, form, roles, error, onChange, onSubmit, on
                         className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm"
                     >
                         <option value="">Selecionar role...</option>
-                        {roles.map((r) => (
+                        {selectableRoles.map((r) => (
                             <option key={r.id} value={r.id}>
                                 {r.name}
                             </option>

@@ -8,9 +8,12 @@ export function TenantsTable({
     switchingSlug,
     switchError,
     toggleError,
+    resendingSlug,
+    resendError,
     onToggleExpand,
     onSwitch,
     onToggle,
+    onResend,
 }: {
     tenants: Tenant[]
     currentTenant: string | null
@@ -18,9 +21,12 @@ export function TenantsTable({
     switchingSlug: string | null
     switchError: Record<string, string>
     toggleError: Record<string, string>
+    resendingSlug: string | null
+    resendError: Record<string, string>
     onToggleExpand: (slug: string) => void
     onSwitch: (slug: string) => void
     onToggle: (slug: string, currentActive: boolean) => void
+    onResend: (slug: string) => void
 }) {
     return (
         <div className="rounded-lg border border-zinc-200 bg-white overflow-hidden">
@@ -44,9 +50,12 @@ export function TenantsTable({
                             switching={switchingSlug === t.slug}
                             switchError={switchError[t.slug]}
                             toggleError={toggleError[t.slug]}
+                            resending={resendingSlug === t.slug}
+                            resendError={resendError[t.slug]}
                             onToggleExpand={() => onToggleExpand(t.slug)}
                             onSwitch={() => onSwitch(t.slug)}
                             onToggle={() => onToggle(t.slug, t.is_active)}
+                            onResend={() => onResend(t.slug)}
                         />
                     ))}
                 </tbody>

@@ -110,15 +110,15 @@ description: "Task list for feature 017-tenant-admin-onboarding"
 
 ### Tests for User Story 3
 
-- [ ] T030 [P] [US3] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: reenvio invalida o `TenantAdminInvite` `PENDING` anterior (passa a `INVALIDATED`) e cria um novo `PENDING` com token/expiração novos
-- [ ] T031 [P] [US3] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: reenvio para um tenant cujo admin já ativou a conta (`has_usable_password() is True`) retorna 409 `ADMIN_ALREADY_ACTIVE`
+- [X] T030 [P] [US3] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: reenvio invalida o `TenantAdminInvite` `PENDING` anterior (passa a `INVALIDATED`) e cria um novo `PENDING` com token/expiração novos
+- [X] T031 [P] [US3] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: reenvio para um tenant cujo admin já ativou a conta (`has_usable_password() is True`) retorna 409 `ADMIN_ALREADY_ACTIVE`
 
 ### Implementation for User Story 3
 
-- [ ] T032 [US3] Implementar `resend_admin_invite(tenant: Tenant) -> TenantAdminInvite` em `docuparse-project/backend-core/tenants/invites.py`: localiza o `UserProfile` do admin do tenant (role "admin"), retorna erro se `has_usable_password()` já for `True`, invalida qualquer `TenantAdminInvite` `PENDING` existente para esse usuário, cria e envia um novo (depende de T004, T006, T008, T013)
-- [ ] T033 [US3] Implementar `invite_resend_view` (POST, `require_permission("tenants.manage")`) em `docuparse-project/backend-core/tenants/views.py` conforme `contracts/tenant-admin-invite-api.md` (depende de T032)
-- [ ] T034 [US3] Adicionar a rota `<slug:slug>/invites/resend/` em `docuparse-project/backend-core/tenants/urls.py`, apontando para `invite_resend_view` (depende de T033)
-- [ ] T035 [P] [US3] Adicionar a ação "Reenviar convite" (botão + estado de loading/erro) em `docuparse-project/frontend/src/modules/admin/components/TenantsTable.tsx`, com o handler correspondente em `TenantsView.tsx`
+- [X] T032 [US3] Implementar `resend_admin_invite(tenant: Tenant) -> TenantAdminInvite` em `docuparse-project/backend-core/tenants/invites.py`: localiza o `UserProfile` do admin do tenant (role "admin"), retorna erro se `has_usable_password()` já for `True`, invalida qualquer `TenantAdminInvite` `PENDING` existente para esse usuário, cria e envia um novo (depende de T004, T006, T008, T013)
+- [X] T033 [US3] Implementar `invite_resend_view` (POST, `require_permission("tenants.manage")`) em `docuparse-project/backend-core/tenants/views.py` conforme `contracts/tenant-admin-invite-api.md` (depende de T032)
+- [X] T034 [US3] Adicionar a rota `<slug:slug>/invites/resend/` em `docuparse-project/backend-core/tenants/urls.py`, apontando para `invite_resend_view` (depende de T033)
+- [X] T035 [P] [US3] Adicionar a ação "Reenviar convite" (botão + estado de loading/erro) em `docuparse-project/frontend/src/modules/admin/components/TenantsTable.tsx`, com o handler correspondente em `TenantsView.tsx`
 
 **Checkpoint**: Todas as três histórias funcionam de forma independente e em conjunto.
 

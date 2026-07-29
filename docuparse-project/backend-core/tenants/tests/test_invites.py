@@ -231,3 +231,90 @@ class InviteActivationTests(TestCase):
 
         admin_user = User.objects.get(username="weak@acme.com")
         assert admin_user.has_usable_password() is False
+
+
+class InviteResendTests(TestCase):
+    def setUp(self) -> None:
+        self.client, self.tenant, self.user = _admin_client()
+        Role.objects.get_or_create(name="admin")
+
+    def _create_invite(self, slug: str = "acme", email: str = "jane.doe@acme.com"):
+        with patch.object(Tenant, "auto_create_schema", new=False):
+            response = self.client.post(
+                "/api/admin/tenants/",
+                {
+                    "slug": slug,
+                    "name": "ACME Corporation",
+                    "admin_name": "Jane Doe",
+                    "admin_email": email,
+                },
+                format="json",
+            )
+        assert response.status_code == 201
+        token = _extract_token(mail.outbox[-1].body)
+        invite = TenantAdminInvite.objects.get(user__username=email)
+        return token, invite
+
+    def test_resend_invalidates_previous_pending_and_creates_new_pending(
+        self,
+    ) -> None:
+        old_token, old_invite = self._create_invite(
+            slug="resend-tenant", email="resend@acme.com"
+        )
+
+        response = self.client.post(
+            "/api/admin/tenants/resend-tenant/invites/resend/",
+            format="json",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["data"]["admin_email"] == "resend@acme.com"
+        assert "expires_at" in body["data"]
+
+        old_invite.refresh_from_db()
+        assert old_invite.status == TenantAdminInvite.Status.INVALIDATED
+
+        new_invite = (
+            TenantAdminInvite.objects.filter(user=old_invite.user)
+            .exclude(id=old_invite.id)
+            .get()
+        )
+        assert new_invite.status == TenantAdminInvite.Status.PENDING
+        assert new_invite.token_hash != old_invite.token_hash
+
+        new_token = _extract_token(mail.outbox[-1].body)
+        assert new_token != old_token
+
+        # the old link no longer works, the new one does
+        expired_response = self.client.post(
+            f"/api/admin/tenants/invites/{old_token}/activate/",
+            {"password": VALID_PASSWORD},
+            format="json",
+        )
+        assert expired_response.status_code == 410
+
+        activate_response = self.client.post(
+            f"/api/admin/tenants/invites/{new_token}/activate/",
+            {"password": VALID_PASSWORD},
+            format="json",
+        )
+        assert activate_response.status_code == 200
+
+    def test_resend_for_already_active_admin_returns_409(self) -> None:
+        token, invite = self._create_invite(
+            slug="active-tenant", email="active@acme.com"
+        )
+        self.client.post(
+            f"/api/admin/tenants/invites/{token}/activate/",
+            {"password": VALID_PASSWORD},
+            format="json",
+        )
+
+        response = self.client.post(
+            "/api/admin/tenants/active-tenant/invites/resend/",
+            format="json",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "ADMIN_ALREADY_ACTIVE"

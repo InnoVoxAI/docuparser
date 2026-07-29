@@ -40,6 +40,10 @@ class InviteAlreadyUsedError(Exception):
     """Raised when the invite has already been consumed."""
 
 
+class AdminAlreadyActiveError(Exception):
+    """Raised when a resend is requested but the tenant admin already has a usable password."""
+
+
 def generate_invite_token() -> str:
     return secrets.token_urlsafe(32)
 
@@ -73,6 +77,21 @@ def send_admin_invite_email(
     logger.info("Tenant admin invite email sent for invite %s", invite.id)
 
 
+def _issue_invite(
+    user: AbstractBaseUser, tenant: Tenant, admin_email: str
+) -> TenantAdminInvite:
+    raw_token = generate_invite_token()
+    invite = TenantAdminInvite.objects.create(
+        user=user,
+        tenant=tenant,
+        token_hash=hash_token(raw_token),
+        expires_at=timezone.now()
+        + timezone.timedelta(hours=settings.TENANT_ADMIN_INVITE_TTL_HOURS),
+    )
+    send_admin_invite_email(invite, admin_email, raw_token)
+    return invite
+
+
 def create_admin_invite(
     tenant: Tenant, admin_name: str, admin_email: str
 ) -> TenantAdminInvite:
@@ -89,16 +108,27 @@ def create_admin_invite(
     admin_role = Role.objects.filter(name="admin").first()
     UserProfile.objects.create(user=user, tenant=tenant, role_ref=admin_role)
 
-    raw_token = generate_invite_token()
-    invite = TenantAdminInvite.objects.create(
-        user=user,
-        tenant=tenant,
-        token_hash=hash_token(raw_token),
-        expires_at=timezone.now()
-        + timezone.timedelta(hours=settings.TENANT_ADMIN_INVITE_TTL_HOURS),
+    return _issue_invite(user, tenant, admin_email)
+
+
+def resend_admin_invite(tenant: Tenant) -> TenantAdminInvite:
+    """Invalidate the tenant admin's pending invite (if any) and issue a new one.
+
+    Raises ``AdminAlreadyActiveError`` if the admin has already set a usable
+    password — resending would be pointless and could confuse an active admin.
+    """
+    profile = UserProfile.objects.select_related("user").get(
+        tenant=tenant, role_ref__name="admin"
     )
-    send_admin_invite_email(invite, admin_email, raw_token)
-    return invite
+    user = profile.user
+    if user.has_usable_password():
+        raise AdminAlreadyActiveError()
+
+    TenantAdminInvite.objects.filter(
+        user=user, status=TenantAdminInvite.Status.PENDING
+    ).update(status=TenantAdminInvite.Status.INVALIDATED)
+
+    return _issue_invite(user, tenant, user.email)
 
 
 def activate_invite(token: str, password: str) -> AbstractBaseUser:

@@ -15,11 +15,13 @@ from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
 
 from tenants.invites import (
+    AdminAlreadyActiveError,
     InviteAlreadyUsedError,
     InviteExpiredError,
     InviteNotFoundError,
     activate_invite,
     create_admin_invite,
+    resend_admin_invite,
 )
 from tenants.models import Tenant, UserProfile
 from tenants.serializers import (
@@ -198,6 +200,52 @@ def invite_activate_view(request: Request, token: str) -> Response:
     return Response(
         {
             "data": {"email": user.email, "tenant_slug": profile.tenant.slug},
+            "error": None,
+            "meta": {},
+        }
+    )
+
+
+@api_view(["POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("tenants.manage")])
+def invite_resend_view(request: Request, slug: str) -> Response:
+    try:
+        tenant = Tenant.objects.get(slug=slug)
+    except Tenant.DoesNotExist:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "TENANT_NOT_FOUND",
+                    "detail": f"No tenant with slug '{slug}'.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        invite = resend_admin_invite(tenant)
+    except AdminAlreadyActiveError:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "ADMIN_ALREADY_ACTIVE",
+                    "detail": "O administrador deste tenant já ativou a conta.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    return Response(
+        {
+            "data": {
+                "admin_email": invite.user.email,
+                "expires_at": invite.expires_at,
+            },
             "error": None,
             "meta": {},
         }

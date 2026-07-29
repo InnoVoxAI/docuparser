@@ -20,12 +20,14 @@
 
 ## Variáveis removidas/depreciadas
 
-- `ADMIN_PASSWORD` deixa de ser exigida pelo endpoint `POST /api/admin/tenants/` (a validação de "must be set" é removida de `_provision_tenant`). Continua existindo apenas para uso opcional do `seed_data.py` em ambientes locais (ver tasks de remoção) — se ausente, o comando passa a gerar uma senha aleatória por tenant automaticamente em vez de falhar.
+- `ADMIN_PASSWORD` deixa de ser exigida pelo endpoint `POST /api/admin/tenants/` (a validação de "must be set" é removida de `_provision_tenant`). Continua sendo usada apenas por `seed_data.py`, e só no primeiro boot (banco vazio) — o comando cria só o tenant/admin default (InnoVox) com essa senha e vira no-op em qualquer boot seguinte. Tem default de dev em `docker-compose.yml`/`​.env.example` (`docuparse-admin`), não precisa mais ser definida manualmente no `.env`.
 
 ## Rodando os testes
 
+A partir da raiz do repositório:
+
 ```bash
-./run_script.sh backend-core pytest tenants/tests/test_invites.py -v
-./run_script.sh backend-core pytest tenants/tests/test_provisioning.py -v
+cd docuparse-project/backend-core && /docuparser/run_script.sh .venv/bin/pytest tenants/tests/test_invites.py -v
+cd docuparse-project/backend-core && /docuparser/run_script.sh .venv/bin/pytest tenants/tests/test_provisioning.py -v
 cd docuparse-project/frontend && npm test -- TenantCreateForm
 ```

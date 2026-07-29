@@ -128,10 +128,11 @@ description: "Task list for feature 017-tenant-admin-onboarding"
 
 **Purpose**: Ajustes que não pertencem a nenhuma história específica, mas são necessários para não deixar código legado nem lacunas de configuração
 
-- [ ] T036 [P] **AJUSTAR** `docuparse-project/backend-core/users/management/commands/seed_data.py`: remover o padrão compartilhado `f"admin@{t.slug}"` e o reaproveitamento da mesma `ADMIN_PASSWORD` entre tenants (linhas ~135-162); para cada tenant não-default, gerar uma senha aleatória própria (`secrets.token_urlsafe(16)`) e imprimi-la no stdout do comando, mantendo o comando utilizável para seed local/dev sem exigir envio de email real
-- [ ] T037 [P] Tornar `ADMIN_PASSWORD` opcional em `docuparse-project/docker-compose.yml` (linha ~135, atualmente `${ADMIN_PASSWORD:?defina ADMIN_PASSWORD no .env...}`), já que deixou de ser exigida pela API de provisionamento e agora só é usada opcionalmente pelo `seed_data.py`
-- [ ] T038 Rodar o fluxo descrito em `docs/specs/017-tenant-admin-onboarding/quickstart.md` manualmente (criar tenant → capturar convite no console backend → ativar → logar) para validar o caminho ponta a ponta
-- [ ] T039 [P] Revisar todos os pontos de log em `docuparse-project/backend-core/tenants/invites.py` para confirmar que nenhum token em claro ou senha é escrito em log (FR-011)
+- [X] T036 [P] **AJUSTAR** `docuparse-project/backend-core/users/management/commands/seed_data.py`: adicionar guardrail no início de `handle()` — se `Tenant.objects.exists()` for `True`, logar `"seed_data: banco já inicializado, nada a fazer"` e retornar (comando inteiro vira no-op); remover o loop `for t in Tenant.objects.filter(is_active=True)` que cria um admin fake (`f"admin@{t.slug}"`) por tenant (linhas ~135-171) — com o guardrail, o único tenant que o seed cria é o tenant default (InnoVox), então basta criar **um único** admin usando `ADMIN_EMAIL`/`ADMIN_PASSWORD` do ambiente diretamente (sem senha aleatória, sem loop); a seção de `SchemaConfig`/`LayoutConfig` (linhas ~172-223) permanece dentro do guardrail, rodando apenas para o tenant default nesse primeiro seed — ver T040 sobre a lacuna que isso deixa para tenants criados depois via convite
+- [X] T037 [P] Tornar `ADMIN_PASSWORD` opcional em `docuparse-project/docker-compose.yml` (linha ~135, atualmente `${ADMIN_PASSWORD:?defina ADMIN_PASSWORD no .env...}`), já que deixou de ser exigida pela API de provisionamento e agora só é usada opcionalmente pelo `seed_data.py`
+- [X] T038 Rodar o fluxo descrito em `docs/specs/017-tenant-admin-onboarding/quickstart.md` manualmente (criar tenant → capturar convite no console backend → ativar → logar) para validar o caminho ponta a ponta
+- [X] T039 [P] Revisar todos os pontos de log em `docuparse-project/backend-core/tenants/invites.py` para confirmar que nenhum token em claro ou senha é escrito em log (FR-011)
+- [X] T040 [P] **DOCUMENTAR** débito técnico (não corrigir neste escopo): com o guardrail de T036, `seed_data.py` só popula `SchemaConfig`/`LayoutConfig` padrão para o tenant default, no primeiro seed. Tenants criados depois via fluxo real de convite (`_provision_tenant` / `create_admin_invite`, US1) **não** recebem esses schemas/layouts automaticamente — bug pré-existente, fora do escopo de 017 (o correto seria `_provision_tenant` copiar/seedar os schemas padrão para o schema do novo tenant, ou algo equivalente a `documents/startup.py::ensure_default_schemas()`, que hoje só cobre o tenant "default" e usa um campo `tenant` FK em `SchemaConfig` aparentemente divergente do modelo por `schema_context` usado em `seed_data.py`). Registrar como nota em `memories/reference/` (basic-memory) e, se houver backlog de bugs do projeto, abrir o item lá também
 
 ---
 
@@ -152,7 +153,7 @@ description: "Task list for feature 017-tenant-admin-onboarding"
 - T006, T007 (Foundational) podem rodar em paralelo após T003/T004
 - Dentro de cada história, as tarefas de teste marcadas `[P]` podem rodar em paralelo entre si (arquivos/casos diferentes no mesmo arquivo de teste, mas sem dependência umas das outras)
 - T018 (frontend, US1) e T012 (backend, US1) podem rodar em paralelo — arquivos diferentes
-- T036, T037, T039 (Polish) podem rodar em paralelo
+- T036, T037, T039, T040 (Polish) podem rodar em paralelo
 
 ---
 

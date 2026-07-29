@@ -75,8 +75,10 @@ docuparse-project/backend-core/
 │       └── test_invites.py       # NOVO
 └── users/
     └── management/commands/
-        └── seed_data.py          # ajustado: senha aleatória por tenant, sem
-                                    #   compartilhar ADMIN_PASSWORD entre tenants
+        └── seed_data.py          # ajustado: guardrail de "roda só com banco vazio"
+                                    #   (no-op se já existir qualquer Tenant); some o
+                                    #   loop multi-tenant — único admin seedado é o do
+                                    #   tenant default, via ADMIN_EMAIL/ADMIN_PASSWORD
 
 docuparse-project/frontend/src/modules/admin/
 ├── components/

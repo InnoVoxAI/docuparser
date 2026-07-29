@@ -12,10 +12,13 @@ import logging
 import secrets
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
+from django.utils import timezone
+from users.models import Role
 
-from tenants.models import TenantAdminInvite
+from tenants.models import Tenant, TenantAdminInvite, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -51,3 +54,31 @@ def send_admin_invite_email(
         raise
 
     logger.info("Tenant admin invite email sent for invite %s", invite.id)
+
+
+def create_admin_invite(
+    tenant: Tenant, admin_name: str, admin_email: str
+) -> TenantAdminInvite:
+    User = get_user_model()
+    user = User(
+        username=admin_email,
+        email=admin_email,
+        first_name=admin_name,
+        is_active=True,
+    )
+    user.set_unusable_password()
+    user.save()
+
+    admin_role = Role.objects.filter(name="admin").first()
+    UserProfile.objects.create(user=user, tenant=tenant, role_ref=admin_role)
+
+    raw_token = generate_invite_token()
+    invite = TenantAdminInvite.objects.create(
+        user=user,
+        tenant=tenant,
+        token_hash=hash_token(raw_token),
+        expires_at=timezone.now()
+        + timezone.timedelta(hours=settings.TENANT_ADMIN_INVITE_TTL_HOURS),
+    )
+    send_admin_invite_email(invite, admin_email, raw_token)
+    return invite

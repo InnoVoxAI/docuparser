@@ -13,6 +13,8 @@ export function TenantsView() {
     const [listError, setListError] = useState('')
     const [formSlug, setFormSlug] = useState('')
     const [formName, setFormName] = useState('')
+    const [formAdminName, setFormAdminName] = useState('')
+    const [formAdminEmail, setFormAdminEmail] = useState('')
     const [submitting, setSubmitting] = useState(false)
     const [formError, setFormError] = useState('')
     const [toggleError, setToggleError] = useState<Record<string, string>>({})
@@ -42,18 +44,37 @@ export function TenantsView() {
         setSubmitting(true)
         setFormError('')
         try {
-            await adminApi.post('/tenants/', { slug: formSlug, name: formName })
+            await adminApi.post('/tenants/', {
+                slug: formSlug,
+                name: formName,
+                admin_name: formAdminName,
+                admin_email: formAdminEmail,
+            })
             setFormSlug('')
             setFormName('')
+            setFormAdminName('')
+            setFormAdminEmail('')
             await fetchTenants()
         } catch (err) {
             const apiError = asApiError(err)
+            const code = apiError.response?.data?.error?.code
             const detail = apiError.response?.data?.error?.detail
-            setFormError(
-                apiError.response?.status === 409
-                    ? (detail ?? `Tenant com slug "${formSlug}" já existe.`)
-                    : (detail ?? 'Erro ao criar tenant.'),
-            )
+            const detailMessage =
+                typeof detail === 'string'
+                    ? detail
+                    : detail && typeof detail === 'object'
+                      ? Object.values(detail).flat().join(' ')
+                      : undefined
+
+            if (code === 'ADMIN_EMAIL_IN_USE') {
+                setFormError(detailMessage ?? `Email "${formAdminEmail}" já está em uso.`)
+            } else if (code === 'TENANT_EXISTS' || apiError.response?.status === 409) {
+                setFormError(detailMessage ?? `Tenant com slug "${formSlug}" já existe.`)
+            } else if (code === 'VALIDATION_ERROR') {
+                setFormError(detailMessage ?? 'Dados inválidos.')
+            } else {
+                setFormError(detailMessage ?? 'Erro ao criar tenant.')
+            }
         } finally {
             setSubmitting(false)
         }
@@ -95,10 +116,14 @@ export function TenantsView() {
             <TenantCreateForm
                 slug={formSlug}
                 name={formName}
+                adminName={formAdminName}
+                adminEmail={formAdminEmail}
                 submitting={submitting}
                 error={formError}
                 onSlugChange={setFormSlug}
                 onNameChange={setFormName}
+                onAdminNameChange={setFormAdminName}
+                onAdminEmailChange={setFormAdminEmail}
                 onSubmit={handleCreate}
             />
 

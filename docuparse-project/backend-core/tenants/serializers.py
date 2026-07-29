@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from tenants.models import Tenant
@@ -19,6 +20,8 @@ class TenantSerializer(serializers.Serializer):
 class TenantCreateSerializer(serializers.Serializer):
     slug = serializers.CharField(max_length=50)
     name = serializers.CharField(max_length=255)
+    admin_name = serializers.CharField(max_length=255)
+    admin_email = serializers.EmailField(max_length=255)
 
     def validate_slug(self, value: str) -> str:
         if not re.match(r"^[a-z0-9-]+$", value):
@@ -28,6 +31,13 @@ class TenantCreateSerializer(serializers.Serializer):
         if Tenant.objects.filter(slug=value).exists():
             raise serializers.ValidationError(
                 f"A tenant with slug '{value}' already exists."
+            )
+        return value
+
+    def validate_admin_email(self, value: str) -> str:
+        if get_user_model().objects.filter(username=value).exists():
+            raise serializers.ValidationError(
+                f"E-mail '{value}' já está em uso por outra conta."
             )
         return value
 

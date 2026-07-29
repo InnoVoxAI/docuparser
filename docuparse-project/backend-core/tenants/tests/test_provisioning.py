@@ -57,18 +57,32 @@ class TenantListCreateTests(TestCase):
         with patch.object(Tenant, "auto_create_schema", new=False):
             response = self.client.post(
                 "/api/admin/tenants/",
-                {"slug": "new-corp", "name": "New Corp"},
+                {
+                    "slug": "new-corp",
+                    "name": "New Corp",
+                    "admin_name": "Jane Doe",
+                    "admin_email": "jane.doe@new-corp.com",
+                },
                 format="json",
             )
         assert response.status_code == 201
         body = response.json()
         assert body["data"]["slug"] == "new-corp"
         assert Tenant.objects.filter(slug="new-corp").exists()
+        # New contract: no fake admin@<slug> user is created anymore.
+        assert not User.objects.filter(username="admin@new-corp").exists()
+        admin_user = User.objects.get(username="jane.doe@new-corp.com")
+        assert not admin_user.has_usable_password()
 
     def test_create_tenant_with_invalid_slug_returns_400(self) -> None:
         response = self.client.post(
             "/api/admin/tenants/",
-            {"slug": "Invalid Slug!", "name": "Bad"},
+            {
+                "slug": "Invalid Slug!",
+                "name": "Bad",
+                "admin_name": "Jane Doe",
+                "admin_email": "jane.doe@bad.com",
+            },
             format="json",
         )
         assert response.status_code == 400
@@ -76,7 +90,12 @@ class TenantListCreateTests(TestCase):
     def test_create_tenant_with_duplicate_slug_returns_409(self) -> None:
         response = self.client.post(
             "/api/admin/tenants/",
-            {"slug": "admin-tenant", "name": "Duplicate"},
+            {
+                "slug": "admin-tenant",
+                "name": "Duplicate",
+                "admin_name": "Jane Doe",
+                "admin_email": "jane.doe@duplicate.com",
+            },
             format="json",
         )
         assert response.status_code == 409

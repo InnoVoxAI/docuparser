@@ -32,7 +32,7 @@ Para geração de código estamos utilizando speckit, que lê as instruções ab
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at docs/specs/010-multi-tenancy-schemas/plan.md
+at docs/specs/017-tenant-admin-onboarding/plan.md
 <!-- SPECKIT END -->
 
 - Sempre que houver modificações verifique a necessidade de atualizar documentos acima descritos, ou memorias.

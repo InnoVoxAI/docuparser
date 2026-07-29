@@ -11,9 +11,12 @@ export function TenantRow({
     switching,
     switchError,
     toggleError,
+    resending,
+    resendError,
     onToggleExpand,
     onSwitch,
     onToggle,
+    onResend,
 }: {
     tenant: Tenant
     currentTenant: string | null
@@ -21,9 +24,12 @@ export function TenantRow({
     switching: boolean
     switchError?: string
     toggleError?: string
+    resending: boolean
+    resendError?: string
     onToggleExpand: () => void
     onSwitch: () => void
     onToggle: () => void
+    onResend: () => void
 }) {
     return (
         <Fragment>
@@ -74,8 +80,18 @@ export function TenantRow({
                         >
                             {tenant.is_active ? 'Desativar' : 'Ativar'}
                         </button>
-                        {toggleError || switchError ? (
-                            <span className="w-full text-right text-xs text-red-600">{toggleError || switchError}</span>
+                        <button
+                            type="button"
+                            onClick={onResend}
+                            disabled={resending}
+                            className="rounded px-2 py-1 text-xs font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-40"
+                        >
+                            {resending ? '...' : 'Reenviar convite'}
+                        </button>
+                        {toggleError || switchError || resendError ? (
+                            <span className="w-full text-right text-xs text-red-600">
+                                {toggleError || switchError || resendError}
+                            </span>
                         ) : null}
                     </div>
                 </td>

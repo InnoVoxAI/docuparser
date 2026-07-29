@@ -131,8 +131,10 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_AUTO_PROCESS_OCR: ${DOCUPARSE_AUTO_PROCESS_OCR:-true}
       OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-qwen/qwen2.5-vl-72b-instruct}
-      # Sem default: seed_data recusa a subir sem uma senha de admin explícita.
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD no .env (copie de .env.example)}
+      # Só é usada por seed_data no primeiro boot (banco vazio, feature 017); em
+      # boots seguintes o guardrail do comando a ignora. Default de dev, sem risco
+      # em produção real (mesmo padrão de POSTGRES_PASSWORD acima).
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-docuparse-admin}
       DEFAULT_TENANT_SLUG: ${DEFAULT_TENANT_SLUG:?defina DEFAULT_TENANT_SLUG no .env (copie de .env.example)}
       DEFAULT_TENANT_NAME: ${DEFAULT_TENANT_NAME:?defina DEFAULT_TENANT_NAME no .env (copie de .env.example)}
     healthcheck:

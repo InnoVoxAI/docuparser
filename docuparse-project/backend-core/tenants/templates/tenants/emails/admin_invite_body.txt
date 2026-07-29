@@ -1,0 +1,9 @@
+Olá, {{ admin_name }},
+
+Você foi convidado para ser o administrador do tenant "{{ tenant_name }}" no DocuParser.
+
+Para ativar sua conta e definir sua senha, acesse o link abaixo:
+
+{{ activation_link }}
+
+Este link expira em {{ expires_at }}. Se você não esperava este convite, ignore este email.

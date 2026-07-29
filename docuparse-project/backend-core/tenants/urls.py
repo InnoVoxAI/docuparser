@@ -1,6 +1,8 @@
 from django.urls import path
 
 from tenants.views import (
+    invite_activate_view,
+    invite_resend_view,
     tenant_detail_update_view,
     tenant_list_create_view,
     tenant_switch_view,
@@ -9,7 +11,17 @@ from tenants.views import (
 
 urlpatterns = [
     path("", tenant_list_create_view, name="tenant-list-create"),
+    path(
+        "invites/<str:token>/activate/",
+        invite_activate_view,
+        name="invite-activate",
+    ),
     path("<slug:slug>/", tenant_detail_update_view, name="tenant-detail-update"),
     path("<slug:slug>/users/", tenant_users_view, name="tenant-users"),
     path("<slug:slug>/switch/", tenant_switch_view, name="tenant-switch"),
+    path(
+        "<slug:slug>/invites/resend/",
+        invite_resend_view,
+        name="invite-resend",
+    ),
 ]

@@ -39,11 +39,11 @@ description: "Task list for feature 017-tenant-admin-onboarding"
 
 **⚠️ CRITICAL**: Nenhuma história de usuário pode ser implementada antes desta fase estar completa
 
-- [ ] T004 Criar o modelo `TenantAdminInvite` em `docuparse-project/backend-core/tenants/models.py` (campos `id`, `user` FK, `tenant` FK, `token_hash` único, `status` com choices PENDING/USED/INVALIDATED, `expires_at`, `used_at`, herdando `TimeStampedModel`) conforme `data-model.md`
-- [ ] T005 Gerar a migração Django para `TenantAdminInvite` em `docuparse-project/backend-core/tenants/migrations/`
-- [ ] T006 [P] Implementar os helpers de token em `docuparse-project/backend-core/tenants/invites.py`: `generate_invite_token()` (usa `secrets.token_urlsafe(32)`) e `hash_token(token: str)` (SHA-256 hex digest) — o token em claro nunca é persistido (depende de T003)
-- [ ] T007 [P] Criar os templates de email em `docuparse-project/backend-core/tenants/templates/tenants/emails/admin_invite_subject.txt` e `admin_invite_body.txt`, com o link de ativação montado a partir de `FRONTEND_BASE_URL` + `/ativar-conta/{token}` (token em claro, apenas no email — nunca seria logado ou persistido)
-- [ ] T008 Implementar `send_admin_invite_email(invite: TenantAdminInvite, admin_email: str, raw_token: str) -> None` em `docuparse-project/backend-core/tenants/invites.py`, usando `django.core.mail.send_mail` com `DEFAULT_FROM_EMAIL` e os templates de T007; deve logar sucesso/falha do envio sem nunca logar o token em claro ou a senha (FR-011) (depende de T001, T007)
+- [X] T004 Criar o modelo `TenantAdminInvite` em `docuparse-project/backend-core/tenants/models.py` (campos `id`, `user` FK, `tenant` FK, `token_hash` único, `status` com choices PENDING/USED/INVALIDATED, `expires_at`, `used_at`, herdando `TimeStampedModel`) conforme `data-model.md`
+- [X] T005 Gerar a migração Django para `TenantAdminInvite` em `docuparse-project/backend-core/tenants/migrations/`
+- [X] T006 [P] Implementar os helpers de token em `docuparse-project/backend-core/tenants/invites.py`: `generate_invite_token()` (usa `secrets.token_urlsafe(32)`) e `hash_token(token: str)` (SHA-256 hex digest) — o token em claro nunca é persistido (depende de T003)
+- [X] T007 [P] Criar os templates de email em `docuparse-project/backend-core/tenants/templates/tenants/emails/admin_invite_subject.txt` e `admin_invite_body.txt`, com o link de ativação montado a partir de `FRONTEND_BASE_URL` + `/ativar-conta/{token}` (token em claro, apenas no email — nunca seria logado ou persistido)
+- [X] T008 Implementar `send_admin_invite_email(invite: TenantAdminInvite, admin_email: str, raw_token: str) -> None` em `docuparse-project/backend-core/tenants/invites.py`, usando `django.core.mail.send_mail` com `DEFAULT_FROM_EMAIL` e os templates de T007; deve logar sucesso/falha do envio sem nunca logar o token em claro ou a senha (FR-011) (depende de T001, T007)
 
 **Checkpoint**: Modelo de convite e mecanismo de envio de email prontos para serem usados pelas histórias de usuário.
 

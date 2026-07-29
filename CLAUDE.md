@@ -24,6 +24,8 @@ docuparse-project/frontend
 
 No arquivo docuparse-project/frontend/frontend_rules.md poderá encontrar regras a seguir para criar ou modificar código no frontend.
 
+You can use run_script.sh with arguments to run any command to test the backend, as it injects enviroment variables.
+
 ## Geração de código
 Para geração de código estamos utilizando speckit, que lê as instruções abaixo:
 
@@ -67,3 +69,7 @@ Memória de projeto é gerenciada pelo **basic-memory** (MCP server), projeto `d
 | `reference/` | Endpoints, bugs conhecidos, tabelas de referência |
 
 Documentos normativos versionados (`datamodel_reference.md`, `business_rules.md`, `posicionamento_estrategico.md`, `business_intelligence.md`, este `CLAUDE.md`) **não** são migrados para o basic-memory — continuam como arquivos referenciados por path fixo na tabela do topo deste documento, revisados via diff/PR.
+
+## Task Master AI Instructions
+**Import Task Master's development workflow commands and guidelines, treat as if import is in the main CLAUDE.md file.**
+@./.taskmaster/CLAUDE.md

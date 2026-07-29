@@ -64,6 +64,15 @@ class RoleManagementTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIsInstance(r.data, list)
 
+    def test_list_roles_includes_is_platform_role(self) -> None:
+        Role.objects.create(name="admin", is_platform_role=True)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.admin_token}")
+        r = self.client.get("/api/ocr/roles")
+        self.assertEqual(r.status_code, 200)
+        by_name = {role["name"]: role["is_platform_role"] for role in r.data}
+        self.assertTrue(by_name["admin"])
+        self.assertFalse(by_name["Operador"])
+
     def test_create_role_with_valid_permissions_returns_201(self) -> None:
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.admin_token}")
         r = self.client.post(

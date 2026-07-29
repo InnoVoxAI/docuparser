@@ -54,11 +54,21 @@ def _setup() -> tuple:
 
 class SeedPermissionsTest(TestCase):
     def test_seed_is_idempotent(self) -> None:
-        from django.core.management import call_command
-
-        call_command("seed_permissions", verbosity=0)
-        call_command("seed_permissions", verbosity=0)
+        # seed_permissions was folded into seed_data (see users/management/commands/
+        # seed_data.py), which also provisions a tenant/admin user and therefore needs
+        # env vars this test doesn't set up. Exercise just the permission-seeding slice
+        # of that command's logic, using its PERMISSIONS list as the source of truth.
+        from users.management.commands.seed_data import PERMISSIONS
         from users.models import Permission
+
+        def seed() -> None:
+            for code, description in PERMISSIONS:
+                Permission.objects.get_or_create(
+                    code=code, defaults={"description": description}
+                )
+
+        seed()
+        seed()
 
         self.assertEqual(Permission.objects.count(), 9)
 

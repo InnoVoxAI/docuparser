@@ -249,12 +249,13 @@ dev-debug.log
 *.sw?
 # OS specific
 
-# Task files
-tasks.json
-tasks/
-
-.taskmaster/
 .sixth/
 docuparse-project/frontend/node_modules
 .devcontainer/devcontainer-lock.json
 .run
+
+node_modules/
+
+# Task files
+# tasks.json
+# tasks/

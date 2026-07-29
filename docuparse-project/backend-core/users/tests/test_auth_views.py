@@ -156,3 +156,22 @@ class MeViewTest(TestCase):
     def test_me_without_token_returns_401(self) -> None:
         r = self.client.get("/api/auth/me")
         self.assertEqual(r.status_code, 401)
+
+    def test_me_includes_role_is_platform_role(self) -> None:
+        platform_role = _make_role("admin")
+        platform_role.is_platform_role = True
+        platform_role.save(update_fields=["is_platform_role"])
+        _make_user("padmin@test.com", "senha123", role=platform_role)
+
+        r = self.client.post(
+            "/api/auth/login",
+            {"email": "padmin@test.com", "password": "senha123"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {r.json()['access']}")
+        data = self.client.get("/api/auth/me").json()
+        self.assertTrue(data["role"]["is_platform_role"])
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self._get_access_token()}")
+        data = self.client.get("/api/auth/me").json()
+        self.assertFalse(data["role"]["is_platform_role"])

@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import os
+from typing import TypedDict
 
 from django.core.management.base import BaseCommand, CommandError
 
 from users.models import Permission, Role
+
+
+class RoleSpec(TypedDict):
+    name: str
+    is_platform_role: bool
+    permissions: list[str]
+
 
 PERMISSIONS: list[tuple[str, str]] = [
     ("inbox.view", "Visualizar Inbox"),
@@ -16,6 +24,47 @@ PERMISSIONS: list[tuple[str, str]] = [
     ("users.manage", "Gerenciar Usuários"),
     ("roles.manage", "Gerenciar Roles"),
     ("tenants.manage", "Gerenciar Tenants"),
+]
+
+ROLE_SPECS: list[RoleSpec] = [
+    {
+        "name": "admin",
+        "is_platform_role": True,
+        "permissions": [
+            "inbox.view",
+            "documents.send",
+            "documents.validate",
+            "models.create",
+            "models.edit",
+            "operations.access",
+            "users.manage",
+            "roles.manage",
+            "tenants.manage",
+        ],
+    },
+    {
+        "name": "tenantAdmin",
+        "is_platform_role": False,
+        "permissions": [
+            "inbox.view",
+            "documents.send",
+            "documents.validate",
+            "models.create",
+            "models.edit",
+            "operations.access",
+            "users.manage",
+        ],
+    },
+    {
+        "name": "operator",
+        "is_platform_role": False,
+        "permissions": [
+            "inbox.view",
+            "documents.send",
+            "documents.validate",
+            "operations.access",
+        ],
+    },
 ]
 
 
@@ -37,10 +86,24 @@ class Command(BaseCommand):
             )
         self.stdout.write("seed_data: permissions ready")
 
-        role, _ = Role.objects.get_or_create(name="admin")
-        role.permissions.set(Permission.objects.all())
-        role.save()
-        self.stdout.write("seed_data: admin role ready")
+        roles_by_name: dict[str, Role] = {}
+        for spec in ROLE_SPECS:
+            role, role_created = Role.objects.get_or_create(
+                name=spec["name"],
+                defaults={"is_platform_role": spec["is_platform_role"]},
+            )
+            if role_created or role.permissions.count() != len(spec["permissions"]):
+                role.permissions.set(
+                    Permission.objects.filter(code__in=spec["permissions"])
+                )
+            role.is_platform_role = spec["is_platform_role"]
+            role.save()
+            roles_by_name[spec["name"]] = role
+            self.stdout.write(
+                f"seed_data: {'created' if role_created else 'updated'} role {spec['name']}"
+            )
+
+        role = roles_by_name["admin"]
 
         admin_email = os.environ.get("ADMIN_EMAIL", "admin@docuparse.com")
         admin_password = os.environ.get("ADMIN_PASSWORD")
@@ -84,6 +147,7 @@ class Command(BaseCommand):
                     "email": tenant_admin_email,
                     "is_active": True,
                     "is_staff": True,
+                    "is_superuser": tenant_admin_email == admin_email,
                 },
             )
             if created:
@@ -97,13 +161,13 @@ class Command(BaseCommand):
                     f"seed_data [{t.slug}]: admin user {tenant_admin_email} already exists"
                 )
 
-            profile, _ = UserProfile.objects.get_or_create(
-                user=user, defaults={"tenant": t}
+            _, profile_created = UserProfile.objects.get_or_create(
+                user=user, defaults={"tenant": t, "role_ref": role}
             )
-            profile.role_ref = role
-            profile.tenant = t
-            profile.save()
-            self.stdout.write(f"seed_data [{t.slug}]: admin profile ready")
+            if profile_created:
+                self.stdout.write(f"seed_data [{t.slug}]: admin profile created")
+            else:
+                self.stdout.write(f"seed_data [{t.slug}]: admin profile already exists")
 
         # ── Per-tenant schema: SchemaConfig and LayoutConfig ──────────────────
         # SchemaConfig / LayoutConfig are tenant-app models — must use schema_context.

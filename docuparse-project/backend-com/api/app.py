@@ -43,21 +43,16 @@ async def lifespan(app: FastAPI):
 
 def _log_startup_config() -> None:
     """Print resolved config values on startup to diagnose env var issues."""
-    raw_primary = os.environ.get("DOCUPARSE_IMAP_PASSWORD")
     raw_fallback = os.environ.get("imap_reader_password")
     password_status = (
         f"[SET, {len(settings.imap_password)} chars]"
         if settings.imap_password
-        else "[EMPTY — adicione DOCUPARSE_IMAP_PASSWORD no .env raiz do projeto]"
+        else "[EMPTY — adicione imap_reader_password no .env raiz do projeto]"
     )
 
     print(flush=True)
     print("=== backend-com startup config ===", flush=True)
     print(f"  imap_password          : {password_status}", flush=True)
-    print(
-        f"  DOCUPARSE_IMAP_PASSWORD: {'[presente, raw=' + repr(raw_primary[:2]) + '...]' if raw_primary else '[AUSENTE no os.environ]'}",
-        flush=True,
-    )
     print(
         f"  imap_reader_password   : {'[presente, raw=' + repr(raw_fallback[:2]) + '...]' if raw_fallback else '[AUSENTE no os.environ]'}",
         flush=True,

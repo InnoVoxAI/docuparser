@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import status
 from rest_framework.decorators import (
@@ -13,8 +14,14 @@ from rest_framework.response import Response
 from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
 
-from tenants.invites import create_admin_invite
-from tenants.models import Tenant
+from tenants.invites import (
+    InviteAlreadyUsedError,
+    InviteExpiredError,
+    InviteNotFoundError,
+    activate_invite,
+    create_admin_invite,
+)
+from tenants.models import Tenant, UserProfile
 from tenants.serializers import (
     TenantCreateSerializer,
     TenantSerializer,
@@ -130,6 +137,70 @@ def tenant_list_create_view(request: Request) -> Response:
             "meta": {"admin_invite_sent": True},
         },
         status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([])
+def invite_activate_view(request: Request, token: str) -> Response:
+    password = request.data.get("password", "")
+
+    try:
+        user = activate_invite(token, password)
+    except InviteNotFoundError:
+        return Response(
+            {
+                "data": None,
+                "error": {"code": "INVITE_NOT_FOUND", "detail": "Convite inválido."},
+                "meta": {},
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    except InviteAlreadyUsedError:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "INVITE_ALREADY_USED",
+                    "detail": "Este convite já foi utilizado.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_410_GONE,
+        )
+    except InviteExpiredError:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "INVITE_EXPIRED",
+                    "detail": "Este convite expirou. Solicite um novo ao administrador da plataforma.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_410_GONE,
+        )
+    except DjangoValidationError as exc:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "detail": {"password": exc.messages},
+                },
+                "meta": {},
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    profile = UserProfile.objects.select_related("tenant").get(user=user)
+    return Response(
+        {
+            "data": {"email": user.email, "tenant_slug": profile.tenant.slug},
+            "error": None,
+            "meta": {},
+        }
     )
 
 

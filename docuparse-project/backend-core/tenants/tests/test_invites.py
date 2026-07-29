@@ -7,17 +7,28 @@ schema routing). Tests without that marker run on any database.
 
 from __future__ import annotations
 
+import re
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import TestCase
+from django.utils import timezone
 from users.models import Role
 
 from tenants.models import Tenant, TenantAdminInvite
 from tenants.tests.test_provisioning import _admin_client
 
 User = get_user_model()
+
+VALID_PASSWORD = "C0rrect-H0rse-Battery"
+_TOKEN_RE = re.compile(r"/ativar-conta/([^\s]+)")
+
+
+def _extract_token(email_body: str) -> str:
+    match = _TOKEN_RE.search(email_body)
+    assert match is not None, "activation link not found in email body"
+    return match.group(1)
 
 
 class TenantCreateAdminInviteTests(TestCase):
@@ -104,3 +115,119 @@ class TenantCreateAdminInviteTests(TestCase):
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "ADMIN_EMAIL_IN_USE"
         assert not Tenant.objects.filter(slug="dup-admin-email").exists()
+
+
+class InviteActivationTests(TestCase):
+    def setUp(self) -> None:
+        self.client, self.tenant, self.user = _admin_client()
+        Role.objects.get_or_create(name="admin")
+
+    def _create_invite(self, slug: str = "acme", email: str = "jane.doe@acme.com"):
+        with patch.object(Tenant, "auto_create_schema", new=False):
+            response = self.client.post(
+                "/api/admin/tenants/",
+                {
+                    "slug": slug,
+                    "name": "ACME Corporation",
+                    "admin_name": "Jane Doe",
+                    "admin_email": email,
+                },
+                format="json",
+            )
+        assert response.status_code == 201
+        token = _extract_token(mail.outbox[-1].body)
+        invite = TenantAdminInvite.objects.get(user__username=email)
+        return token, invite
+
+    def test_activate_with_valid_token_and_password_succeeds_and_allows_login(
+        self,
+    ) -> None:
+        token, invite = self._create_invite()
+
+        response = self.client.post(
+            f"/api/admin/tenants/invites/{token}/activate/",
+            {"password": VALID_PASSWORD},
+            format="json",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["data"]["email"] == "jane.doe@acme.com"
+        assert body["data"]["tenant_slug"] == "acme"
+
+        invite.refresh_from_db()
+        assert invite.status == TenantAdminInvite.Status.USED
+        assert invite.used_at is not None
+
+        admin_user = User.objects.get(username="jane.doe@acme.com")
+        assert admin_user.has_usable_password() is True
+
+        login_response = self.client.post(
+            "/api/auth/login",
+            {"email": "jane.doe@acme.com", "password": VALID_PASSWORD},
+            format="json",
+        )
+        assert login_response.status_code == 200
+
+    def test_activate_with_expired_token_returns_410(self) -> None:
+        token, invite = self._create_invite(
+            slug="expired-tenant", email="expired@acme.com"
+        )
+        invite.expires_at = timezone.now() - timezone.timedelta(hours=1)
+        invite.save(update_fields=["expires_at"])
+
+        response = self.client.post(
+            f"/api/admin/tenants/invites/{token}/activate/",
+            {"password": VALID_PASSWORD},
+            format="json",
+        )
+
+        assert response.status_code == 410
+        assert response.json()["error"]["code"] == "INVITE_EXPIRED"
+
+    def test_activate_with_already_used_token_returns_410(self) -> None:
+        token, invite = self._create_invite(slug="used-tenant", email="used@acme.com")
+        invite.status = TenantAdminInvite.Status.USED
+        invite.used_at = timezone.now()
+        invite.save(update_fields=["status", "used_at"])
+
+        response = self.client.post(
+            f"/api/admin/tenants/invites/{token}/activate/",
+            {"password": VALID_PASSWORD},
+            format="json",
+        )
+
+        assert response.status_code == 410
+        assert response.json()["error"]["code"] == "INVITE_ALREADY_USED"
+
+    def test_activate_with_nonexistent_token_returns_404(self) -> None:
+        response = self.client.post(
+            "/api/admin/tenants/invites/does-not-exist/activate/",
+            {"password": VALID_PASSWORD},
+            format="json",
+        )
+
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "INVITE_NOT_FOUND"
+
+    def test_activate_with_invalid_password_returns_400_and_leaves_invite_pending(
+        self,
+    ) -> None:
+        token, invite = self._create_invite(
+            slug="weak-password-tenant", email="weak@acme.com"
+        )
+
+        response = self.client.post(
+            f"/api/admin/tenants/invites/{token}/activate/",
+            {"password": "12345678"},
+            format="json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+        invite.refresh_from_db()
+        assert invite.status == TenantAdminInvite.Status.PENDING
+
+        admin_user = User.objects.get(username="weak@acme.com")
+        assert admin_user.has_usable_password() is False

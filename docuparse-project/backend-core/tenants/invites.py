@@ -10,9 +10,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
+from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -20,7 +22,22 @@ from users.models import Role
 
 from tenants.models import Tenant, TenantAdminInvite, UserProfile
 
+if TYPE_CHECKING:
+    from django.contrib.auth.base_user import AbstractBaseUser
+
 logger = logging.getLogger(__name__)
+
+
+class InviteNotFoundError(Exception):
+    """Raised when no invite matches the given token."""
+
+
+class InviteExpiredError(Exception):
+    """Raised when the invite exists but is expired or invalidated (superseded)."""
+
+
+class InviteAlreadyUsedError(Exception):
+    """Raised when the invite has already been consumed."""
 
 
 def generate_invite_token() -> str:
@@ -82,3 +99,38 @@ def create_admin_invite(
     )
     send_admin_invite_email(invite, admin_email, raw_token)
     return invite
+
+
+def activate_invite(token: str, password: str) -> AbstractBaseUser:
+    """Validate an invite token and set the invited user's password.
+
+    Raises ``InviteNotFoundError``/``InviteExpiredError``/``InviteAlreadyUsedError``
+    for an invalid token, or ``django.core.exceptions.ValidationError`` if the
+    password fails ``AUTH_PASSWORD_VALIDATORS`` — in both cases the invite is left
+    untouched (not marked as used).
+    """
+    try:
+        invite = TenantAdminInvite.objects.select_related("user", "tenant").get(
+            token_hash=hash_token(token)
+        )
+    except TenantAdminInvite.DoesNotExist:
+        raise InviteNotFoundError() from None
+
+    if invite.status == TenantAdminInvite.Status.USED:
+        raise InviteAlreadyUsedError()
+    if (
+        invite.status == TenantAdminInvite.Status.INVALIDATED
+        or invite.expires_at <= timezone.now()
+    ):
+        raise InviteExpiredError()
+
+    validate_password(password, user=invite.user)
+
+    invite.user.set_password(password)
+    invite.user.save(update_fields=["password"])
+
+    invite.status = TenantAdminInvite.Status.USED
+    invite.used_at = timezone.now()
+    invite.save(update_fields=["status", "used_at", "updated_at"])
+
+    return invite.user

@@ -85,18 +85,18 @@ description: "Task list for feature 017-tenant-admin-onboarding"
 
 ### Tests for User Story 2
 
-- [ ] T021 [P] [US2] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: fluxo completo — criar tenant, capturar o token do email (via `django.core.mail.outbox` em teste), `POST` no endpoint de ativação com senha válida, verificar 200, `user.has_usable_password() is True`, `invite.status == "USED"`, e login subsequente bem-sucedido
-- [ ] T022 [P] [US2] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: ativação com token expirado retorna 410 `INVITE_EXPIRED`; com token já usado retorna 410 `INVITE_ALREADY_USED`; com token inexistente retorna 404 `INVITE_NOT_FOUND`
-- [ ] T023 [P] [US2] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: ativação com senha que viola `AUTH_PASSWORD_VALIDATORS` retorna 400 `VALIDATION_ERROR` e **não** marca o convite como usado
+- [X] T021 [P] [US2] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: fluxo completo — criar tenant, capturar o token do email (via `django.core.mail.outbox` em teste), `POST` no endpoint de ativação com senha válida, verificar 200, `user.has_usable_password() is True`, `invite.status == "USED"`, e login subsequente bem-sucedido
+- [X] T022 [P] [US2] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: ativação com token expirado retorna 410 `INVITE_EXPIRED`; com token já usado retorna 410 `INVITE_ALREADY_USED`; com token inexistente retorna 404 `INVITE_NOT_FOUND`
+- [X] T023 [P] [US2] Teste de integração em `docuparse-project/backend-core/tenants/tests/test_invites.py`: ativação com senha que viola `AUTH_PASSWORD_VALIDATORS` retorna 400 `VALIDATION_ERROR` e **não** marca o convite como usado
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implementar `activate_invite(token: str, password: str) -> User` em `docuparse-project/backend-core/tenants/invites.py`: faz hash do token recebido, busca `TenantAdminInvite` por `token_hash`, valida `status == PENDING` e `expires_at > now()`, valida a senha com `django.contrib.auth.password_validation.validate_password`, define a senha (`user.set_password` + save) e marca o convite `USED` com `used_at = now()` (depende de T004, T006, T002)
-- [ ] T025 [US2] Implementar `invite_activate_view` (POST, sem autenticação — `authentication_classes([])`, `permission_classes([])`, mesmo padrão de `login_view`) em `docuparse-project/backend-core/tenants/views.py`, retornando 200/400/404/410 conforme `contracts/tenant-admin-invite-api.md` (depende de T024)
-- [ ] T026 [US2] Adicionar a rota `invites/<str:token>/activate/` em `docuparse-project/backend-core/tenants/urls.py`, apontando para `invite_activate_view` (depende de T025)
-- [ ] T027 [P] [US2] Criar o módulo de frontend `docuparse-project/frontend/src/modules/tenant-activation/` (`components/ActivateAccountForm.tsx`, `services/tenantActivation.service.ts`, `types.ts`, `index.ts`), seguindo a estrutura de módulo definida em `frontend_rules.md`
-- [ ] T028 [US2] Implementar `ActivateAccountForm.tsx` com React Hook Form + Zod (campos senha/confirmar senha, estados de loading/erro/sucesso), chamando `tenantActivation.service.ts` (depende de T027)
-- [ ] T029 [US2] Registrar a rota pública (ex. `/ativar-conta/:token`) do módulo `tenant-activation` no roteador da aplicação, com lazy-loading conforme as regras de módulo de `frontend_rules.md` (depende de T027)
+- [X] T024 [US2] Implementar `activate_invite(token: str, password: str) -> User` em `docuparse-project/backend-core/tenants/invites.py`: faz hash do token recebido, busca `TenantAdminInvite` por `token_hash`, valida `status == PENDING` e `expires_at > now()`, valida a senha com `django.contrib.auth.password_validation.validate_password`, define a senha (`user.set_password` + save) e marca o convite `USED` com `used_at = now()` (depende de T004, T006, T002)
+- [X] T025 [US2] Implementar `invite_activate_view` (POST, sem autenticação — `authentication_classes([])`, `permission_classes([])`, mesmo padrão de `login_view`) em `docuparse-project/backend-core/tenants/views.py`, retornando 200/400/404/410 conforme `contracts/tenant-admin-invite-api.md` (depende de T024)
+- [X] T026 [US2] Adicionar a rota `invites/<str:token>/activate/` em `docuparse-project/backend-core/tenants/urls.py`, apontando para `invite_activate_view` (depende de T025)
+- [X] T027 [P] [US2] Criar o módulo de frontend `docuparse-project/frontend/src/modules/tenant-activation/` (`components/ActivateAccountForm.tsx`, `services/tenantActivation.service.ts`, `types.ts`, `index.ts`), seguindo a estrutura de módulo definida em `frontend_rules.md`
+- [X] T028 [US2] Implementar `ActivateAccountForm.tsx` com React Hook Form + Zod (campos senha/confirmar senha, estados de loading/erro/sucesso), chamando `tenantActivation.service.ts` (depende de T027)
+- [X] T029 [US2] Registrar a rota pública (ex. `/ativar-conta/:token`) do módulo `tenant-activation` no roteador da aplicação, com lazy-loading conforme as regras de módulo de `frontend_rules.md` (depende de T027)
 
 **Checkpoint**: O convidado consegue ativar a conta e logar — histórias 1 e 2 completas e testáveis em conjunto.
 

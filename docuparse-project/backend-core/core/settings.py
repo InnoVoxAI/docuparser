@@ -159,7 +159,20 @@ else:
         }
     }
 
-AUTH_PASSWORD_VALIDATORS = []
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
+]
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
@@ -239,3 +252,24 @@ OPENROUTER_FALLBACK_MODEL = os.environ.get(
 EMAIL_WEBHOOK_URL = os.environ.get(
     "EMAIL_WEBHOOK_URL", "http://127.0.0.1:8070/api/v1/email/messages"
 )
+
+# Envio de email para o convite de administrador de tenant (feature 017). Default
+# console em dev/test para não exigir SMTP configurado; produção define EMAIL_BACKEND
+# via env (ex. django.core.mail.backends.smtp.EmailBackend) + credenciais SMTP.
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "25"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "false").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+}
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "no-reply@docuparse.local")
+TENANT_ADMIN_INVITE_TTL_HOURS = int(
+    os.environ.get("TENANT_ADMIN_INVITE_TTL_HOURS", "72")
+)
+FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173")

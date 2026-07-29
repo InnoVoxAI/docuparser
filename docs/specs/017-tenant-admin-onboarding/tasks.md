@@ -25,9 +25,9 @@ description: "Task list for feature 017-tenant-admin-onboarding"
 
 **Purpose**: Configuração de ambiente e infraestrutura básica de email, sem lógica de negócio ainda
 
-- [ ] T001 Adicionar as novas variáveis de ambiente com defaults seguros para dev em `docuparse-project/backend-core/core/settings.py`: `EMAIL_BACKEND` (default `django.core.mail.backends.console.EmailBackend`), `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `DEFAULT_FROM_EMAIL` (default `no-reply@docuparse.local`), `TENANT_ADMIN_INVITE_TTL_HOURS` (default `72`), `FRONTEND_BASE_URL` (default `http://localhost:5173`)
-- [ ] T002 [P] Configurar `AUTH_PASSWORD_VALIDATORS` em `docuparse-project/backend-core/core/settings.py` com os validadores padrão do Django (`MinimumLengthValidator`, `CommonPasswordValidator`, `NumericPasswordValidator`, `UserAttributeSimilarityValidator`), hoje vazio (research.md R6)
-- [ ] T003 [P] Criar o módulo de serviço `docuparse-project/backend-core/tenants/invites.py` (arquivo novo, vazio além de imports/docstring) que concentrará toda a lógica de convite, mantendo `tenants/views.py` dentro do limite de 400 linhas da constituição
+- [X] T001 Adicionar as novas variáveis de ambiente com defaults seguros para dev em `docuparse-project/backend-core/core/settings.py`: `EMAIL_BACKEND` (default `django.core.mail.backends.console.EmailBackend`), `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, `DEFAULT_FROM_EMAIL` (default `no-reply@docuparse.local`), `TENANT_ADMIN_INVITE_TTL_HOURS` (default `72`), `FRONTEND_BASE_URL` (default `http://localhost:5173`)
+- [X] T002 [P] Configurar `AUTH_PASSWORD_VALIDATORS` em `docuparse-project/backend-core/core/settings.py` com os validadores padrão do Django (`MinimumLengthValidator`, `CommonPasswordValidator`, `NumericPasswordValidator`, `UserAttributeSimilarityValidator`), hoje vazio (research.md R6)
+- [X] T003 [P] Criar o módulo de serviço `docuparse-project/backend-core/tenants/invites.py` (arquivo novo, vazio além de imports/docstring) que concentrará toda a lógica de convite, mantendo `tenants/views.py` dentro do limite de 400 linhas da constituição
 
 **Checkpoint**: Ambiente configurável para envio de email (console em dev) e critérios mínimos de senha em vigor.
 

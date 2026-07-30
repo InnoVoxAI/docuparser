@@ -15,8 +15,8 @@ from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
 
 from tenants.invites import (
-    AdminAlreadyActiveError,
     InviteAlreadyUsedError,
+    InviteeAlreadyActiveError,
     InviteExpiredError,
     InviteNotFoundError,
     activate_invite,
@@ -227,7 +227,7 @@ def invite_resend_view(request: Request, slug: str) -> Response:
 
     try:
         invite = resend_admin_invite(tenant)
-    except AdminAlreadyActiveError:
+    except InviteeAlreadyActiveError:
         return Response(
             {
                 "data": None,

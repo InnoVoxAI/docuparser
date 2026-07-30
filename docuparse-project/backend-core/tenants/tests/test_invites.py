@@ -16,7 +16,7 @@ from django.test import TestCase
 from django.utils import timezone
 from users.models import Role
 
-from tenants.models import Tenant, TenantAdminInvite
+from tenants.models import Invite, Tenant
 from tenants.tests.test_provisioning import _admin_client
 
 User = get_user_model()
@@ -61,8 +61,8 @@ class TenantCreateAdminInviteTests(TestCase):
         assert profile.tenant_id == tenant.id
         assert profile.role_ref.name == "admin"
 
-        invite = TenantAdminInvite.objects.get(user=admin_user, tenant=tenant)
-        assert invite.status == TenantAdminInvite.Status.PENDING
+        invite = Invite.objects.get(user=admin_user, tenant=tenant)
+        assert invite.status == Invite.Status.PENDING
 
         assert len(mail.outbox) == 1
         assert mail.outbox[0].to == ["jane.doe@acme.com"]
@@ -136,7 +136,7 @@ class InviteActivationTests(TestCase):
             )
         assert response.status_code == 201
         token = _extract_token(mail.outbox[-1].body)
-        invite = TenantAdminInvite.objects.get(user__username=email)
+        invite = Invite.objects.get(user__username=email)
         return token, invite
 
     def test_activate_with_valid_token_and_password_succeeds_and_allows_login(
@@ -156,7 +156,7 @@ class InviteActivationTests(TestCase):
         assert body["data"]["tenant_slug"] == "acme"
 
         invite.refresh_from_db()
-        assert invite.status == TenantAdminInvite.Status.USED
+        assert invite.status == Invite.Status.USED
         assert invite.used_at is not None
 
         admin_user = User.objects.get(username="jane.doe@acme.com")
@@ -187,7 +187,7 @@ class InviteActivationTests(TestCase):
 
     def test_activate_with_already_used_token_returns_410(self) -> None:
         token, invite = self._create_invite(slug="used-tenant", email="used@acme.com")
-        invite.status = TenantAdminInvite.Status.USED
+        invite.status = Invite.Status.USED
         invite.used_at = timezone.now()
         invite.save(update_fields=["status", "used_at"])
 
@@ -227,7 +227,7 @@ class InviteActivationTests(TestCase):
         assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
         invite.refresh_from_db()
-        assert invite.status == TenantAdminInvite.Status.PENDING
+        assert invite.status == Invite.Status.PENDING
 
         admin_user = User.objects.get(username="weak@acme.com")
         assert admin_user.has_usable_password() is False
@@ -252,7 +252,7 @@ class InviteResendTests(TestCase):
             )
         assert response.status_code == 201
         token = _extract_token(mail.outbox[-1].body)
-        invite = TenantAdminInvite.objects.get(user__username=email)
+        invite = Invite.objects.get(user__username=email)
         return token, invite
 
     def test_resend_invalidates_previous_pending_and_creates_new_pending(
@@ -273,14 +273,12 @@ class InviteResendTests(TestCase):
         assert "expires_at" in body["data"]
 
         old_invite.refresh_from_db()
-        assert old_invite.status == TenantAdminInvite.Status.INVALIDATED
+        assert old_invite.status == Invite.Status.INVALIDATED
 
         new_invite = (
-            TenantAdminInvite.objects.filter(user=old_invite.user)
-            .exclude(id=old_invite.id)
-            .get()
+            Invite.objects.filter(user=old_invite.user).exclude(id=old_invite.id).get()
         )
-        assert new_invite.status == TenantAdminInvite.Status.PENDING
+        assert new_invite.status == Invite.Status.PENDING
         assert new_invite.token_hash != old_invite.token_hash
 
         new_token = _extract_token(mail.outbox[-1].body)

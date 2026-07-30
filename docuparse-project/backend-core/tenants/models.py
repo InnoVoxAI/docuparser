@@ -72,7 +72,7 @@ class UserProfile(TimeStampedModel):
         return f"{self.user_id}@{self.tenant_id}"
 
 
-class TenantAdminInvite(TimeStampedModel):
+class Invite(TimeStampedModel):
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pending"
         USED = "USED", "Used"
@@ -82,11 +82,9 @@ class TenantAdminInvite(TimeStampedModel):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="admin_invites",
+        related_name="invites",
     )
-    tenant = models.ForeignKey(
-        Tenant, on_delete=models.CASCADE, related_name="admin_invites"
-    )
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="invites")
     token_hash = models.CharField(max_length=128, unique=True, db_index=True)
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING

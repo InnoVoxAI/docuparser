@@ -82,28 +82,27 @@ class UserManagementTest(TestCase):
             {
                 "name": "Novo",
                 "email": "novo@t.com",
-                "password": "senha123",
                 "role_id": str(self.op_role.id),
             },
             format="json",
         )
         self.assertEqual(r.status_code, 201)
-        self.assertEqual(r.data["email"], "novo@t.com")
-        self.assertTrue(r.data["is_active"])
+        self.assertEqual(r.data["data"]["email"], "novo@t.com")
+        self.assertTrue(r.data["data"]["is_active"])
 
-    def test_create_user_duplicate_email_returns_400(self) -> None:
+    def test_create_user_duplicate_email_returns_409(self) -> None:
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.admin_token}")
         r = self.client.post(
             "/api/ocr/users",
             {
                 "name": "Op2",
                 "email": "op@t.com",
-                "password": "senha123",
                 "role_id": str(self.op_role.id),
             },
             format="json",
         )
-        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.data["error"]["code"], "USER_EXISTS")
 
     def test_get_user_detail_returns_200(self) -> None:
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.admin_token}")

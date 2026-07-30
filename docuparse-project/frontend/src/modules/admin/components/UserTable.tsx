@@ -4,9 +4,11 @@ interface UserTableProps {
     users: AdminUser[]
     onEdit: (user: AdminUser) => void
     onToggleActive: (user: AdminUser) => void
+    onResendInvite: (user: AdminUser) => void
+    resendingUserId?: string | null
 }
 
-export function UserTable({ users, onEdit, onToggleActive }: UserTableProps) {
+export function UserTable({ users, onEdit, onToggleActive, onResendInvite, resendingUserId }: UserTableProps) {
     return (
         <table className="w-full text-sm border border-zinc-200 rounded-md overflow-hidden">
             <thead className="bg-zinc-50 text-zinc-600">
@@ -38,6 +40,15 @@ export function UserTable({ users, onEdit, onToggleActive }: UserTableProps) {
                             <button onClick={() => onToggleActive(u)} className="text-xs text-zinc-600 hover:underline">
                                 {u.is_active ? 'Desativar' : 'Ativar'}
                             </button>
+                            {u.invite_pending ? (
+                                <button
+                                    onClick={() => onResendInvite(u)}
+                                    disabled={resendingUserId === u.id}
+                                    className="text-xs text-zinc-600 hover:underline disabled:opacity-50"
+                                >
+                                    {resendingUserId === u.id ? 'Reenviando...' : 'Reenviar convite'}
+                                </button>
+                            ) : null}
                         </td>
                     </tr>
                 ))}

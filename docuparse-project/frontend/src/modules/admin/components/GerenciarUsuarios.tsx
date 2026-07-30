@@ -8,13 +8,14 @@ import type { AdminUser } from '../types'
 import { UserTable } from './UserTable'
 import { UserFormModal, type UserFormValues } from './UserFormModal'
 
-const EMPTY_FORM: UserFormValues = { name: '', email: '', password: '', role_id: '' }
+const EMPTY_FORM: UserFormValues = { name: '', email: '', role_id: '' }
 
 export function GerenciarUsuarios() {
     const { user: authUser } = useAuth()
     const usersQuery = useUsersQuery()
     const rolesQuery = useRolesQuery()
-    const { createUser, updateUser, toggleUserActive } = useUserMutations()
+    const { createUser, updateUser, toggleUserActive, resendInvite } = useUserMutations()
+    const [resendingUserId, setResendingUserId] = useState<string | null>(null)
     // A lista de usuários já traz o role aninhado (incluindo is_platform_role);
     // localizamos o próprio usuário autenticado nela em vez de depender de /me.
     const currentUserIsPlatformAdmin = Boolean(
@@ -33,7 +34,7 @@ export function GerenciarUsuarios() {
     }
 
     const openEdit = (user: AdminUser) => {
-        setForm({ name: user.name, email: user.email, password: '', role_id: user.role?.id || '' })
+        setForm({ name: user.name, email: user.email, role_id: user.role?.id || '' })
         setModal({ mode: 'edit', user })
         setError('')
     }
@@ -54,8 +55,20 @@ export function GerenciarUsuarios() {
             }
             setModal(null)
         } catch (err) {
-            const data = asApiError(err).response?.data
-            setError(data?.detail || data?.email?.[0] || 'Erro ao salvar.')
+            const apiError = asApiError(err)
+            const data = apiError.response?.data
+            const code = data?.error?.code
+            const detail = data?.error?.detail
+            if (code === 'USER_EXISTS') {
+                setError(detail ?? 'Este e-mail já está em uso.')
+            } else if (code === 'VALIDATION_ERROR') {
+                const roleErrors = detail?.role_id
+                setError((Array.isArray(roleErrors) ? roleErrors[0] : undefined) ?? 'Dados inválidos.')
+            } else if (code === 'INVITE_DELIVERY_FAILED') {
+                setError(detail ?? 'Usuário criado, mas o convite não pôde ser enviado. Use o reenvio de convite.')
+            } else {
+                setError(data?.detail || data?.email?.[0] || 'Erro ao salvar.')
+            }
         }
     }
 
@@ -64,6 +77,19 @@ export function GerenciarUsuarios() {
             await toggleUserActive(user)
         } catch (err) {
             alert(asApiError(err).response?.data?.detail || 'Erro ao alterar status.')
+        }
+    }
+
+    const handleResendInvite = async (user: AdminUser) => {
+        setResendingUserId(user.id)
+        try {
+            await resendInvite(user.id)
+        } catch (err) {
+            const apiError = asApiError(err)
+            const data = apiError.response?.data
+            alert(data?.error?.detail || 'Erro ao reenviar convite.')
+        } finally {
+            setResendingUserId(null)
         }
     }
 
@@ -81,7 +107,13 @@ export function GerenciarUsuarios() {
             {loading ? (
                 <div className="text-sm text-zinc-500">Carregando...</div>
             ) : (
-                <UserTable users={usersQuery.data} onEdit={openEdit} onToggleActive={handleToggleActive} />
+                <UserTable
+                    users={usersQuery.data}
+                    onEdit={openEdit}
+                    onToggleActive={handleToggleActive}
+                    onResendInvite={handleResendInvite}
+                    resendingUserId={resendingUserId}
+                />
             )}
             {modal && (
                 <UserFormModal

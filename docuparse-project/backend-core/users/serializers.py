@@ -85,6 +85,7 @@ class UserListSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
     role = serializers.SerializerMethodField()
     date_joined = serializers.DateTimeField()
+    invite_pending = serializers.SerializerMethodField()
 
     def get_name(self, obj: Any) -> str:
         return obj.get_full_name() or obj.first_name or obj.username
@@ -99,40 +100,32 @@ class UserListSerializer(serializers.Serializer):
             "is_platform_role": profile.role_ref.is_platform_role,
         }
 
+    def get_invite_pending(self, obj: Any) -> bool:
+        return not obj.has_usable_password()
+
 
 class UserCreateSerializer(serializers.Serializer):
+    """Validates the payload for inviting a new user to the caller's tenant.
+
+    No ``password`` field — the invitee sets their own password when they
+    activate the invite. Creation itself is the view's responsibility (it
+    needs ``request.tenant``, which this serializer has no access to).
+    """
+
     name = serializers.CharField(max_length=150)
     email = serializers.EmailField()
-    password = serializers.CharField(write_only=True, min_length=8)
     role_id = serializers.UUIDField()
-
-    def validate_email(self, value: str) -> str:
-        User = get_user_model()
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("Este e-mail já está em uso.")
-        return value
 
     def validate_role_id(self, value: Any) -> Role:
         try:
-            return Role.objects.get(id=value)
+            role = Role.objects.get(id=value)
         except Role.DoesNotExist:
             raise serializers.ValidationError("Role não encontrada.")
-
-    def create(self, validated_data: dict) -> Any:
-        from tenants.models import Tenant, UserProfile
-
-        User = get_user_model()
-        role: Role = validated_data["role_id"]
-        user = User.objects.create_user(
-            username=validated_data["email"],
-            email=validated_data["email"],
-            password=validated_data["password"],
-            first_name=validated_data["name"],
-            is_active=True,
-        )
-        tenant = Tenant.objects.first()
-        UserProfile.objects.create(user=user, tenant=tenant, role_ref=role)
-        return user
+        if role.is_platform_role:
+            raise serializers.ValidationError(
+                "Esta role não pode ser atribuída por convite de tenant admin."
+            )
+        return role
 
 
 class UserUpdateSerializer(serializers.Serializer):

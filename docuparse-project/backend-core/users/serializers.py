@@ -85,6 +85,7 @@ class UserListSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
     role = serializers.SerializerMethodField()
     date_joined = serializers.DateTimeField()
+    invite_pending = serializers.SerializerMethodField()
 
     def get_name(self, obj: Any) -> str:
         return obj.get_full_name() or obj.first_name or obj.username
@@ -98,6 +99,9 @@ class UserListSerializer(serializers.Serializer):
             "name": profile.role_ref.name,
             "is_platform_role": profile.role_ref.is_platform_role,
         }
+
+    def get_invite_pending(self, obj: Any) -> bool:
+        return not obj.has_usable_password()
 
 
 class UserCreateSerializer(serializers.Serializer):

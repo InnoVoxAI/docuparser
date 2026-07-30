@@ -10,7 +10,8 @@ from rest_framework.decorators import (
 )
 from rest_framework.request import Request
 from rest_framework.response import Response
-from tenants.invites import create_invite
+from tenants.invites import InviteeAlreadyActiveError, create_invite, resend_invite
+from tenants.models import UserProfile
 
 from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
@@ -171,3 +172,47 @@ def user_detail_update_view(request: Request, user_id: int) -> Response:
 
     user.refresh_from_db()
     return Response(UserListSerializer(user).data)
+
+
+@api_view(["POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("users.manage")])
+def user_invite_resend_view(request: Request, user_id: int) -> Response:
+    if not UserProfile.objects.filter(user_id=user_id, tenant=request.tenant).exists():
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "USER_NOT_FOUND",
+                    "detail": "Usuário não encontrado neste tenant.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        invite = resend_invite(request.tenant, user_id)
+    except InviteeAlreadyActiveError:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "USER_ALREADY_ACTIVE",
+                    "detail": "Este usuário já ativou a conta.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    return Response(
+        {
+            "data": {
+                "email": invite.user.email,
+                "expires_at": invite.expires_at,
+            },
+            "error": None,
+            "meta": {},
+        }
+    )

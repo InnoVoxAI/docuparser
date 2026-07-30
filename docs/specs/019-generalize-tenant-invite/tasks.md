@@ -99,15 +99,15 @@ description: "Task list for feature 019-generalize-tenant-invite"
 
 ### Tests for User Story 3
 
-- [ ] T019 [P] [US3] Teste de integração em `docuparse-project/backend-core/users/tests/test_user_invites.py`: `POST /api/users/{user_id}/invites/resend/` invalida o `Invite` `PENDING` anterior do usuário (`INVALIDATED`) e cria um novo `PENDING` com token/expiração novos
-- [ ] T020 [P] [US3] Teste de integração em `docuparse-project/backend-core/users/tests/test_user_invites.py`: reenvio para um `user_id` que pertence a **outro** tenant (não o `request.tenant` do chamador) retorna 404 `USER_NOT_FOUND`, sem revelar que o usuário existe em outro tenant
-- [ ] T021 [P] [US3] Teste de integração em `docuparse-project/backend-core/users/tests/test_user_invites.py`: reenvio para um usuário que já ativou a conta (`has_usable_password() is True`) retorna 409 `USER_ALREADY_ACTIVE`
+- [X] T019 [P] [US3] Teste de integração em `docuparse-project/backend-core/users/tests/test_user_invites.py`: `POST /api/users/{user_id}/invites/resend/` invalida o `Invite` `PENDING` anterior do usuário (`INVALIDATED`) e cria um novo `PENDING` com token/expiração novos
+- [X] T020 [P] [US3] Teste de integração em `docuparse-project/backend-core/users/tests/test_user_invites.py`: reenvio para um `user_id` que pertence a **outro** tenant (não o `request.tenant` do chamador) retorna 404 `USER_NOT_FOUND`, sem revelar que o usuário existe em outro tenant
+- [X] T021 [P] [US3] Teste de integração em `docuparse-project/backend-core/users/tests/test_user_invites.py`: reenvio para um usuário que já ativou a conta (`has_usable_password() is True`) retorna 409 `USER_ALREADY_ACTIVE`
 
 ### Implementation for User Story 3
 
-- [ ] T022 [US3] Implementar `user_invite_resend_view` (POST, `require_permission("users.manage")`) em `docuparse-project/backend-core/users/user_views.py`: resolve o `UserProfile` por `user_id` **e** `tenant=request.tenant` (404 se não achar, sem distinguir "não existe" de "existe em outro tenant"), chama `tenants.invites.resend_invite(request.tenant, user_id)` (T006), retorna conforme `contracts/user-invite-api.md` (depende de T006)
-- [ ] T023 [US3] Adicionar a rota `users/<int:user_id>/invites/resend/` em `docuparse-project/backend-core/users/users_urls.py`, apontando para `user_invite_resend_view` (depende de T022)
-- [ ] T024 [P] [US3] Adicionar a ação "Reenviar convite" (botão + estado de loading/erro, visível apenas para usuários com senha não-utilizável) em `docuparse-project/frontend/src/modules/admin/components/UserTable.tsx`, com `useResendInviteMutation` em `docuparse-project/frontend/src/modules/admin/hooks/useUserMutations.ts`
+- [X] T022 [US3] Implementar `user_invite_resend_view` (POST, `require_permission("users.manage")`) em `docuparse-project/backend-core/users/user_views.py`: resolve o `UserProfile` por `user_id` **e** `tenant=request.tenant` (404 se não achar, sem distinguir "não existe" de "existe em outro tenant"), chama `tenants.invites.resend_invite(request.tenant, user_id)` (T006), retorna conforme `contracts/user-invite-api.md` (depende de T006)
+- [X] T023 [US3] Adicionar a rota `users/<int:user_id>/invites/resend/` em `docuparse-project/backend-core/users/users_urls.py`, apontando para `user_invite_resend_view` (depende de T022)
+- [X] T024 [P] [US3] Adicionar a ação "Reenviar convite" (botão + estado de loading/erro, visível apenas para usuários com senha não-utilizável) em `docuparse-project/frontend/src/modules/admin/components/UserTable.tsx`, com `useResendInviteMutation` em `docuparse-project/frontend/src/modules/admin/hooks/useUserMutations.ts`
 
 **Checkpoint**: As três histórias funcionam de forma independente e em conjunto — convite, ativação e reenvio de usuário comum completos.
 
@@ -117,12 +117,12 @@ description: "Task list for feature 019-generalize-tenant-invite"
 
 **Purpose**: Ajustes que não pertencem a nenhuma das três histórias do spec, mas fazem parte do escopo ampliado desta feature (FR-016) e do fechamento de lacunas deixadas pelo rename
 
-- [ ] T025 **CORRIGE BUG (FR-016)**: reescrever o branch POST de `tenant_users_view` em `docuparse-project/backend-core/tenants/views.py` para chamar `tenants.invites.create_invite(tenant, name, email, role)` (T004) em vez de criar o usuário com a senha em texto vinda do request — **sem** a restrição `is_platform_role=False` (o operador de plataforma pode legitimamente atribuir a role admin/tenantAdmin do tenant, ver research.md R4); `tenant` continua vindo do `slug` da URL (este endpoint não sofre do bug FR-015) (depende de T004)
-- [ ] T026 [P] **Teste de regressão FR-016** em `docuparse-project/backend-core/tenants/tests/test_invites.py`: `POST /api/admin/tenants/{slug}/users/` sem `password`, com `role_id` de uma role de plataforma (ex. "admin"), retorna 201 e envia convite por email — confirmando que o operador de plataforma pode atribuir essa role (diferente de US1/FR-003) e que nenhuma senha em texto é mais aceita/exigida (depende de T025)
-- [ ] T027 **REMOVER** o campo de senha do formulário "Convidar usuário" em `docuparse-project/frontend/src/modules/admin/components/TenantUsersPanel.tsx` — o rótulo "Convidar" (já existente) passa a corresponder ao comportamento real (depende de T025)
-- [ ] T028 [P] Atualizar `docuparse-project/backend-core/tenants/tests/test_invites.py` e `docuparse-project/backend-core/tenants/tests/test_provisioning.py`: substituir todas as referências a `TenantAdminInvite` por `Invite` (rename de T001/T003), sem alterar as asserções de comportamento
-- [ ] T029 [P] Rodar o fluxo descrito em `docs/specs/019-generalize-tenant-invite/quickstart.md` manualmente (convidar usuário → capturar convite no console backend → ativar → logar → reenviar) para validar o caminho ponta a ponta
-- [ ] T030 [P] Revisar os pontos de log em `docuparse-project/backend-core/tenants/invites.py` após a generalização (T004-T007) para confirmar que nenhum token em claro ou senha é escrito em log, para qualquer papel (FR-013)
+- [X] T025 **CORRIGE BUG (FR-016)**: reescrever o branch POST de `tenant_users_view` em `docuparse-project/backend-core/tenants/views.py` para chamar `tenants.invites.create_invite(tenant, name, email, role)` (T004) em vez de criar o usuário com a senha em texto vinda do request — **sem** a restrição `is_platform_role=False` (o operador de plataforma pode legitimamente atribuir a role admin/tenantAdmin do tenant, ver research.md R4); `tenant` continua vindo do `slug` da URL (este endpoint não sofre do bug FR-015) (depende de T004)
+- [X] T026 [P] **Teste de regressão FR-016** em `docuparse-project/backend-core/tenants/tests/test_invites.py`: `POST /api/admin/tenants/{slug}/users/` sem `password`, com `role_id` de uma role de plataforma (ex. "admin"), retorna 201 e envia convite por email — confirmando que o operador de plataforma pode atribuir essa role (diferente de US1/FR-003) e que nenhuma senha em texto é mais aceita/exigida (depende de T025)
+- [X] T027 **REMOVER** o campo de senha do formulário "Convidar usuário" em `docuparse-project/frontend/src/modules/admin/components/TenantUsersPanel.tsx` — o rótulo "Convidar" (já existente) passa a corresponder ao comportamento real (depende de T025)
+- [X] T028 [P] Atualizar `docuparse-project/backend-core/tenants/tests/test_invites.py` e `docuparse-project/backend-core/tenants/tests/test_provisioning.py`: substituir todas as referências a `TenantAdminInvite` por `Invite` (rename de T001/T003), sem alterar as asserções de comportamento
+- [X] T029 [P] Rodar o fluxo descrito em `docs/specs/019-generalize-tenant-invite/quickstart.md` manualmente (convidar usuário → capturar convite no console backend → ativar → logar → reenviar) para validar o caminho ponta a ponta
+- [X] T030 [P] Revisar os pontos de log em `docuparse-project/backend-core/tenants/invites.py` após a generalização (T004-T007) para confirmar que nenhum token em claro ou senha é escrito em log, para qualquer papel (FR-013)
 
 **Checkpoint**: Ambos os bugs pré-existentes (FR-015, FR-016) corrigidos e com teste de regressão dedicado; rename de `TenantAdminInvite` → `Invite` completo em código e testes.
 

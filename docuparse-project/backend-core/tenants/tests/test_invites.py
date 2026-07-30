@@ -316,3 +316,61 @@ class InviteResendTests(TestCase):
 
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "ADMIN_ALREADY_ACTIVE"
+
+
+class TenantUsersInviteTests(TestCase):
+    """FR-016 regression: tenant_users_view (platform operator, `tenants.manage`)
+    must invite users instead of creating them with a plaintext password."""
+
+    def setUp(self) -> None:
+        self.client, self.tenant, self.user = _admin_client()
+
+    def test_create_user_without_password_sends_invite_even_for_platform_role(
+        self,
+    ) -> None:
+        platform_role, _ = Role.objects.get_or_create(
+            name="admin", defaults={"is_platform_role": True}
+        )
+        if not platform_role.is_platform_role:
+            platform_role.is_platform_role = True
+            platform_role.save(update_fields=["is_platform_role"])
+
+        response = self.client.post(
+            f"/api/admin/tenants/{self.tenant.slug}/users/",
+            {
+                "name": "Recovered Admin",
+                "email": "recovered-admin@acme.com",
+                "role_id": str(platform_role.id),
+            },
+            format="json",
+        )
+
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert body["error"] is None
+        assert body["meta"]["invite_sent"] is True
+
+        user = User.objects.get(username="recovered-admin@acme.com")
+        assert user.has_usable_password() is False
+
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == ["recovered-admin@acme.com"]
+
+    def test_create_user_with_email_already_in_use_returns_409(self) -> None:
+        role, _ = Role.objects.get_or_create(name="operator")
+        User.objects.create_user(
+            username="taken@acme.com", email="taken@acme.com", password="pw"
+        )
+
+        response = self.client.post(
+            f"/api/admin/tenants/{self.tenant.slug}/users/",
+            {
+                "name": "Duplicate",
+                "email": "taken@acme.com",
+                "role_id": str(role.id),
+            },
+            format="json",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "USER_EXISTS"

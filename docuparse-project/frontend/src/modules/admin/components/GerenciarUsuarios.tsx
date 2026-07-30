@@ -14,7 +14,8 @@ export function GerenciarUsuarios() {
     const { user: authUser } = useAuth()
     const usersQuery = useUsersQuery()
     const rolesQuery = useRolesQuery()
-    const { createUser, updateUser, toggleUserActive } = useUserMutations()
+    const { createUser, updateUser, toggleUserActive, resendInvite } = useUserMutations()
+    const [resendingUserId, setResendingUserId] = useState<string | null>(null)
     // A lista de usuários já traz o role aninhado (incluindo is_platform_role);
     // localizamos o próprio usuário autenticado nela em vez de depender de /me.
     const currentUserIsPlatformAdmin = Boolean(
@@ -79,6 +80,19 @@ export function GerenciarUsuarios() {
         }
     }
 
+    const handleResendInvite = async (user: AdminUser) => {
+        setResendingUserId(user.id)
+        try {
+            await resendInvite(user.id)
+        } catch (err) {
+            const apiError = asApiError(err)
+            const data = apiError.response?.data
+            alert(data?.error?.detail || 'Erro ao reenviar convite.')
+        } finally {
+            setResendingUserId(null)
+        }
+    }
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -93,7 +107,13 @@ export function GerenciarUsuarios() {
             {loading ? (
                 <div className="text-sm text-zinc-500">Carregando...</div>
             ) : (
-                <UserTable users={usersQuery.data} onEdit={openEdit} onToggleActive={handleToggleActive} />
+                <UserTable
+                    users={usersQuery.data}
+                    onEdit={openEdit}
+                    onToggleActive={handleToggleActive}
+                    onResendInvite={handleResendInvite}
+                    resendingUserId={resendingUserId}
+                />
             )}
             {modal && (
                 <UserFormModal

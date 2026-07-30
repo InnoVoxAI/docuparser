@@ -28,6 +28,10 @@ async function toggleUserActive(user: AdminUser): Promise<void> {
     await api.patch(`/users/${user.id}`, { is_active: !user.is_active })
 }
 
+async function resendInvite(userId: string): Promise<void> {
+    await api.post(`/users/${userId}/invites/resend/`)
+}
+
 export function useUserMutations() {
     const queryClient = useQueryClient()
     const invalidate = () => queryClient.invalidateQueries({ queryKey: adminKeys.users() })
@@ -35,10 +39,13 @@ export function useUserMutations() {
     const createMutation = useMutation({ mutationFn: createUser, onSuccess: invalidate })
     const updateMutation = useMutation({ mutationFn: updateUser, onSuccess: invalidate })
     const toggleMutation = useMutation({ mutationFn: toggleUserActive, onSuccess: invalidate })
+    const resendInviteMutation = useMutation({ mutationFn: resendInvite, onSuccess: invalidate })
 
     return {
         createUser: createMutation.mutateAsync,
         updateUser: updateMutation.mutateAsync,
         toggleUserActive: toggleMutation.mutateAsync,
+        resendInvite: resendInviteMutation.mutateAsync,
+        isResendingInvite: resendInviteMutation.isPending,
     }
 }

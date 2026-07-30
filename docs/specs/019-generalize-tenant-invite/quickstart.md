@@ -23,7 +23,7 @@ Guardar o `access` token retornado.
 ## 3. Convidar um usuário comum
 
 ```bash
-curl -X POST http://localhost:8000/api/users/ \
+curl -X POST http://localhost:8000/api/ocr/users \
   -H "Authorization: Bearer <access-token>" \
   -H "Content-Type: application/json" \
   -d '{"name": "Maria Silva", "email": "maria@example.com", "role_id": "<id-da-role-operator>"}'
@@ -58,7 +58,7 @@ Esperado: `200` com tokens JWT — conta já aprovada, sem qualquer aprovação 
 ## 7. Reenviar convite (caso de teste de expiração/perda)
 
 ```bash
-curl -X POST http://localhost:8000/api/users/<user_id>/invites/resend/ \
+curl -X POST http://localhost:8000/api/ocr/users/<user_id>/invites/resend/ \
   -H "Authorization: Bearer <access-token>"
 ```
 

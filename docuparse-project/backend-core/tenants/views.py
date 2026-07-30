@@ -21,6 +21,7 @@ from tenants.invites import (
     InviteNotFoundError,
     activate_invite,
     create_admin_invite,
+    create_invite,
     resend_admin_invite,
 )
 from tenants.models import Tenant, UserProfile
@@ -378,20 +379,21 @@ def tenant_users_view(request: Request, slug: str) -> Response:
         ]
         return Response({"data": data, "error": None, "meta": {"count": len(data)}})
 
-    # POST — create a user and assign them to this tenant
+    # POST — invite a user to this tenant (FR-016: no plaintext password;
+    # invitee sets their own password via the activation link, same as
+    # tenants.invites.create_invite used by the tenant-admin-facing endpoint).
     User = get_user_model()
     name = str(request.data.get("name", "")).strip()
     email = str(request.data.get("email", "")).strip()
-    password = str(request.data.get("password", ""))
     role_id = request.data.get("role_id")
 
-    if not all([name, email, password, role_id]):
+    if not all([name, email, role_id]):
         return Response(
             {
                 "data": None,
                 "error": {
                     "code": "VALIDATION_ERROR",
-                    "detail": "name, email, password e role_id são obrigatórios.",
+                    "detail": "name, email e role_id são obrigatórios.",
                 },
                 "meta": {},
             },
@@ -425,27 +427,31 @@ def tenant_users_view(request: Request, slug: str) -> Response:
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    user = User.objects.create_user(
-        username=email,
-        email=email,
-        password=password,
-        first_name=name,
-        is_active=True,
-    )
-    from tenants.models import UserProfile
-
-    UserProfile.objects.create(user=user, tenant=tenant, role_ref=role)
+    try:
+        invite = create_invite(tenant=tenant, name=name, email=email, role=role)
+    except Exception:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "INVITE_DELIVERY_FAILED",
+                    "detail": "Usuário criado, mas o convite não pôde ser enviado. Use o reenvio de convite.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     return Response(
         {
             "data": {
-                "id": user.pk,
-                "name": user.first_name,
-                "email": user.email,
-                "is_active": user.is_active,
+                "id": invite.user.pk,
+                "name": invite.user.first_name,
+                "email": invite.user.email,
+                "is_active": invite.user.is_active,
             },
             "error": None,
-            "meta": {},
+            "meta": {"invite_sent": True},
         },
         status=status.HTTP_201_CREATED,
     )

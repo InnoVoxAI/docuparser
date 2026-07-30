@@ -15,6 +15,7 @@ export interface AdminUser {
     email: string
     role?: AdminRoleRef | null
     is_active?: boolean
+    invite_pending?: boolean
 }
 
 export interface AdminPermission {

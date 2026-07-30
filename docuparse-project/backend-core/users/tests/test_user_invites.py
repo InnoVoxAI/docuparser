@@ -281,3 +281,87 @@ class UserInviteActivationTests(TestCase):
 
         assert response.status_code == 410
         assert response.json()["error"]["code"] == "INVITE_EXPIRED"
+
+
+class UserInviteResendTests(TestCase):
+    def setUp(self) -> None:
+        _seed_permissions()
+        self.tenant = _make_tenant("acme", "ACME Corporation")
+        self.admin_role = _make_tenant_admin_role()
+        self.op_role = _make_op_role()
+        self.client, self.admin_user = _tenant_admin_client(
+            self.tenant, self.admin_role
+        )
+
+    def _invite_user(
+        self, email: str = "maria.silva@acme.com", name: str = "Maria Silva"
+    ) -> User:
+        response = self.client.post(
+            "/api/ocr/users",
+            {"name": name, "email": email, "role_id": str(self.op_role.id)},
+            format="json",
+        )
+        assert response.status_code == 201, response.content
+        return User.objects.get(username=email)
+
+    def test_resend_invalidates_previous_pending_invite_and_issues_new_one(
+        self,
+    ) -> None:
+        user = self._invite_user()
+        old_invite = Invite.objects.get(user=user)
+        old_token_hash = old_invite.token_hash
+
+        response = self.client.post(
+            f"/api/ocr/users/{user.pk}/invites/resend/",
+            format="json",
+        )
+
+        assert response.status_code == 200, response.content
+        body = response.json()
+        assert body["error"] is None
+        assert body["data"]["email"] == user.email
+
+        old_invite.refresh_from_db()
+        assert old_invite.status == Invite.Status.INVALIDATED
+
+        new_invite = Invite.objects.exclude(id=old_invite.id).get(user=user)
+        assert new_invite.status == Invite.Status.PENDING
+        assert new_invite.token_hash != old_token_hash
+        assert new_invite.expires_at != old_invite.expires_at
+
+        assert len(mail.outbox) == 2
+
+    def test_resend_for_user_in_another_tenant_returns_404(self) -> None:
+        other_tenant = _make_tenant("beta", "Beta Corp")
+        other_role = _make_op_role()
+        other_user = User.objects.create_user(
+            username="outsider@beta.com",
+            email="outsider@beta.com",
+            is_active=True,
+        )
+        other_user.set_unusable_password()
+        other_user.save()
+        UserProfile.objects.create(
+            user=other_user, tenant=other_tenant, role_ref=other_role
+        )
+
+        response = self.client.post(
+            f"/api/ocr/users/{other_user.pk}/invites/resend/",
+            format="json",
+        )
+
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "USER_NOT_FOUND"
+
+    def test_resend_for_already_active_user_returns_409(self) -> None:
+        user = self._invite_user(email="active@acme.com", name="Active User")
+        user.set_password(VALID_PASSWORD)
+        user.save()
+
+        response = self.client.post(
+            f"/api/ocr/users/{user.pk}/invites/resend/",
+            format="json",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "USER_ALREADY_ACTIVE"

@@ -6,7 +6,6 @@ import { adminKeys } from './queryKeys'
 export interface CreateUserInput {
     name: string
     email: string
-    password: string
     role_id: string
 }
 

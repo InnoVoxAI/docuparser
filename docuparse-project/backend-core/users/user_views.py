@@ -10,6 +10,7 @@ from rest_framework.decorators import (
 )
 from rest_framework.request import Request
 from rest_framework.response import Response
+from tenants.invites import create_invite
 
 from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
@@ -56,9 +57,61 @@ def users_list_create_view(request: Request) -> Response:
 
     serializer = UserCreateSerializer(data=request.data)
     if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    user = serializer.save()
-    return Response(UserListSerializer(user).data, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                "data": None,
+                "error": {"code": "VALIDATION_ERROR", "detail": serializer.errors},
+                "meta": {},
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    email = data["email"]
+    if User.objects.filter(username=email).exists():
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "USER_EXISTS",
+                    "detail": f"E-mail '{email}' já está em uso.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    try:
+        invite = create_invite(
+            tenant=request.tenant,
+            name=data["name"],
+            email=email,
+            role=data["role_id"],
+        )
+    except Exception:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "INVITE_DELIVERY_FAILED",
+                    "detail": "Usuário criado, mas o convite não pôde ser enviado. Use o reenvio de convite.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    created_user = User.objects.select_related("docuparse_profile__role_ref").get(
+        pk=invite.user_id
+    )
+    return Response(
+        {
+            "data": UserListSerializer(created_user).data,
+            "error": None,
+            "meta": {"invite_sent": True},
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["GET", "PATCH"])

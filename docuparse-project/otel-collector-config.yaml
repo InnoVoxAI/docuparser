@@ -1,0 +1,58 @@
+# OpenTelemetry Collector config for DocuParse (feature 020-opentelemetry-tracing).
+#
+# Recebe traces via OTLP (gRPC/HTTP) de todos os serviços de aplicação, aplica
+# uma redação básica de atributos (defesa em profundidade — a redação
+# primária roda em processo, no SpanProcessor de shared/docuparse_observability/
+# tracing.py, ver data-model.md) e exporta para o Jaeger via OTLP.
+#
+# Amostragem (tail sampling, FR-009/SC-006) é adicionada em fase posterior
+# (Polish — ver tasks.md T062); esta config cobre apenas o caminho de coleta.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+  # Redação básica: nega por padrão, permite apenas a allowlist de
+  # data-model.md. Isso já cobre a denylist explícita (http.request.body,
+  # http.response.body, Authorization, chaves *_token/*_secret/*_password)
+  # sem precisar enumerá-la — nenhuma chave fora da allowlist sobrevive.
+  redaction:
+    allow_all_keys: false
+    allowed_keys:
+      - http.method
+      - http.route
+      - http.status_code
+      - net.peer.name
+      - messaging.system
+      - messaging.destination
+      - zeebe.job.type
+      - zeebe.process.instance.key
+      - tenant_id
+      - document_id
+      - correlation_id
+      - error.type
+      - error.message
+      - service.name
+      - service.version
+      - deployment.environment
+    summary: debug
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [redaction, batch]
+      exporters: [otlp/jaeger]

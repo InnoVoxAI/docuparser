@@ -74,6 +74,33 @@ services:
     networks:
       - docuparse-network
 
+  # ---------------------------------------------------------------------------
+  # Observabilidade / tracing distribuído (feature 020-opentelemetry-tracing)
+  # ---------------------------------------------------------------------------
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.157.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    networks:
+      - docuparse-network
+    depends_on:
+      jaeger:
+        condition: service_started
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # Jaeger UI
+    networks:
+      - docuparse-network
+
   frontend:
     build: ./frontend
     command: npm run dev -- --host 0.0.0.0 --port 5173
@@ -83,6 +110,9 @@ services:
     ports:
       - "5173:5173"
     environment:
+      OTEL_SERVICE_NAME: frontend
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       # Alvos do proxy do Vite dev server (server-side). Sem prefixo VITE_ para
       # não vazar no bundle do browser: o cliente usa caminhos relativos e o
       # proxy encaminha para estes hostnames internos do Docker.
@@ -109,6 +139,9 @@ services:
     env_file:
       - .env
     environment:
+      OTEL_SERVICE_NAME: backend-core
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       BACKEND_OCR_URL: http://backend-ocr:8080
       LANGEXTRACT_SERVICE_URL: http://langextract-service:8091
       PYTHONPATH: /app:/contracts:/shared
@@ -220,6 +253,9 @@ services:
     ports:
       - "8070:8070"
     environment:
+      OTEL_SERVICE_NAME: backend-com
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -265,6 +301,9 @@ services:
     env_file:
       - .env
     environment:
+      OTEL_SERVICE_NAME: backend-ocr
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -344,6 +383,9 @@ services:
     ports:
       - "8090:8090"
     environment:
+      OTEL_SERVICE_NAME: layout-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -418,6 +460,9 @@ services:
     ports:
       - "8091:8091"
     environment:
+      OTEL_SERVICE_NAME: langextract-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -597,6 +642,9 @@ services:
       - ./bpmn:/app/bpmn:ro
       - ./camunda-workers/scripts:/app/scripts:ro
     environment:
+      OTEL_SERVICE_NAME: camunda-workers
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       ZEEBE_ADDRESS: zeebe:26500
       BACKEND_CORE_URL: http://backend-core:8000
       BACKEND_OCR_URL: http://backend-ocr:8080

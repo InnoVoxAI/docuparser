@@ -22,6 +22,7 @@ class BaseEvent(EventModel):
     document_id: UUID
     correlation_id: UUID = Field(default_factory=uuid4)
     source: str = Field(min_length=1)
+    trace_context: dict[str, str] | None = None
 
     @field_validator("occurred_at")
     @classmethod

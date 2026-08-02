@@ -89,3 +89,23 @@ def test_ocr_client_call_propagates_traceparent_and_creates_child_span(
     assert outgoing_span.parent is not None
     assert outgoing_span.parent.span_id == expected_parent_span_id
     assert outgoing_span.end_time > outgoing_span.start_time
+
+    # T045 (US2) — cada span capturado tem duração > 0, e spans de etapas/serviços
+    # diferentes (aqui: o span "inbound-request" e o span de saída para backend-ocr)
+    # permanecem individualmente distinguíveis, não agregados numa única medição.
+    all_spans = memory_span_exporter.get_finished_spans()
+    assert len(all_spans) >= 2, "expected both the inbound and the outgoing spans"
+    for span in all_spans:
+        assert span.end_time > span.start_time, (
+            f"span {span.name!r} has no positive duration"
+        )
+
+    durations_by_span_id = {
+        span.context.span_id: span.end_time - span.start_time for span in all_spans
+    }
+    assert len(durations_by_span_id) == len(all_spans), (
+        "each span must carry its own duration, not an aggregated total"
+    )
+    assert len({span.name for span in all_spans}) == len(all_spans), (
+        "spans from different steps must remain individually named/distinguishable"
+    )

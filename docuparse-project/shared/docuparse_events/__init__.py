@@ -168,13 +168,17 @@ def inject_trace_context(event: dict[str, Any]) -> dict[str, Any]:
 
     Sem trace ativo (ex.: publisher ainda não instrumentado), o evento é
     devolvido sem alteração e `trace_context` permanece como já estava
-    (tipicamente `None`, o default do schema).
+    (tipicamente `None`, o default do schema). Muta `event` in-place (além de
+    devolvê-lo) para que callers que guardam a mesma referência — ex.:
+    `*_event_worker.py` publicando e retornando o mesmo dict — enxerguem o
+    `trace_context` efetivamente publicado, em vez de uma cópia divergente.
     """
     carrier: dict[str, str] = {}
     propagate.inject(carrier)
     if not carrier:
         return event
-    return {**event, "trace_context": carrier}
+    event["trace_context"] = carrier
+    return event
 
 
 def extract_trace_link(event: dict[str, Any]) -> Link | None:

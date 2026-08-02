@@ -7,6 +7,7 @@ import structlog
 from pyzeebe import ZeebeTaskRouter
 
 from workers._http import core_client
+from workers._tracing import traced_job
 
 log = structlog.get_logger()
 
@@ -18,6 +19,7 @@ validate_document = ZeebeTaskRouter()
     timeout_ms=15_000,
     max_jobs_to_activate=10,
 )
+@traced_job("docuparse-validate-document")
 async def _validate_document(
     document_id: str,
     decision: str,

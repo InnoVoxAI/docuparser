@@ -77,25 +77,25 @@ description: "Task list for feature 020-opentelemetry-tracing"
 
 ### Tests for User Story 1
 
-- [ ] T029 [P] [US1] Teste de integração em `docuparse-project/backend-core/documents/tests/test_tracing_propagation.py` (arquivo novo, estende o teste de contrato Core↔OCR já exigido pela Constituição): usando `InMemorySpanExporter`, confirmar que uma chamada de `documents/services/ocr_client.py` para `backend-ocr` propaga `traceparent` e produz um span filho corretamente contextualizado
-- [ ] T030 [P] [US1] Teste unitário em `docuparse-project/shared/tests/test_docuparse_events_tracing.py` (arquivo novo): publicar um evento via `EventBus.publish()` e confirmar que `trace_context` é populado (T017); consumir o evento e confirmar que `extract_trace_link()` (T018) retorna um `Link` válido apontando para o contexto original
-- [ ] T031 [P] [US1] Teste unitário em `docuparse-project/camunda-workers/tests/workers/test_tracing.py` (arquivo novo): confirmar que o helper de extração de contexto de trace a partir de variáveis de job Zeebe (T034) retorna um `Link` válido quando a variável está presente, e `None` quando ausente
+- [X] T029 [P] [US1] Teste de integração em `docuparse-project/backend-core/documents/tests/test_tracing_propagation.py` (arquivo novo, estende o teste de contrato Core↔OCR já exigido pela Constituição): usando `InMemorySpanExporter`, confirmar que uma chamada de `documents/services/ocr_client.py` para `backend-ocr` propaga `traceparent` e produz um span filho corretamente contextualizado
+- [X] T030 [P] [US1] Teste unitário em `docuparse-project/shared/tests/test_docuparse_events_tracing.py` (arquivo novo): publicar um evento via `EventBus.publish()` e confirmar que `trace_context` é populado (T017); consumir o evento e confirmar que `extract_trace_link()` (T018) retorna um `Link` válido apontando para o contexto original
+- [X] T031 [P] [US1] Teste unitário em `docuparse-project/camunda-workers/tests/workers/test_tracing.py` (arquivo novo): confirmar que o helper de extração de contexto de trace a partir de variáveis de job Zeebe (T034) retorna um `Link` válido quando a variável está presente, e `None` quando ausente
 
 ### Implementation for User Story 1
 
-- [ ] T032 [US1] Usar `extract_trace_link()` (T018) para iniciar o span de processamento com `links=[...]` em `docuparse-project/backend-core/documents/services/event_consumers.py`, para cada handler de evento consumido
-- [ ] T033 [P] [US1] Usar `extract_trace_link()` (T018) para iniciar o span de processamento com `links=[...]` em `docuparse-project/backend-ocr/application/ocr_event_worker.py`
-- [ ] T034 [P] [US1] Usar `extract_trace_link()` (T018) para iniciar o span de processamento com `links=[...]` em `docuparse-project/layout-service/application/layout_event_worker.py`
-- [ ] T035 [P] [US1] Usar `extract_trace_link()` (T018) para iniciar o span de processamento com `links=[...]` em `docuparse-project/langextract-service/application/extraction_event_worker.py`
-- [ ] T036 [US1] Serializar o `traceparent` ativo (via `opentelemetry.propagate.inject()`) como variável adicional do processo Zeebe, ao lado de `correlationId`, no ponto onde uma instância de processo é criada (`scripts/start_process.py` ou client Zeebe equivalente acionado por `backend-core`) (depende de T014)
-- [ ] T037 [US1] Criar helper `extract_trace_link_from_job(job) -> Link | None` em `docuparse-project/camunda-workers/src/workers/_tracing.py` (arquivo novo), extraindo a variável de trace do job Zeebe via `opentelemetry.propagate.extract()` (depende de T036)
-- [ ] T038 [P] [US1] Aplicar o helper de T037 (span com `links=[...]`) em `docuparse-project/camunda-workers/src/workers/document.py`
-- [ ] T039 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/ocr.py`
-- [ ] T040 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/layout.py`
-- [ ] T041 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/extraction.py`
-- [ ] T042 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/validation.py`
-- [ ] T043 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/erp.py`
-- [ ] T044 [US1] Executar os passos 1-3 do `quickstart.md` manualmente para validar visibilidade do trace de ponta a ponta no Jaeger, incluindo o trecho assíncrono/Zeebe (depende de T032-T043)
+- [X] T032 [US1] Usar `extract_trace_link()` (T018) para iniciar o span de processamento com `links=[...]` em `docuparse-project/backend-core/documents/services/event_consumers.py`, para cada handler de evento consumido
+- [X] T033 [P] [US1] Usar `extract_trace_link()` (T018) para iniciar o span de processamento com `links=[...]` em `docuparse-project/backend-ocr/application/ocr_event_worker.py`
+- [X] T034 [P] [US1] Usar `extract_trace_link()` (T018) para iniciar o span de processamento com `links=[...]` em `docuparse-project/layout-service/application/layout_event_worker.py`
+- [X] T035 [P] [US1] Usar `extract_trace_link()` (T018) para iniciar o span de processamento com `links=[...]` em `docuparse-project/langextract-service/application/extraction_event_worker.py`
+- [X] T036 [US1] Serializar o `traceparent` ativo (via `opentelemetry.propagate.inject()`) como variável adicional do processo Zeebe, ao lado de `correlationId`, no ponto onde uma instância de processo é criada (`scripts/start_process.py` ou client Zeebe equivalente acionado por `backend-core`) (depende de T014)
+- [X] T037 [US1] Criar helper `extract_trace_link_from_job(job) -> Link | None` em `docuparse-project/camunda-workers/src/workers/_tracing.py` (arquivo novo), extraindo a variável de trace do job Zeebe via `opentelemetry.propagate.extract()` (depende de T036)
+- [X] T038 [P] [US1] Aplicar o helper de T037 (span com `links=[...]`) em `docuparse-project/camunda-workers/src/workers/document.py`
+- [X] T039 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/ocr.py`
+- [X] T040 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/layout.py`
+- [X] T041 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/extraction.py`
+- [X] T042 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/validation.py`
+- [X] T043 [P] [US1] Aplicar o helper de T037 em `docuparse-project/camunda-workers/src/workers/erp.py`
+- [ ] T044 [US1] Executar os passos 1-3 do `quickstart.md` manualmente para validar visibilidade do trace de ponta a ponta no Jaeger, incluindo o trecho assíncrono/Zeebe (depende de T032-T043) — **pendente**: requer subir o stack completo via `docker compose` (Jaeger, Zeebe, Redis, MinIO) e disparar um upload real; não executável no ambiente isolado desta sessão, ver instruções no quickstart.md
 
 **Checkpoint**: Um trace único é reconstruível do frontend até qualquer backend, incluindo os saltos assíncronos (fila de eventos e workflow Zeebe) — História 1 completa e testável isoladamente.
 

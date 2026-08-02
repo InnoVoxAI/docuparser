@@ -3,6 +3,7 @@ import structlog
 from pyzeebe import ZeebeTaskRouter
 
 from workers._http import core_client
+from workers._tracing import traced_job
 
 log = structlog.get_logger()
 
@@ -15,6 +16,7 @@ reprocess_ocr = ZeebeTaskRouter()
     timeout_ms=200_000,
     max_jobs_to_activate=3,
 )
+@traced_job("docuparse-process-ocr")
 async def _process_ocr(document_id: str, **kwargs) -> dict:
     """Run OCR on a document. Returns updated document state."""
     log.info("ocr_starting", document_id=document_id)
@@ -38,6 +40,7 @@ async def _process_ocr(document_id: str, **kwargs) -> dict:
     timeout_ms=200_000,
     max_jobs_to_activate=3,
 )
+@traced_job("docuparse-reprocess-ocr")
 async def _reprocess_ocr(document_id: str, **kwargs) -> dict:
     """Re-run OCR on a document (e.g. after rejection)."""
     log.info("ocr_reprocess_starting", document_id=document_id)

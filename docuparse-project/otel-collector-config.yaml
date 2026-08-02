@@ -42,6 +42,17 @@ processors:
       - service.name
       - service.version
       - deployment.environment
+      # Atributos do evento de span "exception" (span.record_exception(),
+      # convenção semântica padrão do OTel) — sem esta entrada, o processor
+      # de redação (que nega por padrão) apaga tipo/mensagem/stack trace de
+      # QUALQUER exceção capturada, esvaziando o evento e quebrando o
+      # objetivo da História 4 ("erro de aplicação... com contexto
+      # suficiente para localizá-lo"). Não é dado de documento/pessoal —
+      # é um traceback de código interno da aplicação (data-model.md).
+      - exception.type
+      - exception.message
+      - exception.stacktrace
+      - exception.escaped
     summary: debug
 
 exporters:

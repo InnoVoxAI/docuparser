@@ -152,7 +152,15 @@ async def root():
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Handler global para exceções não tratadas."""
+    """Handler global para exceções não tratadas.
+
+    Nenhuma chamada manual a `span.record_exception()` é necessária aqui
+    (US4): `FastAPIInstrumentor` já insere um middleware dedicado
+    (`ExceptionHandlerMiddleware`) que grava o evento de exceção e marca
+    `status=ERROR` no span ativo antes de qualquer exception_handler rodar
+    — mesmo quando, como aqui, a exceção é capturada e convertida numa
+    resposta 500 em vez de propagar. Confirmado empiricamente (T057).
+    """
     logger.error(f"Exceção não tratada: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,

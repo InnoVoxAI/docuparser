@@ -241,7 +241,7 @@ services:
     build:
       context: .
       dockerfile: backend-com/Dockerfile
-    command: uvicorn api.app:app --host 0.0.0.0 --port 8070 --reload
+    command: uv run uvicorn api.app:app --host 0.0.0.0 --port 8070 --reload
     volumes:
       - ./backend-com:/app
       - ./contracts:/contracts:ro
@@ -290,7 +290,7 @@ services:
     build:
       context: .
       dockerfile: backend-ocr/Dockerfile
-    command: uvicorn api.app:app --host 0.0.0.0 --port 8080 --reload
+    command: uv run uvicorn api.app:app --host 0.0.0.0 --port 8080 --reload
     volumes:
       - ./backend-ocr:/app
       - ./contracts:/contracts:ro
@@ -336,7 +336,7 @@ services:
     build:
       context: .
       dockerfile: backend-ocr/Dockerfile
-    command: python -m application.run_worker
+    command: uv run python -m application.run_worker
     profiles:
       - async-workers
     volumes:
@@ -450,7 +450,7 @@ services:
     build:
       context: .
       dockerfile: langextract-service/Dockerfile
-    command: uvicorn api.app:app --host 0.0.0.0 --port 8091 --reload
+    command: uv run uvicorn api.app:app --host 0.0.0.0 --port 8091 --reload
     volumes:
       - ./langextract-service:/app
       - ./contracts:/contracts:ro
@@ -504,7 +504,7 @@ services:
     build:
       context: .
       dockerfile: langextract-service/Dockerfile
-    command: python -m application.run_worker
+    command: uv run python -m application.run_worker
     profiles:
       - async-workers
     volumes:

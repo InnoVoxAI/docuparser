@@ -18,6 +18,16 @@ _EXPORT_TIMEOUT_SECONDS = 2
 _DENYLIST_ATTRIBUTES = {"http.request.body", "http.response.body", "authorization"}
 _DENYLIST_SUFFIXES = ("_token", "_secret", "_password")
 
+# `opentelemetry-instrumentation-{requests,httpx}` só emitem o atributo
+# `net.peer.name` (contracts/tracing-conventions.md item 4, data-model.md) em
+# métricas, nunca no span — o span client só recebe `network.peer.address`
+# (novo semconv, exige OTEL_SEMCONV_STABILITY_OPT_IN=http/dup, ver abaixo).
+# Normalizamos aqui para que o nome de atributo exigido pelo contrato chegue
+# ao Collector, cujo allowlist (otel-collector-config.yaml) já espera
+# `net.peer.name`, não `network.peer.address`.
+_NET_PEER_NAME_KEY = "net.peer.name"
+_NETWORK_PEER_ADDRESS_KEY = "network.peer.address"
+
 _configured_services: set[str] = set()
 
 
@@ -29,13 +39,23 @@ class RedactingSpanProcessor(SpanProcessor):
 
     def on_end(self, span: ReadableSpan) -> None:
         attributes = span.attributes
-        if not attributes or not any(_is_denied(key) for key in attributes):
+        if not attributes:
+            return
+        normalized = dict(attributes)
+        changed = False
+        if _NET_PEER_NAME_KEY not in normalized and _NETWORK_PEER_ADDRESS_KEY in normalized:
+            normalized[_NET_PEER_NAME_KEY] = normalized[_NETWORK_PEER_ADDRESS_KEY]
+            changed = True
+        if any(_is_denied(key) for key in normalized):
+            normalized = {
+                key: value for key, value in normalized.items() if not _is_denied(key)
+            }
+            changed = True
+        if not changed:
             return
         # ReadableSpan.attributes é um BoundedAttributes somente-leitura; a
-        # única forma suportada de redigir é substituir o dict inteiro.
-        span._attributes = {
-            key: value for key, value in attributes.items() if not _is_denied(key)
-        }
+        # única forma suportada de redigir/normalizar é substituir o dict inteiro.
+        span._attributes = normalized
 
     def shutdown(self) -> None:
         return None
@@ -58,6 +78,15 @@ def configure_tracing(service_name: str) -> None:
     """
     if service_name in _configured_services:
         return
+
+    # As instrumentações `requests`/`httpx` só marcam `error.type` no span de
+    # saída (US3, data-model.md) quando o novo semconv HTTP está ativo; em
+    # `http/dup` elas continuam emitindo os atributos antigos também, então
+    # nada muda para o resto da allowlist. Precisa ser setado antes de
+    # qualquer `XInstrumentor().instrument()` — o valor é lido e cacheado por
+    # processo na primeira instrumentação (opentelemetry.instrumentation._semconv),
+    # e todo bootstrap chama configure_tracing() antes de instrumentar.
+    os.environ.setdefault("OTEL_SEMCONV_STABILITY_OPT_IN", "http/dup")
 
     resource = Resource.create(
         {

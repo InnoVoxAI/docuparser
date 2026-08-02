@@ -21,9 +21,12 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from docuparse_observability.tracing import configure_tracing
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.redis import RedisInstrumentor
 
 
 def _load_project_env() -> None:
@@ -42,6 +45,9 @@ def _load_project_env() -> None:
 
 
 _load_project_env()
+
+configure_tracing("backend-ocr")
+RedisInstrumentor().instrument()
 
 from application.ocr_event_worker import start_worker_thread_from_env  # noqa: E402
 from domain.engine_resolver import ENGINE_DEFAULTS  # noqa: E402
@@ -78,6 +84,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+FastAPIInstrumentor.instrument_app(app)
 
 # Configurar CORS
 app.add_middleware(

@@ -635,16 +635,20 @@ services:
 
   camunda-workers:
     build:
-      context: ./camunda-workers
+      context: .
+      dockerfile: camunda-workers/Dockerfile
     profiles:
       - camunda
     volumes:
       - ./bpmn:/app/bpmn:ro
       - ./camunda-workers/scripts:/app/scripts:ro
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
     environment:
       OTEL_SERVICE_NAME: camunda-workers
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
+      PYTHONPATH: /app/src:/contracts:/shared
       ZEEBE_ADDRESS: zeebe:26500
       BACKEND_CORE_URL: http://backend-core:8000
       BACKEND_OCR_URL: http://backend-ocr:8080

@@ -68,6 +68,13 @@ CORS_ALLOWED_ORIGINS = [
     if o.strip()
 ]
 
+# Libera traceparent/tracestate (W3C Trace Context) além dos headers default do
+# django-cors-headers, para que o SDK Web do frontend propague trace em
+# chamadas cross-origin em produção (research.md R9).
+from corsheaders.defaults import default_headers as _cors_default_headers  # noqa: E402
+
+CORS_ALLOW_HEADERS = [*_cors_default_headers, "traceparent", "tracestate"]
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -79,6 +86,20 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# Bootstrap único de tracing (contracts/tracing-conventions.md item 1). Roda
+# aqui (não em wsgi.py) para cobrir também os management commands que não
+# passam pelo WSGIHandler (consume_events, migrate, etc.) — settings.py é
+# importado por todo entrypoint Django, WSGI ou CLI.
+from docuparse_observability.tracing import configure_tracing  # noqa: E402
+from opentelemetry.instrumentation.django import DjangoInstrumentor  # noqa: E402
+from opentelemetry.instrumentation.redis import RedisInstrumentor  # noqa: E402
+from opentelemetry.instrumentation.requests import RequestsInstrumentor  # noqa: E402
+
+configure_tracing("backend-core")
+DjangoInstrumentor().instrument()
+RequestsInstrumentor().instrument()
+RedisInstrumentor().instrument()
 
 ROOT_URLCONF = "core.urls"
 

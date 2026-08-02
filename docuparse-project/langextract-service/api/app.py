@@ -3,11 +3,19 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from application.extraction_event_worker import start_worker_thread_from_env
+from docuparse_observability.tracing import configure_tracing
 from domain.extractor import extract_fields
 from domain.llm_extractor import extract_with_llm
 from fastapi import FastAPI
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.redis import RedisInstrumentor
 
 from api.schemas import ExtractRequest, ExtractResponse
+
+configure_tracing("langextract-service")
+HTTPXClientInstrumentor().instrument()
+RedisInstrumentor().instrument()
 
 
 @asynccontextmanager
@@ -27,6 +35,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+FastAPIInstrumentor.instrument_app(app)
 
 
 @app.get("/health")

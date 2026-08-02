@@ -5,8 +5,9 @@
 # primária roda em processo, no SpanProcessor de shared/docuparse_observability/
 # tracing.py, ver data-model.md) e exporta para o Jaeger via OTLP.
 #
-# Amostragem (tail sampling, FR-009/SC-006) é adicionada em fase posterior
-# (Polish — ver tasks.md T062); esta config cobre apenas o caminho de coleta.
+# Amostragem: tailsamplingprocessor (FR-009/SC-006) retém 100% dos traces
+# com erro e aplica amostragem probabilística configurável para o restante
+# (ver research.md R5, tasks.md T062).
 
 receivers:
   otlp:
@@ -18,6 +19,28 @@ receivers:
 
 processors:
   batch: {}
+
+  # Tail sampling (FR-009/SC-006): a decisão só pode ser tomada depois que o
+  # trace inteiro (ou pelo menos o span de erro) chegou ao Collector, por
+  # isso roda antes da redação/batch. As duas políticas abaixo são avaliadas
+  # com semântica OR (basta uma "sample" para o trace ser retido):
+  #   1. errors-policy: retém 100% dos traces com QUALQUER span em status ERROR.
+  #   2. probabilistic-policy: retém uma fração configurável do restante
+  #      (100% em dev/default; reduzir via OTEL_TAIL_SAMPLING_PERCENTAGE em
+  #      produção para controlar volume sem nunca perder um erro).
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 50000
+    expected_new_traces_per_sec: 10
+    policies:
+      - name: errors-policy
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: probabilistic-policy
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: ${env:OTEL_TAIL_SAMPLING_PERCENTAGE}
 
   # Redação básica: nega por padrão, permite apenas a allowlist de
   # data-model.md. Isso já cobre a denylist explícita (http.request.body,
@@ -65,5 +88,5 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [redaction, batch]
+      processors: [tail_sampling, redaction, batch]
       exporters: [otlp/jaeger]

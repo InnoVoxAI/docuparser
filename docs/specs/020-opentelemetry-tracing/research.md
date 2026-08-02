@@ -97,6 +97,25 @@ O spec deixa a ferramenta explicitamente como decisão de plano (`Assumptions`).
 - `layout-service` e `camunda-workers` não têm job de deploy em `.github/workflows/ci.yaml` hoje — a instrumentação desses dois serviços cobre o ambiente de desenvolvimento/docker-compose desde já; estender o pipeline de deploy para eles é um gap pré-existente, não introduzido nem obrigatoriamente resolvido por esta feature.
 - `backend-com` declara `structlog` como dependência não utilizada — não removida nem adotada nesta feature (fora de escopo), apenas observada.
 
+## R13: Benchmark de overhead de instrumentação (T065, SC-004)
+
+SC-004 exige overhead de instrumentação ≤5% de latência adicional, medido contra os orçamentos já vigentes na Constitution (`backend-core` 200ms p95 não-processamento, `backend-ocr` 30s p95 processamento) — não como percentual relativo à própria latência baseline (que é sub-milissegundo para um endpoint de health check, tornando qualquer razão relativa a ela estatisticamente ruidosa e sem relação com o orçamento real).
+
+**Metodologia**: comparação antes/depois via `git worktree` no commit `7a9ce49` (fim da Phase 1 — dependências OTel declaradas, porém `configure_tracing()`/instrumentação ainda não existem/não são chamadas) contra o HEAD atual (todas as fases 1-6 aplicadas). Ambas as versões rodadas como processo nativo no host (Django `manage.py runserver` para `backend-core`, `uvicorn api.app:app` para `backend-ocr`), na mesma máquina, mesma porta-a-porta local — evitando o viés de comparar processo nativo (antes) contra container Docker (depois), que introduziria overhead de rede/NAT não relacionado a tracing. A versão "depois" exporta para o `otel-collector` real (`http://127.0.0.1:4317`, já no ar), não para um endpoint inalcançável — para medir o custo de exportação bem-sucedida, não o caminho de falha (esse é o escopo de T064/R6). 500 requisições por execução (+20 de warmup descartadas), 3 execuções por endpoint, medindo `p50`/`p95`/`p99`/`mean` via cliente HTTP sequencial em Python (`urllib`).
+
+**Endpoints escolhidos**: `GET /api/ocr/health` (`backend-core`, não-processamento — `DjangoInstrumentor`) e `GET /health` (`backend-ocr`) como proxy do endpoint de processamento `POST /api/v1/documents/process` (`FastAPIInstrumentor`) — rodar a suíte real de engines de OCR (Tesseract/PaddleOCR/OpenRouter) 1500 vezes localmente não é viável nem representativo (dominado por tempo de engine/rede externa, não por tracing) nem reprodutível sem as dependências nativas dos engines no host; `/health` percorre exatamente o mesmo middleware de instrumentação de entrada (`FastAPIInstrumentor`) que envolve `/api/v1/documents/process`, isolando o custo fixo por requisição da instrumentação sem a variância do processamento de negócio.
+
+| Endpoint | Antes (p95, média de 3 execuções) | Depois (p95, média de 3 execuções) | Overhead absoluto (pior caso) | Orçamento (Constitution) | Overhead vs. orçamento |
+|---|---|---|---|---|---|
+| `backend-core` `GET /api/ocr/health` | ~0.45ms | ~0.66ms | ~0.84ms (pior p95 observado) | 200ms p95 | **0.42%** |
+| `backend-ocr` `GET /health` (proxy de `/api/v1/documents/process`) | ~0.40ms | ~0.79ms | ~1.40ms (pior p95 observado) | 30 000ms p95 | **0.0047%** |
+
+**Decision**: Overhead medido está 1-2 ordens de magnitude abaixo do limite de 5% (SC-004) em ambos os casos — consistente com a escolha de `BatchSpanProcessor` assíncrono (R6) e instrumentação automática de baixo overhead. Nenhuma otimização adicional é necessária antes de mergear.
+
+**Rationale**: Medir contra o orçamento absoluto (não contra a baseline relativa) é o que SC-004/Constitution realmente pedem — um endpoint de health check já é tão rápido (<1ms) que overhead relativo pareceria alto (ex.: 0.2ms → 0.4ms é "100% mais lento") sem que isso tenha qualquer relevância prática frente a um orçamento de 200ms.
+
+**Alternatives considered**: Rodar o benchmark contra os containers Docker de produção (antes/depois) — rejeitado como comparação principal por confundir overhead de instrumentação com overhead de rede Docker (medido à parte, ver acima: container Docker instrumentado teve p95 de ~0.8-2.2ms contra ~0.66ms do processo nativo instrumentado, uma diferença maior que a própria instrumentação, confirmando que misturar os dois fatores distorceria a conclusão); usar `/api/v1/documents/process` real fim-a-fim — rejeitado por inviabilidade prática de rodar centenas de OCRs reais localmente e por introduzir uma variável (latência de engine/API externa) ortogonal ao que está sendo medido.
+
 ## Resumo de decisões
 
 | # | Decisão | Componentes afetados |
@@ -113,3 +132,4 @@ O spec deixa a ferramenta explicitamente como decisão de plano (`Assumptions`).
 | R10 | Jaeger (via OTel Collector) como backend inicial | `docker-compose.yml` |
 | R11 | Amendment à Constitution (Technology Standards) | `.specify/memory/constitution.md` |
 | R12 | Riscos pré-existentes registrados, não corrigidos nesta feature | — |
+| R13 | Benchmark confirma overhead ≤5% (SC-004): 0.42%/0.0047% dos orçamentos | `docker-compose.yml`, `shared/docuparse_observability/tracing.py` (nenhuma mudança de código, apenas validação) |

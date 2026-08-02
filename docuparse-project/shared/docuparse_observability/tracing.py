@@ -7,6 +7,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanProcessor
+from opentelemetry.trace import Link
 
 _DEFAULT_OTLP_ENDPOINT = "http://otel-collector:4317"
 _EXPORT_TIMEOUT_SECONDS = 2
@@ -114,3 +115,17 @@ def configure_tracing(service_name: str) -> None:
 
     trace.set_tracer_provider(provider)
     _configured_services.add(service_name)
+
+
+def capture_current_span_link() -> Link | None:
+    """Captura o contexto do span ativo para propagar através de um limite
+    que não herda `contextvars` automaticamente — `ThreadPoolExecutor.submit()`
+    e `threading.Thread` rodam a função-alvo numa thread com contexto vazio,
+    então sem isso trabalho despachado para outra thread perde a associação
+    com o trace de origem (FR-007). Mesmo padrão de Link usado nas fronteiras
+    de evento/Zeebe (research.md R3/R4), aplicado aqui a um limite interno de
+    processo (thread pool), não uma fronteira entre serviços."""
+    span_context = trace.get_current_span().get_span_context()
+    if not span_context.is_valid:
+        return None
+    return Link(span_context)

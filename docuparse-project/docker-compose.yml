@@ -86,6 +86,12 @@ services:
     ports:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
+    environment:
+      # Tail sampling (FR-009/SC-006, tasks.md T062): fração retida dos
+      # traces SEM erro (traces com erro são sempre 100% retidos pela
+      # errors-policy, independente deste valor). 100 em dev; reduzir em
+      # produção para controlar volume.
+      OTEL_TAIL_SAMPLING_PERCENTAGE: ${OTEL_TAIL_SAMPLING_PERCENTAGE:-100}
     networks:
       - docuparse-network
     depends_on:

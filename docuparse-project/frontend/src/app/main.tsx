@@ -3,10 +3,15 @@ import ReactDOM from 'react-dom/client'
 import { RouterProvider, type createBrowserRouter } from 'react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import '../index.css'
+import { initTracing } from '../shared/lib/tracing'
 import { queryClient } from '../shared/lib/queryClient'
 import { AuthProvider, useAuth, LoginPage } from '../modules/auth'
 import { ActivateAccountForm } from '../modules/tenant-activation'
 import { router } from './router'
+
+// Precisa rodar antes de qualquer chamada de API (fetch/XHR) para que o SDK
+// Web já esteja instrumentado quando a primeira requisição sair.
+initTracing()
 
 /** `router` aceita override só para isolar renders em teste (ver `src/__tests__/utils.tsx`); produção usa sempre o singleton padrão. */
 export function Root({ router: routerProp }: { router?: ReturnType<typeof createBrowserRouter> } = {}) {

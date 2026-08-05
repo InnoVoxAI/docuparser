@@ -25,6 +25,33 @@ Templates reviewed:
 
 Deferred TODOs:
   - None; all placeholders resolved
+==================
+Version change: 1.0.0 → 1.1.0 (feature 020-opentelemetry-tracing)
+
+Modified principles:
+  - None (no Core Principle changed, added, or removed)
+
+Added sections:
+  - Technology Standards: new entry for "OpenTelemetry Collector + Jaeger
+    (rastreamento distribuído)" — additive observability infrastructure,
+    no replacement of any already-locked stack item.
+
+Removed sections:
+  - None
+
+Rationale: MINOR bump per Governance/Versioning Policy ("Addition of new
+principles or materially expanded guidance") — this is new guidance
+(technology entry), not a principle change. See
+docs/specs/020-opentelemetry-tracing/research.md (R11) and plan.md
+(Constitution Check) for full context.
+
+Templates reviewed:
+  - ✅ .specify/templates/plan-template.md — no update needed
+  - ✅ .specify/templates/spec-template.md — no update needed
+  - ✅ .specify/templates/tasks-template.md — no update needed
+
+Deferred TODOs:
+  - None
 -->
 
 # DocuParse Constitution
@@ -144,6 +171,10 @@ as constitution amendments before implementation:
   in production without a security review
 - **Infrastructure**: Docker + Docker Compose; all services MUST be
   containerized
+- **Observability**: OpenTelemetry Collector + Jaeger for distributed
+  tracing across services (additive infrastructure introduced in feature
+  020-opentelemetry-tracing; no application service traces directly to a
+  vendor-specific SDK — always via OTLP export to the Collector)
 
 ## Governance
 
@@ -164,4 +195,4 @@ for the DocuParse project.
 - **Runtime Guidance**: Refer to `CLAUDE.md` for agent-specific development
   guidance.
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-02 | **Last Amended**: 2026-06-02
+**Version**: 1.1.0 | **Ratified**: 2026-06-02 | **Last Amended**: 2026-08-02

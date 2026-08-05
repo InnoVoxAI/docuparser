@@ -14,8 +14,9 @@
 10. [Banco de Dados](#banco-de-dados)
 11. [Estrutura do Banco de Dados](#estrutura-do-banco-de-dados)
 12. [Eventos e Mensageria](#eventos-e-mensageria)
-13. [Autenticação e Permissões](#autenticação-e-permissões)
-14. [Variáveis de Ambiente](#variáveis-de-ambiente)
+13. [Observabilidade e Rastreamento Distribuído](#observabilidade-e-rastreamento-distribuído)
+14. [Autenticação e Permissões](#autenticação-e-permissões)
+15. [Variáveis de Ambiente](#variáveis-de-ambiente)
 
 ---
 
@@ -34,6 +35,8 @@ O DocuParse é um sistema de processamento de documentos baseado em microsservi�
 | PostgreSQL | postgres:16 | 5432 | Banco de dados relacional |
 | Redis | redis:7 | 6380 | Barramento de eventos + cache |
 | MinIO | minio | 9000/9001 | Object storage (arquivos e textos) |
+| OTel Collector | otel-collector-contrib | 4317 (gRPC) / 4318 (HTTP) | Coleta OTLP, redação básica, tail sampling |
+| Jaeger | jaeger all-in-one | 16686 (UI) | Armazenamento e visualização de traces |
 
 ### Fluxo Principal
 
@@ -824,6 +827,58 @@ docker compose exec backend-core python manage.py requeue_dlq
 ```
 
 Também acessível pela tela **Operações** no front-end (requer permissão `operations.access`).
+
+---
+
+## Observabilidade e Rastreamento Distribuído
+
+O sistema usa **OpenTelemetry** para rastreamento distribuído (tracing) entre todos os processos de runtime: `backend-com`, `backend-core`, `backend-ocr`, `langextract-service`, `layout-service`, `camunda-workers` e `frontend`. O objetivo é reconstruir, por um único `trace_id`, o caminho completo — síncrono e assíncrono — que uma requisição percorre entre serviços.
+
+### Componentes
+
+- **OTel Collector** (`otel/opentelemetry-collector-contrib`, serviço `otel-collector` no `docker-compose.yml`): recebe spans via OTLP (gRPC `:4317` / HTTP `:4318`) de todos os serviços, aplica redação básica de atributos e *tail sampling*, e exporta para o Jaeger. Nenhum serviço de aplicação fala diretamente com o Jaeger — trocar o backend de armazenamento no futuro (Grafana Tempo, Honeycomb, etc.) é apenas mudança de configuração do Collector.
+- **Jaeger** (`jaegertracing/all-in-one`, serviço `jaeger`): armazenamento e UI de visualização de traces, `http://localhost:16686`.
+
+### Bootstrap
+
+Cada serviço Python chama `configure_tracing(service_name)` (`shared/docuparse_observability/tracing.py`) uma única vez no bootstrap, o que cria um `TracerProvider` com `Resource` (`service.name`, `service.version`, `deployment.environment`), habilita a instrumentação automática relevante (`FastAPIInstrumentor`/`DjangoInstrumentor`, `RequestsInstrumentor`/`HTTPXClientInstrumentor`, `RedisInstrumentor`) e registra:
+
+1. `RedactingSpanProcessor` — remove/mascara atributos sensíveis (corpo de request/response, `Authorization`, chaves `_token`/`_secret`/`_password`) antes de qualquer exportação.
+2. `BatchSpanProcessor` com exporter OTLP de timeout curto (1-2s) — exportação sempre assíncrona/não-bloqueante: se o Collector estiver indisponível, spans são descartados em background, sem afetar a resposta ao usuário.
+
+O frontend usa o equivalente em JS (`frontend/src/shared/lib/tracing.ts`, `@opentelemetry/sdk-trace-web`), inicializado em `frontend/src/app/main.tsx`.
+
+### Propagação através das fronteiras assíncronas
+
+- **HTTP síncrono**: cabeçalho `traceparent`/`tracestate` (W3C Trace Context), propagado automaticamente pelas instrumentações de cliente HTTP.
+- **Eventos (Redis Streams)**: campo `trace_context: dict[str, str] | None` no schema base de evento (`contracts/events/schemas.py`), populado na publicação (`EventBus.publish()`) e usado no consumo para criar um `Span Link` (não parent-child, para não inflar a duração aparente do span de origem através da espera na fila).
+- **Workflow BPMN/Zeebe**: o `traceparent` ativo é serializado como variável de processo ao lado de `correlationId` no início da instância; cada worker Zeebe (`camunda-workers/src/workers/*.py`) extrai essa variável (helper `extract_trace_link_from_job`) e inicia seu próprio span com um `Link` para o trace de origem.
+
+### Redação e segurança de dados sensíveis
+
+Nenhum atributo de span pode conter conteúdo de documento, dado pessoal ou credencial. Isso é garantido em duas camadas: o `RedactingSpanProcessor` (em processo, antes da exportação) e uma allowlist estrita no `otel-collector-config.yaml` (defesa em profundidade — qualquer atributo fora da allowlist é descartado no Collector, mesmo que escape da primeira camada).
+
+### Amostragem (tail sampling)
+
+O Collector aplica `tailsamplingprocessor` (`otel-collector-config.yaml`) com duas políticas avaliadas em OR:
+
+1. Retém **100%** dos traces com qualquer span em status `ERROR`.
+2. Retém uma fração probabilística configurável do restante, via `OTEL_TAIL_SAMPLING_PERCENTAGE` (padrão `100` em dev; reduzir em produção para controlar volume sem nunca perder um trace com erro).
+
+### Correlação com logs
+
+`log_event()` (`shared/docuparse_observability/__init__.py`) anexa automaticamente `trace_id`/`span_id` do span ativo, quando existir, permitindo saltar de um log de erro para o trace completo no Jaeger.
+
+### Variáveis de ambiente
+
+| Variável | Onde é usada | Descrição |
+|---|---|---|
+| `OTEL_SERVICE_NAME` | Todos os serviços | Nome do serviço no atributo de resource `service.name` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Todos os serviços | Endpoint do Collector (padrão `http://otel-collector:4317`) |
+| `DEPLOYMENT_ENVIRONMENT` | Todos os serviços | Popula `deployment.environment` (dev/staging/production) |
+| `OTEL_TAIL_SAMPLING_PERCENTAGE` | `otel-collector` | % de traces sem erro retidos pelo tail sampling (padrão `100`) |
+
+Ver `docs/specs/020-opentelemetry-tracing/quickstart.md` para o passo a passo completo de validação local (subir o stack, disparar uma requisição, localizar o trace no Jaeger, validar resiliência e ausência de dados sensíveis).
 
 ---
 

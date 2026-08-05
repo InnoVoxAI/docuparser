@@ -1,1 +1,0 @@
-Ative sua conta de administrador em {{ tenant_name }}

@@ -21,9 +21,12 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from docuparse_observability.tracing import configure_tracing
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.redis import RedisInstrumentor
 
 
 def _load_project_env() -> None:
@@ -42,6 +45,9 @@ def _load_project_env() -> None:
 
 
 _load_project_env()
+
+configure_tracing("backend-ocr")
+RedisInstrumentor().instrument()
 
 from application.ocr_event_worker import start_worker_thread_from_env  # noqa: E402
 from domain.engine_resolver import ENGINE_DEFAULTS  # noqa: E402
@@ -78,6 +84,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+FastAPIInstrumentor.instrument_app(app)
 
 # Configurar CORS
 app.add_middleware(
@@ -145,7 +152,15 @@ async def root():
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Handler global para exceções não tratadas."""
+    """Handler global para exceções não tratadas.
+
+    Nenhuma chamada manual a `span.record_exception()` é necessária aqui
+    (US4): `FastAPIInstrumentor` já insere um middleware dedicado
+    (`ExceptionHandlerMiddleware`) que grava o evento de exceção e marca
+    `status=ERROR` no span ativo antes de qualquer exception_handler rodar
+    — mesmo quando, como aqui, a exceção é capturada e convertida numa
+    resposta 500 em vez de propagar. Confirmado empiricamente (T057).
+    """
     logger.error(f"Exceção não tratada: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,

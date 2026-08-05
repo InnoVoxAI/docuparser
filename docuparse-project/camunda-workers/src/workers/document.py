@@ -5,6 +5,7 @@ import structlog
 from pyzeebe import ZeebeTaskRouter
 
 from workers._http import core_client
+from workers._tracing import traced_job
 
 log = structlog.get_logger()
 
@@ -18,6 +19,7 @@ delete_document = ZeebeTaskRouter()
     timeout_ms=15_000,
     max_jobs_to_activate=10,
 )
+@traced_job("docuparse-register-document")
 async def _register_document(
     tenant_id: str,
     document_id: str,
@@ -78,6 +80,7 @@ async def _register_document(
     timeout_ms=10_000,
     max_jobs_to_activate=10,
 )
+@traced_job("docuparse-get-document")
 async def _get_document(document_id: str, **kwargs) -> dict:
     """Fetch current document state from backend-core."""
     async with core_client(timeout=8.0) as client:
@@ -99,6 +102,7 @@ async def _get_document(document_id: str, **kwargs) -> dict:
     timeout_ms=10_000,
     max_jobs_to_activate=5,
 )
+@traced_job("docuparse-delete-document")
 async def _delete_document(document_id: str, **kwargs) -> dict:
     """Delete a document from backend-core."""
     async with core_client(timeout=8.0) as client:

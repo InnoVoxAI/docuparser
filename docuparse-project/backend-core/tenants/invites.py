@@ -1,5 +1,6 @@
-"""Lógica de convite de administrador de tenant (geração de token, envio de email,
-ativação e reenvio) — feature 017-tenant-admin-onboarding.
+"""Lógica de convite de tenant (geração de token, envio de email, ativação e
+reenvio) — generalizada por papel na feature 019-generalize-tenant-invite
+(originalmente exclusiva de admin, feature 017-tenant-admin-onboarding).
 
 Isolado de ``tenants/views.py`` para manter esse arquivo dentro do limite de 400
 linhas por arquivo exigido pela constituição do projeto.
@@ -20,7 +21,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from users.models import Role
 
-from tenants.models import Tenant, TenantAdminInvite, UserProfile
+from tenants.models import Invite, Tenant, UserProfile
 
 if TYPE_CHECKING:
     from django.contrib.auth.base_user import AbstractBaseUser
@@ -40,8 +41,8 @@ class InviteAlreadyUsedError(Exception):
     """Raised when the invite has already been consumed."""
 
 
-class AdminAlreadyActiveError(Exception):
-    """Raised when a resend is requested but the tenant admin already has a usable password."""
+class InviteeAlreadyActiveError(Exception):
+    """Raised when a resend is requested but the invitee already has a usable password."""
 
 
 def generate_invite_token() -> str:
@@ -52,83 +53,89 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def send_admin_invite_email(
-    invite: TenantAdminInvite, admin_email: str, raw_token: str
+def send_invite_email(
+    invite: Invite, email: str, raw_token: str, role_display_name: str
 ) -> None:
     context = {
-        "admin_name": invite.user.first_name,
+        "invitee_name": invite.user.first_name,
         "tenant_name": invite.tenant.name,
+        "role_display_name": role_display_name,
         "activation_link": f"{settings.FRONTEND_BASE_URL}/ativar-conta/{raw_token}",
         "expires_at": invite.expires_at,
     }
-    subject = render_to_string(
-        "tenants/emails/admin_invite_subject.txt", context
-    ).strip()
-    body = render_to_string("tenants/emails/admin_invite_body.txt", context)
+    subject = render_to_string("tenants/emails/invite_subject.txt", context).strip()
+    body = render_to_string("tenants/emails/invite_body.txt", context)
 
     try:
-        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [admin_email])
+        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [email])
     except Exception:
-        logger.exception(
-            "Failed to send tenant admin invite email for invite %s", invite.id
-        )
+        logger.exception("Failed to send invite email for invite %s", invite.id)
         raise
 
-    logger.info("Tenant admin invite email sent for invite %s", invite.id)
+    logger.info("Invite email sent for invite %s", invite.id)
 
 
 def _issue_invite(
-    user: AbstractBaseUser, tenant: Tenant, admin_email: str
-) -> TenantAdminInvite:
+    user: AbstractBaseUser, tenant: Tenant, email: str, role_display_name: str
+) -> Invite:
     raw_token = generate_invite_token()
-    invite = TenantAdminInvite.objects.create(
+    invite = Invite.objects.create(
         user=user,
         tenant=tenant,
         token_hash=hash_token(raw_token),
         expires_at=timezone.now()
         + timezone.timedelta(hours=settings.TENANT_ADMIN_INVITE_TTL_HOURS),
     )
-    send_admin_invite_email(invite, admin_email, raw_token)
+    send_invite_email(invite, email, raw_token, role_display_name)
     return invite
 
 
-def create_admin_invite(
-    tenant: Tenant, admin_name: str, admin_email: str
-) -> TenantAdminInvite:
+def create_invite(tenant: Tenant, name: str, email: str, role: Role) -> Invite:
+    """Create a user with no usable password, assign them to ``tenant`` with
+    ``role``, and email an activation link.
+    """
     User = get_user_model()
-    user = User(
-        username=admin_email,
-        email=admin_email,
-        first_name=admin_name,
-        is_active=True,
-    )
+    user = User(username=email, email=email, first_name=name, is_active=True)
     user.set_unusable_password()
     user.save()
 
+    UserProfile.objects.create(user=user, tenant=tenant, role_ref=role)
+
+    return _issue_invite(user, tenant, email, role.name if role else "")
+
+
+def create_admin_invite(tenant: Tenant, admin_name: str, admin_email: str) -> Invite:
     admin_role = Role.objects.filter(name="admin").first()
-    UserProfile.objects.create(user=user, tenant=tenant, role_ref=admin_role)
-
-    return _issue_invite(user, tenant, admin_email)
+    return create_invite(tenant, admin_name, admin_email, admin_role)
 
 
-def resend_admin_invite(tenant: Tenant) -> TenantAdminInvite:
-    """Invalidate the tenant admin's pending invite (if any) and issue a new one.
+def resend_invite(tenant: Tenant, user_id: int) -> Invite:
+    """Invalidate the invitee's pending invite (if any) and issue a new one.
 
-    Raises ``AdminAlreadyActiveError`` if the admin has already set a usable
-    password — resending would be pointless and could confuse an active admin.
+    Raises ``InviteeAlreadyActiveError`` if the invitee has already set a usable
+    password — resending would be pointless and could confuse an active user.
     """
-    profile = UserProfile.objects.select_related("user").get(
-        tenant=tenant, role_ref__name="admin"
+    profile = UserProfile.objects.select_related("user", "role_ref").get(
+        tenant=tenant, user_id=user_id
     )
     user = profile.user
     if user.has_usable_password():
-        raise AdminAlreadyActiveError()
+        raise InviteeAlreadyActiveError()
 
-    TenantAdminInvite.objects.filter(
-        user=user, status=TenantAdminInvite.Status.PENDING
-    ).update(status=TenantAdminInvite.Status.INVALIDATED)
+    Invite.objects.filter(user=user, status=Invite.Status.PENDING).update(
+        status=Invite.Status.INVALIDATED
+    )
 
-    return _issue_invite(user, tenant, user.email)
+    role_display_name = profile.role_ref.name if profile.role_ref else ""
+    return _issue_invite(user, tenant, user.email, role_display_name)
+
+
+def resend_admin_invite(tenant: Tenant) -> Invite:
+    """Thin wrapper over ``resend_invite`` preserving the existing admin-resend
+    contract (``POST /api/admin/tenants/{slug}/invites/resend/``, no body).
+    """
+    profile = UserProfile.objects.get(tenant=tenant, role_ref__name="admin")
+    return resend_invite(tenant, profile.user_id)
 
 
 def activate_invite(token: str, password: str) -> AbstractBaseUser:
@@ -140,16 +147,16 @@ def activate_invite(token: str, password: str) -> AbstractBaseUser:
     untouched (not marked as used).
     """
     try:
-        invite = TenantAdminInvite.objects.select_related("user", "tenant").get(
+        invite = Invite.objects.select_related("user", "tenant").get(
             token_hash=hash_token(token)
         )
-    except TenantAdminInvite.DoesNotExist:
+    except Invite.DoesNotExist:
         raise InviteNotFoundError() from None
 
-    if invite.status == TenantAdminInvite.Status.USED:
+    if invite.status == Invite.Status.USED:
         raise InviteAlreadyUsedError()
     if (
-        invite.status == TenantAdminInvite.Status.INVALIDATED
+        invite.status == Invite.Status.INVALIDATED
         or invite.expires_at <= timezone.now()
     ):
         raise InviteExpiredError()
@@ -159,7 +166,7 @@ def activate_invite(token: str, password: str) -> AbstractBaseUser:
     invite.user.set_password(password)
     invite.user.save(update_fields=["password"])
 
-    invite.status = TenantAdminInvite.Status.USED
+    invite.status = Invite.Status.USED
     invite.used_at = timezone.now()
     invite.save(update_fields=["status", "used_at", "updated_at"])
 

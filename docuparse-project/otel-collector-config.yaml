@@ -1,0 +1,92 @@
+# OpenTelemetry Collector config for DocuParse (feature 020-opentelemetry-tracing).
+#
+# Recebe traces via OTLP (gRPC/HTTP) de todos os serviços de aplicação, aplica
+# uma redação básica de atributos (defesa em profundidade — a redação
+# primária roda em processo, no SpanProcessor de shared/docuparse_observability/
+# tracing.py, ver data-model.md) e exporta para o Jaeger via OTLP.
+#
+# Amostragem: tailsamplingprocessor (FR-009/SC-006) retém 100% dos traces
+# com erro e aplica amostragem probabilística configurável para o restante
+# (ver research.md R5, tasks.md T062).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+  # Tail sampling (FR-009/SC-006): a decisão só pode ser tomada depois que o
+  # trace inteiro (ou pelo menos o span de erro) chegou ao Collector, por
+  # isso roda antes da redação/batch. As duas políticas abaixo são avaliadas
+  # com semântica OR (basta uma "sample" para o trace ser retido):
+  #   1. errors-policy: retém 100% dos traces com QUALQUER span em status ERROR.
+  #   2. probabilistic-policy: retém uma fração configurável do restante
+  #      (100% em dev/default; reduzir via OTEL_TAIL_SAMPLING_PERCENTAGE em
+  #      produção para controlar volume sem nunca perder um erro).
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 50000
+    expected_new_traces_per_sec: 10
+    policies:
+      - name: errors-policy
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: probabilistic-policy
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: ${env:OTEL_TAIL_SAMPLING_PERCENTAGE}
+
+  # Redação básica: nega por padrão, permite apenas a allowlist de
+  # data-model.md. Isso já cobre a denylist explícita (http.request.body,
+  # http.response.body, Authorization, chaves *_token/*_secret/*_password)
+  # sem precisar enumerá-la — nenhuma chave fora da allowlist sobrevive.
+  redaction:
+    allow_all_keys: false
+    allowed_keys:
+      - http.method
+      - http.route
+      - http.status_code
+      - net.peer.name
+      - messaging.system
+      - messaging.destination
+      - zeebe.job.type
+      - zeebe.process.instance.key
+      - tenant_id
+      - document_id
+      - correlation_id
+      - error.type
+      - error.message
+      - service.name
+      - service.version
+      - deployment.environment
+      # Atributos do evento de span "exception" (span.record_exception(),
+      # convenção semântica padrão do OTel) — sem esta entrada, o processor
+      # de redação (que nega por padrão) apaga tipo/mensagem/stack trace de
+      # QUALQUER exceção capturada, esvaziando o evento e quebrando o
+      # objetivo da História 4 ("erro de aplicação... com contexto
+      # suficiente para localizá-lo"). Não é dado de documento/pessoal —
+      # é um traceback de código interno da aplicação (data-model.md).
+      - exception.type
+      - exception.message
+      - exception.stacktrace
+      - exception.escaped
+    summary: debug
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [tail_sampling, redaction, batch]
+      exporters: [otlp/jaeger]

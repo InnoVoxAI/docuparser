@@ -16,7 +16,7 @@ from django.test import TestCase
 from django.utils import timezone
 from users.models import Role
 
-from tenants.models import Tenant, TenantAdminInvite
+from tenants.models import Invite, Tenant
 from tenants.tests.test_provisioning import _admin_client
 
 User = get_user_model()
@@ -61,8 +61,8 @@ class TenantCreateAdminInviteTests(TestCase):
         assert profile.tenant_id == tenant.id
         assert profile.role_ref.name == "admin"
 
-        invite = TenantAdminInvite.objects.get(user=admin_user, tenant=tenant)
-        assert invite.status == TenantAdminInvite.Status.PENDING
+        invite = Invite.objects.get(user=admin_user, tenant=tenant)
+        assert invite.status == Invite.Status.PENDING
 
         assert len(mail.outbox) == 1
         assert mail.outbox[0].to == ["jane.doe@acme.com"]
@@ -136,7 +136,7 @@ class InviteActivationTests(TestCase):
             )
         assert response.status_code == 201
         token = _extract_token(mail.outbox[-1].body)
-        invite = TenantAdminInvite.objects.get(user__username=email)
+        invite = Invite.objects.get(user__username=email)
         return token, invite
 
     def test_activate_with_valid_token_and_password_succeeds_and_allows_login(
@@ -156,7 +156,7 @@ class InviteActivationTests(TestCase):
         assert body["data"]["tenant_slug"] == "acme"
 
         invite.refresh_from_db()
-        assert invite.status == TenantAdminInvite.Status.USED
+        assert invite.status == Invite.Status.USED
         assert invite.used_at is not None
 
         admin_user = User.objects.get(username="jane.doe@acme.com")
@@ -187,7 +187,7 @@ class InviteActivationTests(TestCase):
 
     def test_activate_with_already_used_token_returns_410(self) -> None:
         token, invite = self._create_invite(slug="used-tenant", email="used@acme.com")
-        invite.status = TenantAdminInvite.Status.USED
+        invite.status = Invite.Status.USED
         invite.used_at = timezone.now()
         invite.save(update_fields=["status", "used_at"])
 
@@ -227,7 +227,7 @@ class InviteActivationTests(TestCase):
         assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
         invite.refresh_from_db()
-        assert invite.status == TenantAdminInvite.Status.PENDING
+        assert invite.status == Invite.Status.PENDING
 
         admin_user = User.objects.get(username="weak@acme.com")
         assert admin_user.has_usable_password() is False
@@ -252,7 +252,7 @@ class InviteResendTests(TestCase):
             )
         assert response.status_code == 201
         token = _extract_token(mail.outbox[-1].body)
-        invite = TenantAdminInvite.objects.get(user__username=email)
+        invite = Invite.objects.get(user__username=email)
         return token, invite
 
     def test_resend_invalidates_previous_pending_and_creates_new_pending(
@@ -273,14 +273,12 @@ class InviteResendTests(TestCase):
         assert "expires_at" in body["data"]
 
         old_invite.refresh_from_db()
-        assert old_invite.status == TenantAdminInvite.Status.INVALIDATED
+        assert old_invite.status == Invite.Status.INVALIDATED
 
         new_invite = (
-            TenantAdminInvite.objects.filter(user=old_invite.user)
-            .exclude(id=old_invite.id)
-            .get()
+            Invite.objects.filter(user=old_invite.user).exclude(id=old_invite.id).get()
         )
-        assert new_invite.status == TenantAdminInvite.Status.PENDING
+        assert new_invite.status == Invite.Status.PENDING
         assert new_invite.token_hash != old_invite.token_hash
 
         new_token = _extract_token(mail.outbox[-1].body)
@@ -318,3 +316,61 @@ class InviteResendTests(TestCase):
 
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "ADMIN_ALREADY_ACTIVE"
+
+
+class TenantUsersInviteTests(TestCase):
+    """FR-016 regression: tenant_users_view (platform operator, `tenants.manage`)
+    must invite users instead of creating them with a plaintext password."""
+
+    def setUp(self) -> None:
+        self.client, self.tenant, self.user = _admin_client()
+
+    def test_create_user_without_password_sends_invite_even_for_platform_role(
+        self,
+    ) -> None:
+        platform_role, _ = Role.objects.get_or_create(
+            name="admin", defaults={"is_platform_role": True}
+        )
+        if not platform_role.is_platform_role:
+            platform_role.is_platform_role = True
+            platform_role.save(update_fields=["is_platform_role"])
+
+        response = self.client.post(
+            f"/api/admin/tenants/{self.tenant.slug}/users/",
+            {
+                "name": "Recovered Admin",
+                "email": "recovered-admin@acme.com",
+                "role_id": str(platform_role.id),
+            },
+            format="json",
+        )
+
+        assert response.status_code == 201, response.content
+        body = response.json()
+        assert body["error"] is None
+        assert body["meta"]["invite_sent"] is True
+
+        user = User.objects.get(username="recovered-admin@acme.com")
+        assert user.has_usable_password() is False
+
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == ["recovered-admin@acme.com"]
+
+    def test_create_user_with_email_already_in_use_returns_409(self) -> None:
+        role, _ = Role.objects.get_or_create(name="operator")
+        User.objects.create_user(
+            username="taken@acme.com", email="taken@acme.com", password="pw"
+        )
+
+        response = self.client.post(
+            f"/api/admin/tenants/{self.tenant.slug}/users/",
+            {
+                "name": "Duplicate",
+                "email": "taken@acme.com",
+                "role_id": str(role.id),
+            },
+            format="json",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "USER_EXISTS"

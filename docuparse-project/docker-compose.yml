@@ -116,9 +116,16 @@ services:
     ports:
       - "5173:5173"
     environment:
-      OTEL_SERVICE_NAME: frontend
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
-      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
+      # Precisam do prefixo VITE_ para chegar ao bundle do browser via
+      # `import.meta.env` (src/shared/lib/tracing.ts) — Vite só expõe vars
+      # VITE_* ao cliente. O browser roda no HOST (fora da rede Docker), então
+      # o endpoint aponta para a porta publicada do otel-collector em
+      # localhost, não para o hostname interno `otel-collector` (inalcançável
+      # a partir do browser) nem para a porta gRPC 4317 (o SDK Web usa o
+      # exporter OTLP/HTTP, porta 4318).
+      VITE_OTEL_SERVICE_NAME: frontend
+      VITE_OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318/v1/traces
+      VITE_DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       # Alvos do proxy do Vite dev server (server-side). Sem prefixo VITE_ para
       # não vazar no bundle do browser: o cliente usa caminhos relativos e o
       # proxy encaminha para estes hostnames internos do Docker.

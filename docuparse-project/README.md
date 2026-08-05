@@ -13,6 +13,7 @@ O projeto é dividido em microserviços:
 5. **layout-service**: classificação de layout (porta 8090)
 6. **langextract-service**: extração estruturada (porta 8091)
 7. **postgres**, **redis** e **minio** como infraestrutura local
+8. **otel-collector** e **jaeger**: coleta e visualização de rastreamento distribuído (ver [docs/TECHNICAL.md](docs/TECHNICAL.md#observabilidade-e-rastreamento-distribuído))
 
 ## Como Rodar com Docker Compose
 
@@ -41,6 +42,7 @@ Backend OCR:    http://127.0.0.1:8080/health
 Layout:         http://127.0.0.1:8090/health
 LangExtract:    http://127.0.0.1:8091/health
 MinIO Console:  http://127.0.0.1:9001
+Jaeger UI:      http://127.0.0.1:16686
 ```
 
 6.  Para parar tudo:
@@ -82,6 +84,7 @@ Copie esse diretorio para armazenamento externo ao servidor, por exemplo outro d
 
 ## Observações de Desenvolvimento
 
+- Todos os serviços exportam traces (OpenTelemetry) para o `otel-collector`, visualizáveis no Jaeger (`http://127.0.0.1:16686`). Variáveis relevantes: `DEPLOYMENT_ENVIRONMENT` e `OTEL_TAIL_SAMPLING_PERCENTAGE` (ambas com default de dev, configuráveis no `.env` — ver `.env.example`). Detalhes completos (propagação, redação de dados sensíveis, tail sampling) em [docs/TECHNICAL.md](docs/TECHNICAL.md#observabilidade-e-rastreamento-distribuído).
 - O `backend-core` executa `python manage.py migrate --noinput` antes de iniciar no compose.
 - `backend-com` e `backend-core` compartilham o volume `docuparse-storage`; isso permite que o core leia arquivos recebidos por email, WhatsApp ou upload manual.
 - `backend-com` publica `document.received` e sincroniza o evento com `backend-core` por `BACKEND_CORE_DOCUMENT_RECEIVED_URL`.

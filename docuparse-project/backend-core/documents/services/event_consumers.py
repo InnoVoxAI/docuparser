@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import functools
 import logging
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from django.db import transaction
+from docuparse_events import extract_trace_link
 from docuparse_observability import log_event
 from events import (
     DocumentReceivedEvent,
@@ -13,6 +15,7 @@ from events import (
     OCRCompletedEvent,
     OCRFailedEvent,
 )
+from opentelemetry import trace
 
 from documents.models import (
     Document,
@@ -22,6 +25,27 @@ from documents.models import (
 )
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer(__name__)
+
+F = TypeVar("F", bound=Callable[[dict], Any])
+
+
+def _traced_consumer(span_name: str) -> Callable[[F], F]:
+    """Inicia o span de processamento com um Link para o trace de origem do
+    evento (research.md R4), quando `trace_context` estiver presente."""
+
+    def decorator(func: F) -> F:
+        @functools.wraps(func)
+        def wrapper(payload: dict[str, Any]) -> Any:
+            link = extract_trace_link(payload)
+            with _tracer.start_as_current_span(
+                span_name, links=[link] if link else []
+            ):
+                return func(payload)
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
 
 
 class DuplicateDocumentError(Exception):
@@ -30,6 +54,7 @@ class DuplicateDocumentError(Exception):
         super().__init__(f"O Documento '{filename}' já existe!")
 
 
+@_traced_consumer("document.received process")
 def consume_document_received(payload: dict[str, Any]) -> Document:
     event = DocumentReceivedEvent.model_validate(payload)
     with transaction.atomic():
@@ -70,6 +95,7 @@ def consume_document_received(payload: dict[str, Any]) -> Document:
         return document
 
 
+@_traced_consumer("extraction.completed process")
 def consume_extraction_completed(payload: dict[str, Any]) -> Document:
     event = ExtractionCompletedEvent.model_validate(payload)
     with transaction.atomic():
@@ -108,6 +134,7 @@ def consume_extraction_completed(payload: dict[str, Any]) -> Document:
         return document
 
 
+@_traced_consumer("ocr.completed process")
 def consume_ocr_completed(payload: dict[str, Any]) -> Document:
     event = OCRCompletedEvent.model_validate(payload)
     with transaction.atomic():
@@ -156,6 +183,7 @@ def consume_ocr_completed(payload: dict[str, Any]) -> Document:
         return document
 
 
+@_traced_consumer("ocr.failed process")
 def consume_ocr_failed(payload: dict[str, Any]) -> Document:
     event = OCRFailedEvent.model_validate(payload)
     with transaction.atomic():
@@ -190,6 +218,7 @@ def consume_ocr_failed(payload: dict[str, Any]) -> Document:
         return document
 
 
+@_traced_consumer("erp.sent process")
 def consume_erp_sent(payload: dict[str, Any]) -> Document:
     event = ERPSentEvent.model_validate(payload)
     with transaction.atomic():
@@ -215,6 +244,7 @@ def consume_erp_sent(payload: dict[str, Any]) -> Document:
         return document
 
 
+@_traced_consumer("erp.failed process")
 def consume_erp_failed(payload: dict[str, Any]) -> Document:
     event = ERPFailedEvent.model_validate(payload)
     with transaction.atomic():

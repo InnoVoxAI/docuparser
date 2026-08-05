@@ -3,7 +3,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parents[3]
+_config_parents = Path(__file__).resolve().parents
+# parents[3] assume a profundidade do checkout local (backend-com/../../../);
+# em containers (`/app/config.py`) essa profundidade não existe — cai para o
+# ancestral mais raso disponível, o que é inofensivo porque
+# DOCUPARSE_LOCAL_STORAGE_DIR/DOCUPARSE_LOCAL_EVENT_DIR sempre vêm do
+# ambiente em Docker (PROJECT_DIR só é usado como default de dev local).
+PROJECT_DIR = _config_parents[3] if len(_config_parents) > 3 else _config_parents[-1]
 
 
 def _env(key: str, default: str = "") -> str:

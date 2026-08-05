@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
+from opentelemetry import propagate, trace
+from opentelemetry.trace import Link
+
 
 @dataclass(frozen=True)
 class EventMessage:
@@ -33,6 +36,7 @@ class LocalJsonlEventBus:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def publish(self, stream: str, event: dict[str, Any]) -> int:
+        event = inject_trace_context(event)
         path = self._stream_path(stream)
         next_offset = self._count(path)
         with path.open("a", encoding="utf-8") as file:
@@ -88,6 +92,7 @@ class RedisStreamEventBus:
 
     def publish(self, stream: str, event: dict[str, Any]) -> str:
         validate_stream_name(stream)
+        event = inject_trace_context(event)
         payload = json.dumps(event, separators=(",", ":"), default=str)
         event_id = self.client.xadd(stream, {"payload": payload})
         return _decode(event_id)
@@ -156,6 +161,40 @@ def publish_dead_letter(
             "payload": entry.payload,
         },
     )
+
+
+def inject_trace_context(event: dict[str, Any]) -> dict[str, Any]:
+    """Popula `trace_context` com o contexto de trace ativo (research.md R4).
+
+    Sem trace ativo (ex.: publisher ainda não instrumentado), o evento é
+    devolvido sem alteração e `trace_context` permanece como já estava
+    (tipicamente `None`, o default do schema). Muta `event` in-place (além de
+    devolvê-lo) para que callers que guardam a mesma referência — ex.:
+    `*_event_worker.py` publicando e retornando o mesmo dict — enxerguem o
+    `trace_context` efetivamente publicado, em vez de uma cópia divergente.
+    """
+    carrier: dict[str, str] = {}
+    propagate.inject(carrier)
+    if not carrier:
+        return event
+    event["trace_context"] = carrier
+    return event
+
+
+def extract_trace_link(event: dict[str, Any]) -> Link | None:
+    """Extrai um `Link` para o contexto de trace de origem de um evento.
+
+    Retorna `None` quando `trace_context` está ausente/vazio (consumidor deve
+    então iniciar um trace novo e desconectado, em vez de falhar).
+    """
+    carrier = event.get("trace_context")
+    if not carrier:
+        return None
+    context = propagate.extract(carrier)
+    span_context = trace.get_current_span(context).get_span_context()
+    if not span_context.is_valid:
+        return None
+    return Link(span_context)
 
 
 def validate_stream_name(stream: str) -> None:

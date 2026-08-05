@@ -3,6 +3,7 @@ import structlog
 from pyzeebe import ZeebeTaskRouter
 
 from workers._http import core_client
+from workers._tracing import traced_job
 
 log = structlog.get_logger()
 
@@ -14,6 +15,7 @@ extract_fields = ZeebeTaskRouter()
     timeout_ms=150_000,
     max_jobs_to_activate=3,
 )
+@traced_job("docuparse-extract-fields")
 async def _extract_fields(
     document_id: str,
     layout: str = "",

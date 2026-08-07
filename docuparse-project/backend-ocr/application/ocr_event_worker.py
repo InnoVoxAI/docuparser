@@ -1,26 +1,50 @@
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol, TypeVar
 from uuid import uuid4
 
 from docuparse_events import (
     EventBus,
     event_bus_from_env,
+    extract_trace_link,
     publish_dead_letter,
     sleep_interval,
 )
 from docuparse_observability import log_event
 from docuparse_storage import document_ocr_raw_text_key, get_storage
 from events import DocumentReceivedEvent, OCRCompletedEvent, OCRFailedEvent
+from opentelemetry import trace
 
 from application.process_document import process_document
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer(__name__)
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _traced_consumer(span_name: str) -> Callable[[F], F]:
+    """Inicia o span de processamento com um Link para o trace de origem do
+    evento (research.md R4), quando `trace_context` estiver presente."""
+
+    def decorator(func: F) -> F:
+        @functools.wraps(func)
+        def wrapper(payload: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
+            link = extract_trace_link(payload)
+            with _tracer.start_as_current_span(
+                span_name, links=[link] if link else []
+            ):
+                return func(payload, *args, **kwargs)
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
 
 
 class Storage(Protocol):
@@ -33,6 +57,7 @@ class EventPublisher(Protocol):
     def publish(self, stream: str, event: dict[str, Any]) -> int | str: ...
 
 
+@_traced_consumer("document.received process")
 def handle_document_received_event(
     payload: dict[str, Any],
     storage: Storage,

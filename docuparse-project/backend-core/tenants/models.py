@@ -70,3 +70,27 @@ class UserProfile(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.user_id}@{self.tenant_id}"
+
+
+class Invite(TimeStampedModel):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        USED = "USED", "Used"
+        INVALIDATED = "INVALIDATED", "Invalidated"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="invites",
+    )
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="invites")
+    token_hash = models.CharField(max_length=128, unique=True, db_index=True)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING
+    )
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"{self.user_id}@{self.tenant_id} ({self.status})"

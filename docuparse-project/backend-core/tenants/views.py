@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import status
 from rest_framework.decorators import (
@@ -13,7 +14,17 @@ from rest_framework.response import Response
 from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
 
-from tenants.models import Tenant
+from tenants.invites import (
+    InviteAlreadyUsedError,
+    InviteeAlreadyActiveError,
+    InviteExpiredError,
+    InviteNotFoundError,
+    activate_invite,
+    create_admin_invite,
+    create_invite,
+    resend_admin_invite,
+)
+from tenants.models import Tenant, UserProfile
 from tenants.serializers import (
     TenantCreateSerializer,
     TenantSerializer,
@@ -22,31 +33,8 @@ from tenants.serializers import (
 
 
 def _provision_tenant(data: dict) -> tuple[Tenant | None, Response | None]:
-    """Create the Tenant record, PostgreSQL schema, and a default admin user."""
-    import os
-
-    from users.models import Role
-
-    from tenants.models import UserProfile
-
+    """Create the Tenant record, PostgreSQL schema, and its admin invite."""
     slug = data["slug"]
-
-    # ADMIN_PASSWORD has no fallback: seeding a new tenant admin with a hardcoded
-    # password would leave a known credential in place until someone remembers to
-    # change it. Fail loudly instead so the deploy is forced to configure it.
-    admin_password = os.environ.get("ADMIN_PASSWORD")
-    if not admin_password:
-        return None, Response(
-            {
-                "data": None,
-                "error": {
-                    "code": "ADMIN_PASSWORD_NOT_CONFIGURED",
-                    "detail": "ADMIN_PASSWORD must be set in the environment to provision a tenant admin.",
-                },
-                "meta": {},
-            },
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
 
     try:
         with transaction.atomic():
@@ -70,23 +58,22 @@ def _provision_tenant(data: dict) -> tuple[Tenant | None, Response | None]:
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
-    # Seed a default admin user for the new tenant using the same credentials
-    # convention as seed_data: admin@<slug>.<ADMIN_EMAIL domain>.
-    tenant_admin_email = f"admin@{slug}"
-
-    User = get_user_model()
-    user, created = User.objects.get_or_create(
-        username=tenant_admin_email,
-        defaults={"email": tenant_admin_email, "is_active": True, "is_staff": False},
-    )
-    if created:
-        user.set_password(admin_password)
-        user.save()
-
-    admin_role = Role.objects.filter(name="admin").first()
-    UserProfile.objects.get_or_create(
-        user=user, defaults={"tenant": tenant, "role_ref": admin_role}
-    )
+    try:
+        create_admin_invite(tenant, data["admin_name"], data["admin_email"])
+    except Exception:
+        # Email delivery failure does NOT roll back the tenant/user already
+        # created above — the operator is expected to use the resend endpoint.
+        return tenant, Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "INVITE_DELIVERY_FAILED",
+                    "detail": "Tenant criado, mas o convite não pôde ser enviado. Use o reenvio de convite.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     return tenant, None
 
@@ -121,6 +108,19 @@ def tenant_list_create_view(request: Request) -> Response:
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+        admin_email_errors = errors.get("admin_email", [])
+        if any("já está em uso" in str(e) for e in admin_email_errors):
+            return Response(
+                {
+                    "data": None,
+                    "error": {
+                        "code": "ADMIN_EMAIL_IN_USE",
+                        "detail": f"E-mail '{request.data.get('admin_email')}' já está em uso por outra conta.",
+                    },
+                    "meta": {},
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response(
             {
                 "data": None,
@@ -134,8 +134,122 @@ def tenant_list_create_view(request: Request) -> Response:
     if err is not None:
         return err
     return Response(
-        {"data": TenantSerializer(tenant).data, "error": None, "meta": {}},
+        {
+            "data": TenantSerializer(tenant).data,
+            "error": None,
+            "meta": {"admin_invite_sent": True},
+        },
         status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([])
+def invite_activate_view(request: Request, token: str) -> Response:
+    password = request.data.get("password", "")
+
+    try:
+        user = activate_invite(token, password)
+    except InviteNotFoundError:
+        return Response(
+            {
+                "data": None,
+                "error": {"code": "INVITE_NOT_FOUND", "detail": "Convite inválido."},
+                "meta": {},
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    except InviteAlreadyUsedError:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "INVITE_ALREADY_USED",
+                    "detail": "Este convite já foi utilizado.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_410_GONE,
+        )
+    except InviteExpiredError:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "INVITE_EXPIRED",
+                    "detail": "Este convite expirou. Solicite um novo ao administrador da plataforma.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_410_GONE,
+        )
+    except DjangoValidationError as exc:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "detail": {"password": exc.messages},
+                },
+                "meta": {},
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    profile = UserProfile.objects.select_related("tenant").get(user=user)
+    return Response(
+        {
+            "data": {"email": user.email, "tenant_slug": profile.tenant.slug},
+            "error": None,
+            "meta": {},
+        }
+    )
+
+
+@api_view(["POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("tenants.manage")])
+def invite_resend_view(request: Request, slug: str) -> Response:
+    try:
+        tenant = Tenant.objects.get(slug=slug)
+    except Tenant.DoesNotExist:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "TENANT_NOT_FOUND",
+                    "detail": f"No tenant with slug '{slug}'.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        invite = resend_admin_invite(tenant)
+    except InviteeAlreadyActiveError:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "ADMIN_ALREADY_ACTIVE",
+                    "detail": "O administrador deste tenant já ativou a conta.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    return Response(
+        {
+            "data": {
+                "admin_email": invite.user.email,
+                "expires_at": invite.expires_at,
+            },
+            "error": None,
+            "meta": {},
+        }
     )
 
 
@@ -265,20 +379,21 @@ def tenant_users_view(request: Request, slug: str) -> Response:
         ]
         return Response({"data": data, "error": None, "meta": {"count": len(data)}})
 
-    # POST — create a user and assign them to this tenant
+    # POST — invite a user to this tenant (FR-016: no plaintext password;
+    # invitee sets their own password via the activation link, same as
+    # tenants.invites.create_invite used by the tenant-admin-facing endpoint).
     User = get_user_model()
     name = str(request.data.get("name", "")).strip()
     email = str(request.data.get("email", "")).strip()
-    password = str(request.data.get("password", ""))
     role_id = request.data.get("role_id")
 
-    if not all([name, email, password, role_id]):
+    if not all([name, email, role_id]):
         return Response(
             {
                 "data": None,
                 "error": {
                     "code": "VALIDATION_ERROR",
-                    "detail": "name, email, password e role_id são obrigatórios.",
+                    "detail": "name, email e role_id são obrigatórios.",
                 },
                 "meta": {},
             },
@@ -312,27 +427,31 @@ def tenant_users_view(request: Request, slug: str) -> Response:
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    user = User.objects.create_user(
-        username=email,
-        email=email,
-        password=password,
-        first_name=name,
-        is_active=True,
-    )
-    from tenants.models import UserProfile
-
-    UserProfile.objects.create(user=user, tenant=tenant, role_ref=role)
+    try:
+        invite = create_invite(tenant=tenant, name=name, email=email, role=role)
+    except Exception:
+        return Response(
+            {
+                "data": None,
+                "error": {
+                    "code": "INVITE_DELIVERY_FAILED",
+                    "detail": "Usuário criado, mas o convite não pôde ser enviado. Use o reenvio de convite.",
+                },
+                "meta": {},
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     return Response(
         {
             "data": {
-                "id": user.pk,
-                "name": user.first_name,
-                "email": user.email,
-                "is_active": user.is_active,
+                "id": invite.user.pk,
+                "name": invite.user.first_name,
+                "email": invite.user.email,
+                "is_active": invite.user.is_active,
             },
             "error": None,
-            "meta": {},
+            "meta": {"invite_sent": True},
         },
         status=status.HTTP_201_CREATED,
     )

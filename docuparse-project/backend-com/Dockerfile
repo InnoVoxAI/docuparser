@@ -18,7 +18,7 @@ WORKDIR /app
 # Install dependencies first (from the lockfile only) so this layer is cached
 # independently of application code changes.
 COPY backend-com/pyproject.toml backend-com/uv.lock ./
-RUN uv sync --frozen --no-install-project
+RUN uv sync --frozen --no-install-project --extra debounce
 
 # Packages shared across services; copied (not flattened into /app) so they
 # resolve via PYTHONPATH exactly like the compose bind mounts do.
@@ -27,7 +27,7 @@ COPY contracts/ /contracts
 
 # Copy the source code into the container
 COPY backend-com/ .
-RUN uv sync --frozen
+RUN uv sync --frozen --extra debounce
 
 # Expose the port that the application listens on
 EXPOSE 8070

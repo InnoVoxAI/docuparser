@@ -44,6 +44,27 @@ CANDIDATE_CONTROLLERS = [
     "fornecedores", "despesas", "cobrancas", "planodecontas", "notafiscal",
 ]
 
+# Parâmetros OBRIGATÓRIOS por controller. Sem eles a API responde 403 com
+# "Id do condomínio não informado" e o controller pareceria inexistente.
+# 'todos' é o coringa aceito por condominios para devolver a carteira inteira.
+CONTROLLER_REQUIRED_PARAMS: dict[str, dict] = {
+    "condominios": {"id": "todos"},
+}
+
+# Quando um controller reclama de parâmetro faltando, estes candidatos são
+# testados em ordem até um responder 200. O que funcionar entra no achado.
+# `{cond_id}` é substituído pelo id de condomínio já descoberto, quando houver.
+CANDIDATE_REQUIRED_PARAMS: list[dict] = [
+    {"id": "todos"},
+    {"idCondominio": "todos"},
+    {"idCondominio": "{cond_id}"},
+    {"id": "{cond_id}"},
+    {"ID_CONDOMINIO_COND": "{cond_id}"},
+]
+
+# Sinais, na mensagem de erro, de que faltou parâmetro (≠ endpoint inexistente).
+_MISSING_PARAM_HINTS = ("não informado", "nao informado", "obrigat", "informe ", "não informada")
+
 # Params candidatos para filtro server-side por CNPJ (Fase B task 2.1).
 CANDIDATE_CNPJ_FILTER_PARAMS = ["CNPJ", "cnpj", "pesquisa", "busca", "ST_CGC_CON", "ST_CNPJ_CON"]
 
@@ -109,10 +130,24 @@ def looks_like_cpf(v: Any) -> bool:
     return bool(re.fullmatch(r"\D*\d{11}\D*", str(v if v is not None else "")))
 
 
+# Campos cujo NOME indica credencial. O cadastro de condomínio da v2 traz
+# st_apptoken_usu / st_accesstoken_usu / st_senha_usu: gravá-los na amostra
+# colocaria credenciais em disco (fere RI-002 e RI-004).
+SECRET_FIELD_RE = re.compile(r"(?i)(token|senha|password|passwd|secret|chave|api[_-]?key|md5)")
+
+
+def looks_like_secret_field(name: Any) -> bool:
+    return bool(SECRET_FIELD_RE.search(str(name)))
+
+
 def mask_pii_in_record(record: dict) -> dict:
     out = {}
     for k, v in record.items():
-        if looks_like_cnpj(v):
+        # Nome de campo tem precedência sobre valor: um campo de token com valor
+        # curto não seria pego por nenhuma heurística de formato.
+        if looks_like_secret_field(k):
+            out[k] = "" if not str(v or "").strip() else "***REDACTED***"
+        elif looks_like_cnpj(v):
             out[k] = mask_cnpj(v)
         elif looks_like_cpf(v):
             out[k] = mask_cpf(v)
@@ -138,31 +173,117 @@ def guess_cnpj_field(records: list[dict]) -> Optional[str]:
     return c.most_common(1)[0][0] if c else None
 
 
-def guess_id_field(records: list[dict]) -> Optional[str]:
-    """Heurística: chave que começa com 'id' e cujo valor é numérico."""
+def guess_id_field(records: list[dict], entidade: str = "condominio") -> Optional[str]:
+    """Descobre o NOME do campo identificador da própria entidade.
+
+    Contar ocorrências não basta: um registro de condomínio traz uma dúzia de
+    campos `id_*` numéricos (plano de contas, tipo de cobrança, CNAE…), todos
+    empatados. Escolher o errado corromperia o índice da Fase 4 em silêncio —
+    o CNPJ casaria, mas o id comparado com o gabarito seria de outra entidade.
+    Por isso a escolha é por PONTUAÇÃO, priorizando o campo que nomeia a
+    própria entidade (convenção `id_<entidade>_<sufixo>` da API).
+    """
     if FIELD_ID_OVERRIDE:
         return FIELD_ID_OVERRIDE
-    c: Counter = Counter()
+    ent = str(entidade or "").lower().rstrip("s")
+    candidatos: dict[str, int] = {}
+    valores: dict[str, set] = {}
     for r in records:
         for k, v in r.items():
-            if re.match(r"(?i)^id[_a-z]*$", str(k)) and only_digits(v):
-                c[k] += 1
-    return c.most_common(1)[0][0] if c else None
+            nome = str(k).lower()
+            if not re.match(r"(?i)^id[_a-z]*$", nome) or not only_digits(v):
+                continue
+            score = 1
+            if ent and re.match(rf"^id_{re.escape(ent)}", nome):
+                score = 100        # id_condominio_* -> é o id da própria entidade
+            elif ent and ent in nome:
+                score = 10         # cita a entidade em outra posição
+            candidatos[k] = max(candidatos.get(k, 0), score)
+            valores.setdefault(k, set()).add(str(v))
+    if not candidatos:
+        return None
+    # Desempate: id de verdade é único por registro; um FK repete entre registros.
+    def chave(k: str):
+        return (candidatos[k], len(valores[k]))
+    return max(candidatos, key=chave)
+
+
+def _unwrap_single_key(records: list[dict]) -> list[dict]:
+    """Desembrulha envelopes do tipo [{'condominio': [{...}]}] em [{...}].
+
+    A v2 aninha a entidade sob uma chave com o nome dela. Sem desembrulhar, o
+    achado reportaria 1 registro com um único "campo" chamado `condominio`, e a
+    heurística de nome de CNPJ (e o índice da Fase 4) não achariam nada.
+    """
+    out: list[dict] = []
+    mudou = False
+    for r in records:
+        if isinstance(r, dict) and len(r) == 1:
+            v = next(iter(r.values()))
+            if isinstance(v, dict) and v:
+                out.append(v)
+                mudou = True
+                continue
+            if isinstance(v, list) and v and all(isinstance(i, dict) for i in v):
+                out.extend(v)
+                mudou = True
+                continue
+        out.append(r)
+    # Envelopes podem ser aninhados em mais de um nível; repete até estabilizar.
+    return _unwrap_single_key(out) if mudou else out
 
 
 def extract_records(body: Any) -> list[dict]:
     """Normaliza a resposta em lista de registros, seja qual for o envelope."""
+    records: list[dict]
     if isinstance(body, list):
-        return [r for r in body if isinstance(r, dict)]
-    if isinstance(body, dict):
+        records = [r for r in body if isinstance(r, dict)]
+    elif isinstance(body, dict):
         for key in ("data", "records", "result", "results", "items"):
             v = body.get(key)
             if isinstance(v, list):
-                return [r for r in v if isinstance(r, dict)]
-        if body and all(str(k).isdigit() for k in body.keys()):
-            return [v for v in body.values() if isinstance(v, dict)]
-        return [body] if body else []
-    return []
+                records = [r for r in v if isinstance(r, dict)]
+                break
+        else:
+            if body and all(str(k).isdigit() for k in body.keys()):
+                records = [v for v in body.values() if isinstance(v, dict)]
+            else:
+                records = [body] if body else []
+    else:
+        return []
+    return _unwrap_single_key(records)
+
+
+# Chaves que a API usa para devolver erro DENTRO do corpo. 'status' é o padrão da v1
+# (>=100 = erro); 'msg' é o que o backend v2 usa junto de um HTTP 5xx.
+BODY_ERROR_KEYS = ("msg", "mensagem", "erro", "error", "message")
+
+
+def detect_body_error(body: Any, http_status: Optional[int] = None) -> Optional[dict]:
+    """Detecta erro sinalizado no corpo da resposta, não pelo status HTTP.
+
+    Devolve {'campo': <nome>, 'valor': <conteúdo>} ou None. Existe porque o erro
+    pode chegar por três caminhos: status HTTP, envelope no corpo, ou os dois —
+    e um envelope de erro NÃO pode ser confundido com um registro de dados.
+    """
+    if not isinstance(body, dict):
+        return None
+    # Padrão v1: campo 'status' numérico onde >=100 significa erro.
+    st = body.get("status")
+    if st is not None:
+        try:
+            if int(st) >= 100:
+                return {"campo": "status", "valor": st}
+        except (TypeError, ValueError):
+            pass
+    # Padrão v2 observado: corpo só com uma chave de mensagem, sob HTTP 4xx/5xx.
+    for k in BODY_ERROR_KEYS:
+        if k in body and isinstance(body[k], str) and body[k].strip():
+            # Só é erro se o corpo não parece um registro de dados: ou o HTTP já
+            # falhou, ou a mensagem é a única coisa que veio.
+            if (http_status or 0) >= 400 or len(body) == 1:
+                return {"campo": k, "valor": body[k]}
+    return None
 
 
 def detect_pagination(body: Any) -> dict:
@@ -238,12 +359,28 @@ def make_client(cfg: Config, bad_auth: bool = False) -> ReadOnlyClient:
 # ------------------------------------------------------------------------------------
 # Sonda primitiva e busca de registros
 # ------------------------------------------------------------------------------------
+def looks_like_missing_param(body_error: Optional[dict]) -> bool:
+    """A mensagem indica parâmetro obrigatório faltando (≠ endpoint inexistente)?"""
+    if not body_error:
+        return False
+    txt = str(body_error.get("valor", "")).lower()
+    return any(h in txt for h in _MISSING_PARAM_HINTS)
+
+
+def merge_required_params(controller: str, params: Optional[dict]) -> dict:
+    """Junta os params pedidos aos obrigatórios conhecidos daquele controller."""
+    out = dict(CONTROLLER_REQUIRED_PARAMS.get(controller) or {})
+    out.update(params or {})
+    return out
+
+
 def probe(client: ReadOnlyClient, base_url: str, controller: str, params: Optional[dict] = None) -> dict:
     url = f"{base_url}/condor/{controller}"
+    params = merge_required_params(controller, params)
     finding: dict = {
         "controller": controller, "url": url, "params": params or {},
-        "http_status": None, "body_status": None, "exists": None,
-        "num_records": 0, "fields": [], "sample": None,
+        "http_status": None, "body_status": None, "body_error": None, "exists": None,
+        "requer_param": False, "num_records": 0, "fields": [], "sample": None,
         "pagination_hint": {}, "error": None,
     }
     try:
@@ -252,13 +389,22 @@ def probe(client: ReadOnlyClient, base_url: str, controller: str, params: Option
         body = safe_json(resp)
         if isinstance(body, dict):
             finding["body_status"] = body.get("status")
-        records = extract_records(body)
-        finding["num_records"] = len(records)
+        finding["body_error"] = detect_body_error(body, resp.status_code)
         finding["pagination_hint"] = detect_pagination(body)
-        if records:
-            finding["fields"] = sorted(records[0].keys())
-            finding["sample"] = mask_pii_in_record(records[0])
-        finding["exists"] = bool(resp.status_code == 200 and (records or body is not None))
+        if finding["body_error"]:
+            # Envelope de erro não é dado: não vira registro nem campo descoberto,
+            # senão 'msg' entraria no relatório como se fosse coluna da entidade.
+            finding["requer_param"] = looks_like_missing_param(finding["body_error"])
+            # Reclamar de parâmetro faltando PROVA que o controller existe —
+            # marcar como inexistente aqui seria um falso negativo do §7.1.
+            finding["exists"] = True if finding["requer_param"] else False
+        else:
+            records = extract_records(body)
+            finding["num_records"] = len(records)
+            if records:
+                finding["fields"] = sorted(records[0].keys())
+                finding["sample"] = mask_pii_in_record(records[0])
+            finding["exists"] = bool(resp.status_code == 200 and (records or body is not None))
     except Exception as e:  # noqa: BLE001
         finding["error"] = repr(e)
     return finding
@@ -267,13 +413,19 @@ def probe(client: ReadOnlyClient, base_url: str, controller: str, params: Option
 def fetch_records(client: ReadOnlyClient, cfg: Config, controller: str,
                   want: int = 25, extra_params: Optional[dict] = None) -> list[dict]:
     """Busca registros REAIS (não mascarados) para heurística/índice. Nunca são gravados crus."""
-    params = {"itensPorPagina": want}
+    params = merge_required_params(controller, {"itensPorPagina": want})
     if extra_params:
         params.update(extra_params)
     body = None
     try:
         resp = client.get(f"{cfg.base_url}/condor/{controller}", params=params)
         body = safe_json(resp)
+        err = detect_body_error(body, resp.status_code)
+        if err:
+            # Sem isto, o envelope de erro viraria "registro" e envenenaria a
+            # heurística de nome de campo e o índice da Fase 4.
+            logger.warning("%s respondeu erro no corpo (%s); descartando", controller, err["campo"])
+            return []
     except Exception as e:  # noqa: BLE001
         logger.warning("falha ao buscar %s: %r", controller, e)
     return extract_records(body)
@@ -282,13 +434,51 @@ def fetch_records(client: ReadOnlyClient, cfg: Config, controller: str,
 # ------------------------------------------------------------------------------------
 # Fase 0 — autenticação & modelo de erro  (§7.4)
 # ------------------------------------------------------------------------------------
+def _erro_via(finding: dict) -> str:
+    """Por onde o erro chega: status HTTP, envelope no corpo, os dois, ou nenhum."""
+    via_http = (finding["http_status"] or 0) >= 400
+    via_body = bool(finding["body_error"]) or bool(finding["body_status"])
+    if via_http and via_body:
+        return "http_status+envelope_no_corpo"
+    if via_http:
+        return "http_status"
+    if via_body:
+        return "envelope_no_corpo"
+    return "indeterminado"
+
+
+# Termos que, numa mensagem de erro do corpo, indicam recusa de credencial —
+# e não uma falha genérica do servidor.
+_AUTH_DENIED_HINTS = ("permiss", "token", "autoriz", "unauthor", "forbidden", "credencial", "licen")
+
+
 def phase0_auth_errors(client: ReadOnlyClient, cfg: Config) -> dict:
     logger.info("== Fase 0: auth & modelo de erro ==")
     out: dict = {}
     valid = probe(client, cfg.base_url, "condominios", params={"itensPorPagina": 1})
+    # 'autenticou' é tri-estado de propósito: um HTTP 500 com "permissão negada"
+    # no corpo não é autenticação bem-sucedida, mas também não é o 401 clássico.
+    autenticou: Optional[bool]
+    motivo = None
+    body_err_txt = str((valid["body_error"] or {}).get("valor", "")).lower()
+    if valid["error"] is not None:
+        autenticou, motivo = None, "requisição não completou (erro de transporte)"
+    elif any(h in body_err_txt for h in _AUTH_DENIED_HINTS):
+        autenticou, motivo = False, "credencial recusada por mensagem no corpo, apesar do status HTTP"
+    elif looks_like_missing_param(valid["body_error"]):
+        # 403 por parâmetro faltando NÃO é recusa de credencial: para o endpoint
+        # reclamar do parâmetro, a credencial já passou pelo gateway.
+        autenticou, motivo = True, "endpoint respondeu reclamando de parâmetro — credencial passou"
+    elif valid["http_status"] == 401:
+        autenticou, motivo = False, "credencial rejeitada pelo status HTTP"
+    elif valid["http_status"] == 200 and not valid["body_error"]:
+        autenticou, motivo = True, "chamada válida retornou dados"
+    else:
+        autenticou, motivo = None, "resposta não permite concluir (nem dados, nem recusa explícita)"
     out["chamada_valida"] = {
         "http_status": valid["http_status"], "body_status": valid["body_status"],
-        "autenticou": valid["http_status"] not in (401, 403) and valid["error"] is None,
+        "body_error": valid["body_error"], "autenticou": autenticou, "motivo": motivo,
+        "erro_via": _erro_via(valid),
     }
     bad = make_client(cfg, bad_auth=True)
     try:
@@ -297,11 +487,13 @@ def phase0_auth_errors(client: ReadOnlyClient, cfg: Config) -> dict:
         bad.close()
     out["token_invalido"] = {
         "http_status": binv["http_status"], "body_status": binv["body_status"],
-        "erro_via": ("http_status" if (binv["http_status"] or 0) >= 400
-                     else "envelope_no_corpo" if binv["body_status"] else "indeterminado"),
+        "body_error": binv["body_error"], "erro_via": _erro_via(binv),
     }
     nx = probe(client, cfg.base_url, "__endpoint_inexistente__")
-    out["path_inexistente"] = {"http_status": nx["http_status"], "body_status": nx["body_status"]}
+    out["path_inexistente"] = {
+        "http_status": nx["http_status"], "body_status": nx["body_status"],
+        "body_error": nx["body_error"], "erro_via": _erro_via(nx),
+    }
     out["nota"] = ("Tokens vão no header a cada requisição -> stateless por natureza. "
                    "Expiração NÃO é verificável numa execução única (precisa observação ao longo do tempo).")
     return out
@@ -310,19 +502,54 @@ def phase0_auth_errors(client: ReadOnlyClient, cfg: Config) -> dict:
 # ------------------------------------------------------------------------------------
 # Fase 1 — endpoints & campos  (§7.1, §7.2-campo, §7.8)
 # ------------------------------------------------------------------------------------
+def _discover_required_params(client: ReadOnlyClient, cfg: Config, controller: str,
+                              cond_id: Optional[str]) -> Optional[dict]:
+    """Testa candidatos de parâmetro obrigatório até um responder com dados.
+
+    Roda só quando o controller reclamou de parâmetro faltando — logo, existe.
+    Devolve o conjunto de params que funcionou, ou None.
+    """
+    for cand in CANDIDATE_REQUIRED_PARAMS:
+        if any("{cond_id}" in str(v) for v in cand.values()) and not cond_id:
+            continue  # candidato depende de um id que ainda não temos
+        p = {k: str(v).replace("{cond_id}", str(cond_id or "")) for k, v in cand.items()}
+        f = probe(client, cfg.base_url, controller, params={**p, "itensPorPagina": 5})
+        if f["http_status"] == 200 and not f["body_error"] and f["num_records"]:
+            logger.info("  %s: parâmetro obrigatório descoberto -> %s", controller, p)
+            return p
+    return None
+
+
 def phase1_endpoints(client: ReadOnlyClient, cfg: Config, controllers: Optional[list] = None) -> dict:
     logger.info("== Fase 1: descoberta de endpoints & campos ==")
     endpoints: dict = {}
     condominio_records: list[dict] = []
+    params_descobertos: dict = {}
+    cond_id: Optional[str] = None
     for ctrl in (controllers or CANDIDATE_CONTROLLERS):
         endpoints[ctrl] = probe(client, cfg.base_url, ctrl, params={"itensPorPagina": 5})
+        if endpoints[ctrl].get("requer_param"):
+            achado = _discover_required_params(client, cfg, ctrl, cond_id)
+            if achado:
+                params_descobertos[ctrl] = achado
+                CONTROLLER_REQUIRED_PARAMS.setdefault(ctrl, {}).update(achado)
+                endpoints[ctrl] = probe(client, cfg.base_url, ctrl, params={"itensPorPagina": 5})
         if ctrl == "condominios":
             condominio_records = fetch_records(client, cfg, ctrl, want=25)
+            # Guarda um id real: outros controllers costumam exigi-lo.
+            id_field = FIELD_ID_OVERRIDE or guess_id_field(condominio_records)
+            if condominio_records and id_field:
+                cond_id = str(condominio_records[0].get(id_field) or "") or None
     return {
         "endpoints": endpoints,
         "campo_cnpj_condominio": guess_cnpj_field(condominio_records),   # NOME do campo (task 1.3)
         "campo_id_condominio": guess_id_field(condominio_records),
-        "nota_campos": "Nomes descobertos por heurística; conferir via inspeção do tráfego do ERP.",
+        "params_obrigatorios_descobertos": params_descobertos,
+        "condominio_id_usado_nas_sondas": cond_id,
+        "nota_campos": ("Nomes descobertos por heurística; conferir via inspeção do tráfego do "
+                        "ERP. `campo_cnpj_condominio` é a CHAVE DE BUSCA (recebe o CNPJ vindo do "
+                        "documento); `campo_id_condominio` é a RESPOSTA (identificador do "
+                        "condomínio no ERP, comparado com o gabarito da amostra)."),
     }
 
 
@@ -355,7 +582,8 @@ def _probe_rate_limit(client: ReadOnlyClient, cfg: Config, n: int = 8) -> dict:
     headers_seen: dict = {}
     for _ in range(n):
         try:
-            resp = client.get(f"{cfg.base_url}/condor/condominios", params={"itensPorPagina": 1})
+            resp = client.get(f"{cfg.base_url}/condor/condominios",
+                              params=merge_required_params("condominios", {"itensPorPagina": 1}))
             statuses.append(resp.status_code)
             for h in resp.headers:
                 if re.search(r"(?i)rate|limit|remaining|retry", h):
@@ -392,10 +620,19 @@ def phase2_mechanics(client: ReadOnlyClient, cfg: Config, cnpj_field: Optional[s
             recs = fetch_records(client, cfg, "condominios", want=50, extra_params={p: known_cnpj})
             out["filtro_cnpj"][p] = {"num": len(recs), "estreitou": 0 < len(recs) < baseline_n}
         achou = any(v.get("estreitou") for v in out["filtro_cnpj"].values() if isinstance(v, dict))
-        out["filtro_cnpj"]["conclusao"] = (
-            "Existe filtro server-side por CNPJ" if achou
-            else "SEM filtro server-side -> sincronização local da carteira é OBRIGATÓRIA"
-        )
+        if achou:
+            out["filtro_cnpj"]["conclusao"] = "Existe filtro server-side por CNPJ"
+        elif baseline_n < 2:
+            # Com 1 condomínio na carteira, filtrar não tem como "estreitar" nada:
+            # com ou sem filtro o resultado é o mesmo. Concluir "sem filtro" aqui
+            # seria falsa confiança numa das decisões mais caras da Fase C.
+            out["filtro_cnpj"]["conclusao"] = (
+                f"NÃO CONCLUSIVO — carteira com {baseline_n} condomínio(s) visível(is): "
+                "um filtro não teria como estreitar o resultado. Repetir com carteira de 2+."
+            )
+        else:
+            out["filtro_cnpj"]["conclusao"] = (
+                "SEM filtro server-side -> sincronização local da carteira é OBRIGATÓRIA")
     else:
         out["filtro_cnpj"]["conclusao"] = "Não testado (sem CNPJ conhecido / campo não identificado)"
 
@@ -403,6 +640,10 @@ def phase2_mechanics(client: ReadOnlyClient, cfg: Config, cnpj_field: Optional[s
     for pp in CANDIDATE_PERPAGE_PARAMS:
         one = fetch_records(client, cfg, "condominios", want=1, extra_params={pp: 1})
         out["paginacao"][f"{pp}=1"] = {"num": len(one), "respeitou_limite": len(one) == 1}
+    if baseline_n < 2:
+        out["paginacao"]["nota"] = (
+            f"Baseline de {baseline_n} registro(s): 'respeitou_limite' é trivialmente "
+            "verdadeiro e NÃO prova que o parâmetro de paginação funciona.")
 
     # 2.4 data (leitura)
     out["data"]["formatos_observados"] = _detect_date_formats(base_records)
@@ -572,10 +813,12 @@ def _write_achados_csv(findings: dict, cfg: Config) -> None:
     eps = _dig(findings, "fase1_endpoints", "endpoints") or {}
     with (cfg.out_dir / "achados.csv").open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
-        w.writerow(["controller", "http_status", "exists", "num_records", "num_fields", "error"])
+        w.writerow(["controller", "http_status", "exists", "num_records", "num_fields",
+                    "body_error", "error"])
         for ctrl, f in eps.items():
+            be = (f.get("body_error") or {}).get("valor")
             w.writerow([ctrl, f.get("http_status"), f.get("exists"),
-                        f.get("num_records"), len(f.get("fields") or []), f.get("error")])
+                        f.get("num_records"), len(f.get("fields") or []), be, f.get("error")])
 
 
 def _write_associacao_csv(findings: dict, cfg: Config) -> None:
@@ -601,21 +844,47 @@ def _build_report_md(f: dict) -> str:
     if f0:
         L.append("## §7.4 — Autenticação e modelo de erro")
         L.append(f"- Chamada válida: HTTP `{_dig(f0, 'chamada_valida', 'http_status')}`, "
-                 f"autenticou: `{_dig(f0, 'chamada_valida', 'autenticou')}`.")
+                 f"autenticou: `{_dig(f0, 'chamada_valida', 'autenticou')}` "
+                 f"({_dig(f0, 'chamada_valida', 'motivo')}); "
+                 f"erro via `{_dig(f0, 'chamada_valida', 'erro_via')}`.")
+        for rotulo, chave in (("Chamada válida", "chamada_valida"),
+                              ("Token inválido", "token_invalido"),
+                              ("Path inexistente", "path_inexistente")):
+            be = _dig(f0, chave, "body_error")
+            if be:
+                L.append(f"  - {rotulo} — erro no corpo (`{be.get('campo')}`): `{be.get('valor')}`")
         L.append(f"- Token inválido: HTTP `{_dig(f0, 'token_invalido', 'http_status')}`, "
                  f"erro via `{_dig(f0, 'token_invalido', 'erro_via')}`.")
-        L.append(f"- Path inexistente: HTTP `{_dig(f0, 'path_inexistente', 'http_status')}`.")
+        L.append(f"- Path inexistente: HTTP `{_dig(f0, 'path_inexistente', 'http_status')}`, "
+                 f"erro via `{_dig(f0, 'path_inexistente', 'erro_via')}`.")
         L.append(f"- {f0.get('nota', '')}\n")
 
     f1 = f.get("fase1_endpoints")
     if f1:
         L.append("## §7.1 / §7.8 — Endpoints e campos")
-        L.append("| controller | existe | HTTP | nº campos |")
-        L.append("|---|---|---|---|")
+        L.append("| controller | existe | HTTP | nº campos | erro no corpo |")
+        L.append("|---|---|---|---|---|")
         for ctrl, ff in (f1.get("endpoints") or {}).items():
-            L.append(f"| `{ctrl}` | {ff.get('exists')} | {ff.get('http_status')} | {len(ff.get('fields') or [])} |")
-        L.append(f"\n**Campo de CNPJ do condomínio (nome):** `{f1.get('campo_cnpj_condominio')}` · "
-                 f"**Campo de id:** `{f1.get('campo_id_condominio')}`  \n_{f1.get('nota_campos', '')}_\n")
+            be = (ff.get("body_error") or {}).get("valor") or ""
+            L.append(f"| `{ctrl}` | {ff.get('exists')} | {ff.get('http_status')} | "
+                     f"{len(ff.get('fields') or [])} | {be} |")
+        cnpj_f = f1.get("campo_cnpj_condominio")
+        id_f = f1.get("campo_id_condominio")
+        L.append("\n### Os dois campos que sustentam a associação\n")
+        L.append("São pontas opostas da mesma operação — não confundir:\n")
+        L.append("| | Campo | Papel | Origem do valor |")
+        L.append("|---|---|---|---|")
+        L.append(f"| 🔑 **Chave de busca** | `{cnpj_f}` | Onde o cadastro guarda o **CNPJ** do "
+                 "condomínio. É por ele que se **procura** | O valor vem de fora: é o CNPJ "
+                 "extraído do documento pelo DocuParse |")
+        L.append(f"| 🎯 **Resposta** | `{id_f}` | **Identificador** do condomínio dentro do ERP. "
+                 "É o que se **obtém** do match | O valor vem do próprio ERP |")
+        L.append("\nA Fase 4 monta o índice `{%s normalizado → %s}`: entra com o CNPJ do "
+                 "documento, sai com o identificador do condomínio.\n" % (cnpj_f, id_f))
+        L.append(f"O `condominio_esperado_id` da amostra rotulada é um **`{id_f}`**, nunca um "
+                 "CNPJ — e o gabarito NÃO pode ser montado casando CNPJ, sob pena de gerar a "
+                 "resposta com a mesma chave que está sendo testada.\n")
+        L.append(f"_{f1.get('nota_campos', '')}_\n")
 
     f2 = f.get("fase2_mecanica")
     if f2:
@@ -676,6 +945,43 @@ def run_self_test() -> int:
     check("extract_records lista", extract_records([rec]) == [rec])
     check("extract_records envelope data", extract_records({"data": [rec]}) == [rec])
     check("extract_records numerado", extract_records({"0": rec}) == [rec])
+
+    # Modelo de erro: envelope no corpo não pode passar por registro de dados.
+    err_v2 = {"msg": "Permissão ao access_token negada. Detalhe: abc licenca123"}
+    check("detecta erro no corpo via 'msg' (HTTP 5xx)",
+          (detect_body_error(err_v2, 500) or {}).get("campo") == "msg")
+    check("detecta erro no corpo via 'status' >=100 (padrão v1)",
+          (detect_body_error({"status": 101, "msg": "x"}, 200) or {}).get("campo") == "status")
+    check("registro legítimo não vira erro", detect_body_error(rec, 200) is None)
+
+    # Envelope aninhado da v2: [{'condominio': [{...}]}] tem que virar [{...}].
+    check("desembrulha envelope aninhado da entidade",
+          extract_records([{"condominio": [rec]}]) == [rec])
+    check("desembrulha envelope de nível duplo",
+          extract_records([{"a": {"b": rec}}]) == [rec])
+    check("parâmetro obrigatório é distinguido de endpoint inexistente",
+          looks_like_missing_param({"campo": "msg", "valor": "Id do condomínio não informado."})
+          and not looks_like_missing_param({"campo": "msg", "valor": "Não encontrado."}))
+    check("params obrigatórios do controller entram na requisição",
+          merge_required_params("condominios", {"itensPorPagina": 5}) ==
+          {"id": "todos", "itensPorPagina": 5})
+
+    # Campos de credencial não podem ser gravados na amostra (RI-002 / RI-004).
+    seg = {"st_apptoken_usu": "abc123", "st_senha_usu": "s3nh4",
+           "st_accesstoken_usu": "", "st_nome_cond": "COND X"}
+    msk = mask_pii_in_record(seg)
+    check("mascara campo de token pelo NOME", msk["st_apptoken_usu"] == "***REDACTED***")
+    check("mascara campo de senha pelo NOME", msk["st_senha_usu"] == "***REDACTED***")
+    check("campo de credencial vazio continua vazio", msk["st_accesstoken_usu"] == "")
+    check("campo comum não é redigido", msk["st_nome_cond"] == "COND X")
+
+    # O id da entidade tem que ganhar dos vários FKs numéricos do registro.
+    cond = {"id_planoconta_plc": "8", "id_tipocobranca_tco": "1",
+            "id_condominio_cond": "7", "id_cnae_cnae": "1157", "st_nome_cond": "X"}
+    check("escolhe o id da própria entidade, não um FK",
+          guess_id_field([cond], "condominios") == "id_condominio_cond")
+    check("id continua achável sem pista de entidade",
+          guess_id_field([{"id_x_y": "3"}], "") == "id_x_y")
 
     c = {"total": 10, "sem_cnpj": 1, "cnpj_invalido": 0, "casou": 8,
          "correto": 7, "errado": 1, "sem_match": 1}

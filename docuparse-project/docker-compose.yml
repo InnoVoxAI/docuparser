@@ -74,6 +74,39 @@ services:
     networks:
       - docuparse-network
 
+  # ---------------------------------------------------------------------------
+  # Observabilidade / tracing distribuído (feature 020-opentelemetry-tracing)
+  # ---------------------------------------------------------------------------
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.157.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    environment:
+      # Tail sampling (FR-009/SC-006, tasks.md T062): fração retida dos
+      # traces SEM erro (traces com erro são sempre 100% retidos pela
+      # errors-policy, independente deste valor). 100 em dev; reduzir em
+      # produção para controlar volume.
+      OTEL_TAIL_SAMPLING_PERCENTAGE: ${OTEL_TAIL_SAMPLING_PERCENTAGE:-100}
+    networks:
+      - docuparse-network
+    depends_on:
+      jaeger:
+        condition: service_started
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # Jaeger UI
+    networks:
+      - docuparse-network
+
   frontend:
     build: ./frontend
     command: npm run dev -- --host 0.0.0.0 --port 5173
@@ -83,6 +116,16 @@ services:
     ports:
       - "5173:5173"
     environment:
+      # Precisam do prefixo VITE_ para chegar ao bundle do browser via
+      # `import.meta.env` (src/shared/lib/tracing.ts) — Vite só expõe vars
+      # VITE_* ao cliente. O browser roda no HOST (fora da rede Docker), então
+      # o endpoint aponta para a porta publicada do otel-collector em
+      # localhost, não para o hostname interno `otel-collector` (inalcançável
+      # a partir do browser) nem para a porta gRPC 4317 (o SDK Web usa o
+      # exporter OTLP/HTTP, porta 4318).
+      VITE_OTEL_SERVICE_NAME: frontend
+      VITE_OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318/v1/traces
+      VITE_DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       # Alvos do proxy do Vite dev server (server-side). Sem prefixo VITE_ para
       # não vazar no bundle do browser: o cliente usa caminhos relativos e o
       # proxy encaminha para estes hostnames internos do Docker.
@@ -109,6 +152,9 @@ services:
     env_file:
       - .env
     environment:
+      OTEL_SERVICE_NAME: backend-core
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       BACKEND_OCR_URL: http://backend-ocr:8080
       LANGEXTRACT_SERVICE_URL: http://langextract-service:8091
       PYTHONPATH: /app:/contracts:/shared
@@ -131,8 +177,10 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_AUTO_PROCESS_OCR: ${DOCUPARSE_AUTO_PROCESS_OCR:-true}
       OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL:-qwen/qwen2.5-vl-72b-instruct}
-      # Sem default: seed_data recusa a subir sem uma senha de admin explícita.
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD no .env (copie de .env.example)}
+      # Só é usada por seed_data no primeiro boot (banco vazio, feature 017); em
+      # boots seguintes o guardrail do comando a ignora. Default de dev, sem risco
+      # em produção real (mesmo padrão de POSTGRES_PASSWORD acima).
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-docuparse-admin}
       DEFAULT_TENANT_SLUG: ${DEFAULT_TENANT_SLUG:?defina DEFAULT_TENANT_SLUG no .env (copie de .env.example)}
       DEFAULT_TENANT_NAME: ${DEFAULT_TENANT_NAME:?defina DEFAULT_TENANT_NAME no .env (copie de .env.example)}
     healthcheck:
@@ -206,7 +254,7 @@ services:
     build:
       context: .
       dockerfile: backend-com/Dockerfile
-    command: uvicorn api.app:app --host 0.0.0.0 --port 8070 --reload
+    command: uv run uvicorn api.app:app --host 0.0.0.0 --port 8070 --reload
     volumes:
       - ./backend-com:/app
       - ./contracts:/contracts:ro
@@ -218,6 +266,9 @@ services:
     ports:
       - "8070:8070"
     environment:
+      OTEL_SERVICE_NAME: backend-com
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -252,7 +303,7 @@ services:
     build:
       context: .
       dockerfile: backend-ocr/Dockerfile
-    command: uvicorn api.app:app --host 0.0.0.0 --port 8080 --reload
+    command: uv run uvicorn api.app:app --host 0.0.0.0 --port 8080 --reload
     volumes:
       - ./backend-ocr:/app
       - ./contracts:/contracts:ro
@@ -263,6 +314,9 @@ services:
     env_file:
       - .env
     environment:
+      OTEL_SERVICE_NAME: backend-ocr
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -295,7 +349,7 @@ services:
     build:
       context: .
       dockerfile: backend-ocr/Dockerfile
-    command: python -m application.run_worker
+    command: uv run python -m application.run_worker
     profiles:
       - async-workers
     volumes:
@@ -342,6 +396,9 @@ services:
     ports:
       - "8090:8090"
     environment:
+      OTEL_SERVICE_NAME: layout-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -406,7 +463,7 @@ services:
     build:
       context: .
       dockerfile: langextract-service/Dockerfile
-    command: uvicorn api.app:app --host 0.0.0.0 --port 8091 --reload
+    command: uv run uvicorn api.app:app --host 0.0.0.0 --port 8091 --reload
     volumes:
       - ./langextract-service:/app
       - ./contracts:/contracts:ro
@@ -416,6 +473,9 @@ services:
     ports:
       - "8091:8091"
     environment:
+      OTEL_SERVICE_NAME: langextract-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
       DOCUPARSE_EVENT_BUS: redis
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -457,7 +517,7 @@ services:
     build:
       context: .
       dockerfile: langextract-service/Dockerfile
-    command: python -m application.run_worker
+    command: uv run python -m application.run_worker
     profiles:
       - async-workers
     volumes:
@@ -588,13 +648,20 @@ services:
 
   camunda-workers:
     build:
-      context: ./camunda-workers
+      context: .
+      dockerfile: camunda-workers/Dockerfile
     profiles:
       - camunda
     volumes:
       - ./bpmn:/app/bpmn:ro
       - ./camunda-workers/scripts:/app/scripts:ro
+      - ./contracts:/contracts:ro
+      - ./shared:/shared:ro
     environment:
+      OTEL_SERVICE_NAME: camunda-workers
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
+      PYTHONPATH: /app/src:/contracts:/shared
       ZEEBE_ADDRESS: zeebe:26500
       BACKEND_CORE_URL: http://backend-core:8000
       BACKEND_OCR_URL: http://backend-ocr:8080

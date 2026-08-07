@@ -13,12 +13,16 @@ export function TenantsView() {
     const [listError, setListError] = useState('')
     const [formSlug, setFormSlug] = useState('')
     const [formName, setFormName] = useState('')
+    const [formAdminName, setFormAdminName] = useState('')
+    const [formAdminEmail, setFormAdminEmail] = useState('')
     const [submitting, setSubmitting] = useState(false)
     const [formError, setFormError] = useState('')
     const [toggleError, setToggleError] = useState<Record<string, string>>({})
     const [expandedSlug, setExpandedSlug] = useState<string | null>(null)
     const [switchingSlug, setSwitchingSlug] = useState<string | null>(null)
     const [switchError, setSwitchError] = useState<Record<string, string>>({})
+    const [resendingSlug, setResendingSlug] = useState<string | null>(null)
+    const [resendError, setResendError] = useState<Record<string, string>>({})
 
     const fetchTenants = useCallback(async () => {
         setLoadingList(true)
@@ -42,18 +46,37 @@ export function TenantsView() {
         setSubmitting(true)
         setFormError('')
         try {
-            await adminApi.post('/tenants/', { slug: formSlug, name: formName })
+            await adminApi.post('/tenants/', {
+                slug: formSlug,
+                name: formName,
+                admin_name: formAdminName,
+                admin_email: formAdminEmail,
+            })
             setFormSlug('')
             setFormName('')
+            setFormAdminName('')
+            setFormAdminEmail('')
             await fetchTenants()
         } catch (err) {
             const apiError = asApiError(err)
+            const code = apiError.response?.data?.error?.code
             const detail = apiError.response?.data?.error?.detail
-            setFormError(
-                apiError.response?.status === 409
-                    ? (detail ?? `Tenant com slug "${formSlug}" já existe.`)
-                    : (detail ?? 'Erro ao criar tenant.'),
-            )
+            const detailMessage =
+                typeof detail === 'string'
+                    ? detail
+                    : detail && typeof detail === 'object'
+                      ? Object.values(detail).flat().join(' ')
+                      : undefined
+
+            if (code === 'ADMIN_EMAIL_IN_USE') {
+                setFormError(detailMessage ?? `Email "${formAdminEmail}" já está em uso.`)
+            } else if (code === 'TENANT_EXISTS' || apiError.response?.status === 409) {
+                setFormError(detailMessage ?? `Tenant com slug "${formSlug}" já existe.`)
+            } else if (code === 'VALIDATION_ERROR') {
+                setFormError(detailMessage ?? 'Dados inválidos.')
+            } else {
+                setFormError(detailMessage ?? 'Erro ao criar tenant.')
+            }
         } finally {
             setSubmitting(false)
         }
@@ -77,6 +100,26 @@ export function TenantsView() {
         }
     }
 
+    const handleResend = async (slug: string) => {
+        setResendError((prev) => ({ ...prev, [slug]: '' }))
+        setResendingSlug(slug)
+        try {
+            await adminApi.post(`/tenants/${slug}/invites/resend/`)
+        } catch (err) {
+            const apiError = asApiError(err)
+            const detail = apiError.response?.data?.error?.detail
+            setResendError((prev) => ({
+                ...prev,
+                [slug]:
+                    apiError.response?.data?.error?.code === 'ADMIN_ALREADY_ACTIVE'
+                        ? (detail ?? 'O administrador deste tenant já ativou a conta.')
+                        : (detail ?? 'Erro ao reenviar convite.'),
+            }))
+        } finally {
+            setResendingSlug(null)
+        }
+    }
+
     const handleSwitch = async (slug: string) => {
         setSwitchError((prev) => ({ ...prev, [slug]: '' }))
         setSwitchingSlug(slug)
@@ -95,10 +138,14 @@ export function TenantsView() {
             <TenantCreateForm
                 slug={formSlug}
                 name={formName}
+                adminName={formAdminName}
+                adminEmail={formAdminEmail}
                 submitting={submitting}
                 error={formError}
                 onSlugChange={setFormSlug}
                 onNameChange={setFormName}
+                onAdminNameChange={setFormAdminName}
+                onAdminEmailChange={setFormAdminEmail}
                 onSubmit={handleCreate}
             />
 
@@ -113,9 +160,12 @@ export function TenantsView() {
                     switchingSlug={switchingSlug}
                     switchError={switchError}
                     toggleError={toggleError}
+                    resendingSlug={resendingSlug}
+                    resendError={resendError}
                     onToggleExpand={(slug) => setExpandedSlug((prev) => (prev === slug ? null : slug))}
                     onSwitch={handleSwitch}
                     onToggle={handleToggle}
+                    onResend={handleResend}
                 />
             ) : null}
         </div>

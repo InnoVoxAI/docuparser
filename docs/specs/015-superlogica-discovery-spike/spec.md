@@ -69,7 +69,7 @@ verificar que todas as checagens passam e que o código de saída reflete o resu
 **Acceptance Scenarios**:
 
 1. **Given** nenhuma credencial configurada e sem acesso à rede, **When** o operador roda o modo
-   de auto-verificação, **Then** as 13 checagens são impressas individualmente como PASS/FAIL,
+   de auto-verificação, **Then** as 16 checagens são impressas individualmente como PASS/FAIL,
    um veredito final é exibido e o processo encerra com código 0.
 2. **Given** uma regressão em qualquer função pura, **When** o modo de auto-verificação roda,
    **Then** a checagem correspondente é impressa como FAIL e o processo encerra com código
@@ -131,16 +131,24 @@ que o relatório mapeia cada bloco ao item correspondente do §7.
    nº de registros, nomes de campo e 1 registro de exemplo com PII mascarada.
 2. **Given** a sonda de autenticação, **When** ela roda, **Then** o relatório declara se a
    chamada válida autenticou e **por onde o erro chega** — pelo status HTTP, por um envelope no
-   corpo da resposta, ou indeterminado — testando token inválido e caminho inexistente.
+   corpo da resposta, por ambos, ou indeterminado — testando token inválido e caminho inexistente.
 3. **Given** a sonda de filtro por CNPJ, **When** ela roda com um CNPJ real da própria carteira,
-   **Then** o relatório conclui explicitamente por uma das duas alternativas: *existe filtro
-   server-side* ou *sem filtro → sincronização local obrigatória*; e, se não houver CNPJ
-   conhecido, conclui *não testado* com a razão.
+   **Then** o relatório conclui explicitamente por uma das alternativas: *existe filtro
+   server-side*, *sem filtro → sincronização local obrigatória*, ou *não conclusivo* quando a
+   carteira visível for pequena demais para que um filtro pudesse estreitar o resultado; e, se
+   não houver CNPJ conhecido, conclui *não testado* com a razão.
 4. **Given** a sonda de rate limit, **When** ela roda, **Then** ela usa uma rajada deliberadamente
    pequena, interrompe imediatamente ao receber sinal de limite excedido, e registra os
    cabeçalhos de limite observados (ou a ausência deles).
 5. **Given** um controller que não responde ou falha, **When** a varredura continua, **Then** o
    erro é registrado no achado daquele controller e **os demais continuam sendo sondados**.
+6. **Given** uma resposta cujo corpo traz envelope de erro, **When** o achado é montado,
+   **Then** o envelope é reportado como erro e **não** aparece como registro, campo descoberto
+   ou amostra daquele controller.
+7. **Given** um controller que responde reclamando de **parâmetro obrigatório faltando**,
+   **When** o achado é montado, **Then** ele é registrado como **existente** — reclamar do
+   parâmetro prova que o endpoint existe — e a ferramenta testa candidatos até achar o
+   parâmetro que faz o endpoint responder com dados, registrando qual funcionou.
 
 ---
 
@@ -290,12 +298,33 @@ que sobrou para a Fase C.
 - **FR-010**: A ferramenta MUST executar uma chamada válida e reportar se autenticou.
 - **FR-011**: A ferramenta MUST forçar uma chamada com credenciais inválidas e uma chamada a um
   caminho inexistente, e MUST classificar **por onde o erro chega**: status HTTP, envelope no
-  corpo da resposta, ou indeterminado.
+  corpo da resposta, **ambos** (híbrido), ou indeterminado. O caso híbrido é obrigatório porque
+  a API observada usa as duas vias ao mesmo tempo — o status diz que falhou, o corpo diz por quê.
+- **FR-013**: A ferramenta MUST tratar um envelope de erro no corpo como **erro, nunca como
+  registro de dados** — não pode contar como registro, virar campo descoberto, alimentar a
+  heurística de nome de campo nem entrar no índice da Fase 4.
+- **FR-014**: A ferramenta MUST NOT declarar autenticação bem-sucedida com base apenas na
+  ausência de `401`/`403`. Quando o corpo indicar recusa de credencial sob outro status, o
+  veredito MUST ser "não autenticou", com o motivo registrado; quando a resposta não permitir
+  concluir, o veredito MUST ser explicitamente indeterminado.
 - **FR-012**: A ferramenta MUST registrar como ressalva que a **expiração** de credencial não é
   verificável numa execução única.
 
 **Fase 1 — endpoints e campos** *(resolve §7.1, §7.2-campo, §7.8)*
 
+- **FR-015**: A ferramenta MUST enviar os **parâmetros obrigatórios** de cada controller e MUST
+  distinguir *"faltou parâmetro"* de *"endpoint não existe"*: uma resposta que reclama de
+  parâmetro faltando prova que o controller **existe**. Quando isso ocorrer, a ferramenta MUST
+  testar candidatos de parâmetro até obter dados e MUST registrar qual funcionou.
+- **FR-016**: A ferramenta MUST desembrulhar envelopes que aninham a entidade sob uma chave com
+  o nome dela, em qualquer profundidade, antes de descobrir campos ou montar o índice.
+- **FR-017**: A ferramenta MUST redigir, **pelo nome do campo**, valores de campos que aparentem
+  credencial (token, senha, secret, chave), independentemente do formato do valor — o cadastro
+  do condomínio expõe campos desse tipo, e gravá-los violaria RI-002 e RI-004.
+- **FR-018**: Ao descobrir o nome do campo identificador, a ferramenta MUST priorizar o campo que
+  identifica **a própria entidade** sobre chaves estrangeiras numéricas do mesmo registro.
+  Escolher a errada corromperia o índice da Fase 4 **em silêncio**: o CNPJ casaria, mas o
+  identificador comparado ao gabarito seria de outra entidade.
 - **FR-020**: Para cada controller candidato, a ferramenta MUST produzir um achado contendo:
   identificação do controller, destino consultado, parâmetros usados, status HTTP, status do
   envelope no corpo, veredito de existência, nº de registros, nomes de campo descobertos, 1
@@ -311,9 +340,12 @@ que sobrou para a Fase C.
 **Fase 2 — mecânica** *(resolve §7.2-filtro, §7.5, §7.6, §7.7)*
 
 - **FR-030**: A ferramenta MUST testar um conjunto de parâmetros candidatos de **filtro
-  server-side por CNPJ** usando um CNPJ real da própria carteira, e MUST concluir de forma binária
-  e explícita: *existe filtro* ou *sem filtro → sincronização local obrigatória*. Se não houver
-  CNPJ conhecido, MUST concluir *não testado* com a razão.
+  server-side por CNPJ** usando um CNPJ real da própria carteira, e MUST concluir de forma
+  explícita: *existe filtro* ou *sem filtro → sincronização local obrigatória*. Se não houver
+  CNPJ conhecido, MUST concluir *não testado* com a razão. Quando a carteira visível tiver menos
+  de 2 condomínios, a ferramenta MUST concluir **não conclusivo** — um filtro não teria como
+  estreitar o resultado, e declarar "sem filtro" ali seria falsa confiança numa das decisões
+  mais caras da Fase C. A mesma ressalva MUST acompanhar a conclusão de paginação.
 - **FR-031**: A ferramenta MUST testar parâmetros candidatos de **itens por página** e reportar,
   para cada um, se o limite foi respeitado; e MUST reportar o nº de registros obtidos numa
   requisição de referência.
@@ -389,8 +421,12 @@ Lista de objetos, um por documento.
 |---|---|---|
 | `doc_id` | sim | Identificador livre do documento |
 | `tipo` | recomendado | Tipo do documento; permite segmentar as métricas por tipo |
-| `cnpj_papel_condominio` | sim | CNPJ do **lado condomínio** já extraído pelo DocuParse; com ou sem máscara; vazio quando ausente |
-| `condominio_esperado_id` | para medir precisão | O identificador do condomínio correto (**gabarito**). Sem ele, mede-se apenas cobertura |
+| `cnpj_papel_condominio` | sim | CNPJ do **lado condomínio** já extraído pelo DocuParse; com ou sem máscara; vazio quando ausente. É a **chave de busca** — vai contra o campo de CNPJ do cadastro |
+| `condominio_esperado_id` | para medir precisão | O **identificador** do condomínio correto no ERP (**gabarito**) — mesma natureza do campo identificador descoberto na Fase 1, **nunca um CNPJ**. Sem ele, mede-se apenas cobertura |
+
+> ⚠️ O gabarito MUST vir de fonte **independente da chave sob teste** — do arquivamento manual já
+> correto no ERP, ou da origem do documento. Obtê-lo casando CNPJ produziria a resposta com a
+> mesma chave que está sendo avaliada, e a precisão medida não significaria nada.
 
 Exemplo mínimo:
 
@@ -410,15 +446,16 @@ Documento único, legível por máquina, com todas as fases executadas.
 | `base_url` | URL base efetivamente usada |
 | `gerado_em` | Instante da execução |
 | `modo` | `completo` ou `teste (somente condominios)` |
-| `fase0_auth_erro` | `chamada_valida` (status HTTP, status do envelope, autenticou), `token_invalido` (idem + `erro_via` ∈ `http_status` \| `envelope_no_corpo` \| `indeterminado`), `path_inexistente`, `nota` |
+| `fase0_auth_erro` | `chamada_valida` (status HTTP, status do envelope, `body_error`, `autenticou` tri-estado + `motivo`), `token_invalido` e `path_inexistente` (idem + `erro_via` ∈ `http_status` \| `envelope_no_corpo` \| `http_status+envelope_no_corpo` \| `indeterminado`), `nota` |
 | `fase1_endpoints` | `endpoints` (mapa controller → achado), `campo_cnpj_condominio`, `campo_id_condominio`, `nota_campos` |
 | `fase2_mecanica` | `filtro_cnpj` (por parâmetro candidato: nº de registros e se estreitou; + `conclusao`), `paginacao` (baseline e, por parâmetro candidato, se respeitou o limite), `data.formatos_observados` (contagens, exemplos, nota), `rate_limit` (status observados, cabeçalhos de limite, se atingiu o limite, nota), `lote` (nota de deferimento) |
 | `fase3_anexos` | `num_despesas_amostradas`, `campos_suspeitos_anexo` (campo → formato aparente), `conclusao`, `nota_escrita` |
 | `fase4_associacao` | `index_size`, `counters`, `metrics`, `rows`, `go_no_go` — ou `erro` quando não pôde rodar |
 
 **Achado por endpoint** (unidade reutilizada em `fase1_endpoints.endpoints`):
-`controller`, `url`, `params`, `http_status`, `body_status`, `exists`, `num_records`, `fields`,
-`sample` (1 registro **com PII mascarada**), `pagination_hint`, `error`.
+`controller`, `url`, `params`, `http_status`, `body_status`, `body_error` (`campo` + `valor`, ou
+nulo), `exists`, `num_records`, `fields`, `sample` (1 registro **com PII mascarada**),
+`pagination_hint`, `error`.
 
 ### Saída 2 — achados por endpoint (`achados.csv`)
 
@@ -431,6 +468,7 @@ Uma linha por controller sondado.
 | `exists` | Veredito de existência |
 | `num_records` | Nº de registros retornados |
 | `num_fields` | Nº de campos descobertos |
+| `body_error` | Mensagem de erro vinda no corpo da resposta, se houve |
 | `error` | Erro capturado, se houve |
 
 ### Saída 3 — associação por documento (`associacao.csv`)
@@ -499,8 +537,13 @@ páginas do índice e sobrescrita dos nomes de campo são opcionais e têm padr�
   são hipótese até a sonda dizer o contrário.
 - **Achado de endpoint**: o veredito de uma sonda sobre um controller — existência, sinais de
   erro (HTTP e envelope), campos descobertos, exemplo mascarado, indícios de paginação.
-- **Nome do campo de CNPJ**: o **nome da coluna** onde o cadastro do condomínio guarda o CNPJ. É
-  o elo que falta: o *valor* já vem do DocuParse; sem o *nome*, não há como montar o índice.
+- **Nome do campo de CNPJ** (*chave de busca*): o **nome da coluna** onde o cadastro do condomínio
+  guarda o CNPJ. É o elo que falta: o *valor* já vem do DocuParse; sem o *nome*, não há como
+  montar o índice. É por onde se **entra** na busca.
+- **Nome do campo identificador** (*resposta*): o **nome da coluna** que guarda a chave primária
+  do condomínio no ERP. É o que se **obtém** do match, o que é comparado com o gabarito da
+  amostra, e o que a integração usará depois para operar sobre aquele condomínio — o CNPJ não
+  serve para isso. Confundir os dois campos inverte entrada e saída da regra de associação.
 - **Índice de condomínios**: mapa `CNPJ normalizado → condomínio` construído a partir da carteira
   paginada. Existe apenas em memória durante a execução.
 - **Documento da amostra**: uma linha do *ground truth* — identificador, tipo, CNPJ do
@@ -516,7 +559,7 @@ páginas do índice e sobrescrita dos nomes de campo são opcionais e têm padr�
 
 ### Definition of Done do spike
 
-- **SC-001**: A auto-verificação offline executa **13 checagens** e todas passam, sem rede, sem
+- **SC-001**: A auto-verificação offline executa **26 checagens** e todas passam, sem rede, sem
   credenciais e sem gravar arquivos.
 - **SC-002**: O smoke check passa antes da varredura completa: `condominios` responde, a
   credencial autentica e o nome do campo de CNPJ é identificado.

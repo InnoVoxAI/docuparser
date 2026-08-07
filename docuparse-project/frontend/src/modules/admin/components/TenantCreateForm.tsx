@@ -3,18 +3,26 @@ import type { FormEvent } from 'react'
 export function TenantCreateForm({
     slug,
     name,
+    adminName,
+    adminEmail,
     submitting,
     error,
     onSlugChange,
     onNameChange,
+    onAdminNameChange,
+    onAdminEmailChange,
     onSubmit,
 }: {
     slug: string
     name: string
+    adminName: string
+    adminEmail: string
     submitting: boolean
     error: string
     onSlugChange: (value: string) => void
     onNameChange: (value: string) => void
+    onAdminNameChange: (value: string) => void
+    onAdminEmailChange: (value: string) => void
     onSubmit: (e: FormEvent) => void
 }) {
     return (
@@ -38,6 +46,22 @@ export function TenantCreateForm({
                     onChange={(e) => onNameChange(e.target.value)}
                     required
                     placeholder="Nome da empresa"
+                    className="h-9 flex-1 min-w-40 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-500 focus:outline-none"
+                />
+                <input
+                    type="text"
+                    value={adminName}
+                    onChange={(e) => onAdminNameChange(e.target.value)}
+                    required
+                    placeholder="Nome do administrador"
+                    className="h-9 flex-1 min-w-40 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-500 focus:outline-none"
+                />
+                <input
+                    type="email"
+                    value={adminEmail}
+                    onChange={(e) => onAdminEmailChange(e.target.value)}
+                    required
+                    placeholder="Email do administrador"
                     className="h-9 flex-1 min-w-40 rounded-md border border-zinc-300 px-3 text-sm focus:border-zinc-500 focus:outline-none"
                 />
                 <button

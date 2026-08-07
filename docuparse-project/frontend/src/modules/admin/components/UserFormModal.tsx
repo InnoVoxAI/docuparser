@@ -4,7 +4,6 @@ import type { AdminRole } from '../types'
 export interface UserFormValues {
     name: string
     email: string
-    password: string
     role_id: string
 }
 
@@ -51,17 +50,6 @@ export function UserFormModal({
                         required
                         className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm"
                     />
-                    {mode === 'create' && (
-                        <input
-                            type="password"
-                            value={form.password}
-                            onChange={(e) => onChange({ ...form, password: e.target.value })}
-                            placeholder="Senha (mín. 8 chars)"
-                            required
-                            minLength={8}
-                            className="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm"
-                        />
-                    )}
                     <select
                         value={form.role_id}
                         onChange={(e) => onChange({ ...form, role_id: e.target.value })}

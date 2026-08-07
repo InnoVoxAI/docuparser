@@ -3,6 +3,7 @@ import structlog
 from pyzeebe import ZeebeTaskRouter
 
 from workers._http import layout_client
+from workers._tracing import traced_job
 
 log = structlog.get_logger()
 
@@ -14,6 +15,7 @@ classify_layout = ZeebeTaskRouter()
     timeout_ms=45_000,
     max_jobs_to_activate=5,
 )
+@traced_job("docuparse-classify-layout")
 async def _classify_layout(
     document_id: str,
     raw_text_uri: str = "",

@@ -68,6 +68,13 @@ CORS_ALLOWED_ORIGINS = [
     if o.strip()
 ]
 
+# Libera traceparent/tracestate (W3C Trace Context) além dos headers default do
+# django-cors-headers, para que o SDK Web do frontend propague trace em
+# chamadas cross-origin em produção (research.md R9).
+from corsheaders.defaults import default_headers as _cors_default_headers  # noqa: E402
+
+CORS_ALLOW_HEADERS = [*_cors_default_headers, "traceparent", "tracestate"]
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -79,6 +86,20 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# Bootstrap único de tracing (contracts/tracing-conventions.md item 1). Roda
+# aqui (não em wsgi.py) para cobrir também os management commands que não
+# passam pelo WSGIHandler (consume_events, migrate, etc.) — settings.py é
+# importado por todo entrypoint Django, WSGI ou CLI.
+from docuparse_observability.tracing import configure_tracing  # noqa: E402
+from opentelemetry.instrumentation.django import DjangoInstrumentor  # noqa: E402
+from opentelemetry.instrumentation.redis import RedisInstrumentor  # noqa: E402
+from opentelemetry.instrumentation.requests import RequestsInstrumentor  # noqa: E402
+
+configure_tracing("backend-core")
+DjangoInstrumentor().instrument()
+RequestsInstrumentor().instrument()
+RedisInstrumentor().instrument()
 
 ROOT_URLCONF = "core.urls"
 
@@ -159,7 +180,20 @@ else:
         }
     }
 
-AUTH_PASSWORD_VALIDATORS = []
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
+]
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
@@ -239,3 +273,24 @@ OPENROUTER_FALLBACK_MODEL = os.environ.get(
 EMAIL_WEBHOOK_URL = os.environ.get(
     "EMAIL_WEBHOOK_URL", "http://127.0.0.1:8070/api/v1/email/messages"
 )
+
+# Envio de email para o convite de administrador de tenant (feature 017). Default
+# console em dev/test para não exigir SMTP configurado; produção define EMAIL_BACKEND
+# via env (ex. django.core.mail.backends.smtp.EmailBackend) + credenciais SMTP.
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "25"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "false").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+}
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "no-reply@docuparse.local")
+TENANT_ADMIN_INVITE_TTL_HOURS = int(
+    os.environ.get("TENANT_ADMIN_INVITE_TTL_HOURS", "72")
+)
+FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173")

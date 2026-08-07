@@ -8,7 +8,7 @@ export function TenantUsersPanel({ slug, currentTenant }: { slug: string; curren
     const [users, setUsers] = useState<TenantUser[]>([])
     const [roles, setRoles] = useState<AdminRole[]>([])
     const [loadingUsers, setLoadingUsers] = useState(true)
-    const [form, setForm] = useState({ name: '', email: '', password: '', role_id: '' })
+    const [form, setForm] = useState({ name: '', email: '', role_id: '' })
     const [submitting, setSubmitting] = useState(false)
     const [formError, setFormError] = useState('')
 
@@ -38,7 +38,7 @@ export function TenantUsersPanel({ slug, currentTenant }: { slug: string; curren
         setSubmitting(true)
         try {
             await adminApi.post(`/tenants/${slug}/users/`, form)
-            setForm({ name: '', email: '', password: '', role_id: '' })
+            setForm({ name: '', email: '', role_id: '' })
             await fetchUsers()
         } catch (err) {
             const apiError = asApiError(err)
@@ -118,15 +118,6 @@ export function TenantUsersPanel({ slug, currentTenant }: { slug: string; curren
                         required
                         placeholder="E-mail"
                         className="h-8 flex-1 min-w-36 rounded border border-zinc-300 px-2 text-xs focus:outline-none focus:border-zinc-500"
-                    />
-                    <input
-                        type="password"
-                        value={form.password}
-                        onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                        required
-                        minLength={8}
-                        placeholder="Senha (mín. 8)"
-                        className="h-8 flex-1 min-w-32 rounded border border-zinc-300 px-2 text-xs focus:outline-none focus:border-zinc-500"
                     />
                     <select
                         value={form.role_id}

@@ -1,0 +1,6 @@
+# Artefatos crus de execução do spike.
+# Contêm dados pessoais NÃO mascarados vindos do ERP (email, telefone,
+# endereço, CPF de proprietários) — ver RELATORIO-ACHADOS.md, seção de PII.
+# O que persiste e é versionado é o RELATORIO-ACHADOS.md, não estes arquivos.
+*
+!.gitignore

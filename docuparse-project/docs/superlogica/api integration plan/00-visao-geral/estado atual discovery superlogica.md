@@ -6,8 +6,12 @@ _Atualizado em 2026-08-07 · projeto DocuParse × API Condomínios (Superlógica
 > reconstruir o contexto lendo cinco arquivos. Se você voltou ao projeto depois de um tempo,
 > comece por aqui.
 >
-> Os **achados técnicos** em si estão no [`RELATORIO-ACHADOS.md`](RELATORIO-ACHADOS.md). Este
+> Os **achados técnicos** em si estão no [`RELATORIO-ACHADOS.md`](../fase-b-spike/achados/RELATORIO-ACHADOS.md). Este
 > documento é sobre o **processo**: o que já rodou, o que sobrou, e como ler o que saiu.
+>
+> As **restrições que condicionam a Fase C** estão em
+> [`restricoes-criticas.md`](restricoes-criticas.md) — leitura obrigatória antes de escrever
+> código da integração.
 
 ---
 
@@ -31,7 +35,7 @@ em cima dela.**
 | **B** | Spike de descoberta descartável — mede e reporta | 🟡 **Em andamento** (~70%) |
 | **C** | Specify real da integração | ⬜ **Não iniciada** |
 
-A Fase B se divide em 6 sub-fases, definidas no [plano](plano-fase-b-spike-descoberta.md):
+A Fase B se divide em 6 sub-fases, definidas no [plano](../fase-b-spike/plano-fase-b-spike-descoberta.md):
 
 | Sub-fase | O que faz | Status |
 |---|---|---|
@@ -50,21 +54,21 @@ A Fase B se divide em 6 sub-fases, definidas no [plano](plano-fase-b-spike-desco
 
 | Arquivo | Fase | O que é |
 |---|---|---|
-| [`estudo-api-superlogica-condominios-docuparse.md`](estudo-api-superlogica-condominios-docuparse.md) | A | Estudo da API. O **§7** lista as 9 perguntas que só a API responde |
-| [`pontos-a-esclarecer-validacao-humana.md`](pontos-a-esclarecer-validacao-humana.md) | A | **H1–H8**: decisões de produto/negócio que exigem humano |
+| [`estudo-api-superlogica-condominios-docuparse.md`](../fase-a-estudo/estudo-api-superlogica-condominios-docuparse.md) | A | Estudo da API. O **§7** lista as 9 perguntas que só a API responde |
+| [`pontos-a-esclarecer-validacao-humana.md`](../fase-a-estudo/pontos-a-esclarecer-validacao-humana.md) | A | **H1–H8**: decisões de produto/negócio que exigem humano |
 | [`roadmap-visual-docuparse-superlogica.md`](roadmap-visual-docuparse-superlogica.md) | A | Diagrama A→B→C (⚠️ desatualizado — ver §7) |
-| [`plano-fase-b-spike-descoberta.md`](plano-fase-b-spike-descoberta.md) | B | Plano do spike: sub-fases 0–5, tarefas, DoD |
-| [`README-discovery-spike.md`](README-discovery-spike.md) | B | Como rodar a ferramenta |
-| [`RELATORIO-ACHADOS.md`](RELATORIO-ACHADOS.md) | B | **O entregável.** Os achados por item do §7 |
+| [`plano-fase-b-spike-descoberta.md`](../fase-b-spike/plano-fase-b-spike-descoberta.md) | B | Plano do spike: sub-fases 0–5, tarefas, DoD |
+| [`README-discovery-spike.md`](../fase-b-spike/ferramenta/README-discovery-spike.md) | B | Como rodar a ferramenta |
+| [`RELATORIO-ACHADOS.md`](../fase-b-spike/achados/RELATORIO-ACHADOS.md) | B | **O entregável.** Os achados por item do §7 |
 | **este arquivo** | B | Estado do processo |
 
 ### Código
 
 | Arquivo | O que é |
 |---|---|
-| [`discovery_spike.py`](../discovery_spike.py) | A ferramenta. ~900 linhas, descartável, 100% read-only |
-| [`amostra.exemplo.json`](../amostra.exemplo.json) | **Molde** do formato da amostra — dados fictícios, não roda |
-| `achados_out/` | Saídas da última execução (fora do git) |
+| [`discovery_spike.py`](../fase-b-spike/ferramenta/discovery_spike.py) | A ferramenta. ~900 linhas, descartável, 100% read-only |
+| [`amostra.exemplo.json`](../fase-b-spike/ferramenta/amostra.exemplo.json) | **Molde** do formato da amostra — dados fictícios, não roda |
+| `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/` | Saídas da última execução (fora do git) |
 
 ### Spec Kit (SDD)
 
@@ -89,7 +93,7 @@ A spec 015 parou logo após o `/speckit-specify`:
 ## 4. Achados críticos até aqui
 
 Os cinco que mais mudam o que vem depois. Detalhes completos no
-[`RELATORIO-ACHADOS.md`](RELATORIO-ACHADOS.md).
+[`RELATORIO-ACHADOS.md`](../fase-b-spike/achados/RELATORIO-ACHADOS.md).
 
 ### 4.1 A credencial enxerga 1 condomínio — e isso limita a Fase 4
 
@@ -133,8 +137,6 @@ O registro de despesa traz `id_condominio_cond` (= o gabarito, atribuído por um
 lançar) e `arquivos` (o documento). Documento e resposta certa, pareados, no mesmo lugar — e o
 gabarito é independente da chave sob teste.
 
-**O SELECT não serve** para isso: o `mapa_download.csv` é organizado por categoria do plano de
-contas e não tem dimensão de condomínio.
 
 ---
 
@@ -173,7 +175,7 @@ H7 agora bloqueia a montagem da amostra.
 ### 5.4 Dívidas de documentação
 
 - **O estudo da Fase A não foi atualizado.** Continua com 21 tags `[HIP]` e pelo menos 5 pontos
-  hoje desatualizados. Ver o aviso no §0 do [`RELATORIO-ACHADOS.md`](RELATORIO-ACHADOS.md).
+  hoje desatualizados. Ver o aviso no §0 do [`RELATORIO-ACHADOS.md`](../fase-b-spike/achados/RELATORIO-ACHADOS.md).
 - **O roadmap visual está desatualizado.** Marca a Fase B como bloqueada por falta de credencial;
   a credencial chegou e as Fases 0–3 rodaram.
 - **O README do spike** menciona um `.env.example` local que não existe (as variáveis foram para
@@ -187,16 +189,16 @@ H7 agora bloqueia a montagem da amostra.
 
 ```bash
 # 1) Sanidade offline — sem rede, sem credencial (28 checagens)
-python3 "docuparse-project/docs/superlogica/api integration plan/discovery_spike.py" --self-test
+python3 "docuparse-project/docs/superlogica/api integration plan/fase-b-spike/ferramenta/discovery_spike.py" --self-test
 
 # 2) Smoke check — só o endpoint condominios
-./run_script.sh python3 "docuparse-project/docs/superlogica/api integration plan/discovery_spike.py" --test-mode -v
+./run_script.sh python3 "docuparse-project/docs/superlogica/api integration plan/fase-b-spike/ferramenta/discovery_spike.py" --test-mode -v
 
 # 3) Descoberta completa (fases 0–3)
-./run_script.sh python3 "docuparse-project/docs/superlogica/api integration plan/discovery_spike.py" -v
+./run_script.sh python3 "docuparse-project/docs/superlogica/api integration plan/fase-b-spike/ferramenta/discovery_spike.py" -v
 
 # 4) + Fase 4, quando houver amostra
-./run_script.sh python3 "docuparse-project/docs/superlogica/api integration plan/discovery_spike.py" --sample amostra.json -v
+./run_script.sh python3 "docuparse-project/docs/superlogica/api integration plan/fase-b-spike/ferramenta/discovery_spike.py" --sample amostra.json -v
 ```
 
 Se der `ERRO: defina SL_APP_TOKEN e SL_ACCESS_TOKEN`, o `.env` não carregou — confira as
@@ -206,13 +208,13 @@ variáveis `SL_*` no `.env` da raiz.
 
 | Arquivo | Para quê |
 |---|---|
-| `achados_out/RELATORIO-ACHADOS.md` | **Leia primeiro.** Versão gerada, da última execução |
-| `achados_out/achados.json` | Achados completos, estruturados. Onde conferir qualquer número |
-| `achados_out/achados.csv` | Uma linha por controller — visão rápida de existe/não existe |
-| `achados_out/associacao.csv` | Uma linha por documento. **Só existe se a Fase 4 rodou** |
+| `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/RELATORIO-ACHADOS.md` | **Leia primeiro.** Versão gerada, da última execução |
+| `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/achados.json` | Achados completos, estruturados. Onde conferir qualquer número |
+| `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/achados.csv` | Uma linha por controller — visão rápida de existe/não existe |
+| `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/associacao.csv` | Uma linha por documento. **Só existe se a Fase 4 rodou** |
 
 > O `RELATORIO-ACHADOS.md` **versionado** (nesta pasta) é curado à mão a partir dessas saídas e
-> é o que persiste. O de `achados_out/` é descartável e sobrescrito a cada execução.
+> é o que persiste. O de `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/` é descartável e sobrescrito a cada execução.
 
 ### Interpretar — quatro armadilhas
 

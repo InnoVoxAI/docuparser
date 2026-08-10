@@ -43,11 +43,11 @@ seu papel.
 
 | Documento | Papel |
 |---|---|
-| [plano-fase-b-spike-descoberta.md](../../../docuparse-project/docs/superlogica/api%20integration%20plan/documentation/plano-fase-b-spike-descoberta.md) | Requisito de origem (o quê/porquê + tarefas por fase) |
-| [discovery_spike.py](../../../docuparse-project/docs/superlogica/api%20integration%20plan/discovery_spike.py) | Comportamento de referência já implementado e testado |
-| [README-discovery-spike.md](../../../docuparse-project/docs/superlogica/api%20integration%20plan/documentation/README-discovery-spike.md) | Contratos operacionais (credenciais, amostra, saídas) |
-| [estudo-api-superlogica-condominios-docuparse.md](../../../docuparse-project/docs/superlogica/api%20integration%20plan/documentation/estudo-api-superlogica-condominios-docuparse.md) | **§7** — as hipóteses que este spike resolve |
-| [pontos-a-esclarecer-validacao-humana.md](../../../docuparse-project/docs/superlogica/api%20integration%20plan/documentation/pontos-a-esclarecer-validacao-humana.md) | **H1–H8** — decisões humanas em aberto |
+| [plano-fase-b-spike-descoberta.md](../../../docuparse-project/docs/superlogica/api%20integration%20plan/fase-b-spike/plano-fase-b-spike-descoberta.md) | Requisito de origem (o quê/porquê + tarefas por fase) |
+| [discovery_spike.py](../../../docuparse-project/docs/superlogica/api%20integration%20plan/fase-b-spike/ferramenta/discovery_spike.py) | Comportamento de referência já implementado e testado |
+| [README-discovery-spike.md](../../../docuparse-project/docs/superlogica/api%20integration%20plan/fase-b-spike/ferramenta/README-discovery-spike.md) | Contratos operacionais (credenciais, amostra, saídas) |
+| [estudo-api-superlogica-condominios-docuparse.md](../../../docuparse-project/docs/superlogica/api%20integration%20plan/fase-a-estudo/estudo-api-superlogica-condominios-docuparse.md) | **§7** — as hipóteses que este spike resolve |
+| [pontos-a-esclarecer-validacao-humana.md](../../../docuparse-project/docs/superlogica/api%20integration%20plan/fase-a-estudo/pontos-a-esclarecer-validacao-humana.md) | **H1–H8** — decisões humanas em aberto |
 
 ---
 
@@ -69,7 +69,7 @@ verificar que todas as checagens passam e que o código de saída reflete o resu
 **Acceptance Scenarios**:
 
 1. **Given** nenhuma credencial configurada e sem acesso à rede, **When** o operador roda o modo
-   de auto-verificação, **Then** as 16 checagens são impressas individualmente como PASS/FAIL,
+   de auto-verificação, **Then** as 28 checagens são impressas individualmente como PASS/FAIL,
    um veredito final é exibido e o processo encerra com código 0.
 2. **Given** uma regressão em qualquer função pura, **When** o modo de auto-verificação roda,
    **Then** a checagem correspondente é impressa como FAIL e o processo encerra com código

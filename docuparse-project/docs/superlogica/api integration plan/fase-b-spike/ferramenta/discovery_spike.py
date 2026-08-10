@@ -1019,13 +1019,25 @@ def run_self_test() -> int:
 # ------------------------------------------------------------------------------------
 # CLI
 # ------------------------------------------------------------------------------------
+def _default_out_dir() -> Path:
+    """`<fase-b-spike>/achados/execucoes/<AAAA-MM-DD>`, relativo ao próprio script.
+
+    Ancorado no arquivo, não no cwd: os artefatos caem sempre na pasta da Fase B,
+    de onde quer que a ferramenta seja invocada. Aquele diretório é ignorado pelo
+    git — os artefatos crus trazem PII do ERP; o que se versiona é o relatório.
+    """
+    return (Path(__file__).resolve().parent.parent / "achados" / "execucoes"
+            / time.strftime("%Y-%m-%d"))
+
+
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
         description="Spike de descoberta READ-ONLY da API Condomínios (Superlógica).")
     p.add_argument("--phases", default="0,1,2,3",
                    help="fases a rodar, ex.: '0,1,2,3' ou '0,1'. A fase 4 requer --sample.")
     p.add_argument("--sample", type=Path, help="JSON com amostra rotulada (habilita a Fase 4).")
-    p.add_argument("--out", type=Path, default=Path("achados_out"), help="diretório de saída.")
+    p.add_argument("--out", type=Path, default=_default_out_dir(),
+                   help="diretório de saída (padrão: ../achados/execucoes/<AAAA-MM-DD>).")
     p.add_argument("--base-url", default=os.getenv("SL_BASE_URL", BASE_URL_DEFAULT))
     p.add_argument("--timeout", type=float, default=float(os.getenv("SL_TIMEOUT", "30")))
     p.add_argument("--max-pages", type=int, default=int(os.getenv("SL_MAX_PAGES", "5")))

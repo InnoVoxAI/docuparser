@@ -260,6 +260,3 @@ node_modules/
 # tasks.json
 # tasks/
 
-# Saídas do spike de descoberta Superlógica (spec 015) — dados do ERP, não versionar.
-# O que persiste é o RELATORIO-ACHADOS.md em docs/superlogica/.../documentation/.
-achados_out/

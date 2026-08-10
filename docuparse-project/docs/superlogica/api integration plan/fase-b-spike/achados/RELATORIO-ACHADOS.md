@@ -3,7 +3,7 @@
 **Status: Fases 0–3 EXECUTADAS. Fase 4 (regra de associação) NÃO EXECUTADA.**
 
 _Execução: 2026-08-07 19:15 · `base_url` `https://api.superlogica.net/v2` · modo: **completo** ·
-artefatos em `achados_out/`._
+artefatos em `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/`._
 
 ---
 
@@ -19,12 +19,12 @@ o que a sondagem real da API respondeu.
 
 | | |
 |---|---|
-| **Script executado** | [`discovery_spike.py`](../discovery_spike.py) |
-| **Comando** | `./run_script.sh python3 "docuparse-project/docs/superlogica/api integration plan/discovery_spike.py" -v` |
+| **Script executado** | [`discovery_spike.py`](../ferramenta/discovery_spike.py) |
+| **Comando** | `./run_script.sh python3 "docuparse-project/docs/superlogica/api integration plan/fase-b-spike/ferramenta/discovery_spike.py" -v` |
 | **Modo** | completo (todos os controllers candidatos), fases 0 a 3 |
 | **Execução** | 2026-08-07 19:15 · `base_url` `https://api.superlogica.net/v2` |
 | **Natureza** | 100% READ-ONLY — só `GET`, guarda rígida no cliente HTTP (RI-001) |
-| **Artefatos crus** | `achados_out/achados.json`, `achados_out/achados.csv` (fora do git) |
+| **Artefatos crus** | `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/achados.json`, `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/achados.csv` (fora do git) |
 | **Auto-verificação** | 28/28 checagens offline passando |
 
 Todo dado deste relatório **sai desses artefatos**. Nada aqui vem de observação manual de
@@ -46,12 +46,14 @@ pontos-a-esclarecer...md          RELATORIO-ACHADOS.md
 
 | Documento | Relação com este relatório |
 |---|---|
-| [`estudo-api-superlogica-condominios-docuparse.md`](estudo-api-superlogica-condominios-docuparse.md) | **A origem.** O §7 lista as 9 perguntas que só a API responde. Este relatório as responde uma a uma |
-| [`plano-fase-b-spike-descoberta.md`](plano-fase-b-spike-descoberta.md) | O plano que definiu as Fases 0–5 do spike e o DoD |
-| [`README-discovery-spike.md`](README-discovery-spike.md) | Como rodar a ferramenta (modos, variáveis, formato da amostra) |
-| [`pontos-a-esclarecer-validacao-humana.md`](pontos-a-esclarecer-validacao-humana.md) | H1–H8, decisões **humanas**. Este relatório **não** as resolve |
-| [`docs/specs/015-superlogica-discovery-spike/spec.md`](../../../../../docs/specs/015-superlogica-discovery-spike/spec.md) | A spec formal do spike (requisitos, restrições, contratos de saída) |
-| [`estado atual discovery superlogica.md`](estado%20atual%20discovery%20superlogica.md) | Recapitulação do processo: em que pé está cada fase e o que falta |
+| [`estudo-api-superlogica-condominios-docuparse.md`](../../fase-a-estudo/estudo-api-superlogica-condominios-docuparse.md) | **A origem.** O §7 lista as 9 perguntas que só a API responde. Este relatório as responde uma a uma |
+| [`plano-fase-b-spike-descoberta.md`](../plano-fase-b-spike-descoberta.md) | O plano que definiu as Fases 0–5 do spike e o DoD |
+| [`README-discovery-spike.md`](../ferramenta/README-discovery-spike.md) | Como rodar a ferramenta (modos, variáveis, formato da amostra) |
+| [`pontos-a-esclarecer-validacao-humana.md`](../../fase-a-estudo/pontos-a-esclarecer-validacao-humana.md) | H1–H8, decisões **humanas**. Este relatório **não** as resolve |
+| [`docs/specs/015-superlogica-discovery-spike/spec.md`](../../../../../../docs/specs/015-superlogica-discovery-spike/spec.md) | A spec formal do spike (requisitos, restrições, contratos de saída) |
+| [`estado atual discovery superlogica.md`](../../00-visao-geral/estado%20atual%20discovery%20superlogica.md) | Recapitulação do processo: em que pé está cada fase e o que falta |
+| [`restricoes-criticas.md`](../../00-visao-geral/restricoes-criticas.md) | As 14 restrições que condicionam a Fase C, derivadas destes achados |
+| [`endpoints/`](../../endpoints/README.md) | Um documento por endpoint: o que é, campos, status |
 
 ### ⚠️ Sobre "reescrever os `[HIP]`"
 
@@ -237,21 +239,71 @@ escopo read-only.
 
 ---
 
-### §7.3 — Anexos na leitura ✅ **RESOLVIDO (parcialmente)**
+### §7.3 — Anexos na leitura ✅ **RESOLVIDO** (leitura) · ⬜ download e escrita em aberto
 
 2 despesas amostradas. Campos candidatos a anexo:
 
-| Campo | Formato aparente |
+| Campo | Conteúdo |
 |---|---|
-| `arquivos` | conteúdo com 1177 caracteres — **o candidato forte** |
-| `documentos_pendentes` | 2 caracteres |
-| `st_documento_des`, `st_serienota_des` | vazios |
+| **`arquivos`** | **Lista de objetos com metadado de anexo** — o campo real |
+| `documentos_pendentes` | Lista vazia (`[]`) na amostra |
+| `st_documento_des`, `st_serienota_des` | Vazios — não são anexo, são número/série do documento |
 
-**Há campo de anexo na leitura.** O formato exato (URL / base64 / id) ainda não foi
-classificado — `arquivos` precisa de inspeção do conteúdo.
+#### O formato: nem URL, nem base64 — **referência por id + hash**
 
-**Confirmar se a despesa aceita anexo na ESCRITA só se resolve escrevendo** → passo autorizado
-à parte, fora do spike (H1).
+Esta era a bifurcação em aberto do §7.3, e está **decidida**. O anexo **não vem embutido** na
+resposta da despesa: vem uma lista de metadados apontando para o arquivo.
+
+Estrutura real observada (despesa `335373`, condomínio `7`):
+
+```json
+"arquivos": [
+  {
+    "id_arquivo_arq":  "125918",
+    "st_nome_arq":     "Recibo de Pagamento (24)",
+    "st_extensao_arq": "pdf",
+    "st_hash_arq":     "e9cc9a43245cdbe3ec2fd9089bc24ea56ae8058e",
+    "nm_tamanho_arq":  "7284",
+    "dt_envio_arq":    "08/05/2026",
+    "fl_vinculado_arq": "1",
+    "id_despesa_des":  "335373",
+    "id_parcela_pdes": "350457",
+    "etiquetas": [ { "st_nomeabreviadoetiqueta_eti": "Doc. Pgto" } ]
+  }
+]
+```
+
+Em português: *a despesa 335373 tem um anexo — PDF de 7,3 KB chamado "Recibo de Pagamento (24)",
+id 125918, etiquetado como "Doc. Pgto"*.
+
+**Campos que importam para a Fase 4:**
+
+| Campo | Para quê |
+|---|---|
+| `id_arquivo_arq` | Chave para baixar o arquivo |
+| `st_hash_arq` | SHA-1 do conteúdo — serve para deduplicar e verificar integridade |
+| `st_extensao_arq` | Filtrar só `pdf` ao montar a amostra |
+| `nm_tamanho_arq` | Bytes — descartar arquivos vazios/corrompidos antes de gastar OCR |
+| `etiquetas[].st_nomeabreviadoetiqueta_eti` | Classificação humana do anexo (`Doc. Pgto`, …) — **pista para o H7** |
+
+> As **etiquetas** são um achado lateral relevante: o ERP já classifica o anexo por tipo, feito
+> por pessoa. Pode servir de segunda fonte para o H7 (taxonomia de tipos de documento) e para
+> segmentar as métricas da Fase 4 por tipo.
+
+#### O que continua em aberto
+
+1. **O endpoint de download.** Sabemos o identificador, não o path que troca `id_arquivo_arq`
+   pelos bytes. **Resolvível só com `GET`** — não depende de decisão humana.
+2. **A escrita.** Confirmar se a despesa *aceita* anexo, e em que formato, só se resolve
+   escrevendo → passo autorizado à parte, fora do spike (H1).
+
+**Consequência para a Fase 4:** o caminho de montagem da amostra está desenhado —
+`despesa → id_condominio_cond` (gabarito) e `despesa → arquivos[].id_arquivo_arq` → baixar PDF →
+DocuParse → `cnpj_papel_condominio`. Falta só o passo de download.
+
+> ⚠️ Repare em `dt_envio_arq: "08/05/2026"` e `dt_vencimento_pdes: "08/05/2026 00:00:00"`. É o
+> [R-04](../../00-visao-geral/restricoes-criticas.md#r-04) num campo real: **8 de maio** ou
+> **5 de agosto**? Ambos plausíveis. A ambiguidade não é teórica.
 
 ---
 
@@ -329,7 +381,7 @@ passou a mandar o parâmetro obrigatório (antes media 8 × 403, não 8 × 200);
 **retém o go/no-go** e anula `precisao_%` / `errado_%` quando o índice tem menos de 2
 condomínios — em vez de imprimir um `errado_% = 0` que seria artefato do ambiente.
 
-Fora da ferramenta: [`run_script.sh`](../../../../../run_script.sh) tinha o caminho `/docuparser`
+Fora da ferramenta: [`run_script.sh`](../../../../../../run_script.sh) tinha o caminho `/docuparser`
 do dev container hardcoded e não carregava o `.env` num clone no host.
 
 ---

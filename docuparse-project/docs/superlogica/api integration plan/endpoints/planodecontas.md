@@ -1,0 +1,32 @@
+# `planodecontas`
+
+**Status:** ❌ Não encontrado · **Papel no projeto:** —
+
+## O que é
+
+Esperava-se o plano de contas (classificação contábil das despesas). Não existe com este nome — apesar de `id_planoconta_plc` aparecer como campo em condomínios e despesas, o que confirma que a entidade existe sob outro path.
+
+## Chamada
+
+| | |
+|---|---|
+| **Path** | `GET /v2/condor/planodecontas` |
+| **Métodos sondados** | `GET` apenas — o spike é read-only por construção (RI-001). Escrita não foi testada e está fora do escopo da Fase B |
+| **Parâmetro obrigatório** | nenhum identificado |
+| **HTTP observado** | `404` |
+| **Registros na sonda** | 0 |
+| **Campos descobertos** | 0 |
+| **Erro no corpo** | `Não encontrado. A página que você tentou acessar não existe.` |
+
+## Campos descobertos
+
+Nenhum — o endpoint não retornou dados.
+
+## Encaminhamento
+
+- Descobrir o path real por **inspeção do tráfego do ERP** (a interface usa a mesma API; a aba *Network* revela o path exato).
+
+
+---
+
+_Gerado a partir de `fase-b-spike/achados/execucoes/2026-08-07/achados.json`. Ver [RELATORIO-ACHADOS.md](../fase-b-spike/achados/RELATORIO-ACHADOS.md)._

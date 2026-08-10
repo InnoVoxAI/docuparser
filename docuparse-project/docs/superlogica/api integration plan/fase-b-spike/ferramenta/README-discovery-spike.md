@@ -111,7 +111,7 @@ Veja `amostra.exemplo.json`.
 
 ## 6. Saídas (o que persiste)
 
-Gravadas em `--out` (default `achados_out/`):
+Gravadas em `--out` (default `fase-b-spike/achados/execucoes/<AAAA-MM-DD>/`):
 
 | Arquivo | Conteúdo |
 |---|---|

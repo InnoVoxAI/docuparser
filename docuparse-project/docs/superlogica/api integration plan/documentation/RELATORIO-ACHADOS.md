@@ -5,18 +5,90 @@
 _Execução: 2026-08-07 19:15 · `base_url` `https://api.superlogica.net/v2` · modo: **completo** ·
 artefatos em `achados_out/`._
 
-> Este arquivo é o que **persiste** depois do descarte do `discovery_spike.py`.
-> Todo dado abaixo foi **produzido pela ferramenta** e sai dos artefatos daquela execução
-> (`achados.json` / `achados.csv`) — não de observação manual de terminal.
->
-> ⚠️ **Ressalva que atravessa o relatório inteiro:** a credencial enxerga **1 condomínio**
-> (`id_condominio_cond=7`, "COND. EDF. BETULA"). Não é possível distinguir daqui se a carteira
-> tem mesmo 1 ou se a credencial só vê 1 — é o edge case de *permissão parcial* previsto na
-> spec. Toda conclusão que dependa de **volume** está marcada como não conclusiva.
+---
+
+## 0. Como ler este documento
+
+### O que ele é
+
+O **entregável da Fase B**. O spike é uma ferramenta descartável; o que sobrevive a ela é este
+relatório. Cada seção abaixo pega uma pergunta técnica que a Fase A deixou **em aberto** e diz
+o que a sondagem real da API respondeu.
+
+### Como os resultados foram obtidos
+
+| | |
+|---|---|
+| **Script executado** | [`discovery_spike.py`](../discovery_spike.py) |
+| **Comando** | `./run_script.sh python3 "docuparse-project/docs/superlogica/api integration plan/discovery_spike.py" -v` |
+| **Modo** | completo (todos os controllers candidatos), fases 0 a 3 |
+| **Execução** | 2026-08-07 19:15 · `base_url` `https://api.superlogica.net/v2` |
+| **Natureza** | 100% READ-ONLY — só `GET`, guarda rígida no cliente HTTP (RI-001) |
+| **Artefatos crus** | `achados_out/achados.json`, `achados_out/achados.csv` (fora do git) |
+| **Auto-verificação** | 28/28 checagens offline passando |
+
+Todo dado deste relatório **sai desses artefatos**. Nada aqui vem de observação manual de
+terminal — quando algo foi descoberto sondando à mão, virou comportamento da ferramenta antes
+de virar linha deste documento.
+
+### Onde ele se encaixa
+
+```
+FASE A (concluída)                FASE B (aqui)                    FASE C (não iniciada)
+─────────────────                 ─────────────                    ────────────────────
+estudo-api-...md                  discovery_spike.py               Specify da integração
+  §7: 9 perguntas [HIP]  ────►      executa e mede       ────►       (a escrever)
+pontos-a-esclarecer...md          RELATORIO-ACHADOS.md
+  H1–H8 (humanas)                   ESTE documento
+```
+
+### Documentos relacionados
+
+| Documento | Relação com este relatório |
+|---|---|
+| [`estudo-api-superlogica-condominios-docuparse.md`](estudo-api-superlogica-condominios-docuparse.md) | **A origem.** O §7 lista as 9 perguntas que só a API responde. Este relatório as responde uma a uma |
+| [`plano-fase-b-spike-descoberta.md`](plano-fase-b-spike-descoberta.md) | O plano que definiu as Fases 0–5 do spike e o DoD |
+| [`README-discovery-spike.md`](README-discovery-spike.md) | Como rodar a ferramenta (modos, variáveis, formato da amostra) |
+| [`pontos-a-esclarecer-validacao-humana.md`](pontos-a-esclarecer-validacao-humana.md) | H1–H8, decisões **humanas**. Este relatório **não** as resolve |
+| [`docs/specs/015-superlogica-discovery-spike/spec.md`](../../../../../docs/specs/015-superlogica-discovery-spike/spec.md) | A spec formal do spike (requisitos, restrições, contratos de saída) |
+| [`estado atual discovery superlogica.md`](estado%20atual%20discovery%20superlogica.md) | Recapitulação do processo: em que pé está cada fase e o que falta |
+
+### ⚠️ Sobre "reescrever os `[HIP]`"
+
+O plano da Fase B previa que a saída do spike **reescreveria** as tags de confiança
+(`[HIP] → [DOC]`) dentro do estudo da Fase A. **Isso não foi feito.**
+
+O `estudo-api-...md` continua **intocado**, com suas **21 tags `[HIP]` originais**. O que existe
+é **este documento novo**, que responde às mesmas perguntas do §7 — mas nenhum leitor do estudo
+da Fase A saberá disso só lendo o estudo.
+
+**Ação pendente, não executada:** decidir entre (a) atualizar as tags no estudo da Fase A
+apontando para cá, ou (b) adicionar um aviso no topo dele remetendo a este relatório. Enquanto
+nenhuma das duas acontecer, **o estudo da Fase A está desatualizado** em pelo menos 5 pontos —
+`ST_CGC_CON` como campo de CNPJ (errado, é `st_cpf_cond`), o modelo de erro, o parâmetro
+obrigatório `id`, quais controllers existem e o formato de data.
+
+### ⚠️ Ressalva que atravessa o relatório inteiro — CONFIRMADA
+
+A credencial dá acesso a **1 condomínio apenas** (`id_condominio_cond=7`, "COND. EDF. BETULA"),
+verificado junto a quem a forneceu (2026-08-07). Não é artefato de medição: é o escopo real da
+credencial *por enquanto*. Toda conclusão que dependa de **volume de carteira** está marcada
+como não conclusiva, e a Fase 4 fica limitada à metade de cobertura (ver §5/§7 ⭐).
+
+### Legenda de status
+
+| | |
+|---|---|
+| ✅ **RESOLVIDO** | A sondagem respondeu; vale como fato |
+| ⚠️ **PARCIAL** | Parte respondida, parte ainda aberta |
+| ⛔ **NÃO CONCLUSIVO** | Rodou, mas o ambiente não sustenta a conclusão |
+| ⬜ **NÃO EXECUTADO** | Não rodou; nada foi inventado no lugar |
 
 ---
 
-## §7.4 — Autenticação e modelo de erro ✅ **RESOLVIDO**
+## 1. Achados por item do §7 da Fase A
+
+### §7.4 — Autenticação e modelo de erro ✅ **RESOLVIDO**
 
 Chamada válida: **HTTP 200**, `autenticou: true`. A credencial funciona.
 
@@ -43,7 +115,7 @@ eterno contra erros que retry nenhum resolve.
 - O padrão v1 (`status` no corpo, ≥100 = erro) **coexiste** com `msg` na v2 — o `403` traz
   os dois.
 
-### Mapeamento das credenciais (confirmado por sondagem)
+#### Mapeamento das credenciais (confirmado por sondagem)
 
 | Header | Recebe |
 |---|---|
@@ -55,7 +127,7 @@ Serve a outro fluxo. O spike não o consome.
 
 ---
 
-## §7.1 / §7.8 — Endpoints e campos ✅ **RESOLVIDO**
+### §7.1 / §7.8 — Endpoints e campos ✅ **RESOLVIDO**
 
 **Descoberta que destrava tudo:** `condor/condominios` **exige o parâmetro `id`**. Sem ele,
 responde `403 "Id do condomínio não informado"`. O coringa **`id=todos`** devolve a carteira.
@@ -80,12 +152,12 @@ inspeção do tráfego do ERP — o nome do controller provavelmente difere do c
 (`Base table or view not found`). Não é "não existe" — é um endpoint quebrado do lado do ERP,
 ou não provisionado para esta licença. Vale reportar ao Superlógica.
 
-### Envelope das respostas
+#### Envelope das respostas
 
 As entidades vêm **duplamente aninhadas**: `[ { "condominio": [ {…109 campos…} ] } ]`. Sem
 desembrulhar, o achado reportaria 1 registro com um único "campo" chamado `condominio`.
 
-### Nomes de campo descobertos (§7.2-campo)
+#### Nomes de campo descobertos (§7.2-campo)
 
 Os dois campos centrais são **pontas opostas da mesma operação** — a confusão entre eles é o
 erro que mais custa caro, então vale a distinção explícita:
@@ -124,9 +196,9 @@ ferramenta agora os redige por nome antes de gravar qualquer amostra.
 
 ---
 
-## §7.2-filtro / §7.5 / §7.6 / §7.7 — Mecânica ⚠️ **PARCIAL**
+### §7.2-filtro / §7.5 / §7.6 / §7.7 — Mecânica ⚠️ **PARCIAL**
 
-### Filtro server-side por CNPJ — ⛔ **NÃO CONCLUSIVO**
+#### Filtro server-side por CNPJ — ⛔ **NÃO CONCLUSIVO**
 
 Os 6 parâmetros candidatos (`CNPJ`, `cnpj`, `pesquisa`, `busca`, `ST_CGC_CON`, `ST_CNPJ_CON`)
 foram testados com um CNPJ real da carteira. Nenhum estreitou o resultado — **mas com 1
@@ -141,31 +213,31 @@ o mesmo registro.
 Para decidir, repetir contra uma carteira com **2 ou mais** condomínios. (Uma versão anterior
 deste relatório concluía "SEM filtro" — era falsa confiança, corrigida na ferramenta.)
 
-### Paginação — ⚠️ não conclusivo
+#### Paginação — ⚠️ não conclusivo
 
 `itensPorPagina`, `limit` e `porPagina` foram aceitos, mas com baseline de 1 registro
 "respeitou o limite" é trivialmente verdadeiro e **não prova** que a paginação funciona.
 Também depende de carteira maior.
 
-### Formato de data — ✅ observado
+#### Formato de data — ✅ observado
 
 Só o formato **com barra** aparece nas respostas (ex.: `08/10/2020`); zero ocorrências de ISO.
 **A leitura não distingue `DD/MM` de `MM/DD`** — o teste ativo depende de existir filtro de
 data. Continua em aberto, e é o bug clássico da integração.
 
-### Rate limit — ✅ sem sinal de limite
+#### Rate limit — ✅ sem sinal de limite
 
 Burst de 8 requisições: **8 × HTTP 200**, nenhum `429`, **nenhum cabeçalho de rate limit**
 exposto. O limite real não é público. **Throttle conservador na integração.**
 
-### Lote — ⬜ deferido
+#### Lote — ⬜ deferido
 
 O padrão `params[]` da v1 era `POST`. Confirmação depende do caminho de escrita, fora do
 escopo read-only.
 
 ---
 
-## §7.3 — Anexos na leitura ✅ **RESOLVIDO (parcialmente)**
+### §7.3 — Anexos na leitura ✅ **RESOLVIDO (parcialmente)**
 
 2 despesas amostradas. Campos candidatos a anexo:
 
@@ -183,30 +255,63 @@ classificado — `arquivos` precisa de inspeção do conteúdo.
 
 ---
 
-## ⭐ §5 / §7 ⭐ — Regra de associação ⬜ **NÃO EXECUTADA**
+### ⭐ §5 / §7 ⭐ — Regra de associação ⬜ **NÃO EXECUTADA**
 
 Não rodou por **falta de amostra rotulada**. O bloqueio técnico caiu — `st_cpf_cond` e
 `id_condominio_cond` estão identificados, então a Fase 4 tem como montar o índice.
 
-**Nenhum go/no-go foi emitido.** Nenhuma métrica de cobertura, precisão ou % de associações
-erradas existe. A regra documento↔condomínio permanece **hipótese não testada**.
+**Nenhum go/no-go foi emitido.** A regra documento↔condomínio permanece **hipótese não testada**.
 
-E há um problema de fundo, independente da amostra:
+#### A Fase 4 se parte em duas metades, e só uma é acessível nesta credencial
 
-> **Com 1 condomínio na carteira, a Fase 4 não produz um go/no-go significativo.** Um índice de
-> uma entrada só permite "casou" ou "não casou"; a **associação errada** — o número de risco
-> financeiro/jurídico, o motivo de a Fase 4 existir — não tem como se manifestar. Confundir
-> um condomínio com outro exige que haja outro.
+Com **1 condomínio** (confirmado), o índice tem uma entrada só. Isso não zera a fase — separa o
+que ela mede:
 
-**A Fase 4 precisa de um ambiente com a carteira real.** Confirmar com quem forneceu os tokens
-se esta licença é sandbox de demonstração ou produção com visibilidade restrita.
+| Métrica | Acessível aqui | Por quê |
+|---|---|---|
+| % sem CNPJ | ✅ | Mede se o DocuParse extraiu algum CNPJ do documento |
+| % CNPJ inválido | ✅ | DV local; pega erro de OCR |
+| Cobertura (% que casou) | ✅ | O CNPJ extraído bate com o do cadastro |
+| **Precisão / % ERRADO** | ❌ | **Não há outro condomínio com que confundir** |
+
+Ou seja: dá para rodar a Fase 4 aqui como **ensaio** — valida o encanamento de ponta a ponta e
+mede a **qualidade de extração do DocuParse**, que é informação real. O que **não** sai é o
+go/no-go, porque ele se apoia no `% ERRADO` — o número de risco financeiro/jurídico e o motivo
+de a fase existir. Confundir um condomínio com outro exige que haja outro.
+
+**O go/no-go exige um ambiente com a carteira real (2+ condomínios).**
+
+#### Onde obter o gabarito: `condor/despesas`
+
+O registro de despesa (97 campos) traz, no mesmo lugar, o documento e a resposta certa:
+
+| Campo | Papel na amostra |
+|---|---|
+| `id_condominio_cond` | **É o `condominio_esperado_id`** — atribuído por uma pessoa ao lançar a despesa |
+| `st_fantasia_cond` | Nome do condomínio, para conferência humana |
+| `arquivos` | O anexo — o documento a ser processado pelo DocuParse |
+
+O gabarito é **independente da chave sob teste**: quem lançou a despesa escolheu o condomínio
+por julgamento humano, não casando CNPJ. É a condição que valida a medição.
+
+⚠️ **Duas armadilhas de montagem:**
+
+1. O `id_condominio_cond` aparece em dois papéis opostos — vindo do **índice de CNPJ** é o
+   *palpite*; vindo do **registro da despesa** é a *verdade*. Usar o mesmo valor nos dois lados
+   compara algo consigo mesmo e dá 100% sempre.
+2. **O `cnpj_papel_condominio` tem que sair do PDF, via DocuParse.** Tirá-lo dos campos
+   estruturados da despesa testaria o ERP contra o ERP — não a extração, que é o que está sob
+   julgamento. Da API pode vir tudo, menos esse campo.
+
+**Pré-requisito ainda aberto:** o formato do campo `arquivos` (URL / base64 / id) não foi
+classificado — sem isso não há como puxar os PDFs programaticamente. Ver §7.3.
 
 ---
 
-## Correções feitas na ferramenta
+## 2. Correções feitas na ferramenta durante esta execução
 
 A execução expôs sete defeitos, todos corrigidos e cobertos por auto-verificação
-(**13 → 26 checagens** offline):
+(**13 → 28 checagens** offline):
 
 | # | Defeito | Impacto se não corrigido |
 |---|---|---|
@@ -218,25 +323,37 @@ A execução expôs sete defeitos, todos corrigidos e cobertos por auto-verifica
 | 6 | `mask_pii_in_record` só mascarava CPF/CNPJ | **Gravaria tokens e senhas em disco** (RI-002/RI-004) |
 | 7 | `guess_id_field` escolhia por contagem | Elegeu `id_planoconta_plc`; o índice da Fase 4 mapearia CNPJ → id errado, **corrompendo o go/no-go em silêncio** |
 
-Mais dois ajustes de honestidade: a conclusão do filtro e a da paginação agora se declaram
-**não conclusivas** quando a carteira é pequena demais para sustentá-las, e a sonda de rate
-limit passou a mandar o parâmetro obrigatório (antes media 8 × 403, não 8 × 200).
+Mais três ajustes de honestidade: a conclusão do filtro e a da paginação agora se declaram
+**não conclusivas** quando a carteira é pequena demais para sustentá-las; a sonda de rate limit
+passou a mandar o parâmetro obrigatório (antes media 8 × 403, não 8 × 200); e a Fase 4 agora
+**retém o go/no-go** e anula `precisao_%` / `errado_%` quando o índice tem menos de 2
+condomínios — em vez de imprimir um `errado_% = 0` que seria artefato do ambiente.
 
-Fora da ferramenta: [`run_script.sh`](../../../../run_script.sh) tinha o caminho `/docuparser`
+Fora da ferramenta: [`run_script.sh`](../../../../../run_script.sh) tinha o caminho `/docuparser`
 do dev container hardcoded e não carregava o `.env` num clone no host.
 
 ---
 
-## Encaminhamento
+## 3. Encaminhamento
 
 **Bloqueadores da Fase 4, em ordem:**
 
-1. **Ambiente com a carteira real** (2+ condomínios). Destrava o go/no-go **e** a bifurcação do
-   filtro e a paginação. É o item de maior alcance.
-2. **Amostra rotulada.** O gabarito (`condominio_esperado_id`) **não pode** ser obtido casando o
-   CNPJ — seria usar a resposta para corrigir a própria prova. Tem que vir de fonte
-   independente: o arquivamento manual já correto no ERP, ou a pasta de origem do documento.
-3. **H7** — mapa tipo de documento → qual campo é o papel-condomínio.
+1. **Formato do campo `arquivos`** (URL / base64 / id). Deixou de ser curiosidade do §7.3 e virou
+   pré-requisito da amostra: é por ele que se puxa o PDF de cada despesa. Resolvível por
+   inspeção do tráfego do ERP, sem depender de credencial nova.
+2. **H7** — mapa tipo de documento → qual campo é o papel-condomínio. Define o que entra em
+   `cnpj_papel_condominio` por tipo.
+3. **Ambiente com a carteira real** (2+ condomínios). Destrava o **go/no-go**, a bifurcação do
+   filtro e a paginação — as três conclusões que esta credencial não sustenta. É o item de maior
+   alcance, e o único que não tem contorno técnico.
+
+Com 1 e 2 resolvidos, o **ensaio de cobertura** já pode rodar nesta credencial e entregar a
+qualidade de extração do DocuParse, sem esperar o item 3.
+
+**O SELECT não serve como fonte de gabarito.** O `mapa_download.csv` é organizado por *categoria
+do plano de contas* (`pasta_destino`, `categoria_bruta`, `fornecedor`) e **não tem dimensão de
+condomínio** — o pipeline pressupõe um condomínio só. Ele fornece documentos, não a associação
+correta.
 
 **Descoberta manual pendente (não depende de credencial):** os 4 controllers `404`
 (`condominos`, `contatosunidade`, `cobrancas`, `planodecontas`) e o formato do campo `arquivos`

@@ -383,6 +383,11 @@ que sobrou para a Fase C.
   inválido**, **% sem match no cadastro** e **% de associações erradas**.
 - **FR-054**: Quando a amostra não trouxer gabarito, a precisão MUST ser reportada como
   indisponível — nunca estimada — e o go/no-go MUST orientar a rotular a amostra.
+- **FR-057**: Quando o índice tiver **menos de 2 condomínios**, a ferramenta MUST reportar
+  cobertura, % sem CNPJ e % CNPJ inválido normalmente, mas MUST declarar **precisão e % de
+  associações erradas como não mensuráveis nesse ambiente** — sem outro condomínio no índice, a
+  associação errada não tem como se manifestar, e um `% ERRADO` de zero seria artefato do
+  ambiente, não evidência de acerto. O go/no-go MUST ser explicitamente retido nesse caso.
 - **FR-055**: O go/no-go MUST apresentar os números, MUST destacar o **% de associações erradas**
   como o número de risco financeiro/jurídico, e MUST declarar que o limiar é decisão humana (H5).
 - **FR-056**: A ferramenta MUST recusar-se a rodar esta fase quando o nome do campo de CNPJ não
@@ -559,7 +564,7 @@ páginas do índice e sobrescrita dos nomes de campo são opcionais e têm padr�
 
 ### Definition of Done do spike
 
-- **SC-001**: A auto-verificação offline executa **26 checagens** e todas passam, sem rede, sem
+- **SC-001**: A auto-verificação offline executa **28 checagens** e todas passam, sem rede, sem
   credenciais e sem gravar arquivos.
 - **SC-002**: O smoke check passa antes da varredura completa: `condominios` responde, a
   credencial autentica e o nome do campo de CNPJ é identificado.
@@ -573,7 +578,9 @@ páginas do índice e sobrescrita dos nomes de campo são opcionais e têm padr�
   (status HTTP × envelope no corpo).
 - **SC-006**: A regra de associação tem **go/no-go acompanhado de métricas numéricas** —
   cobertura, precisão, % sem CNPJ, % CNPJ inválido, % sem match e % errado — e **nenhum** limiar
-  de auto-confirmação foi assumido pela ferramenta.
+  de auto-confirmação foi assumido pela ferramenta. Em ambiente com índice de menos de 2
+  condomínios, este critério é atendido pela **retenção explícita** do go/no-go (FR-057): as
+  métricas de discriminação saem marcadas como não mensuráveis, nunca como zero.
 - **SC-007**: Os quatro artefatos de saída estão persistidos e são autossuficientes: um leitor que
   nunca viu a ferramenta entende os achados só com eles. A ferramenta pode ser descartada sem
   perda de informação.

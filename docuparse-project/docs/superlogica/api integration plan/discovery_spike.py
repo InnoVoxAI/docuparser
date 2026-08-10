@@ -727,7 +727,19 @@ def _association_metrics(c: dict) -> dict:
     }
 
 
-def _go_no_go_text(m: dict) -> str:
+def _go_no_go_text(m: dict, index_size: int = 2) -> str:
+    # Com menos de 2 condomínios no índice não existe "outro condomínio" com que
+    # confundir: 'errado_%' seria zero por construção do ambiente, não por acerto
+    # da regra. Emitir go/no-go aqui seria falsa segurança sobre o número de risco.
+    if index_size < 2:
+        return (
+            f"GO/NO-GO RETIDO: o índice tem {index_size} condomínio(s). "
+            f"Cobertura ({m['cobertura_match_%']}%), sem CNPJ ({m['sem_cnpj_%']}%) e CNPJ "
+            f"inválido ({m['cnpj_invalido_%']}%) SÃO válidos e medem a qualidade de extração "
+            "do DocuParse. Mas PRECISÃO e ASSOCIAÇÕES ERRADAS não são mensuráveis sem outro "
+            "condomínio no índice — um 'errado_%' de zero aqui é artefato do ambiente, não "
+            "evidência de acerto. Repetir com carteira de 2+ condomínios para decidir."
+        )
     prec = m.get("precisao_%")
     if prec is None:
         return ("SEM GABARITO suficiente: a amostra não trouxe 'condominio_esperado_id'. "
@@ -788,8 +800,15 @@ def phase4_association(client: ReadOnlyClient, cfg: Config,
         rows.append(row)
 
     metrics = _association_metrics(c)
+    if len(index) < 2:
+        # Não basta ressalvar em texto: os números têm que sair marcados como
+        # não mensuráveis, senão viram tabela e alguém os cita fora de contexto.
+        metrics["precisao_%"] = None
+        metrics["errado_%"] = None
+        metrics["nota_ambiente"] = (
+            f"precisao_% e errado_% indisponíveis: índice com {len(index)} condomínio(s).")
     return {"index_size": len(index), "counters": c, "metrics": metrics,
-            "rows": rows, "go_no_go": _go_no_go_text(metrics)}
+            "rows": rows, "go_no_go": _go_no_go_text(metrics, len(index))}
 
 
 # ------------------------------------------------------------------------------------
@@ -988,6 +1007,10 @@ def run_self_test() -> int:
     m = _association_metrics(c)
     check("precisão = 7/8 = 87.5%", m["precisao_%"] == 87.5)
     check("cobertura = 8/10 = 80.0%", m["cobertura_match_%"] == 80.0)
+
+    # Índice com 1 condomínio: 'errado_%' seria zero por construção do ambiente.
+    check("go/no-go é retido com índice < 2", "RETIDO" in _go_no_go_text(m, index_size=1))
+    check("go/no-go é emitido com índice >= 2", "RETIDO" not in _go_no_go_text(m, index_size=2))
 
     print("\nRESULTADO:", "TODOS PASSARAM ✅" if ok else "HOUVE FALHAS ❌")
     return 0 if ok else 1

@@ -4,21 +4,26 @@ import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
-
 from api.app import app
 from application.layout_event_worker import LayoutWorker, handle_ocr_completed_event
 from docuparse_events import LocalJsonlEventBus
 from docuparse_storage import LocalStorage
 from domain.classifier import classify_layout
 from events import validate_event
+from fastapi.testclient import TestClient
 
 
 def test_health_and_ready() -> None:
     client = TestClient(app)
 
-    assert client.get("/health").json() == {"status": "healthy", "service": "docuparse-layout-service"}
-    assert client.get("/ready").json() == {"status": "ready", "service": "docuparse-layout-service"}
+    assert client.get("/health").json() == {
+        "status": "healthy",
+        "service": "docuparse-layout-service",
+    }
+    assert client.get("/ready").json() == {
+        "status": "ready",
+        "service": "docuparse-layout-service",
+    }
 
 
 def test_classify_layout_endpoint() -> None:
@@ -143,7 +148,9 @@ def test_layout_worker_consumes_ocr_completed_stream(tmp_path) -> None:
 def test_layout_worker_sends_invalid_event_to_dlq(tmp_path) -> None:
     storage = LocalStorage(tmp_path / "objects")
     event_bus = LocalJsonlEventBus(tmp_path / "events")
-    event_bus.publish("ocr.completed", {"event_type": "ocr.completed", "document_id": str(uuid4())})
+    event_bus.publish(
+        "ocr.completed", {"event_type": "ocr.completed", "document_id": str(uuid4())}
+    )
 
     worker = LayoutWorker(storage=storage, event_bus=event_bus, start_at_latest=False)
 

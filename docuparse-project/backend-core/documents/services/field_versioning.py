@@ -64,7 +64,9 @@ def _aggregate_confidence(fields: dict[str, Any]) -> float:
     return round(sum(confs) / len(confs), 4) if confs else 0.0
 
 
-def _sync_extraction_result(document: Document, version: ExtractionFieldVersion) -> None:
+def _sync_extraction_result(
+    document: Document, version: ExtractionFieldVersion
+) -> None:
     result = getattr(document, "extraction_result", None)
     if result is None:
         return
@@ -85,9 +87,7 @@ def create_version(
     """Cria uma nova versão ativa, desativando a anterior e sincronizando o
     ``ExtractionResult``. Não sobrescreve nenhuma versão existente (FR-013/FR-016).
     """
-    active = (
-        document.field_versions.select_for_update().filter(is_active=True).first()
-    )
+    active = document.field_versions.select_for_update().filter(is_active=True).first()
     version_number = _next_version_number(document)
     if confidence is None:
         confidence = _aggregate_confidence(fields)

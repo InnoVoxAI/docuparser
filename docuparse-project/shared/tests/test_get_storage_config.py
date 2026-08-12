@@ -11,9 +11,8 @@ from unittest import mock
 
 import boto3
 import pytest
-from moto import mock_aws
-
 from docuparse_storage import RoutingStorage, get_storage
+from moto import mock_aws
 
 KEY = "documents/t/d/original"
 
@@ -52,9 +51,15 @@ def test_local_dir_resolved_from_env(tmp_path):
 
 
 def test_s3_backend_writes_s3_uri():
-    with mock_aws(), _clean_env(
-        DOCUPARSE_STORAGE_BACKEND="s3", S3_BUCKET="docuparse", S3_REGION="us-east-1",
-        AWS_ACCESS_KEY_ID="test", AWS_SECRET_ACCESS_KEY="test",
+    with (
+        mock_aws(),
+        _clean_env(
+            DOCUPARSE_STORAGE_BACKEND="s3",
+            S3_BUCKET="docuparse",
+            S3_REGION="us-east-1",
+            AWS_ACCESS_KEY_ID="test",
+            AWS_SECRET_ACCESS_KEY="test",
+        ),
     ):
         boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="docuparse")
         storage = get_storage()

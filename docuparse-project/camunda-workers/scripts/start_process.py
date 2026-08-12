@@ -21,7 +21,8 @@ import sys
 # Allow running from project root or scripts/ directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from pyzeebe import ZeebeClient, create_insecure_channel  # noqa: E402
+from opentelemetry import propagate
+from pyzeebe import ZeebeClient, create_insecure_channel
 
 
 async def start(
@@ -51,6 +52,11 @@ async def start(
         "channel": channel,
         "correlationId": correlation_id or document_id,
     }
+    # Serializa o traceparent ativo (se houver) como variável de processo, ao
+    # lado de correlationId — cada job handler o extrai via Span Link em vez
+    # de span pai (research.md R3), já que a instância BPMN pode ficar
+    # pendente por muito tempo entre a criação e a execução do primeiro job.
+    propagate.inject(variables)
 
     print(f"Starting process '{process_id}' with variables:")
     for k, v in variables.items():

@@ -15,6 +15,22 @@ def migrate_legacy_tenant_data(apps, schema_editor):
     first (see that migration's dependencies) to copy whatever exists there
     into the new tenants app models before it's gone for good.
     """
+    # documents is a TENANT_APP, so its tables are never created in the public
+    # schema this migration runs in — only real pre-multi-tenancy deployments
+    # ever had documents_tenant/documents_userprofile here. Check via
+    # introspection before querying, or a fresh install/test DB (where those
+    # tables simply don't exist) crashes with a ProgrammingError instead of
+    # taking the no-op path below.
+    with schema_editor.connection.cursor() as cursor:
+        existing_tables = set(
+            schema_editor.connection.introspection.table_names(cursor)
+        )
+    if (
+        "documents_tenant" not in existing_tables
+        or "documents_userprofile" not in existing_tables
+    ):
+        return  # Fresh install, nothing to consolidate.
+
     LegacyTenant = apps.get_model("documents", "Tenant")
     LegacyUserProfile = apps.get_model("documents", "UserProfile")
     Tenant = apps.get_model("tenants", "Tenant")
@@ -34,7 +50,7 @@ def migrate_legacy_tenant_data(apps, schema_editor):
         return
 
     if not LegacyTenant.objects.exists() and not LegacyUserProfile.objects.exists():
-        return  # Fresh install, nothing to consolidate.
+        return  # Legacy tables exist but are empty, nothing to consolidate.
 
     default_tenant, _ = Tenant.objects.get_or_create(
         slug=DEFAULT_TENANT_SLUG,
@@ -70,7 +86,6 @@ def reverse_noop(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("tenants", "0002_populate_schema_name_and_domain"),
         ("documents", "0010_backfill_field_versions"),

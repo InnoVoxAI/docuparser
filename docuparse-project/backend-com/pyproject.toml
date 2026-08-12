@@ -1,7 +1,7 @@
 [project]
-name = "atoms"
-version = "0.1.0"
-description = "Mini tools for building big things"
+name = "backend-com"
+version = "0.0.1"
+description = "Docuparser Com (for communication system)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -21,6 +21,11 @@ dependencies = [
     "uvicorn>=0.44.0",
     "pytest>=9.0.3",
     "pre-commit>=4.6.0",
+    "opentelemetry-sdk>=1.44.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.44.0",
+    "opentelemetry-instrumentation-fastapi>=0.65b0",
+    "opentelemetry-instrumentation-requests>=0.65b0",
+    "opentelemetry-instrumentation-redis>=0.65b0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +35,7 @@ debounce = [
 
 test = [
     "moto[s3]>=5.0",
+    "httpx>=0.28.1",
 ]
 
 email-reader = [
@@ -53,10 +59,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-path = "src/atoms/__init__.py"
+path = "./__init__.py"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/atoms", "README.md"]
+include = [".", "README.md"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/atoms"]
+packages = ["."]

@@ -1,36 +1,63 @@
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol, TypeVar
 from uuid import uuid4
 
-from events import DocumentReceivedEvent, OCRCompletedEvent, OCRFailedEvent
-from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
+from docuparse_events import (
+    EventBus,
+    event_bus_from_env,
+    extract_trace_link,
+    publish_dead_letter,
+    sleep_interval,
+)
 from docuparse_observability import log_event
 from docuparse_storage import document_ocr_raw_text_key, get_storage
+from events import DocumentReceivedEvent, OCRCompletedEvent, OCRFailedEvent
+from opentelemetry import trace
 
 from application.process_document import process_document
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer(__name__)
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _traced_consumer(span_name: str) -> Callable[[F], F]:
+    """Inicia o span de processamento com um Link para o trace de origem do
+    evento (research.md R4), quando `trace_context` estiver presente."""
+
+    def decorator(func: F) -> F:
+        @functools.wraps(func)
+        def wrapper(payload: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
+            link = extract_trace_link(payload)
+            with _tracer.start_as_current_span(
+                span_name, links=[link] if link else []
+            ):
+                return func(payload, *args, **kwargs)
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
 
 
 class Storage(Protocol):
-    def get_bytes(self, uri_or_key: str) -> bytes:
-        ...
+    def get_bytes(self, uri_or_key: str) -> bytes: ...
 
-    def put_bytes(self, key: str, content: bytes):
-        ...
+    def put_bytes(self, key: str, content: bytes): ...
 
 
 class EventPublisher(Protocol):
-    def publish(self, stream: str, event: dict[str, Any]) -> int | str:
-        ...
+    def publish(self, stream: str, event: dict[str, Any]) -> int | str: ...
 
 
+@_traced_consumer("document.received process")
 def handle_document_received_event(
     payload: dict[str, Any],
     storage: Storage,
@@ -138,12 +165,16 @@ def handle_document_received_event(
         return event_dict
 
 
-def _process_or_mock_document(event: DocumentReceivedEvent, file_bytes: bytes) -> dict[str, Any]:
+def _process_or_mock_document(
+    event: DocumentReceivedEvent, file_bytes: bytes
+) -> dict[str, Any]:
     if _mock_ocr_allowed() and "ocr_mock_raw_text" in event.data.metadata:
         return {
             "raw_text": str(event.data.metadata.get("ocr_mock_raw_text", "")),
             "raw_text_fallback": "",
-            "document_type": str(event.data.metadata.get("ocr_mock_document_type", "digital_pdf")),
+            "document_type": str(
+                event.data.metadata.get("ocr_mock_document_type", "digital_pdf")
+            ),
             "engine_used": "mock",
             "processing_time_seconds": 0.0,
             "filename": event.data.file.filename,
@@ -162,7 +193,11 @@ def _process_or_mock_document(event: DocumentReceivedEvent, file_bytes: bytes) -
 
 
 def _mock_ocr_allowed() -> bool:
-    return os.environ.get("DOCUPARSE_OCR_WORKER_ALLOW_MOCK", "").strip().lower() in {"1", "true", "yes"}
+    return os.environ.get("DOCUPARSE_OCR_WORKER_ALLOW_MOCK", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 class OCRWorker:
@@ -195,17 +230,24 @@ class OCRWorker:
         self._stop.set()
 
     def run_forever(self) -> None:
-        logger.info("OCR Redis worker started", extra={"stream": self.input_stream, "offset": self._offset})
+        logger.info(
+            "OCR Redis worker started",
+            extra={"stream": self.input_stream, "offset": self._offset},
+        )
         while not self._stop.is_set():
             processed = self.run_once()
             if processed == 0:
                 sleep_interval(self.poll_interval_seconds)
 
     def run_once(self) -> int:
-        entries = self.event_bus.consume_entries(self.input_stream, self._offset, count=10)
+        entries = self.event_bus.consume_entries(
+            self.input_stream, self._offset, count=10
+        )
         for entry in entries:
             try:
-                handle_document_received_event(entry.payload, self.storage, self.event_bus)
+                handle_document_received_event(
+                    entry.payload, self.storage, self.event_bus
+                )
             except Exception as exc:
                 publish_dead_letter(
                     self.event_bus,
@@ -231,18 +273,31 @@ class OCRWorker:
 def worker_from_env() -> OCRWorker:
     return OCRWorker(
         storage=get_storage(),
-        event_bus=event_bus_from_env(os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")),
+        event_bus=event_bus_from_env(
+            os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")
+        ),
         input_stream=os.environ.get("DOCUPARSE_OCR_INPUT_STREAM", "document.received"),
-        poll_interval_seconds=float(os.environ.get("DOCUPARSE_OCR_WORKER_POLL_SECONDS", "2")),
-        start_at_latest=os.environ.get("DOCUPARSE_OCR_WORKER_START_AT_LATEST", "true").strip().lower() not in {"0", "false", "no"},
+        poll_interval_seconds=float(
+            os.environ.get("DOCUPARSE_OCR_WORKER_POLL_SECONDS", "2")
+        ),
+        start_at_latest=os.environ.get("DOCUPARSE_OCR_WORKER_START_AT_LATEST", "true")
+        .strip()
+        .lower()
+        not in {"0", "false", "no"},
     )
 
 
 def start_worker_thread_from_env() -> OCRWorker | None:
-    enabled = os.environ.get("DOCUPARSE_OCR_WORKER_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+    enabled = os.environ.get("DOCUPARSE_OCR_WORKER_ENABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     if not enabled:
         return None
     worker = worker_from_env()
-    thread = threading.Thread(target=worker.run_forever, name="docuparse-ocr-worker", daemon=True)
+    thread = threading.Thread(
+        target=worker.run_forever, name="docuparse-ocr-worker", daemon=True
+    )
     thread.start()
     return worker

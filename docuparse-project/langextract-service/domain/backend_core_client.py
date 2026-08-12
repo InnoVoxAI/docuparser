@@ -9,6 +9,7 @@ Environment variables:
                                     (default: http://127.0.0.1:8000)
     DOCUPARSE_INTERNAL_SERVICE_TOKEN — bearer token for internal service calls
 """
+
 from __future__ import annotations
 
 import json
@@ -32,7 +33,9 @@ def fetch_schema_for_layout(
     - no active LayoutConfig matches the layout
     - the matched SchemaConfig has an empty definition
     """
-    backend_core_url = os.getenv("BACKEND_CORE_URL", "http://127.0.0.1:8000").strip().rstrip("/")
+    backend_core_url = (
+        os.getenv("BACKEND_CORE_URL", "http://127.0.0.1:8000").strip().rstrip("/")
+    )
     internal_token = os.getenv("DOCUPARSE_INTERNAL_SERVICE_TOKEN", "").strip()
 
     headers: dict[str, str] = {"Content-Type": "application/json"}
@@ -48,7 +51,9 @@ def fetch_schema_for_layout(
         logger.warning(
             "langextract.backend_core_client.layout_configs_fetch_failed | "
             "tenant=%s layout=%s error=%s",
-            tenant_id, layout, exc,
+            tenant_id,
+            layout,
+            exc,
         )
         return None, 0.75
 
@@ -56,7 +61,8 @@ def fetch_schema_for_layout(
     # Primary match: layout + document_type + active
     matching = next(
         (
-            c for c in layout_configs
+            c
+            for c in layout_configs
             if c.get("layout") == layout
             and c.get("document_type") == document_type
             and c.get("is_active")
@@ -66,7 +72,11 @@ def fetch_schema_for_layout(
     # Secondary match: layout only (ignore document_type)
     if matching is None:
         matching = next(
-            (c for c in layout_configs if c.get("layout") == layout and c.get("is_active")),
+            (
+                c
+                for c in layout_configs
+                if c.get("layout") == layout and c.get("is_active")
+            ),
             None,
         )
 
@@ -74,7 +84,9 @@ def fetch_schema_for_layout(
         logger.info(
             "langextract.backend_core_client.no_layout_config | "
             "tenant=%s layout=%s document_type=%s",
-            tenant_id, layout, document_type,
+            tenant_id,
+            layout,
+            document_type,
         )
         return None, 0.75
 
@@ -85,7 +97,8 @@ def fetch_schema_for_layout(
         logger.info(
             "langextract.backend_core_client.layout_config_has_no_schema | "
             "tenant=%s layout=%s",
-            tenant_id, layout,
+            tenant_id,
+            layout,
         )
         return None, confidence_threshold
 
@@ -98,7 +111,8 @@ def fetch_schema_for_layout(
         logger.warning(
             "langextract.backend_core_client.schema_config_fetch_failed | "
             "schema_config_id=%s error=%s",
-            schema_config_id, exc,
+            schema_config_id,
+            exc,
         )
         return None, confidence_threshold
 
@@ -107,14 +121,18 @@ def fetch_schema_for_layout(
         logger.info(
             "langextract.backend_core_client.empty_schema_definition | "
             "schema_config_id=%s schema_id=%s",
-            schema_config_id, schema_config.get("schema_id"),
+            schema_config_id,
+            schema_config.get("schema_id"),
         )
         return None, confidence_threshold
 
     logger.info(
         "langextract.backend_core_client.schema_loaded | "
         "schema_id=%s layout=%s document_type=%s tenant=%s",
-        schema_config.get("schema_id"), layout, document_type, tenant_id,
+        schema_config.get("schema_id"),
+        layout,
+        document_type,
+        tenant_id,
     )
     return definition, confidence_threshold
 

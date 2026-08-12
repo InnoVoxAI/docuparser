@@ -6,7 +6,9 @@ from django.conf import settings
 
 class LangExtractClient:
     def __init__(self):
-        self.base_url = getattr(settings, "LANGEXTRACT_SERVICE_URL", "http://langextract-service:8091")
+        self.base_url = getattr(
+            settings, "LANGEXTRACT_SERVICE_URL", "http://langextract-service:8091"
+        )
 
     def extract_with_schema(
         self,

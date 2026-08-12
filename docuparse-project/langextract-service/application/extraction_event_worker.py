@@ -1,34 +1,62 @@
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol, TypeVar
 from uuid import uuid4
 
+from docuparse_events import (
+    EventBus,
+    event_bus_from_env,
+    extract_trace_link,
+    publish_dead_letter,
+    sleep_interval,
+)
+from docuparse_observability import log_event
+from docuparse_storage import get_storage
 from domain.backend_core_client import fetch_schema_for_layout
 from domain.extractor import extract_fields
 from domain.llm_extractor import extract_with_llm
 from events import ExtractionCompletedEvent, LayoutClassifiedEvent
-from docuparse_events import EventBus, event_bus_from_env, publish_dead_letter, sleep_interval
-from docuparse_observability import log_event
-from docuparse_storage import get_storage
+from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer(__name__)
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _traced_consumer(span_name: str) -> Callable[[F], F]:
+    """Inicia o span de processamento com um Link para o trace de origem do
+    evento (research.md R4), quando `trace_context` estiver presente."""
+
+    def decorator(func: F) -> F:
+        @functools.wraps(func)
+        def wrapper(payload: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
+            link = extract_trace_link(payload)
+            with _tracer.start_as_current_span(
+                span_name, links=[link] if link else []
+            ):
+                return func(payload, *args, **kwargs)
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
 
 
 class Storage(Protocol):
-    def get_bytes(self, uri_or_key: str) -> bytes:
-        ...
+    def get_bytes(self, uri_or_key: str) -> bytes: ...
 
 
 class EventPublisher(Protocol):
-    def publish(self, stream: str, event: dict[str, Any]) -> int | str:
-        ...
+    def publish(self, stream: str, event: dict[str, Any]) -> int | str: ...
 
 
+@_traced_consumer("layout.classified process")
 def handle_layout_classified_event(
     payload: dict[str, Any],
     storage: Storage,
@@ -75,7 +103,9 @@ def handle_layout_classified_event(
             document_id=str(event.document_id),
             layout=event.data.layout,
         )
-        extracted = extract_fields(raw_text, event.data.layout, event.data.document_type)
+        extracted = extract_fields(
+            raw_text, event.data.layout, event.data.document_type
+        )
 
     output = ExtractionCompletedEvent(
         event_id=uuid4(),
@@ -132,17 +162,24 @@ class ExtractionWorker:
         self._stop.set()
 
     def run_forever(self) -> None:
-        logger.info("LangExtract Redis worker started", extra={"stream": self.input_stream, "offset": self._offset})
+        logger.info(
+            "LangExtract Redis worker started",
+            extra={"stream": self.input_stream, "offset": self._offset},
+        )
         while not self._stop.is_set():
             processed = self.run_once()
             if processed == 0:
                 sleep_interval(self.poll_interval_seconds)
 
     def run_once(self) -> int:
-        entries = self.event_bus.consume_entries(self.input_stream, self._offset, count=10)
+        entries = self.event_bus.consume_entries(
+            self.input_stream, self._offset, count=10
+        )
         for entry in entries:
             try:
-                handle_layout_classified_event(entry.payload, self.storage, self.event_bus)
+                handle_layout_classified_event(
+                    entry.payload, self.storage, self.event_bus
+                )
             except Exception as exc:
                 publish_dead_letter(
                     self.event_bus,
@@ -177,19 +214,33 @@ class ExtractionWorker:
 def worker_from_env() -> ExtractionWorker:
     return ExtractionWorker(
         storage=get_storage(),
-        event_bus=event_bus_from_env(os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")),
-        input_stream=os.environ.get("DOCUPARSE_EXTRACTION_INPUT_STREAM", "layout.classified"),
-        poll_interval_seconds=float(os.environ.get("DOCUPARSE_EXTRACTION_WORKER_POLL_SECONDS", "2")),
-        start_at_latest=os.environ.get("DOCUPARSE_EXTRACTION_WORKER_START_AT_LATEST", "true").strip().lower()
+        event_bus=event_bus_from_env(
+            os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", "/data/events")
+        ),
+        input_stream=os.environ.get(
+            "DOCUPARSE_EXTRACTION_INPUT_STREAM", "layout.classified"
+        ),
+        poll_interval_seconds=float(
+            os.environ.get("DOCUPARSE_EXTRACTION_WORKER_POLL_SECONDS", "2")
+        ),
+        start_at_latest=os.environ.get(
+            "DOCUPARSE_EXTRACTION_WORKER_START_AT_LATEST", "true"
+        )
+        .strip()
+        .lower()
         not in {"0", "false", "no"},
     )
 
 
 def start_worker_thread_from_env() -> ExtractionWorker | None:
-    enabled = os.environ.get("DOCUPARSE_EXTRACTION_WORKER_ENABLED", "").strip().lower() in {"1", "true", "yes"}
+    enabled = os.environ.get(
+        "DOCUPARSE_EXTRACTION_WORKER_ENABLED", ""
+    ).strip().lower() in {"1", "true", "yes"}
     if not enabled:
         return None
     worker = worker_from_env()
-    thread = threading.Thread(target=worker.run_forever, name="docuparse-extraction-worker", daemon=True)
+    thread = threading.Thread(
+        target=worker.run_forever, name="docuparse-extraction-worker", daemon=True
+    )
     thread.start()
     return worker

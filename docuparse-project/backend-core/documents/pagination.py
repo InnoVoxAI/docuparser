@@ -84,7 +84,7 @@ def paginate_queryset(
     count = queryset.count()
     total_pages = ceil(count / page_size) if count else 0
     offset = (page - 1) * page_size
-    items = list(queryset[offset:offset + page_size])
+    items = list(queryset[offset : offset + page_size])
     return PageResult(
         items=items,
         count=count,

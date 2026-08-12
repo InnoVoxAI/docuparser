@@ -37,12 +37,17 @@ class Document(TimeStampedModel):
         VALIDATION_PENDING = "VALIDATION_PENDING", "Validation pending"
         APPROVED = "APPROVED", "Approved"
         REJECTED = "REJECTED", "Rejected"
-        ERP_INTEGRATION_REQUESTED = "ERP_INTEGRATION_REQUESTED", "ERP integration requested"
+        ERP_INTEGRATION_REQUESTED = (
+            "ERP_INTEGRATION_REQUESTED",
+            "ERP integration requested",
+        )
         ERP_SENT = "ERP_SENT", "ERP sent"
         ERP_FAILED = "ERP_FAILED", "ERP failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    status = models.CharField(max_length=64, choices=Status.choices, default=Status.RECEIVED)
+    status = models.CharField(
+        max_length=64, choices=Status.choices, default=Status.RECEIVED
+    )
     channel = models.CharField(max_length=32)
     file_uri = models.CharField(max_length=1024)
     raw_text_uri = models.CharField(max_length=1024, blank=True)
@@ -70,7 +75,9 @@ class Document(TimeStampedModel):
 class DocumentEvent(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event_id = models.UUIDField(unique=True)
-    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="events", null=True, blank=True)
+    document = models.ForeignKey(
+        Document, on_delete=models.CASCADE, related_name="events", null=True, blank=True
+    )
     event_type = models.CharField(max_length=128, db_index=True)
     event_version = models.CharField(max_length=16, default="v1")
     correlation_id = models.UUIDField(db_index=True)
@@ -87,7 +94,9 @@ class DocumentEvent(TimeStampedModel):
 
 class ExtractionResult(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.OneToOneField(Document, on_delete=models.CASCADE, related_name="extraction_result")
+    document = models.OneToOneField(
+        Document, on_delete=models.CASCADE, related_name="extraction_result"
+    )
     schema_id = models.CharField(max_length=128)
     schema_version = models.CharField(max_length=32)
     fields = models.JSONField(default=dict)
@@ -109,7 +118,9 @@ class ExtractionFieldVersion(TimeStampedModel):
         MANUAL_EDIT = "MANUAL_EDIT", "Manual edit"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="field_versions")
+    document = models.ForeignKey(
+        Document, on_delete=models.CASCADE, related_name="field_versions"
+    )
     version_number = models.PositiveIntegerField()
     source_type = models.CharField(max_length=32, choices=SourceType.choices)
     fields = models.JSONField(default=dict)
@@ -159,7 +170,9 @@ class ValidationDecision(TimeStampedModel):
         CORRECTED = "corrected", "Corrected"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="validation_decisions")
+    document = models.ForeignKey(
+        Document, on_delete=models.CASCADE, related_name="validation_decisions"
+    )
     decided_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -177,9 +190,13 @@ class ERPIntegrationAttempt(TimeStampedModel):
         FAILED = "failed", "Failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="erp_attempts")
+    document = models.ForeignKey(
+        Document, on_delete=models.CASCADE, related_name="erp_attempts"
+    )
     connector = models.CharField(max_length=128)
-    status = models.CharField(max_length=32, choices=Status.choices, default=Status.REQUESTED)
+    status = models.CharField(
+        max_length=32, choices=Status.choices, default=Status.REQUESTED
+    )
     idempotency_key = models.CharField(max_length=255, unique=True)
     request_payload = models.JSONField(default=dict)
     response_payload = models.JSONField(default=dict, blank=True)
@@ -216,9 +233,15 @@ class OCRSettings(TimeStampedModel):
         TESSERACT = "tesseract", "Tesseract"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    digital_pdf_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.DOCLING)
-    scanned_image_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.OPENROUTER)
-    handwritten_engine = models.CharField(max_length=32, choices=Engine.choices, default=Engine.OPENROUTER)
+    digital_pdf_engine = models.CharField(
+        max_length=32, choices=Engine.choices, default=Engine.DOCLING
+    )
+    scanned_image_engine = models.CharField(
+        max_length=32, choices=Engine.choices, default=Engine.OPENROUTER
+    )
+    handwritten_engine = models.CharField(
+        max_length=32, choices=Engine.choices, default=Engine.OPENROUTER
+    )
     technical_fallback_engine = models.CharField(
         max_length=32, choices=Engine.choices, default=Engine.TESSERACT
     )
@@ -238,7 +261,9 @@ class EmailSettings(TimeStampedModel):
         MANUAL_TEST = "manual_test", "Manual test"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    provider = models.CharField(max_length=32, choices=Provider.choices, default=Provider.IMAP)
+    provider = models.CharField(
+        max_length=32, choices=Provider.choices, default=Provider.IMAP
+    )
     inbox_folder = models.CharField(max_length=255, default="INBOX")
     imap_host = models.CharField(max_length=255, blank=True)
     imap_port = models.PositiveIntegerField(default=993)
@@ -273,7 +298,9 @@ class LayoutConfig(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     layout = models.CharField(max_length=128)
     document_type = models.CharField(max_length=64)
-    schema_config = models.ForeignKey(SchemaConfig, on_delete=models.PROTECT, related_name="layout_configs")
+    schema_config = models.ForeignKey(
+        SchemaConfig, on_delete=models.PROTECT, related_name="layout_configs"
+    )
     confidence_threshold = models.FloatField(default=0.75)
     is_active = models.BooleanField(default=True)
 

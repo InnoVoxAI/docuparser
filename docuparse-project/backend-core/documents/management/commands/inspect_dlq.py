@@ -4,8 +4,8 @@ import json
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
-
 from docuparse_events import event_bus_from_env
+
 from documents.services.dlq_inspector import DEFAULT_DLQ_STREAMS, inspect_dlq_streams
 
 
@@ -43,7 +43,9 @@ class Command(BaseCommand):
         report = inspect_dlq_streams(event_bus, streams=streams, limit=limit)
 
         if options["json"]:
-            self.stdout.write(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+            self.stdout.write(
+                json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
+            )
             return
 
         for item in report:

@@ -1,27 +1,41 @@
 import json
-from django.contrib.auth import get_user_model
-from django.db.models import Prefetch, Q, TextField, ProtectedError
-from django.db.models.functions import Cast
-from django.conf import settings
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.clickjacking import xframe_options_exempt
-from django.views.decorators.http import require_GET, require_POST
-from django.http import Http404
-from django.http import FileResponse
 from io import BytesIO
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.response import Response
-from rest_framework import status
 
+import models.boleto.schemas as _boleto_classifier
+import models.contadeagua.schemas as _agua_classifier
+import models.nota_fiscal.schemas as _nf_classifier
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.db.models import Prefetch, ProtectedError, Q, TextField
+from django.db.models.functions import Cast
+from django.http import FileResponse, Http404, JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.decorators.clickjacking import xframe_options_exempt
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
+from docuparse_events import event_bus_from_env
+from docuparse_storage import get_storage
+from rest_framework import status
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    permission_classes,
+)
+from rest_framework.response import Response
 from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
 
-from docuparse_events import event_bus_from_env
-from docuparse_storage import get_storage
-
-from .models import Document, EmailSettings, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, SETTINGS_SINGLETON_ID, ValidationDecision
+from .models import (
+    SETTINGS_SINGLETON_ID,
+    Document,
+    EmailSettings,
+    ExtractionResult,
+    IntegrationSettings,
+    LayoutConfig,
+    OCRSettings,
+    SchemaConfig,
+    ValidationDecision,
+)
 from .pagination import paginate_queryset
 from .serializers import (
     DocumentDetailSerializer,
@@ -35,17 +49,19 @@ from .serializers import (
     ValidationDecisionSerializer,
 )
 from .services import field_versioning
-from .services.ocr_client import OCRClient
-from .services.langextract_client import LangExtractClient
+from .services.dlq_inspector import (
+    DEFAULT_DLQ_STREAMS,
+    inspect_dlq_streams,
+    requeue_dlq_entry,
+)
 from .services.erp_publisher import publish_erp_integration_requested
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
-from .services.dlq_inspector import DEFAULT_DLQ_STREAMS, requeue_dlq_entry, inspect_dlq_streams
-from .services.ocr_processor import process_document_ocr, start_document_ocr_thread
-from .services.processing_queue import submit_document_processing, submit_document_langextract
-
-import models.nota_fiscal.schemas as _nf_classifier
-import models.boleto.schemas as _boleto_classifier
-import models.contadeagua.schemas as _agua_classifier
+from .services.langextract_client import LangExtractClient
+from .services.ocr_client import OCRClient
+from .services.ocr_processor import process_document_ocr
+from .services.processing_queue import (
+    submit_document_processing,
+)
 
 
 @require_GET
@@ -85,15 +101,22 @@ def diagnostics_view(request):
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
             cursor.fetchone()
-        checks["database"] = {"ok": True, "engine": connection.settings_dict.get("ENGINE")}
+        checks["database"] = {
+            "ok": True,
+            "engine": connection.settings_dict.get("ENGINE"),
+        }
     except Exception as exc:
         checks["database"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
-    checks["langextract_service"] = _probe_http(f"{settings.LANGEXTRACT_SERVICE_URL}/health")
+    checks["langextract_service"] = _probe_http(
+        f"{settings.LANGEXTRACT_SERVICE_URL}/health"
+    )
     checks["backend_ocr"] = _probe_http(f"{settings.BACKEND_OCR_URL}/health")
 
     overall_ok = all(check.get("ok") for check in checks.values())
-    return JsonResponse({"ok": overall_ok, "checks": checks}, status=200 if overall_ok else 503)
+    return JsonResponse(
+        {"ok": overall_ok, "checks": checks}, status=200 if overall_ok else 503
+    )
 
 
 def _internal_token_error(request):
@@ -117,7 +140,10 @@ def _internal_token_error(request):
     user = getattr(request, "user", None)
     if user is not None and user.is_authenticated:
         return None
-    return Response({"detail": "invalid internal service token teste456"}, status=status.HTTP_401_UNAUTHORIZED)
+    return Response(
+        {"detail": "invalid internal service token teste456"},
+        status=status.HTTP_401_UNAUTHORIZED,
+    )
 
 
 @require_GET
@@ -236,8 +262,7 @@ def _apply_search(queryset, term: str | None):
 @permission_classes([require_permission("inbox.view")])
 def documents_inbox_view(request):
     queryset = (
-        Document.objects
-        .select_related("extraction_result")
+        Document.objects.select_related("extraction_result")
         .prefetch_related(
             Prefetch(
                 "validation_decisions",
@@ -264,10 +289,20 @@ def document_received_event_view(request):
         document = consume_document_received(request.data)
     except DuplicateDocumentError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
-    skip_auto = request.query_params.get("skip_auto_process", "").lower() in ("1", "true", "yes")
-    if settings.DOCUPARSE_AUTO_PROCESS_OCR and not document.raw_text_uri and not skip_auto:
+    skip_auto = request.query_params.get("skip_auto_process", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if (
+        settings.DOCUPARSE_AUTO_PROCESS_OCR
+        and not document.raw_text_uri
+        and not skip_auto
+    ):
         submit_document_processing(document.id)
-    return Response(DocumentDetailSerializer(document).data, status=status.HTTP_201_CREATED)
+    return Response(
+        DocumentDetailSerializer(document).data, status=status.HTTP_201_CREATED
+    )
 
 
 @api_view(["GET"])
@@ -323,9 +358,14 @@ def document_process_ocr_view(request, document_id):
     try:
         document = process_document_ocr(document_id)
     except (FileNotFoundError, ValueError) as exc:
-        return Response({"detail": f"Arquivo original nao encontrado: {exc}"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"detail": f"Arquivo original nao encontrado: {exc}"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
     except Exception as exc:
-        return Response({"detail": f"Falha no OCR: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response(
+            {"detail": f"Falha no OCR: {exc}"}, status=status.HTTP_502_BAD_GATEWAY
+        )
     return Response(DocumentDetailSerializer(document).data)
 
 
@@ -340,9 +380,15 @@ def document_reprocess_ocr_view(request, document_id):
     try:
         document = process_document_ocr(document_id)
     except (FileNotFoundError, ValueError) as exc:
-        return Response({"detail": f"Arquivo original nao encontrado: {exc}"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"detail": f"Arquivo original nao encontrado: {exc}"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
     except Exception as exc:
-        return Response({"detail": f"Falha no reprocessamento OCR: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response(
+            {"detail": f"Falha no reprocessamento OCR: {exc}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
     return Response(DocumentDetailSerializer(document).data)
 
 
@@ -360,11 +406,15 @@ def document_validation_view(request, document_id):
         ValidationDecision.Decision.REJECTED,
         ValidationDecision.Decision.CORRECTED,
     }:
-        return Response({"detail": "Invalid decision"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Invalid decision"}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     if not hasattr(document, "extraction_result") or document.extraction_result is None:
         return Response(
-            {"detail": "Extração de campos não concluída. Execute a extração antes de aprovar ou rejeitar."},
+            {
+                "detail": "Extração de campos não concluída. Execute a extração antes de aprovar ou rejeitar."
+            },
             status=status.HTTP_422_UNPROCESSABLE_ENTITY,
         )
 
@@ -395,12 +445,17 @@ def document_validation_view(request, document_id):
     corrected_fields = request.data.get("corrected_fields") or {}
     if corrected_fields and hasattr(document, "extraction_result"):
         document.extraction_result.requires_human_validation = False
-        document.extraction_result.save(update_fields=["requires_human_validation", "updated_at"])
+        document.extraction_result.save(
+            update_fields=["requires_human_validation", "updated_at"]
+        )
         active = field_versioning.get_active_version(document)
         try:
             field_versioning.save_manual_edit(
                 document,
-                incoming_fields=[{"name": name, "value": value} for name, value in corrected_fields.items()],
+                incoming_fields=[
+                    {"name": name, "value": value}
+                    for name, value in corrected_fields.items()
+                ],
                 base_version_number=active.version_number if active else None,
                 created_by=user,
             )
@@ -409,12 +464,15 @@ def document_validation_view(request, document_id):
 
     if decision == ValidationDecision.Decision.APPROVED:
         document.transition_to(Document.Status.APPROVED)
+        publish_erp_integration_requested(document)
     elif decision == ValidationDecision.Decision.REJECTED:
         document.transition_to(Document.Status.REJECTED)
     else:
         document.transition_to(Document.Status.VALIDATION_PENDING)
 
-    return Response(ValidationDecisionSerializer(validation).data, status=status.HTTP_201_CREATED)
+    return Response(
+        ValidationDecisionSerializer(validation).data, status=status.HTTP_201_CREATED
+    )
 
 
 def _resolve_request_user(request):
@@ -432,11 +490,16 @@ def _resolve_request_user(request):
 @permission_classes([require_permission("documents.validate")])
 def document_save_fields_view(request, document_id):
     """Salva edições/remoções/adições como nova versão ativa MANUAL_EDIT (US1/US2)."""
-    document = get_object_or_404(Document.objects.select_related("extraction_result"), id=document_id)
+    document = get_object_or_404(
+        Document.objects.select_related("extraction_result"), id=document_id
+    )
 
     incoming_fields = request.data.get("fields")
     if not isinstance(incoming_fields, list):
-        return Response({"detail": "O campo 'fields' deve ser uma lista."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "O campo 'fields' deve ser uma lista."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     base_version_number = request.data.get("base_version_number")
 
@@ -456,11 +519,19 @@ def document_save_fields_view(request, document_id):
             status=status.HTTP_409_CONFLICT,
         )
     except field_versioning.EmptyFieldListError:
-        return Response({"detail": "Não é possível salvar uma lista de campos vazia."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        return Response(
+            {"detail": "Não é possível salvar uma lista de campos vazia."},
+            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
     except field_versioning.NoChangesError:
-        return Response({"detail": "Nenhuma alteração a salvar."}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        return Response(
+            {"detail": "Nenhuma alteração a salvar."},
+            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
 
-    return Response(ExtractionFieldVersionSerializer(version).data, status=status.HTTP_201_CREATED)
+    return Response(
+        ExtractionFieldVersionSerializer(version).data, status=status.HTTP_201_CREATED
+    )
 
 
 @api_view(["GET"])
@@ -469,7 +540,9 @@ def document_save_fields_view(request, document_id):
 def document_field_versions_view(request, document_id):
     """Histórico somente leitura de versões da lista de campos (US3)."""
     document = get_object_or_404(Document, id=document_id)
-    versions = document.field_versions.select_related("previous_version", "created_by").order_by("-version_number")
+    versions = document.field_versions.select_related(
+        "previous_version", "created_by"
+    ).order_by("-version_number")
     active = versions.filter(is_active=True).first()
     data = ExtractionFieldVersionSerializer(versions, many=True).data
     return Response(
@@ -490,27 +563,42 @@ def document_langextract_view(request, document_id):
 
     schema_config_id = request.data.get("schema_config_id")
     if not schema_config_id:
-        return Response({"detail": "schema_config_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "schema_config_id is required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     document = get_object_or_404(Document, id=document_id)
     schema_config = get_object_or_404(SchemaConfig, id=schema_config_id)
 
     if not document.raw_text_uri:
-        return Response({"detail": "Documento sem texto bruto disponivel. Execute o OCR primeiro."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Documento sem texto bruto disponivel. Execute o OCR primeiro."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     storage = get_storage()
     try:
         payload = json.loads(storage.get_bytes(document.raw_text_uri).decode("utf-8"))
     except Exception as exc:
-        return Response({"detail": f"Erro ao ler texto bruto: {exc}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"detail": f"Erro ao ler texto bruto: {exc}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     raw_text = str(payload.get("raw_text") or "")
     if not raw_text.strip():
-        return Response({"detail": "Texto bruto do documento esta vazio."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Texto bruto do documento esta vazio."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     definition = schema_config.definition
     if not definition or not isinstance(definition, dict):
-        return Response({"detail": "SchemaConfig nao possui definicao valida."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "SchemaConfig nao possui definicao valida."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     # Inject schema_id/version from the model so llm_extractor can identify the schema.
     # The definition JSON (built by buildLangExtractDefinition in the frontend) does not
@@ -530,7 +618,10 @@ def document_langextract_view(request, document_id):
             document_type=str(document.content_type or "unknown"),
         )
     except Exception as exc:
-        return Response({"detail": f"Falha na extracao LangExtract: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response(
+            {"detail": f"Falha na extracao LangExtract: {exc}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
 
     result_fields = result.get("fields") or {}
     result_confidence = result.get("confidence") or 0.0
@@ -551,18 +642,20 @@ def document_langextract_view(request, document_id):
         source_type=source_type,
         confidence=result_confidence,
     )
-    if document.status not in (Document.Status.VALIDATION_PENDING, Document.Status.APPROVED, Document.Status.REJECTED):
+    if document.status not in (
+        Document.Status.VALIDATION_PENDING,
+        Document.Status.APPROVED,
+        Document.Status.REJECTED,
+    ):
         document.transition_to(Document.Status.EXTRACTION_COMPLETED)
 
     return Response(result)
-    
 
 
 @api_view(["GET", "POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def schema_configs_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     if request.method == "GET":
         queryset = SchemaConfig.objects.all().order_by("schema_id", "version")
         return Response(SchemaConfigSerializer(queryset, many=True).data)
@@ -585,10 +678,9 @@ PROTECTED_SCHEMA_IDS = ["nota_fiscal_default", "conta_agua_default"]
 
 
 @api_view(["GET", "PATCH", "DELETE"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def schema_config_detail_view(request, schema_id):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     config = get_object_or_404(SchemaConfig, id=schema_id)
     if request.method == "GET":
         return Response(SchemaConfigSerializer(config).data)
@@ -602,7 +694,9 @@ def schema_config_detail_view(request, schema_id):
             config.delete()
         except ProtectedError:
             return Response(
-                {"detail": "Este modelo possui layouts vinculados e não pode ser excluído."},
+                {
+                    "detail": "Este modelo possui layouts vinculados e não pode ser excluído."
+                },
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -612,17 +706,20 @@ def schema_config_detail_view(request, schema_id):
     for field in ("schema_id", "version", "definition", "is_active"):
         if field in serializer.validated_data:
             setattr(config, field, serializer.validated_data[field])
-    config.save(update_fields=["schema_id", "version", "definition", "is_active", "updated_at"])
+    config.save(
+        update_fields=["schema_id", "version", "definition", "is_active", "updated_at"]
+    )
     return Response(SchemaConfigSerializer(config).data)
 
 
 @api_view(["GET", "POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def layout_configs_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     if request.method == "GET":
-        queryset = LayoutConfig.objects.select_related("schema_config").order_by("layout")
+        queryset = LayoutConfig.objects.select_related("schema_config").order_by(
+            "layout"
+        )
         return Response(LayoutConfigSerializer(queryset, many=True).data)
 
     serializer = LayoutConfigSerializer(data=request.data)
@@ -631,17 +728,18 @@ def layout_configs_view(request):
         layout=serializer.validated_data["layout"],
         document_type=serializer.validated_data["document_type"],
         schema_config=serializer.validated_data["schema_config"],
-        confidence_threshold=serializer.validated_data.get("confidence_threshold", 0.75),
+        confidence_threshold=serializer.validated_data.get(
+            "confidence_threshold", 0.75
+        ),
         is_active=serializer.validated_data.get("is_active", True),
     )
     return Response(LayoutConfigSerializer(config).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["GET", "PATCH"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def integration_settings_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     config, _ = IntegrationSettings.objects.get_or_create(
         id=SETTINGS_SINGLETON_ID,
         defaults={
@@ -676,10 +774,9 @@ def integration_settings_view(request):
 
 
 @api_view(["GET", "PATCH"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def ocr_settings_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     config, _ = OCRSettings.objects.get_or_create(id=SETTINGS_SINGLETON_ID)
     if request.method == "GET":
         return Response(OCRSettingsSerializer(config).data)
@@ -717,10 +814,9 @@ def ocr_settings_view(request):
 
 
 @api_view(["GET", "PATCH"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("models.edit")])
 def email_settings_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     config, _ = EmailSettings.objects.get_or_create(id=SETTINGS_SINGLETON_ID)
     if request.method == "GET":
         return Response(EmailSettingsSerializer(config).data)
@@ -760,10 +856,9 @@ def email_settings_view(request):
 
 
 @api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
 def dlq_summary_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     limit = _positive_int(request.query_params.get("limit"), default=50, maximum=500)
     report = inspect_dlq_streams(
         event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
@@ -786,13 +881,14 @@ def dlq_summary_view(request):
 
 
 @api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
 def dlq_events_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     stream = request.query_params.get("stream") or "ocr.completed.dlq"
     if stream not in DEFAULT_DLQ_STREAMS:
-        return Response({"detail": "Invalid DLQ stream"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Invalid DLQ stream"}, status=status.HTTP_400_BAD_REQUEST
+        )
     limit = _positive_int(request.query_params.get("limit"), default=50, maximum=500)
     report = inspect_dlq_streams(
         event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
@@ -803,14 +899,16 @@ def dlq_events_view(request):
 
 
 @api_view(["POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
 def dlq_requeue_view(request):
-    auth_error = _internal_token_error(request)
-    if auth_error is not None:
-        return auth_error
     stream = request.data.get("stream")
     entry_id = request.data.get("id") or request.data.get("entry_id")
     if not stream or not entry_id:
-        return Response({"detail": "Fields 'stream' and 'id' are required"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Fields 'stream' and 'id' are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     try:
         result = requeue_dlq_entry(
             event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
@@ -823,7 +921,10 @@ def dlq_requeue_view(request):
         )
     except ValueError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-    return Response(result, status=status.HTTP_202_ACCEPTED if result["execute"] else status.HTTP_200_OK)
+    return Response(
+        result,
+        status=status.HTTP_202_ACCEPTED if result["execute"] else status.HTTP_200_OK,
+    )
 
 
 def _positive_int(value, *, default: int, maximum: int) -> int:

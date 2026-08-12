@@ -141,4 +141,3 @@ O fluxo acima nao usa as configuracoes da aba "Extracao". A UI salva schemas e l
 - Uma forma de selecionar schema por layout/configuracao (LayoutConfig) em runtime.
 - Um endpoint no backend-core (ou langextract-service) para teste visual real, chamando a extracao com o schema escolhido.
 - Aplicar regras de pos-processamento e traceabilidade na extracao (ex: incluir source span).
-

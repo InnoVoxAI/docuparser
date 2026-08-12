@@ -7,6 +7,7 @@ import structlog
 from pyzeebe import ZeebeTaskRouter
 
 from workers._http import core_client
+from workers._tracing import traced_job
 
 log = structlog.get_logger()
 
@@ -18,6 +19,7 @@ export_erp = ZeebeTaskRouter()
     timeout_ms=90_000,
     max_jobs_to_activate=5,
 )
+@traced_job("docuparse-export-erp")
 async def _export_erp(
     document_id: str,
     tenant_id: str = "",

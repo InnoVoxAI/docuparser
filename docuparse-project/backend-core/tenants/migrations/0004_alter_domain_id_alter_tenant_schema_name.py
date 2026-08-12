@@ -5,20 +5,26 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('tenants', '0003_migrate_legacy_tenant_data'),
+        ("tenants", "0003_migrate_legacy_tenant_data"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='domain',
-            name='id',
-            field=models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID'),
+            model_name="domain",
+            name="id",
+            field=models.BigAutoField(
+                auto_created=True, primary_key=True, serialize=False, verbose_name="ID"
+            ),
         ),
         migrations.AlterField(
-            model_name='tenant',
-            name='schema_name',
-            field=models.CharField(db_index=True, max_length=63, unique=True, validators=[django_tenants.postgresql_backend.base._check_schema_name]),
+            model_name="tenant",
+            name="schema_name",
+            field=models.CharField(
+                db_index=True,
+                max_length=63,
+                unique=True,
+                validators=[django_tenants.postgresql_backend.base._check_schema_name],
+            ),
         ),
     ]

@@ -85,8 +85,8 @@ export const BOLETO_DEFAULT_EXAMPLES: SchemaExample[] = [
     {
         field: 'descontos_progressivos',
         expected: JSON.stringify([
-            { data_limite: '2026-03-10', valor_desconto: 100.00, valor_com_desconto: 1370.15 },
-            { data_limite: '2026-03-20', valor_desconto: 50.00, valor_com_desconto: 1420.15 },
+            { data_limite: '2026-03-10', valor_desconto: 100.0, valor_com_desconto: 1370.15 },
+            { data_limite: '2026-03-20', valor_desconto: 50.0, valor_com_desconto: 1420.15 },
         ]),
         source: 'Até dia 10/03/2026 conceder desconto de R$100,00, cobrar R$1.370,15.\nAté dia 20/03/2026 conceder desconto de R$50,00, cobrar R$1.420,15.',
     },
@@ -118,7 +118,7 @@ export const BOLETO_DEFAULT_EXAMPLES: SchemaExample[] = [
         field: 'itens_cobranca',
         expected: JSON.stringify([
             { descricao: 'Taxa Condominial', valor: 1040.15 },
-            { descricao: 'Rateio Extra SERV. DA FACHADA/ CXS AR CONDICION', valor: 430.00 },
+            { descricao: 'Rateio Extra SERV. DA FACHADA/ CXS AR CONDICION', valor: 430.0 },
         ]),
         source: 'Composição da cobrança\nTaxa Condominial 1.040,15\nRateio Extra SERV. DA FACHADA/ CXS AR CONDICION - 430,00',
     },

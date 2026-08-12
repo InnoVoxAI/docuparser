@@ -8,6 +8,7 @@ on:
     paths:
       - "docuparse-project/**"
       - "pyproject.toml"
+      - "!docuparse-project/frontend/**"
 
 jobs:
   pre-deploy:

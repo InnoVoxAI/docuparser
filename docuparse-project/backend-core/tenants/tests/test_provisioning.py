@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Integration tests for the tenant provisioning API.
 
@@ -7,15 +5,17 @@ Tests marked `tenant_db` require POSTGRES_HOST env var (PostgreSQL with
 schema routing). Tests without that marker run on any database.
 """
 
-import pytest
+from __future__ import annotations
+
 from unittest.mock import patch
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
+from users.models import Permission, Role
 
 from tenants.models import Tenant, UserProfile
-from users.models import Permission, Role
 
 User = get_user_model()
 
@@ -27,11 +27,16 @@ def _admin_client() -> tuple[APIClient, Tenant, User]:
         tenant = Tenant.objects.create(
             slug="admin-tenant", name="Admin Tenant", schema_name="tenant_admin_tenant"
         )
-    perm, _ = Permission.objects.get_or_create(code="tenants.manage", defaults={"description": "Gerenciar Tenants"})
+    perm, _ = Permission.objects.get_or_create(
+        code="tenants.manage", defaults={"description": "Gerenciar Tenants"}
+    )
     role = Role.objects.create(name="superadmin")
     role.permissions.add(perm)
     user = User.objects.create_user(
-        username="super@admin.com", email="super@admin.com", password="pw", is_active=True
+        username="super@admin.com",
+        email="super@admin.com",
+        password="pw",
+        is_active=True,
     )
     UserProfile.objects.create(user=user, tenant=tenant, role_ref=role)
     client.force_authenticate(user=user)
@@ -52,18 +57,32 @@ class TenantListCreateTests(TestCase):
         with patch.object(Tenant, "auto_create_schema", new=False):
             response = self.client.post(
                 "/api/admin/tenants/",
-                {"slug": "new-corp", "name": "New Corp"},
+                {
+                    "slug": "new-corp",
+                    "name": "New Corp",
+                    "admin_name": "Jane Doe",
+                    "admin_email": "jane.doe@new-corp.com",
+                },
                 format="json",
             )
         assert response.status_code == 201
         body = response.json()
         assert body["data"]["slug"] == "new-corp"
         assert Tenant.objects.filter(slug="new-corp").exists()
+        # New contract: no fake admin@<slug> user is created anymore.
+        assert not User.objects.filter(username="admin@new-corp").exists()
+        admin_user = User.objects.get(username="jane.doe@new-corp.com")
+        assert not admin_user.has_usable_password()
 
     def test_create_tenant_with_invalid_slug_returns_400(self) -> None:
         response = self.client.post(
             "/api/admin/tenants/",
-            {"slug": "Invalid Slug!", "name": "Bad"},
+            {
+                "slug": "Invalid Slug!",
+                "name": "Bad",
+                "admin_name": "Jane Doe",
+                "admin_email": "jane.doe@bad.com",
+            },
             format="json",
         )
         assert response.status_code == 400
@@ -71,7 +90,12 @@ class TenantListCreateTests(TestCase):
     def test_create_tenant_with_duplicate_slug_returns_409(self) -> None:
         response = self.client.post(
             "/api/admin/tenants/",
-            {"slug": "admin-tenant", "name": "Duplicate"},
+            {
+                "slug": "admin-tenant",
+                "name": "Duplicate",
+                "admin_name": "Jane Doe",
+                "admin_email": "jane.doe@duplicate.com",
+            },
             format="json",
         )
         assert response.status_code == 409
@@ -83,9 +107,13 @@ class TenantListCreateTests(TestCase):
 
     def test_user_without_tenants_manage_permission_returns_403(self) -> None:
         with patch.object(Tenant, "auto_create_schema", new=False):
-            t = Tenant.objects.create(slug="other", name="Other", schema_name="tenant_other")
+            t = Tenant.objects.create(
+                slug="other", name="Other", schema_name="tenant_other"
+            )
         role = Role.objects.create(name="ordinary")
-        u = User.objects.create_user(username="ord@t.com", email="ord@t.com", password="pw", is_active=True)
+        u = User.objects.create_user(
+            username="ord@t.com", email="ord@t.com", password="pw", is_active=True
+        )
         UserProfile.objects.create(user=u, tenant=t, role_ref=role)
         client = APIClient()
         client.force_authenticate(user=u)
@@ -134,9 +162,12 @@ class TenantSchemaIsolationTests:
 
     def test_tenant_schema_is_created_on_provision(self) -> None:
         from django.db import connection
+
         slug = "isolation-test"
         schema_name = f"tenant_{slug}"
-        tenant = Tenant.objects.create(slug=slug, name="Isolation Test", schema_name=schema_name)
+        tenant = Tenant.objects.create(
+            slug=slug, name="Isolation Test", schema_name=schema_name
+        )
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT schema_name FROM information_schema.schemata WHERE schema_name = %s",
@@ -151,8 +182,12 @@ class TenantSchemaIsolationTests:
         from documents.models import Document
 
         slug_a, slug_b = "tenant-a-iso", "tenant-b-iso"
-        tenant_a = Tenant.objects.create(slug=slug_a, name="A", schema_name=f"tenant_{slug_a}")
-        tenant_b = Tenant.objects.create(slug=slug_b, name="B", schema_name=f"tenant_{slug_b}")
+        tenant_a = Tenant.objects.create(
+            slug=slug_a, name="A", schema_name=f"tenant_{slug_a}"
+        )
+        tenant_b = Tenant.objects.create(
+            slug=slug_b, name="B", schema_name=f"tenant_{slug_b}"
+        )
 
         with schema_context(tenant_a.schema_name):
             doc = Document.objects.create(

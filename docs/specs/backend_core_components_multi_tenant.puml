@@ -18,4 +18,3 @@ Rel(tenant_mgr, db, "filtra dados por tenant_id")
 Rel(orchestrator, layout_router, "decide fluxo")
 Rel(layout_router, db, "carrega configuração do supervisor")
 @enduml
-

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING, Iterator
+from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from .keys import StoredObject
 
@@ -63,7 +64,10 @@ class S3Storage:
     def put_bytes(self, key: str, content: bytes) -> StoredObject:
         self._validate_key(key)
         self._client.put_object(Bucket=self._bucket, Key=key, Body=content)
-        logger.debug("s3.uploaded", extra={"bucket": self._bucket, "key": key, "size": len(content)})
+        logger.debug(
+            "s3.uploaded",
+            extra={"bucket": self._bucket, "key": key, "size": len(content)},
+        )
         return StoredObject(
             uri=f"{self.scheme}://{self._bucket}/{key}",
             key=key,
@@ -111,7 +115,7 @@ class S3Storage:
     def _resolve(self, uri_or_key: str) -> tuple[str, str]:
         """Devolve (bucket, key) a partir de ``s3://bucket/key`` ou key nua."""
         if uri_or_key.startswith(f"{self.scheme}://"):
-            rest = uri_or_key[len(self.scheme) + 3:]
+            rest = uri_or_key[len(self.scheme) + 3 :]
             bucket, _, key = rest.partition("/")
             if not bucket or not key:
                 raise ValueError(f"Invalid s3 URI: {uri_or_key!r}")
@@ -125,7 +129,11 @@ class S3Storage:
         response = getattr(exc, "response", None) or {}
         error = response.get("Error", {}) if isinstance(response, dict) else {}
         code = str(error.get("Code", ""))
-        status = str(response.get("ResponseMetadata", {}).get("HTTPStatusCode", "")) if isinstance(response, dict) else ""
+        status = (
+            str(response.get("ResponseMetadata", {}).get("HTTPStatusCode", ""))
+            if isinstance(response, dict)
+            else ""
+        )
         return code in _NOT_FOUND_CODES or status == "404"
 
     @staticmethod

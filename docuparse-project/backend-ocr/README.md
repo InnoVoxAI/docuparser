@@ -238,7 +238,7 @@ class MyNewEngine(BaseOCREngine):
     @property
     def name(self) -> str:
         return "my_new_engine"
-    
+
     def process(self, file_bytes: bytes, metadata: dict) -> dict:
         # OCR implementation
         return {"raw_text": "...", "confidence": 0.95, ...}

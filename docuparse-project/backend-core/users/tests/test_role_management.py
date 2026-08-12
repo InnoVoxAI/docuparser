@@ -3,8 +3,8 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
-
 from tenants.models import Tenant, UserProfile
+
 from users.models import Permission, Role
 
 User = get_user_model()
@@ -12,27 +12,37 @@ User = get_user_model()
 
 def _setup() -> tuple:
     tenant, _ = Tenant.objects.get_or_create(slug="test", defaults={"name": "Test"})
-    Permission.objects.bulk_create([
-        Permission(code="inbox.view", description="Inbox"),
-        Permission(code="documents.validate", description="Validate"),
-        Permission(code="users.manage", description="Users"),
-        Permission(code="roles.manage", description="Roles"),
-    ])
+    Permission.objects.bulk_create(
+        [
+            Permission(code="inbox.view", description="Inbox"),
+            Permission(code="documents.validate", description="Validate"),
+            Permission(code="users.manage", description="Users"),
+            Permission(code="roles.manage", description="Roles"),
+        ]
+    )
     admin_role = Role.objects.create(name="Admin")
     admin_role.permissions.set(Permission.objects.all())
 
     op_role = Role.objects.create(name="Operador")
     op_role.permissions.set(Permission.objects.filter(code__in=["inbox.view"]))
 
-    admin = User.objects.create_user(username="admin@t.com", email="admin@t.com", password="pw", is_active=True)
+    admin = User.objects.create_user(
+        username="admin@t.com", email="admin@t.com", password="pw", is_active=True
+    )
     UserProfile.objects.create(user=admin, tenant=tenant, role_ref=admin_role)
 
-    op = User.objects.create_user(username="op@t.com", email="op@t.com", password="pw", is_active=True)
+    op = User.objects.create_user(
+        username="op@t.com", email="op@t.com", password="pw", is_active=True
+    )
     UserProfile.objects.create(user=op, tenant=tenant, role_ref=op_role)
 
     client = APIClient()
-    admin_token = client.post("/api/auth/login", {"email": "admin@t.com", "password": "pw"}, format="json").data["access"]
-    op_token = client.post("/api/auth/login", {"email": "op@t.com", "password": "pw"}, format="json").data["access"]
+    admin_token = client.post(
+        "/api/auth/login", {"email": "admin@t.com", "password": "pw"}, format="json"
+    ).data["access"]
+    op_token = client.post(
+        "/api/auth/login", {"email": "op@t.com", "password": "pw"}, format="json"
+    ).data["access"]
     return admin_token, op_token, op_role
 
 
@@ -54,11 +64,23 @@ class RoleManagementTest(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIsInstance(r.data, list)
 
+    def test_list_roles_includes_is_platform_role(self) -> None:
+        Role.objects.create(name="admin", is_platform_role=True)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.admin_token}")
+        r = self.client.get("/api/ocr/roles")
+        self.assertEqual(r.status_code, 200)
+        by_name = {role["name"]: role["is_platform_role"] for role in r.data}
+        self.assertTrue(by_name["admin"])
+        self.assertFalse(by_name["Operador"])
+
     def test_create_role_with_valid_permissions_returns_201(self) -> None:
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.admin_token}")
         r = self.client.post(
             "/api/ocr/roles",
-            {"name": "Coordenador", "permission_codes": ["inbox.view", "documents.validate"]},
+            {
+                "name": "Coordenador",
+                "permission_codes": ["inbox.view", "documents.validate"],
+            },
             format="json",
         )
         self.assertEqual(r.status_code, 201)

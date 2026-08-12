@@ -94,11 +94,15 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="document",
-            index=models.Index(fields=["received_at"], name="documents_d_received_at_idx"),
+            index=models.Index(
+                fields=["received_at"], name="documents_d_received_at_idx"
+            ),
         ),
         migrations.AddIndex(
             model_name="documentevent",
-            index=models.Index(fields=["event_type"], name="documents_d_event_type_idx"),
+            index=models.Index(
+                fields=["event_type"], name="documents_d_event_type_idx"
+            ),
         ),
         # Remove Tenant and UserProfile models from documents app
         # (they now live in tenants app)

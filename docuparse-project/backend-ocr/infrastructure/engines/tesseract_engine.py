@@ -16,20 +16,19 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import cv2
 import fitz
 import numpy as np
 import pytesseract
 from pytesseract import Output
+from shared.preprocessing import preprocess_image
 
 from infrastructure.engines.base_engine import BaseOCREngine
-from shared.preprocessing import preprocess_image
 
 
 class TesseractEngine(BaseOCREngine):
-
     @property
     def name(self) -> str:
         return "tesseract"
@@ -53,7 +52,7 @@ class TesseractEngine(BaseOCREngine):
 
         return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    def _build_variants(self, gray: np.ndarray) -> List[Tuple[str, np.ndarray]]:
+    def _build_variants(self, gray: np.ndarray) -> list[tuple[str, np.ndarray]]:
         resized = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
         blur = cv2.GaussianBlur(resized, (3, 3), 0)
         otsu = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
@@ -74,7 +73,9 @@ class TesseractEngine(BaseOCREngine):
             ("adaptive_inverted", inverted),
         ]
 
-    def _extract_with_data(self, image: np.ndarray, lang: str, psm: int) -> Tuple[str, float]:
+    def _extract_with_data(
+        self, image: np.ndarray, lang: str, psm: int
+    ) -> tuple[str, float]:
         config = f"--oem 3 --psm {psm}"
         data = pytesseract.image_to_data(
             image,
@@ -105,7 +106,9 @@ class TesseractEngine(BaseOCREngine):
         avg_conf = float(np.mean(confidences)) if confidences else 0.0
         return extracted_text, avg_conf
 
-    def _build_term_metrics(self, image: np.ndarray, lang: str, psm: int, total_seconds: float) -> Dict[str, Any]:
+    def _build_term_metrics(
+        self, image: np.ndarray, lang: str, psm: int, total_seconds: float
+    ) -> dict[str, Any]:
         config = f"--oem 3 --psm {psm}"
         data = pytesseract.image_to_data(
             image,
@@ -138,15 +141,17 @@ class TesseractEngine(BaseOCREngine):
             }
 
         total_weight = sum(max(len(term), 1) for term, _ in terms)
-        confidence_by_term: Dict[str, List[float]] = {}
-        conversion_time_by_term: Dict[str, str] = {}
+        confidence_by_term: dict[str, list[float]] = {}
+        conversion_time_by_term: dict[str, str] = {}
 
         for index, (term, confidence) in enumerate(terms, start=1):
             term_key = f"{index}:{term}"
             confidence_by_term[term_key] = [round(confidence, 2)]
 
             weight = max(len(term), 1)
-            term_seconds = total_seconds * (weight / total_weight) if total_weight else 0.0
+            term_seconds = (
+                total_seconds * (weight / total_weight) if total_weight else 0.0
+            )
             conversion_time_by_term[term_key] = self._format_seconds(term_seconds)
 
         return {
@@ -155,11 +160,17 @@ class TesseractEngine(BaseOCREngine):
             "total_conversion_time": self._format_seconds(total_seconds),
         }
 
-    def preprocess_for_classification(self, image_bytes: bytes, classification: str) -> np.ndarray:
+    def preprocess_for_classification(
+        self, image_bytes: bytes, classification: str
+    ) -> np.ndarray:
         return preprocess_image(image_bytes, classification)
 
-    def process_with_classification(self, image_bytes: bytes, classification: str) -> Dict[str, Any]:
-        preprocessed = self.preprocess_for_classification(image_bytes=image_bytes, classification=classification)
+    def process_with_classification(
+        self, image_bytes: bytes, classification: str
+    ) -> dict[str, Any]:
+        preprocessed = self.preprocess_for_classification(
+            image_bytes=image_bytes, classification=classification
+        )
         result = self.process({"original": image_bytes, "preprocessed": preprocessed})
         result.setdefault("_meta", {})
         result["_meta"]["preprocessing"] = {
@@ -176,15 +187,19 @@ class TesseractEngine(BaseOCREngine):
         pages: list[np.ndarray] = []
         for page in document:
             pixmap = page.get_pixmap(matrix=matrix, alpha=False)
-            rgb = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(pixmap.height, pixmap.width, 3)
+            rgb = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+                pixmap.height, pixmap.width, 3
+            )
             pages.append(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
         document.close()
         return pages
 
-    def _process_pdf_page(self, page_image: np.ndarray) -> Dict[str, Any]:
+    def _process_pdf_page(self, page_image: np.ndarray) -> dict[str, Any]:
         process_start = time.perf_counter()
         gray = self._decode_to_gray(page_image)
-        resized = cv2.resize(gray, None, fx=1.25, fy=1.25, interpolation=cv2.INTER_CUBIC)
+        resized = cv2.resize(
+            gray, None, fx=1.25, fy=1.25, interpolation=cv2.INTER_CUBIC
+        )
         blur = cv2.GaussianBlur(resized, (3, 3), 0)
         otsu = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
 
@@ -193,7 +208,9 @@ class TesseractEngine(BaseOCREngine):
         best_lang = ""
         for lang in ["por+eng", "eng"]:
             try:
-                extracted_text, avg_conf = self._extract_with_data(otsu, lang=lang, psm=6)
+                extracted_text, avg_conf = self._extract_with_data(
+                    otsu, lang=lang, psm=6
+                )
             except pytesseract.TesseractError:
                 continue
             if len(extracted_text) > len(best_text):
@@ -202,7 +219,9 @@ class TesseractEngine(BaseOCREngine):
                 best_lang = lang
 
         if not best_text:
-            best_text = pytesseract.image_to_string(otsu, lang="eng", config="--oem 3 --psm 6").strip()
+            best_text = pytesseract.image_to_string(
+                otsu, lang="eng", config="--oem 3 --psm 6"
+            ).strip()
             best_confidence = 0.0
             best_lang = "eng"
 
@@ -217,7 +236,7 @@ class TesseractEngine(BaseOCREngine):
             },
         }
 
-    def _process_image_source(self, content: Any) -> Dict[str, Any]:
+    def _process_image_source(self, content: Any) -> dict[str, Any]:
         process_start = time.perf_counter()
         preprocessed_for_metrics = None
         source_for_ocr = content
@@ -258,7 +277,9 @@ class TesseractEngine(BaseOCREngine):
                         continue
 
                     score = avg_conf * max(len(extracted_text), 1)
-                    best_score = best_confidence * max(len(best_text), 1) if best_text else -1
+                    best_score = (
+                        best_confidence * max(len(best_text), 1) if best_text else -1
+                    )
 
                     if score > best_score:
                         best_text = extracted_text
@@ -268,14 +289,18 @@ class TesseractEngine(BaseOCREngine):
                         best_psm = psm
 
         if not best_text:
-            best_text = pytesseract.image_to_string(gray, lang="eng", config="--oem 3 --psm 6").strip()
+            best_text = pytesseract.image_to_string(
+                gray, lang="eng", config="--oem 3 --psm 6"
+            ).strip()
             best_confidence = 0.0
             best_variant = "gray_fallback"
             best_lang = "eng"
             best_psm = 6
 
         total_ocr_seconds = time.perf_counter() - process_start
-        metrics_source = preprocessed_for_metrics if preprocessed_for_metrics is not None else gray
+        metrics_source = (
+            preprocessed_for_metrics if preprocessed_for_metrics is not None else gray
+        )
         term_metrics = self._build_term_metrics(
             image=metrics_source,
             lang=best_lang,
@@ -301,7 +326,9 @@ class TesseractEngine(BaseOCREngine):
             },
         }
 
-    def process(self, content: Any, metadata: dict[str, Any] | None = None) -> Dict[str, Any]:
+    def process(
+        self, content: Any, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Process image or PDF with Tesseract OCR.
         metadata: aceito para satisfazer o contrato BaseOCREngine; não utilizado internamente.
@@ -311,7 +338,9 @@ class TesseractEngine(BaseOCREngine):
                 self._process_pdf_page(page_image)
                 for page_image in self._render_pdf_pages(content)
             ]
-            raw_text = "\n\n".join(result.get("raw_text", "") for result in page_results).strip()
+            raw_text = "\n\n".join(
+                result.get("raw_text", "") for result in page_results
+            ).strip()
             page_meta = [result.get("_meta", {}) for result in page_results]
             avg_confidences = [
                 meta.get("avg_confidence")

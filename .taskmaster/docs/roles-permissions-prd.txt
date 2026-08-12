@@ -1,0 +1,231 @@
+<context>
+# Overview
+Hoje o backend-core tem um sistema de RBAC (Role/Permission) modelado, mas na prática só existe
+um role em uso: "admin", que recebe todas as 9 permissions via seed
+(docuparse-project/backend-core/users/management/commands/seed_data.py). Não há segregação real
+de privilégio entre "equipe da InnoVox operando a plataforma" e "usuários dentro de um tenant
+cliente". Além disso, o levantamento do código mostrou que 3 das 9 permissions definidas nunca são
+checadas por nenhum endpoint (models.create, models.edit, operations.access) — ou seja, hoje
+qualquer usuário autenticado acessa telas de Modelos, Operações (DLQ) e Configurações
+(integration/OCR/email settings), independente do seu role.
+
+Este PRD cobre a introdução de dois novos roles (tenantAdmin, operator) além do admin de
+plataforma existente, o enforcement real das permissions hoje mortas, e uma proteção contra
+escalonamento de privilégio (um tenantAdmin não pode se auto-promover, ou promover outro usuário
+do seu tenant, a admin de plataforma).
+
+Público: usuários internos da InnoVox (role admin) e usuários de tenants clientes (tenantAdmin,
+operator).
+
+# Core Features
+
+## 1. Três roles com permission matrix fixa
+- admin (escopo: plataforma, exclusivo equipe InnoVox): todas as 9 permissions —
+  inbox.view, documents.send, documents.validate, models.create, models.edit,
+  operations.access, users.manage, roles.manage, tenants.manage.
+- tenantAdmin (escopo: por tenant): inbox.view, documents.send, documents.validate,
+  models.create, models.edit, operations.access, users.manage.
+- operator (escopo: por tenant): inbox.view, documents.send, documents.validate,
+  operations.access.
+Por quê: hoje um único role "admin" com todas as permissions não permite diferenciar quem
+administra a plataforma (InnoVox) de quem administra ou apenas opera dentro de um tenant
+cliente. Como funciona: os 3 roles são registrados no seed como definições globais (tabela
+Role já é global, não tenant-scoped); a atribuição de qual role um usuário tem continua sendo
+por UserProfile (user + tenant + role_ref), como já é hoje.
+
+## 2. Enforcement das permissions hoje "mortas"
+- models.create / models.edit devem passar a proteger, via require_permission(...), os
+  endpoints de Modelos (schema_configs_view, schema_config_detail_view, layout_configs_view)
+  E os endpoints de Configurações (integration_settings_view, ocr_settings_view,
+  email_settings_view) — decisão: settings ficam sob models.edit, não sob um código novo.
+- operations.access deve passar a proteger dlq_summary_view, dlq_events_view,
+  dlq_requeue_view.
+Por quê: essas 3 permissions já existem no seed há tempo mas nenhum endpoint as checa —
+qualquer usuário autenticado (mesmo operator, mesmo um usuário sem nenhum role) acessa essas
+telas hoje via API direta, o que anula o propósito de ter tenantAdmin vs operator segregados
+se essas rotas não forem fechadas.
+
+## 3. Proteção contra escalonamento de privilégio
+- No endpoint protegido por users.manage (user_views.py), impedir que um usuário que não seja
+  ele mesmo um platform admin consiga setar o role_ref de qualquer usuário (inclusive ele
+  mesmo) para o role "admin".
+- Implementação recomendada: adicionar um flag booleano no modelo Role (ex:
+  is_platform_role) em vez de comparar por nome de string — mais robusto a rename do role no
+  futuro. O seed marca "admin" com is_platform_role=True; tenantAdmin/operator ficam False.
+  Isso requer uma migration nova em backend-core/users (adicionar coluna).
+- A view de users.manage passa a rejeitar (403) qualquer tentativa de setar role_ref para um
+  Role com is_platform_role=True, a menos que quem está fazendo a requisição já tenha ele
+  mesmo um role com is_platform_role=True.
+Por quê: sem essa checagem, dar users.manage a tenantAdmin (necessário para que ele
+administre usuários do próprio tenant) abriria brecha para ele se auto-promover a admin de
+plataforma, já que Role é uma tabela global e nada hoje impede setar qualquer role_ref
+existente.
+
+## 4. Ajustes no frontend
+- Confirmar/ajustar PermissionGuard e app/navigation.ts (docuparse-project/frontend) para que
+  as rotas de Modelos/Settings exijam models.edit e a rota de Operações exija
+  operations.access — hoje (achado do levantamento) essas permissions não aparecem em nenhum
+  lugar do frontend, então as rotas provavelmente estão abertas para qualquer usuário
+  autenticado ou mal mapeadas para roles.manage.
+- Na tela de Gerenciar Usuários (GerenciarUsuarios / modules/admin), o seletor de role não deve
+  oferecer a opção "admin" (platform role) para quem não for ele mesmo admin — espelha a
+  proteção do item 3 no backend, evitando que a tentativa nem chegue a ser feita (a
+  validação real de qualquer forma acontece no backend).
+
+# User Experience
+- Um usuário InnoVox com role admin continua vendo/acessando tudo, incluindo gestão de
+  tenants e de roles (telas que só ele acessa).
+- Um tenantAdmin, ao logar, vê inbox, envio/validação de documentos, Modelos, Operações e a
+  tela de Gerenciar Usuários do seu próprio tenant — mas não vê Gerenciar Tenants nem
+  Gerenciar Roles, e não consegue promover ninguém a admin de plataforma (nem via UI nem via
+  API direta).
+- Um operator vê apenas inbox, envio/validação de documentos e Operações — sem acesso a
+  Modelos nem a Gerenciar Usuários.
+</context>
+<PRD>
+# Technical Architecture
+
+## Modelos e enforcement existentes (não mudam de forma, só de dado/uso)
+- Permission: docuparse-project/backend-core/users/models.py:16-25 (code único + description).
+- Role: docuparse-project/backend-core/users/models.py:28-37 (name único + M2M permissions).
+  Precisa de uma nova coluna is_platform_role (BooleanField, default=False) — nova migration
+  em backend-core/users/migrations/. GUARDRAIL: confirmar com o usuário antes de aplicar essa
+  migration em qualquer ambiente que já tenha rodado migrations em produção (regra do
+  CLAUDE.md do projeto).
+- UserProfile: docuparse-project/backend-core/tenants/models.py:45-73 — já tem
+  role_ref (FK nullable para Role) + tenant. Não muda de forma.
+- require_permission(code) / HasDocuparsePermission:
+  docuparse-project/backend-core/users/permissions.py:9-35 — mecanismo de enforcement já
+  existente e correto, só falta ser aplicado nos endpoints listados abaixo.
+
+## Endpoints a instrumentar com require_permission (hoje sem checagem granular)
+Todos em docuparse-project/backend-core/documents/views.py, hoje protegidos apenas por
+_internal_token_error (L121-141), que libera qualquer usuário autenticado:
+- schema_configs_view (L653) -> require_permission("models.edit")
+- schema_config_detail_view (L679) -> require_permission("models.edit")
+- layout_configs_view (L715) -> require_permission("models.edit")
+- integration_settings_view (L740) -> require_permission("models.edit")
+- ocr_settings_view (L778) -> require_permission("models.edit")
+- email_settings_view (L819) -> require_permission("models.edit")
+- dlq_summary_view / dlq_events_view / dlq_requeue_view (~L888-930, rotas em
+  documents/urls.py:94-96) -> require_permission("operations.access")
+Nota: manter a exceção de service token (request.auth == "service_token") como já funciona
+hoje em require_permission, para não quebrar chamadas service-to-service.
+
+Fora de escopo deste PRD (mas achado durante o levantamento, registrar como débito técnico):
+list_engines_view e classify_text_view (documents/views.py, ~L282) estão hoje sem nenhuma
+autenticação (AllowAny por omissão de DEFAULT_PERMISSION_CLASSES em core/settings.py:46-53).
+
+## Escalonamento de privilégio
+- Migration: adicionar Role.is_platform_role (bool, default False).
+- Seed: marcar apenas o role "admin" com is_platform_role=True.
+- user_views.py (endpoints atualmente protegidos por users.manage, L44 e L66): antes de
+  salvar um role_ref novo em um UserProfile, checar
+  `if new_role.is_platform_role and not request.user.docuparse_profile.role_ref.is_platform_role: return 403`.
+- Bônus de robustez (opcional, avaliar custo): também impedir que um tenantAdmin altere o
+  próprio UserProfile (auto-edição) para trocar de tenant, já que isso é ortogonal a role mas
+  mesma superfície de risco.
+
+## Seed (seed_data.py)
+Substituir a criação de um único role "admin" por 3 roles com a permission matrix definida em
+"Core Features #1". Manter idempotência do comando (get_or_create), como já é hoje.
+
+## Frontend (docuparse-project/frontend)
+- app/navigation.ts: conferir/adicionar entradas de menu para Modelos (models.edit) e
+  Operações (operations.access) caso não estejam mapeadas corretamente hoje.
+- Rotas afetadas (SettingsRoute.tsx, OperationsRoute.tsx e equivalentes): trocar o `code` do
+  PermissionGuard para o correto (models.edit / operations.access) onde hoje estiver ausente
+  ou usando roles.manage por engano.
+- modules/admin (GerenciarUsuarios): o `<select>` de role não deve listar roles com
+  is_platform_role=True quando o usuário logado não for ele mesmo is_platform_role — o
+  backend já bloqueia, isso é só UX (evitar erro 403 confuso).
+- Tipos AdminRole/AdminPermission (modules/admin/types.ts) precisam refletir o novo campo
+  is_platform_role vindo da API de /roles, se o frontend for usar isso para o item acima.
+
+# Development Roadmap
+
+## Fase 1 — Modelo de dados
+- Migration: Role.is_platform_role (default False).
+- Atualizar seed_data.py com os 3 roles e a permission matrix completa.
+- Rodar o seed localmente e conferir via shell/admin que os 3 roles existem com as
+  permissions corretas.
+
+## Fase 2 — Enforcement backend (permissions hoje mortas)
+- Aplicar require_permission("models.edit") nos 6 endpoints de Modelos/Settings listados.
+- Aplicar require_permission("operations.access") nos 3 endpoints de DLQ/Operações.
+- Testes: para cada endpoint, um teste que confirma 403 para operator (nos de models.edit) e
+  200 para tenantAdmin/admin; e 200 para operator nos de operations.access.
+
+## Fase 3 — Proteção contra escalonamento
+- Implementar a checagem is_platform_role em user_views.py.
+- Testes: tenantAdmin tentando setar role_ref=admin em si mesmo ou em outro usuário do seu
+  tenant deve receber 403; admin fazendo a mesma operação deve funcionar.
+
+## Fase 4 — Frontend
+- Corrigir/mapear PermissionGuard e navigation.ts para models.edit e operations.access.
+- Ajustar o seletor de role em GerenciarUsuarios para esconder roles is_platform_role de
+  quem não é admin.
+- Teste manual (Playwright, como já é padrão no projeto — ver memória do feature 016) logando
+  como tenantAdmin e operator simulados, conferindo menu e bloqueio de rota.
+
+## Fase 5 — Documentação
+- Atualizar a nota de referência sobre RBAC no basic-memory (projeto docuparser,
+  reference/ ou decisions/) com a permission matrix final e os arquivos tocados.
+- Revisar se docs/specs/010-multi-tenancy-schemas/plan.md precisa de atualização (o plano de
+  multi-tenancy é o documento normativo referenciado pelo CLAUDE.md do projeto).
+
+# Logical Dependency Chain
+1. Fase 1 (modelo + seed) é pré-requisito de tudo — sem os 3 roles existirem com a permission
+   matrix certa, nada mais faz sentido testar.
+2. Fase 3 (escalonamento) depende da migration da Fase 1 (is_platform_role) mas é
+   logicamente independente da Fase 2 — podem ser feitas em paralelo ou em qualquer ordem
+   relativa entre si, ambas depois da Fase 1.
+3. Fase 2 (enforcement) não depende de Fase 3, mas ambas devem estar prontas antes da Fase 4
+   (frontend), já que o frontend precisa saber o código de permission final de cada rota e o
+   comportamento do seletor de roles.
+4. Fase 5 (documentação) é sempre a última, depois de tudo validado.
+
+# Risks and Mitigations
+- Migration em produção: adicionar coluna nova é seguro (não destrutivo), mas o CLAUDE.md do
+  projeto exige perguntar antes de mexer em migrations que já rodaram em produção — tratar
+  isso como um passo de confirmação explícita antes do deploy, não antes do desenvolvimento.
+- Comparação por nome de role ("admin") é frágil a rename — mitigado usando o flag
+  is_platform_role em vez de string matching.
+- Endpoints de settings (integration/ocr/email) hoje sem nenhuma permission granular: ao
+  aplicar models.edit, qualquer usuário/token que dependia do comportamento "qualquer
+  autenticado acessa" vai quebrar — checar se há alguma automação/serviço interno que bate
+  nesses endpoints sem ser via UI antes de aplicar em produção.
+- list_engines_view / classify_text_view sem autenticação nenhuma é um achado à parte, fora
+  de escopo deste PRD — não misturar essa correção com o rollout de roles para não acoplar
+  dois riscos de deploy diferentes.
+- Usuários existentes com role "admin" hoje (antes do PRD) devem ser migrados/confirmados
+  como is_platform_role=True no seed/data migration, para não perderem acesso.
+
+# Appendix
+Permission matrix final:
+
+| Permission          | admin | tenantAdmin | operator |
+|----------------------|:-----:|:-----------:|:--------:|
+| inbox.view            |  X    |     X       |    X     |
+| documents.send         |  X    |     X       |    X     |
+| documents.validate     |  X    |     X       |    X     |
+| models.create           |  X    |     X       |          |
+| models.edit             |  X    |     X       |          |
+| operations.access       |  X    |     X       |    X     |
+| users.manage            |  X    |     X       |          |
+| roles.manage            |  X    |             |          |
+| tenants.manage          |  X    |             |          |
+
+Arquivos-chave identificados no levantamento prévio:
+- docuparse-project/backend-core/users/models.py (Permission, Role)
+- docuparse-project/backend-core/users/permissions.py (require_permission, HasDocuparsePermission)
+- docuparse-project/backend-core/users/management/commands/seed_data.py (seed)
+- docuparse-project/backend-core/tenants/models.py (UserProfile)
+- docuparse-project/backend-core/documents/views.py (endpoints a instrumentar)
+- docuparse-project/backend-core/documents/urls.py:94-96 (rotas DLQ)
+- docuparse-project/backend-core/users/user_views.py (endpoint users.manage, checagem de
+  escalonamento)
+- docuparse-project/backend-core/users/role_views.py (endpoint roles.manage, não muda)
+- docuparse-project/frontend/src/app/navigation.ts
+- docuparse-project/frontend/src/modules/admin (GerenciarUsuarios, GerenciarRoles, types.ts)
+</PRD>

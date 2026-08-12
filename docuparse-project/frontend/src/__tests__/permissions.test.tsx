@@ -6,37 +6,50 @@ import { renderApp } from './utils'
 
 // US1 / T016 — visibilidade de navegação conforme as permissões do usuário.
 function mockMe(permissions: string[]) {
-  server.use(
-    http.get('/api/auth/me', () =>
-      HttpResponse.json({ id: 'u1', name: 'User', email: 'u@docuparse.local', permissions }),
-    ),
-  )
+    server.use(
+        http.get('/api/auth/me', () =>
+            HttpResponse.json({ id: 'u1', name: 'User', email: 'u@docuparse.local', permissions }),
+        ),
+    )
 }
 
 describe('Permissões e navegação', () => {
-  beforeEach(() => localStorage.setItem('access_token', 'tok'))
+    beforeEach(() => localStorage.setItem('access_token', 'tok'))
 
-  it('exibe apenas itens permitidos (somente inbox.view)', async () => {
-    mockMe(['inbox.view'])
-    renderApp()
-    expect((await screen.findAllByText('Inbox')).length).toBeGreaterThan(0)
-    expect(screen.queryAllByText('Dashboard').length).toBeGreaterThan(0)
-    // Sem documents.validate / roles.manage / users.manage:
-    expect(screen.queryAllByText('Validacao')).toHaveLength(0)
-    expect(screen.queryAllByText('Configuracoes')).toHaveLength(0)
-    expect(screen.queryAllByText('Usuários')).toHaveLength(0)
-  })
+    it('exibe apenas itens permitidos (somente inbox.view)', async () => {
+        mockMe(['inbox.view'])
+        renderApp()
+        expect((await screen.findAllByText('Inbox')).length).toBeGreaterThan(0)
+        expect(screen.queryAllByText('Dashboard').length).toBeGreaterThan(0)
+        // Sem documents.validate / roles.manage / users.manage:
+        expect(screen.queryAllByText('Validacao')).toHaveLength(0)
+        expect(screen.queryAllByText('Configuracoes')).toHaveLength(0)
+        expect(screen.queryAllByText('Usuários')).toHaveLength(0)
+    })
 
-  it('exibe "Validacao" quando o usuário tem documents.validate', async () => {
-    mockMe(['inbox.view', 'documents.validate'])
-    renderApp()
-    expect((await screen.findAllByText('Validacao')).length).toBeGreaterThan(0)
-  })
+    it('exibe "Validacao" quando o usuário tem documents.validate', async () => {
+        mockMe(['inbox.view', 'documents.validate'])
+        renderApp()
+        expect((await screen.findAllByText('Validacao')).length).toBeGreaterThan(0)
+    })
 
-  it('exibe itens administrativos quando o usuário tem as permissões', async () => {
-    mockMe(['inbox.view', 'roles.manage', 'users.manage'])
-    renderApp()
-    expect((await screen.findAllByText('Roles')).length).toBeGreaterThan(0)
-    expect(screen.queryAllByText('Usuários').length).toBeGreaterThan(0)
-  })
+    it('exibe itens administrativos quando o usuário tem as permissões', async () => {
+        mockMe(['inbox.view', 'roles.manage', 'users.manage'])
+        renderApp()
+        expect((await screen.findAllByText('Roles')).length).toBeGreaterThan(0)
+        expect(screen.queryAllByText('Usuários').length).toBeGreaterThan(0)
+    })
+
+    it('oculta "Configurações" para operador (sem models.edit)', async () => {
+        mockMe(['inbox.view', 'documents.validate', 'operations.access'])
+        renderApp()
+        expect((await screen.findAllByText('Operações')).length).toBeGreaterThan(0)
+        expect(screen.queryAllByText('Configurações')).toHaveLength(0)
+    })
+
+    it('exibe "Configurações" quando o usuário tem models.edit', async () => {
+        mockMe(['inbox.view', 'models.edit'])
+        renderApp()
+        expect((await screen.findAllByText('Configurações')).length).toBeGreaterThan(0)
+    })
 })

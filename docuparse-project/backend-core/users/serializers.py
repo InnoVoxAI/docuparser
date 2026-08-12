@@ -20,12 +20,15 @@ class LoginSerializer(serializers.Serializer):
         if user is None:
             # Distinguish "inactive account" from "wrong credentials"
             from django.contrib.auth import get_user_model
+
             User = get_user_model()
             try:
                 db_user = User.objects.get(username=email)
                 if not db_user.is_active:
                     raise serializers.ValidationError(
-                        {"detail": "Conta inativa. Aguarde ativação pelo administrador."},
+                        {
+                            "detail": "Conta inativa. Aguarde ativação pelo administrador."
+                        },
                         code="inactive",
                     )
             except User.DoesNotExist:
@@ -59,18 +62,21 @@ class UserMeSerializer(serializers.Serializer):
         profile = getattr(obj, "docuparse_profile", None)
         if not profile or not profile.role_ref:
             return None
-        return {"id": str(profile.role_ref.id), "name": profile.role_ref.name}
+        return {
+            "id": str(profile.role_ref.id),
+            "name": profile.role_ref.name,
+            "is_platform_role": profile.role_ref.is_platform_role,
+        }
 
     def get_permissions(self, obj: Any) -> list[str]:
         profile = getattr(obj, "docuparse_profile", None)
         if not profile or not profile.role_ref:
             return []
-        return list(
-            profile.role_ref.permissions.values_list("code", flat=True)
-        )
+        return list(profile.role_ref.permissions.values_list("code", flat=True))
 
 
 # ─── User Management Serializers ─────────────────────────────────────────────
+
 
 class UserListSerializer(serializers.Serializer):
     id = serializers.IntegerField(source="pk")
@@ -79,6 +85,7 @@ class UserListSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
     role = serializers.SerializerMethodField()
     date_joined = serializers.DateTimeField()
+    invite_pending = serializers.SerializerMethodField()
 
     def get_name(self, obj: Any) -> str:
         return obj.get_full_name() or obj.first_name or obj.username
@@ -87,41 +94,38 @@ class UserListSerializer(serializers.Serializer):
         profile = getattr(obj, "docuparse_profile", None)
         if not profile or not profile.role_ref:
             return None
-        return {"id": str(profile.role_ref.id), "name": profile.role_ref.name}
+        return {
+            "id": str(profile.role_ref.id),
+            "name": profile.role_ref.name,
+            "is_platform_role": profile.role_ref.is_platform_role,
+        }
+
+    def get_invite_pending(self, obj: Any) -> bool:
+        return not obj.has_usable_password()
 
 
 class UserCreateSerializer(serializers.Serializer):
+    """Validates the payload for inviting a new user to the caller's tenant.
+
+    No ``password`` field — the invitee sets their own password when they
+    activate the invite. Creation itself is the view's responsibility (it
+    needs ``request.tenant``, which this serializer has no access to).
+    """
+
     name = serializers.CharField(max_length=150)
     email = serializers.EmailField()
-    password = serializers.CharField(write_only=True, min_length=8)
     role_id = serializers.UUIDField()
-
-    def validate_email(self, value: str) -> str:
-        User = get_user_model()
-        if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("Este e-mail já está em uso.")
-        return value
 
     def validate_role_id(self, value: Any) -> Role:
         try:
-            return Role.objects.get(id=value)
+            role = Role.objects.get(id=value)
         except Role.DoesNotExist:
             raise serializers.ValidationError("Role não encontrada.")
-
-    def create(self, validated_data: dict) -> Any:
-        from tenants.models import Tenant, UserProfile
-        User = get_user_model()
-        role: Role = validated_data["role_id"]
-        user = User.objects.create_user(
-            username=validated_data["email"],
-            email=validated_data["email"],
-            password=validated_data["password"],
-            first_name=validated_data["name"],
-            is_active=True,
-        )
-        tenant = Tenant.objects.first()
-        UserProfile.objects.create(user=user, tenant=tenant, role_ref=role)
-        return user
+        if role.is_platform_role:
+            raise serializers.ValidationError(
+                "Esta role não pode ser atribuída por convite de tenant admin."
+            )
+        return role
 
 
 class UserUpdateSerializer(serializers.Serializer):
@@ -141,9 +145,11 @@ class UserUpdateSerializer(serializers.Serializer):
 
 # ─── Role Management Serializers ──────────────────────────────────────────────
 
+
 class RoleListSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     name = serializers.CharField()
+    is_platform_role = serializers.BooleanField()
     permissions = serializers.SerializerMethodField()
     users_count = serializers.IntegerField(read_only=True)
     created_at = serializers.DateTimeField()
@@ -154,18 +160,24 @@ class RoleListSerializer(serializers.Serializer):
 
 class RoleCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=128)
-    permission_codes = serializers.ListField(child=serializers.CharField(), min_length=1)
+    permission_codes = serializers.ListField(
+        child=serializers.CharField(), min_length=1
+    )
 
     def validate_name(self, value: str) -> str:
         from users.models import Role
+
         if Role.objects.filter(name=value).exists():
             raise serializers.ValidationError("Já existe uma role com este nome.")
         return value
 
     def validate_permission_codes(self, value: list[str]) -> list[str]:
         from users.models import Permission
+
         if not value:
-            raise serializers.ValidationError("Uma role deve ter ao menos uma permissão.")
+            raise serializers.ValidationError(
+                "Uma role deve ter ao menos uma permissão."
+            )
         for code in value:
             if not Permission.objects.filter(code=code).exists():
                 raise serializers.ValidationError(f"Permissão '{code}' não existe.")
@@ -174,12 +186,17 @@ class RoleCreateSerializer(serializers.Serializer):
 
 class RoleUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=128, required=False)
-    permission_codes = serializers.ListField(child=serializers.CharField(), min_length=1, required=False)
+    permission_codes = serializers.ListField(
+        child=serializers.CharField(), min_length=1, required=False
+    )
 
     def validate_permission_codes(self, value: list[str]) -> list[str]:
         from users.models import Permission
+
         if not value:
-            raise serializers.ValidationError("Uma role deve ter ao menos uma permissão.")
+            raise serializers.ValidationError(
+                "Uma role deve ter ao menos uma permissão."
+            )
         for code in value:
             if not Permission.objects.filter(code=code).exists():
                 raise serializers.ValidationError(f"Permissão '{code}' não existe.")
@@ -187,6 +204,7 @@ class RoleUpdateSerializer(serializers.Serializer):
 
 
 # ─── Register Serializer ──────────────────────────────────────────────────────
+
 
 class RegisterSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150)

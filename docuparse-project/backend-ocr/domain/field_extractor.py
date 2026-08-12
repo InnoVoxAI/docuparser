@@ -24,26 +24,19 @@ from typing import Any
 # nunca importa diretamente de utils/.
 from shared.validators import (
     REQUIRED_FIELDS,
-    FIELD_CONFIDENCE_THRESHOLDS,
-    LOW_CONFIDENCE_THRESHOLD,
-    _get_raw_text,
-    _is_header_like_value,
 )
 
 # A implementação agora mora em domain/field_extractor_impl.py.
 # O shim utils/validate_fields.py ainda existe para compatibilidade externa.
 from domain.field_extractor_impl import (
     compute_field_pipeline_quality,
-    extract_fields_candidates,
-    extract_dynamic_document_fields,
     extract_avg_confidence,
+    extract_dynamic_document_fields,
+    extract_fields_candidates,
     merge_field_confidence,
     merge_fields_by_validation,
     resolve_field_fallback_engine,
     should_run_llm,
-    extract_critical_fields_with_confidence,
-    validate_fields,
-    get_low_confidence_critical_fields,
 )
 
 
@@ -146,7 +139,9 @@ class FieldExtractor:
             fallback_validation=fallback_validation,
         )
 
-    def get_fallback_engine(self, classification: str, current_engine: str) -> str | None:
+    def get_fallback_engine(
+        self, classification: str, current_engine: str
+    ) -> str | None:
         """Retorna o engine de fallback recomendado para o doc_type e engine atual."""
         return resolve_field_fallback_engine(classification, current_engine)
 

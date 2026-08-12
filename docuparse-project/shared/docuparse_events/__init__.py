@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
+from opentelemetry import propagate, trace
+from opentelemetry.trace import Link
+
 
 @dataclass(frozen=True)
 class EventMessage:
@@ -16,14 +19,13 @@ class EventMessage:
 
 
 class EventBus(Protocol):
-    def publish(self, stream: str, event: dict[str, Any]) -> int | str:
-        ...
+    def publish(self, stream: str, event: dict[str, Any]) -> int | str: ...
 
-    def consume(self, stream: str, offset: int | str = 0) -> list[dict[str, Any]]:
-        ...
+    def consume(self, stream: str, offset: int | str = 0) -> list[dict[str, Any]]: ...
 
-    def consume_entries(self, stream: str, offset: int | str = 0, count: int | None = None) -> list[EventMessage]:
-        ...
+    def consume_entries(
+        self, stream: str, offset: int | str = 0, count: int | None = None
+    ) -> list[EventMessage]: ...
 
 
 class LocalJsonlEventBus:
@@ -34,6 +36,7 @@ class LocalJsonlEventBus:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def publish(self, stream: str, event: dict[str, Any]) -> int:
+        event = inject_trace_context(event)
         path = self._stream_path(stream)
         next_offset = self._count(path)
         with path.open("a", encoding="utf-8") as file:
@@ -44,7 +47,9 @@ class LocalJsonlEventBus:
     def consume(self, stream: str, offset: int = 0) -> list[dict[str, Any]]:
         return [entry.payload for entry in self.consume_entries(stream, offset)]
 
-    def consume_entries(self, stream: str, offset: int | str = 0, count: int | None = None) -> list[EventMessage]:
+    def consume_entries(
+        self, stream: str, offset: int | str = 0, count: int | None = None
+    ) -> list[EventMessage]:
         path = self._stream_path(stream)
         if not path.exists():
             return []
@@ -76,23 +81,30 @@ class RedisStreamEventBus:
         self.client = client
 
     @classmethod
-    def from_url(cls, url: str) -> "RedisStreamEventBus":
+    def from_url(cls, url: str) -> RedisStreamEventBus:
         try:
             import redis
         except ModuleNotFoundError as exc:
-            raise RuntimeError("Redis event bus requires the 'redis' Python package") from exc
+            raise RuntimeError(
+                "Redis event bus requires the 'redis' Python package"
+            ) from exc
         return cls(redis.Redis.from_url(url))
 
     def publish(self, stream: str, event: dict[str, Any]) -> str:
         validate_stream_name(stream)
+        event = inject_trace_context(event)
         payload = json.dumps(event, separators=(",", ":"), default=str)
         event_id = self.client.xadd(stream, {"payload": payload})
         return _decode(event_id)
 
-    def consume(self, stream: str, offset: int | str = "0-0", count: int | None = None) -> list[dict[str, Any]]:
+    def consume(
+        self, stream: str, offset: int | str = "0-0", count: int | None = None
+    ) -> list[dict[str, Any]]:
         return [entry.payload for entry in self.consume_entries(stream, offset, count)]
 
-    def consume_entries(self, stream: str, offset: int | str = "0-0", count: int | None = None) -> list[EventMessage]:
+    def consume_entries(
+        self, stream: str, offset: int | str = "0-0", count: int | None = None
+    ) -> list[EventMessage]:
         validate_stream_name(stream)
         redis_offset = "0-0" if offset == 0 else str(offset)
         response = self.client.xread({stream: redis_offset}, count=count)
@@ -101,7 +113,11 @@ class RedisStreamEventBus:
             for message_id, fields in messages:
                 payload = _field(fields, "payload")
                 if payload:
-                    events.append(EventMessage(id=_decode(message_id), payload=json.loads(payload)))
+                    events.append(
+                        EventMessage(
+                            id=_decode(message_id), payload=json.loads(payload)
+                        )
+                    )
         return events
 
     def latest_id(self, stream: str) -> str:
@@ -117,7 +133,9 @@ def event_bus_from_env(local_root: str | Path | None = None) -> EventBus:
     if mode in {"redis", "redis-streams", "redis_streams"}:
         redis_url = os.environ.get("REDIS_URL", "redis://redis:6379/0").strip()
         return RedisStreamEventBus.from_url(redis_url)
-    root = local_root or os.environ.get("DOCUPARSE_LOCAL_EVENT_DIR", ".docuparse-events")
+    root = local_root or os.environ.get(
+        "DOCUPARSE_LOCAL_EVENT_DIR", ".docuparse-events"
+    )
     return LocalJsonlEventBus(root)
 
 
@@ -143,6 +161,40 @@ def publish_dead_letter(
             "payload": entry.payload,
         },
     )
+
+
+def inject_trace_context(event: dict[str, Any]) -> dict[str, Any]:
+    """Popula `trace_context` com o contexto de trace ativo (research.md R4).
+
+    Sem trace ativo (ex.: publisher ainda não instrumentado), o evento é
+    devolvido sem alteração e `trace_context` permanece como já estava
+    (tipicamente `None`, o default do schema). Muta `event` in-place (além de
+    devolvê-lo) para que callers que guardam a mesma referência — ex.:
+    `*_event_worker.py` publicando e retornando o mesmo dict — enxerguem o
+    `trace_context` efetivamente publicado, em vez de uma cópia divergente.
+    """
+    carrier: dict[str, str] = {}
+    propagate.inject(carrier)
+    if not carrier:
+        return event
+    event["trace_context"] = carrier
+    return event
+
+
+def extract_trace_link(event: dict[str, Any]) -> Link | None:
+    """Extrai um `Link` para o contexto de trace de origem de um evento.
+
+    Retorna `None` quando `trace_context` está ausente/vazio (consumidor deve
+    então iniciar um trace novo e desconectado, em vez de falhar).
+    """
+    carrier = event.get("trace_context")
+    if not carrier:
+        return None
+    context = propagate.extract(carrier)
+    span_context = trace.get_current_span(context).get_span_context()
+    if not span_context.is_valid:
+        return None
+    return Link(span_context)
 
 
 def validate_stream_name(stream: str) -> None:

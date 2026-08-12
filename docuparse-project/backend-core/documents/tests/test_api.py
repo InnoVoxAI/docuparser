@@ -1,30 +1,71 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
-import json
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
-from rest_framework.test import APIClient
-
-from docuparse_storage import LocalStorage, document_original_key
 from docuparse_events import EventMessage, LocalJsonlEventBus, publish_dead_letter
-
-from documents.models import Document, EmailSettings, ERPIntegrationAttempt, ExtractionResult, IntegrationSettings, LayoutConfig, OCRSettings, SchemaConfig, SETTINGS_SINGLETON_ID, ValidationDecision
+from docuparse_storage import LocalStorage, document_original_key
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 from tenants.models import Tenant, UserProfile
+from users.models import Permission, Role
+
+from documents.models import (
+    SETTINGS_SINGLETON_ID,
+    Document,
+    EmailSettings,
+    ERPIntegrationAttempt,
+    ExtractionResult,
+    IntegrationSettings,
+    LayoutConfig,
+    OCRSettings,
+    SchemaConfig,
+    ValidationDecision,
+)
+
+
+def _jwt_for(user, tenant) -> str:
+    """Real access token carrying the 'tenant' claim JWTTenantMiddleware needs
+    to route the request to the tenant's schema — force_authenticate() bypasses
+    that middleware entirely since it doesn't set any Authorization header."""
+    token = RefreshToken.for_user(user)
+    token["tenant"] = tenant.slug
+    return str(token.access_token)
 
 
 class DocumentsAPITests(TestCase):
     def setUp(self) -> None:
         self.client = APIClient()
-        with patch.object(Tenant, "auto_create_schema", new=False):
-            self.tenant = Tenant.objects.create(
-                slug="tenant-demo", name="Tenant Demo", schema_name="tenant_tenant_demo"
-            )
-        self.user = get_user_model().objects.create_user(username="operator", password="test")
+        self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
+        connection.set_tenant(self.tenant)
+        self.user = get_user_model().objects.create_user(
+            username="operator", password="test"
+        )
+        role = Role.objects.create(name="Operador")
+        role.permissions.set(
+            [
+                Permission.objects.create(code="inbox.view", description="Inbox view"),
+                Permission.objects.create(
+                    code="documents.validate", description="Validate"
+                ),
+                Permission.objects.create(
+                    code="models.edit", description="Models edit"
+                ),
+                Permission.objects.create(
+                    code="operations.access", description="Operations access"
+                ),
+            ]
+        )
+        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {_jwt_for(self.user, self.tenant)}"
+        )
         self.document = Document.objects.create(
             status=Document.Status.VALIDATION_PENDING,
             channel="manual",
@@ -35,11 +76,13 @@ class DocumentsAPITests(TestCase):
         )
 
     def test_inbox_and_detail_endpoints(self) -> None:
-        inbox = self.client.get(reverse("documents-inbox"), {"status": Document.Status.VALIDATION_PENDING})
+        inbox = self.client.get(
+            reverse("documents-inbox"), {"status": Document.Status.VALIDATION_PENDING}
+        )
         detail = self.client.get(reverse("document-detail", args=[self.document.id]))
 
         assert inbox.status_code == 200
-        assert inbox.json()[0]["id"] == str(self.document.id)
+        assert inbox.json()["results"][0]["id"] == str(self.document.id)
         assert detail.status_code == 200
         assert detail.json()["file_uri"] == self.document.file_uri
 
@@ -84,7 +127,7 @@ class DocumentsAPITests(TestCase):
         from uuid import uuid4
 
         document_id = uuid4()
-        with patch("documents.views.start_document_ocr_thread") as start_thread:
+        with patch("documents.views.submit_document_processing") as start_thread:
             response = self.client.post(
                 reverse("document-received-event"),
                 {
@@ -117,19 +160,12 @@ class DocumentsAPITests(TestCase):
 
     def test_document_file_endpoint_serves_original_file(self) -> None:
         # feature 009: o endpoint passou a exigir JWT do usuário com permissão
-        # "inbox.view" (ou token interno). Autentica o usuário com a permissão.
-        from users.models import Permission, Role
-        # UserProfile already imported from tenants.models
-
-        permission = Permission.objects.create(code="inbox.view", description="Inbox view")
-        role = Role.objects.create(name="Operador")
-        role.permissions.add(permission)
-        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
-        self.client.force_authenticate(user=self.user)
-
-        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
-            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
-        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        # "inbox.view" (ou token interno) — self.user already has it via setUp.
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
             stored = LocalStorage(storage_dir).put_bytes(
                 document_original_key(self.tenant.slug, str(self.document.id)),
                 b"%PDF original",
@@ -137,15 +173,23 @@ class DocumentsAPITests(TestCase):
             self.document.file_uri = stored.uri
             self.document.save(update_fields=["file_uri"])
 
-            response = self.client.get(reverse("document-file", args=[self.document.id]))
+            response = self.client.get(
+                reverse("document-file", args=[self.document.id])
+            )
 
         assert response.status_code == 200
         assert b"".join(response.streaming_content) == b"%PDF original"
 
-    def test_process_ocr_endpoint_updates_extraction_result(self) -> None:
-        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
-            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
-        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+    def test_process_ocr_endpoint_without_schema_stores_raw_text_only(self) -> None:
+        """No LayoutConfig/SchemaConfig matches this document, so OCR completes
+        (raw text stored) but auto_extract_after_ocr() has nothing to extract
+        with and leaves the document at OCR_COMPLETED without an ExtractionResult.
+        """
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
             stored = LocalStorage(storage_dir).put_bytes(
                 document_original_key(self.tenant.slug, str(self.document.id)),
                 b"%PDF original",
@@ -154,22 +198,22 @@ class DocumentsAPITests(TestCase):
             self.document.save(update_fields=["file_uri"])
             with patch("documents.services.ocr_processor.OCRClient") as client_class:
                 client_class.return_value.process_document.return_value = {
-                    "fields": {"valor": "R$ 123,45"},
-                    "final_score": 0.82,
-                    "raw_text": "valor R$ 123,45",
+                    "raw_text": "texto sem schema correspondente",
                     "document_type": "scanned_image",
                     "engine_used": "mock",
                 }
 
-                response = self.client.post(reverse("document-process-ocr", args=[self.document.id]))
+                response = self.client.post(
+                    reverse("document-process-ocr", args=[self.document.id])
+                )
 
         self.document.refresh_from_db()
-        extraction = self.document.extraction_result
         assert response.status_code == 200
-        assert self.document.status == Document.Status.VALIDATION_PENDING
-        assert extraction.fields == {"valor": "R$ 123,45"}
-        assert extraction.confidence == 0.82
-        assert response.json()["full_transcription"] == "valor R$ 123,45"
+        assert self.document.status == Document.Status.OCR_COMPLETED
+        assert not hasattr(self.document, "extraction_result")
+        assert (
+            response.json()["full_transcription"] == "texto sem schema correspondente"
+        )
         assert response.json()["ocr_metadata"] == {
             "engine_used": "mock",
             "classification": "scanned_image",
@@ -177,34 +221,107 @@ class DocumentsAPITests(TestCase):
             "classification_engine_preprocessing_hints": {},
         }
 
-    def test_reprocess_ocr_endpoint_replaces_existing_extraction_result(self) -> None:
-        ExtractionResult.objects.create(
-            document=self.document,
-            schema_id="legacy_ocr",
-            schema_version="v1",
-            fields={"valor": "antigo"},
-            confidence=0.1,
-            requires_human_validation=True,
+    def test_process_ocr_endpoint_auto_extracts_with_matching_layout(self) -> None:
+        """document.layout resolves a LayoutConfig -> SchemaConfig (highest
+        priority in _resolve_schema_for_extraction), so auto_extract_after_ocr()
+        runs LangExtract and creates the ExtractionResult synchronously."""
+        schema = SchemaConfig.objects.create(
+            schema_id="boleto", version="v1", definition={"fields": ["valor"]}
         )
-        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
-            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
-        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        LayoutConfig.objects.create(
+            layout="boleto_padrao", document_type="", schema_config=schema
+        )
+        self.document.layout = "boleto_padrao"
+        self.document.save(update_fields=["layout"])
+
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
             stored = LocalStorage(storage_dir).put_bytes(
                 document_original_key(self.tenant.slug, str(self.document.id)),
                 b"%PDF original",
             )
             self.document.file_uri = stored.uri
             self.document.save(update_fields=["file_uri"])
-            with patch("documents.services.ocr_processor.OCRClient") as client_class:
+            with (
+                patch("documents.services.ocr_processor.OCRClient") as client_class,
+                patch(
+                    "documents.services.ocr_processor.LangExtractClient"
+                ) as langextract_class,
+            ):
                 client_class.return_value.process_document.return_value = {
-                    "fields": {"valor": "novo"},
-                    "final_score": 0.77,
+                    "raw_text": "valor R$ 123,45",
+                    "document_type": "scanned_image",
+                    "engine_used": "mock",
+                }
+                langextract_class.return_value.extract_with_schema.return_value = {
+                    "fields": {"valor": "R$ 123,45"},
+                    "confidence": 0.82,
+                    "requires_human_validation": False,
+                }
+
+                response = self.client.post(
+                    reverse("document-process-ocr", args=[self.document.id])
+                )
+
+        self.document.refresh_from_db()
+        extraction = self.document.extraction_result
+        assert response.status_code == 200
+        assert self.document.status == Document.Status.VALIDATION_PENDING
+        assert extraction.schema_id == "boleto"
+        assert extraction.fields == {"valor": "R$ 123,45"}
+        assert extraction.confidence == 0.82
+
+    def test_reprocess_ocr_endpoint_replaces_existing_extraction_result(self) -> None:
+        schema = SchemaConfig.objects.create(
+            schema_id="boleto", version="v1", definition={"fields": ["valor"]}
+        )
+        LayoutConfig.objects.create(
+            layout="boleto_padrao", document_type="", schema_config=schema
+        )
+        self.document.layout = "boleto_padrao"
+        self.document.save(update_fields=["layout"])
+        ExtractionResult.objects.create(
+            document=self.document,
+            schema_id="boleto",
+            schema_version="v1",
+            fields={"valor": "antigo"},
+            confidence=0.1,
+            requires_human_validation=True,
+        )
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
+            stored = LocalStorage(storage_dir).put_bytes(
+                document_original_key(self.tenant.slug, str(self.document.id)),
+                b"%PDF original",
+            )
+            self.document.file_uri = stored.uri
+            self.document.save(update_fields=["file_uri"])
+            with (
+                patch("documents.services.ocr_processor.OCRClient") as client_class,
+                patch(
+                    "documents.services.ocr_processor.LangExtractClient"
+                ) as langextract_class,
+            ):
+                client_class.return_value.process_document.return_value = {
                     "raw_text": "valor novo",
                     "document_type": "digital_pdf",
                     "engine_used": "docling",
                 }
+                langextract_class.return_value.extract_with_schema.return_value = {
+                    "fields": {"valor": "novo"},
+                    "confidence": 0.77,
+                    "requires_human_validation": False,
+                }
 
-                response = self.client.post(reverse("document-reprocess-ocr", args=[self.document.id]))
+                response = self.client.post(
+                    reverse("document-reprocess-ocr", args=[self.document.id])
+                )
 
         self.document.refresh_from_db()
         assert response.status_code == 200
@@ -212,10 +329,14 @@ class DocumentsAPITests(TestCase):
         assert self.document.extraction_result.confidence == 0.77
         assert response.json()["full_transcription"] == "valor novo"
 
-    def test_delete_document_endpoint_removes_database_row_and_preserves_storage(self) -> None:
-        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
-            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
-        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+    def test_delete_document_endpoint_removes_database_row_and_preserves_storage(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
             storage = LocalStorage(storage_dir)
             stored = storage.put_bytes(
                 document_original_key(self.tenant.slug, str(self.document.id)),
@@ -224,7 +345,9 @@ class DocumentsAPITests(TestCase):
             self.document.file_uri = stored.uri
             self.document.save(update_fields=["file_uri"])
 
-            response = self.client.delete(reverse("document-delete", args=[self.document.id]))
+            response = self.client.delete(
+                reverse("document-delete", args=[self.document.id])
+            )
 
             assert response.status_code == 204
             assert not Document.objects.filter(id=self.document.id).exists()
@@ -232,8 +355,13 @@ class DocumentsAPITests(TestCase):
 
     def test_operational_api_requires_internal_token_when_configured(self) -> None:
         with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN="secret"):
+            self.client.credentials()  # clear the JWT set in setUp: genuinely no credentials
             rejected = self.client.get(reverse("documents-inbox"))
-            accepted = self.client.get(reverse("documents-inbox"), HTTP_AUTHORIZATION="Bearer secret")
+            accepted = self.client.get(
+                reverse("documents-inbox"),
+                HTTP_AUTHORIZATION="Bearer secret",
+                HTTP_X_TENANT=self.tenant.slug,
+            )
 
         assert rejected.status_code == 401
         assert accepted.status_code == 200
@@ -260,10 +388,21 @@ class DocumentsAPITests(TestCase):
         assert self.document.status == Document.Status.ERP_INTEGRATION_REQUESTED
         assert self.document.validation_decisions.count() == 1
 
-    def test_approve_document_publishes_erp_integration_requested_and_exports_json(self) -> None:
-        with tempfile.TemporaryDirectory() as event_dir, tempfile.TemporaryDirectory() as export_dir, self.settings(
-            DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
-            DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+    def test_approve_document_publishes_erp_integration_requested_and_exports_json(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as event_dir,
+            tempfile.TemporaryDirectory() as export_dir,
+            # event_bus_from_env() reads DOCUPARSE_EVENT_BUS from the process
+            # environment, not Django settings — self.settings() alone can't
+            # force local mode when the environment pins the bus to Redis (as
+            # the devcontainer's .env does).
+            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
+            self.settings(
+                DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
+                DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+            ),
         ):
             ExtractionResult.objects.create(
                 document=self.document,
@@ -295,9 +434,18 @@ class DocumentsAPITests(TestCase):
         assert exported["payload"]["fields"] == {"valor": "R$ 123,45"}
 
     def test_approve_document_uses_corrected_fields_for_export(self) -> None:
-        with tempfile.TemporaryDirectory() as event_dir, tempfile.TemporaryDirectory() as export_dir, self.settings(
-            DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
-            DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+        with (
+            tempfile.TemporaryDirectory() as event_dir,
+            tempfile.TemporaryDirectory() as export_dir,
+            # event_bus_from_env() reads DOCUPARSE_EVENT_BUS from the process
+            # environment, not Django settings — self.settings() alone can't
+            # force local mode when the environment pins the bus to Redis (as
+            # the devcontainer's .env does).
+            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
+            self.settings(
+                DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
+                DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+            ),
         ):
             extraction = ExtractionResult.objects.create(
                 document=self.document,
@@ -321,11 +469,19 @@ class DocumentsAPITests(TestCase):
 
         extraction.refresh_from_db()
         assert response.status_code == 201
-        assert extraction.fields == {"valor": "R$ 999,99"}
-        assert events[0]["data"]["payload"]["fields"] == {"valor": "R$ 999,99"}
+        # field_versioning.save_manual_edit() (feature 007) syncs ExtractionResult.fields
+        # to the active version's {value, confidence} snapshot — edited fields get
+        # confidence 1.0 per FR-025/FR-027 — rather than the flat dict OCR/LangExtract
+        # write directly.
+        assert extraction.fields == {"valor": {"value": "R$ 999,99", "confidence": 1.0}}
+        assert events[0]["data"]["payload"]["fields"] == {
+            "valor": {"value": "R$ 999,99", "confidence": 1.0}
+        }
 
     def test_integration_settings_endpoint_persists_non_secret_fields(self) -> None:
-        response = self.client.get(reverse("integration-settings"), {"tenant": self.tenant.slug})
+        response = self.client.get(
+            reverse("integration-settings"), {"tenant": self.tenant.slug}
+        )
         update = self.client.patch(
             reverse("integration-settings"),
             {
@@ -348,14 +504,29 @@ class DocumentsAPITests(TestCase):
         assert config.superlogica_base_url == "https://sandbox.superlogica.example"
 
     def test_approval_respects_disabled_json_export_setting(self) -> None:
+        # erp_publisher._integration_settings() looks up the singleton row by
+        # SETTINGS_SINGLETON_ID; without it this create() is invisible to that
+        # lookup (IntegrationSettings.id defaults to a random uuid4) and
+        # get_or_create() silently falls back to its approved_export_enabled=True
+        # default instead of the row this test just made.
         IntegrationSettings.objects.create(
+            id=SETTINGS_SINGLETON_ID,
             approved_export_enabled=False,
             approved_export_dir="/tmp/ignored",
             approved_export_format=IntegrationSettings.ExportFormat.JSON,
         )
-        with tempfile.TemporaryDirectory() as event_dir, tempfile.TemporaryDirectory() as export_dir, self.settings(
-            DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
-            DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+        with (
+            tempfile.TemporaryDirectory() as event_dir,
+            tempfile.TemporaryDirectory() as export_dir,
+            # event_bus_from_env() reads DOCUPARSE_EVENT_BUS from the process
+            # environment, not Django settings — self.settings() alone can't
+            # force local mode when the environment pins the bus to Redis (as
+            # the devcontainer's .env does).
+            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
+            self.settings(
+                DOCUPARSE_LOCAL_EVENT_DIR=event_dir,
+                DOCUPARSE_APPROVED_EXPORT_DIR=export_dir,
+            ),
         ):
             ExtractionResult.objects.create(
                 document=self.document,
@@ -381,7 +552,9 @@ class DocumentsAPITests(TestCase):
         assert events[0]["data"]["metadata"]["approved_export_path"] == ""
 
     def test_ocr_settings_endpoint_persists_non_secret_fields(self) -> None:
-        response = self.client.get(reverse("ocr-settings"), {"tenant": self.tenant.slug})
+        response = self.client.get(
+            reverse("ocr-settings"), {"tenant": self.tenant.slug}
+        )
         update = self.client.patch(
             reverse("ocr-settings"),
             {
@@ -408,7 +581,9 @@ class DocumentsAPITests(TestCase):
         assert config.digital_pdf_min_text_blocks == 10
 
     def test_email_settings_endpoint_persists_non_secret_fields(self) -> None:
-        response = self.client.get(reverse("email-settings"), {"tenant": self.tenant.slug})
+        response = self.client.get(
+            reverse("email-settings"), {"tenant": self.tenant.slug}
+        )
         update = self.client.patch(
             reverse("email-settings"),
             {
@@ -478,21 +653,32 @@ class DocumentsAPITests(TestCase):
 
         schema.refresh_from_db()
         assert draft_response.status_code == 200
-        assert schema.definition == {"fields": ["valor", "vencimento"], "status": "draft"}
+        assert schema.definition == {
+            "fields": ["valor", "vencimento"],
+            "status": "draft",
+        }
 
     def test_dlq_operation_endpoints(self) -> None:
-        with tempfile.TemporaryDirectory() as event_dir, self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir):
+        with (
+            tempfile.TemporaryDirectory() as event_dir,
+            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
+            self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir),
+        ):
             bus = LocalJsonlEventBus(event_dir)
             publish_dead_letter(
                 bus,
                 stream="ocr.completed",
-                entry=EventMessage(id=1, payload={"event_type": "ocr.completed", "event_id": "event-1"}),
+                entry=EventMessage(
+                    id=1, payload={"event_type": "ocr.completed", "event_id": "event-1"}
+                ),
                 error=ValueError("invalid event"),
                 source="layout-service",
             )
 
             summary = self.client.get(reverse("dlq-summary"))
-            events = self.client.get(reverse("dlq-events"), {"stream": "ocr.completed.dlq"})
+            events = self.client.get(
+                reverse("dlq-events"), {"stream": "ocr.completed.dlq"}
+            )
             dry_run = self.client.post(
                 reverse("dlq-requeue"),
                 {"stream": "ocr.completed.dlq", "id": "1", "execute": False},
@@ -500,10 +686,17 @@ class DocumentsAPITests(TestCase):
             )
             requeue = self.client.post(
                 reverse("dlq-requeue"),
-                {"stream": "ocr.completed.dlq", "id": "1", "execute": True, "note": "reviewed"},
+                {
+                    "stream": "ocr.completed.dlq",
+                    "id": "1",
+                    "execute": True,
+                    "note": "reviewed",
+                },
                 format="json",
             )
-            invalid = self.client.get(reverse("dlq-events"), {"stream": "not.allowed.dlq"})
+            invalid = self.client.get(
+                reverse("dlq-events"), {"stream": "not.allowed.dlq"}
+            )
             invalid_requeue = self.client.post(
                 reverse("dlq-requeue"),
                 {"stream": "not.allowed.dlq", "id": "1", "execute": True},
@@ -524,6 +717,27 @@ class DocumentsAPITests(TestCase):
         assert invalid.status_code == 400
         assert invalid_requeue.status_code == 400
 
+    def test_dlq_endpoints_require_operations_access(self) -> None:
+        role = Role.objects.create(name="SemOperacoes")
+        role.permissions.set([Permission.objects.get(code="inbox.view")])
+        user = get_user_model().objects.create_user(username="viewer", password="test")
+        UserProfile.objects.create(user=user, tenant=self.tenant, role_ref=role)
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {_jwt_for(user, self.tenant)}"
+        )
+
+        summary = self.client.get(reverse("dlq-summary"))
+        events = self.client.get(reverse("dlq-events"), {"stream": "ocr.completed.dlq"})
+        requeue = self.client.post(
+            reverse("dlq-requeue"),
+            {"stream": "ocr.completed.dlq", "id": "1", "execute": False},
+            format="json",
+        )
+
+        assert summary.status_code == 403
+        assert events.status_code == 403
+        assert requeue.status_code == 403
+
     def test_rejection_notes_in_document_list(self) -> None:
         ValidationDecision.objects.create(
             document=self.document,
@@ -536,7 +750,10 @@ class DocumentsAPITests(TestCase):
         response = self.client.get(reverse("documents-inbox"))
 
         assert response.status_code == 200
-        doc_data = next((d for d in response.json() if d["id"] == str(self.document.id)), None)
+        doc_data = next(
+            (d for d in response.json()["results"] if d["id"] == str(self.document.id)),
+            None,
+        )
         assert doc_data is not None
         assert doc_data["rejection_notes"] == "Valor total divergente."
 
@@ -549,7 +766,14 @@ class DocumentsAPITests(TestCase):
             size_bytes=512,
         )
         response2 = self.client.get(reverse("documents-inbox"))
-        doc2_data = next((d for d in response2.json() if d["id"] == str(doc_no_rejection.id)), None)
+        doc2_data = next(
+            (
+                d
+                for d in response2.json()["results"]
+                if d["id"] == str(doc_no_rejection.id)
+            ),
+            None,
+        )
         assert doc2_data is not None
         assert doc2_data["rejection_notes"] is None
 
@@ -562,18 +786,31 @@ class InternalServiceTokenGateTests(TestCase):
     o usuário autenticado via JWT precisa ser aceito (antes era rejeitado), e o
     caller serviço↔serviço com o token interno também. Só requisições sem
     credencial válida devem receber 401.
+
+    `schema-configs` agora também exige a permissão `models.edit`
+    (HasDocuparsePermission), então o usuário JWT do teste precisa dessa
+    permissão para exercitar os cenários de sucesso; o bypass por
+    `service_token` continua incondicional.
     """
 
     TOKEN = "staging-token-123"
 
     def setUp(self) -> None:
         self.client = APIClient()
+        self.tenant = Tenant.objects.create(slug="tenant-gate", name="Tenant Gate")
+        connection.set_tenant(self.tenant)
         self.user = get_user_model().objects.create_user(username="op", password="x")
+        role = Role.objects.create(name="GateTester")
+        role.permissions.set(
+            [Permission.objects.create(code="models.edit", description="Models edit")]
+        )
+        UserProfile.objects.create(user=self.user, tenant=self.tenant, role_ref=role)
+        self.jwt = _jwt_for(self.user, self.tenant)
 
     def test_token_configured_accepts_authenticated_user_jwt(self) -> None:
         # Cenário staging: token configurado + usuário logado -> 200 (era 401).
         with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
-            self.client.force_authenticate(user=self.user)
+            self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.jwt}")
             response = self.client.get(reverse("schema-configs"))
         assert response.status_code == 200
 
@@ -581,7 +818,9 @@ class InternalServiceTokenGateTests(TestCase):
         # Caller serviço↔serviço (ex.: langextract) com o token interno -> 200.
         with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
             response = self.client.get(
-                reverse("schema-configs"), HTTP_AUTHORIZATION=f"Bearer {self.TOKEN}"
+                reverse("schema-configs"),
+                HTTP_AUTHORIZATION=f"Bearer {self.TOKEN}",
+                HTTP_X_TENANT=self.tenant.slug,
             )
         assert response.status_code == 200
 
@@ -600,7 +839,10 @@ class InternalServiceTokenGateTests(TestCase):
         assert response.status_code == 401
 
     def test_token_not_configured_keeps_access_open(self) -> None:
-        # Localhost/dev: sem token -> acesso aberto (comportamento histórico).
+        # Localhost/dev: sem token interno configurado, qualquer JWT válido
+        # basta (não precisa bater com nenhum token de serviço) — o tenant
+        # ainda precisa ser identificado para rotear a query à schema certa.
         with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=""):
+            self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.jwt}")
             response = self.client.get(reverse("schema-configs"))
         assert response.status_code == 200

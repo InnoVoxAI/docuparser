@@ -62,7 +62,9 @@ class BaseOCREngine(ABC):
         ...
 
     @abstractmethod
-    def process(self, content: Any, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    def process(
+        self, content: Any, metadata: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Executa OCR no conteúdo fornecido e retorna resultado estruturado.
 

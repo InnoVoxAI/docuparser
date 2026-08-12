@@ -1,0 +1,71 @@
+version: '3.9'
+
+services:
+
+  docuparser:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+
+    volumes:
+      - ..:/docuparser:cached
+
+    command: sleep infinity
+
+    networks:
+      - docuparser_net
+
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: pgvector/pgvector:pg16
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-docuparse}
+      POSTGRES_USER: ${POSTGRES_USER:-docuparse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docuparse}
+
+    ports:
+      - "5440:5432"
+
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+    networks:
+      - docuparser_net
+
+  redis:
+    image: redis:7
+
+    restart: unless-stopped
+
+    ports:
+      - "6383:6379"
+
+    networks:
+      - docuparser_net
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-docuparse}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-docuparse-local}
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - docuparser_net
+
+volumes:
+  postgres-data:
+  minio-data:
+
+networks:
+  docuparser_net:

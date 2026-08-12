@@ -1,6 +1,6 @@
 # Guia de Administração: Autenticação, Roles e Permissões
 
-**Feature**: 003-auth-roles-permissions  
+**Feature**: 003-auth-roles-permissions
 **Audiência**: Desenvolvedor / Administrador do sistema
 
 ---

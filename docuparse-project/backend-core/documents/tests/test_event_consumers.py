@@ -3,10 +3,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from django.db import connection
 from django.test import TestCase
-
-from documents.models import Document, DocumentEvent, ERPIntegrationAttempt, ExtractionResult
 from tenants.models import Tenant
+
+from documents.models import (
+    Document,
+    DocumentEvent,
+    ERPIntegrationAttempt,
+    ExtractionResult,
+)
 from documents.services.event_consumers import (
     consume_document_received,
     consume_erp_failed,
@@ -18,6 +24,14 @@ from documents.services.event_consumers import (
 
 
 class CoreEventConsumerTests(TestCase):
+    def setUp(self) -> None:
+        # consume_document_received doesn't create a Tenant itself — the
+        # caller (JWTTenantMiddleware, in production) is expected to have
+        # already routed the connection to the right schema before any of
+        # these consumers run.
+        self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
+        connection.set_tenant(self.tenant)
+
     def _document_received_payload(self, document_id=None, event_id=None) -> dict:
         document_id = document_id or uuid4()
         return {
@@ -44,20 +58,23 @@ class CoreEventConsumerTests(TestCase):
             },
         }
 
-    def test_consume_document_received_creates_tenant_document_and_event_idempotently(self) -> None:
+    def test_consume_document_received_creates_tenant_document_and_event_idempotently(
+        self,
+    ) -> None:
         payload = self._document_received_payload()
 
         first = consume_document_received(payload)
         second = consume_document_received(payload)
 
         assert first.id == second.id
-        assert Tenant.objects.count() == 1
         assert Document.objects.count() == 1
         assert DocumentEvent.objects.count() == 1
         assert first.status == Document.Status.RECEIVED
         assert first.file_uri == payload["data"]["file"]["uri"]
 
-    def test_consume_extraction_completed_updates_document_and_is_idempotent(self) -> None:
+    def test_consume_extraction_completed_updates_document_and_is_idempotent(
+        self,
+    ) -> None:
         document = consume_document_received(self._document_received_payload())
         payload = {
             "event_id": str(uuid4()),
@@ -84,7 +101,9 @@ class CoreEventConsumerTests(TestCase):
         document.refresh_from_db()
         assert document.status == Document.Status.VALIDATION_PENDING
         assert ExtractionResult.objects.count() == 1
-        assert DocumentEvent.objects.filter(event_type="extraction.completed").count() == 1
+        assert (
+            DocumentEvent.objects.filter(event_type="extraction.completed").count() == 1
+        )
 
     def test_consume_ocr_completed_updates_document_and_is_idempotent(self) -> None:
         document = consume_document_received(self._document_received_payload())

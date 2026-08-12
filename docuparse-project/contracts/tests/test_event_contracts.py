@@ -4,9 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-
 from events import EVENT_MODELS, validate_event
-
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "events" / "examples"
 

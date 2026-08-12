@@ -1,15 +1,21 @@
 import asyncio
+
 import structlog
-
-from pyzeebe import ZeebeWorker, create_insecure_channel
-
 from config import settings
-from workers.document import register_document, get_document, delete_document
-from workers.ocr import process_ocr, reprocess_ocr
-from workers.layout import classify_layout
-from workers.extraction import extract_fields
-from workers.validation import validate_document
+from docuparse_observability.tracing import configure_tracing
+from opentelemetry.instrumentation.grpc import GrpcInstrumentorClient
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from pyzeebe import ZeebeWorker, create_insecure_channel
+from workers.document import delete_document, get_document, register_document
 from workers.erp import export_erp
+from workers.extraction import extract_fields
+from workers.layout import classify_layout
+from workers.ocr import process_ocr, reprocess_ocr
+from workers.validation import validate_document
+
+configure_tracing("camunda-workers")
+HTTPXClientInstrumentor().instrument()
+GrpcInstrumentorClient().instrument()
 
 log = structlog.get_logger()
 

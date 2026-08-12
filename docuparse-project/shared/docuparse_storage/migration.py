@@ -33,15 +33,19 @@ def migrate_uri(uri: str, local: LocalStorage, s3: S3Storage, *, dry_run: bool) 
     inalteradas (já migradas ou vazias). Devolve a nova URI (``s3://``)."""
     if not uri or not uri.startswith(LOCAL_PREFIX):
         return uri
-    key = uri[len(LOCAL_PREFIX):]
-    content = local.get_bytes(uri)  # levanta FileNotFoundError se sumiu (falha explícita)
+    key = uri[len(LOCAL_PREFIX) :]
+    content = local.get_bytes(
+        uri
+    )  # levanta FileNotFoundError se sumiu (falha explícita)
     if dry_run:
         return f"s3://<bucket>/{key}"
     stored = s3.put_bytes(key, content)
     return stored.uri
 
 
-def migrate_documents(documents, local: LocalStorage, s3: S3Storage, *, dry_run: bool) -> MigrationStats:
+def migrate_documents(
+    documents, local: LocalStorage, s3: S3Storage, *, dry_run: bool
+) -> MigrationStats:
     """Itera um iterável de documentos (duck-typing: atributos ``file_uri`` e
     ``raw_text_uri`` e um ``save(update_fields=...)``), migrando cada artefato.
 

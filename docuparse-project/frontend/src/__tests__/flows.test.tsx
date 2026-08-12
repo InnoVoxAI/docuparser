@@ -129,7 +129,7 @@ describe('Operações (DLQ)', () => {
                 }),
             ),
         )
-        const user = await navigate('Operacoes')
+        const user = await navigate('Operações')
 
         expect(await screen.findByText('TimeoutError')).toBeInTheDocument()
         await user.click(screen.getByText('worker-ocr'))
@@ -142,7 +142,7 @@ describe('Operações (DLQ)', () => {
 describe('Configurações', () => {
     it('renderiza a tela de configurações com as áreas disponíveis', async () => {
         mockSession([])
-        await navigate('Configuracoes')
+        await navigate('Configurações')
         // A tela de configurações expõe as áreas/abas de setup.
         expect((await screen.findAllByText(/OCR/i)).length).toBeGreaterThan(0)
     })
@@ -169,7 +169,7 @@ describe('Configurações — áreas e salvamento', () => {
             }),
         )
         mockSession([])
-        const user = await navigate('Configuracoes')
+        const user = await navigate('Configurações')
 
         await user.click((await screen.findAllByText('OCR'))[0])
         await user.click(await screen.findByRole('button', { name: /Salvar OCR/i }))
@@ -216,7 +216,6 @@ describe('Usuários (CRUD)', () => {
 
         await user.type(screen.getByPlaceholderText('Nome'), 'João')
         await user.type(screen.getByPlaceholderText('E-mail'), 'joao@docuparse.local')
-        await user.type(screen.getByPlaceholderText(/Senha/i), 'segredo123')
         await user.selectOptions(screen.getByRole('combobox'), 'r1')
         await user.click(screen.getByRole('button', { name: /^Salvar$/i }))
 

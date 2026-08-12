@@ -104,6 +104,10 @@ export default [
                         { from: { element: { type: 'module' } }, allow: { to: { element: { type: 'test' } } } },
                         { from: { element: { type: 'shared' } }, allow: { to: { element: { type: ['shared'] } } } },
                         { from: { element: { type: 'shared' } }, allow: { to: { file: { categories: 'types' } } } },
+                        // Specs de shared (ex.: shared/lib/tracing.test.ts) reaproveitam
+                        // helpers/mocks do harness global de testes, mesma exceção já
+                        // concedida a testes de módulo acima.
+                        { from: { element: { type: 'shared' } }, allow: { to: { element: { type: 'test' } } } },
                         { from: { element: { type: 'models' } }, allow: { to: { file: { categories: 'types' } } } },
                         {
                             from: { element: { type: 'test' } },

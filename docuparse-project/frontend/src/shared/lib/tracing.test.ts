@@ -24,9 +24,7 @@ describe('tracing', () => {
 
         expect(capturedTraceparent).not.toBeNull()
         // Formato W3C Trace Context: version-traceId(32 hex)-spanId(16 hex)-flags(2 hex)
-        expect(capturedTraceparent).toMatch(
-            /^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/,
-        )
+        expect(capturedTraceparent).toMatch(/^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/)
     })
 
     it('is idempotent — calling initTracing() again does not throw or re-register instrumentation', () => {

@@ -38,9 +38,9 @@ describe('Telas / navegação (smoke)', () => {
             'Upload',
             'Inbox',
             'Dashboard',
-            'Validacao',
-            'Operacoes',
-            'Configuracoes',
+            'Validação',
+            'Operações',
+            'Configurações',
             'Usuários',
             'Roles',
         ]) {

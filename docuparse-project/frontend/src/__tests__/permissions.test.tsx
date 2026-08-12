@@ -22,15 +22,15 @@ describe('Permissões e navegação', () => {
         expect((await screen.findAllByText('Inbox')).length).toBeGreaterThan(0)
         expect(screen.queryAllByText('Dashboard').length).toBeGreaterThan(0)
         // Sem documents.validate / roles.manage / users.manage:
-        expect(screen.queryAllByText('Validacao')).toHaveLength(0)
-        expect(screen.queryAllByText('Configuracoes')).toHaveLength(0)
+        expect(screen.queryAllByText('Validação')).toHaveLength(0)
+        expect(screen.queryAllByText('Configurações')).toHaveLength(0)
         expect(screen.queryAllByText('Usuários')).toHaveLength(0)
     })
 
     it('exibe "Validacao" quando o usuário tem documents.validate', async () => {
         mockMe(['inbox.view', 'documents.validate'])
         renderApp()
-        expect((await screen.findAllByText('Validacao')).length).toBeGreaterThan(0)
+        expect((await screen.findAllByText('Validação')).length).toBeGreaterThan(0)
     })
 
     it('exibe itens administrativos quando o usuário tem as permissões', async () => {

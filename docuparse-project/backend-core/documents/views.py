@@ -14,6 +14,8 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 from docuparse_events import event_bus_from_env
+from docuparse_orchestrator.context import orchestration_run
+from docuparse_orchestrator.decorators import task
 from docuparse_storage import get_storage
 from rest_framework import status
 from rest_framework.decorators import (
@@ -58,7 +60,7 @@ from .services.erp_publisher import publish_erp_integration_requested
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.langextract_client import LangExtractClient
 from .services.ocr_client import OCRClient
-from .services.ocr_processor import process_document_ocr
+from .services.ocr_processor import auto_extract_after_ocr, process_document_ocr
 from .services.processing_queue import (
     submit_document_processing,
 )
@@ -350,6 +352,16 @@ def document_file_view(request, document_id):
     )
 
 
+def _auto_extract_ignoring_errors(document) -> None:
+    """auto_extract_after_ocr now raises on failure (needed by extraction_task's
+    retry/error tracking in the automatic pipeline) — manual OCR endpoints keep
+    the previous behavior of never failing the OCR response over extraction."""
+    try:
+        auto_extract_after_ocr(document)
+    except Exception:
+        pass
+
+
 @api_view(["POST"])
 def document_process_ocr_view(request, document_id):
     auth_error = _internal_token_error(request)
@@ -366,6 +378,7 @@ def document_process_ocr_view(request, document_id):
         return Response(
             {"detail": f"Falha no OCR: {exc}"}, status=status.HTTP_502_BAD_GATEWAY
         )
+    _auto_extract_ignoring_errors(document)
     return Response(DocumentDetailSerializer(document).data)
 
 
@@ -389,7 +402,62 @@ def document_reprocess_ocr_view(request, document_id):
             {"detail": f"Falha no reprocessamento OCR: {exc}"},
             status=status.HTTP_502_BAD_GATEWAY,
         )
+    _auto_extract_ignoring_errors(document)
     return Response(DocumentDetailSerializer(document).data)
+
+
+def _validation_decision_body(
+    document_id, decision, notes, corrected_fields, user_id
+) -> dict:
+    document = Document.objects.select_related("extraction_result").get(
+        id=document_id
+    )
+    user = get_user_model().objects.get(id=user_id)
+
+    validation = ValidationDecision.objects.create(
+        document=document,
+        decided_by=user,
+        decision=decision,
+        corrected_fields=corrected_fields,
+        notes=notes,
+    )
+
+    if corrected_fields and hasattr(document, "extraction_result"):
+        document.extraction_result.requires_human_validation = False
+        document.extraction_result.save(
+            update_fields=["requires_human_validation", "updated_at"]
+        )
+        active = field_versioning.get_active_version(document)
+        try:
+            field_versioning.save_manual_edit(
+                document,
+                incoming_fields=[
+                    {"name": name, "value": value}
+                    for name, value in corrected_fields.items()
+                ],
+                base_version_number=active.version_number if active else None,
+                created_by=user,
+            )
+        except (field_versioning.NoChangesError, field_versioning.EmptyFieldListError):
+            pass  # sem alteração efetiva ou lista vazia: não cria versão
+
+    if decision == ValidationDecision.Decision.APPROVED:
+        document.transition_to(Document.Status.APPROVED)
+        publish_erp_integration_requested(document)
+    elif decision == ValidationDecision.Decision.REJECTED:
+        document.transition_to(Document.Status.REJECTED)
+    else:
+        document.transition_to(Document.Status.VALIDATION_PENDING)
+
+    return {"validation_decision_id": str(validation.id)}
+
+
+# max_attempts=1: gravar ValidationDecision/ExtractionFieldVersion não é
+# idempotente (.create()) — repetir a tentativa duplicaria registros de
+# auditoria em vez de só tentar de novo uma chamada de rede transitória.
+validation_decision_task = task("validation_decision", max_attempts=1)(
+    _validation_decision_body
+)
 
 
 @api_view(["POST"])
@@ -434,42 +502,25 @@ def document_validation_view(request, document_id):
         if user is None:
             user = User.objects.create_user(username="operador", password="operador")
 
-    validation = ValidationDecision.objects.create(
-        document=document,
-        decided_by=user,
-        decision=decision,
-        corrected_fields=request.data.get("corrected_fields") or {},
-        notes=notes,
-    )
-
     corrected_fields = request.data.get("corrected_fields") or {}
-    if corrected_fields and hasattr(document, "extraction_result"):
-        document.extraction_result.requires_human_validation = False
-        document.extraction_result.save(
-            update_fields=["requires_human_validation", "updated_at"]
+
+    # orchestration_run marca o run como FAILED sozinho se a task abaixo
+    # terminar em erro (ver context.py) — não precisa de raise manual; só
+    # checar result.status depois do "with" pra decidir a resposta HTTP.
+    with orchestration_run("document_validation"):
+        result = validation_decision_task(
+            document_id, decision, notes, corrected_fields, user.id
         )
-        active = field_versioning.get_active_version(document)
-        try:
-            field_versioning.save_manual_edit(
-                document,
-                incoming_fields=[
-                    {"name": name, "value": value}
-                    for name, value in corrected_fields.items()
-                ],
-                base_version_number=active.version_number if active else None,
-                created_by=user,
-            )
-        except (field_versioning.NoChangesError, field_versioning.EmptyFieldListError):
-            pass  # sem alteração efetiva ou lista vazia: não cria versão
 
-    if decision == ValidationDecision.Decision.APPROVED:
-        document.transition_to(Document.Status.APPROVED)
-        publish_erp_integration_requested(document)
-    elif decision == ValidationDecision.Decision.REJECTED:
-        document.transition_to(Document.Status.REJECTED)
-    else:
-        document.transition_to(Document.Status.VALIDATION_PENDING)
+    if result.status == "error":
+        return Response(
+            {"detail": f"Falha ao registrar decisão: {result.error.message}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
 
+    validation = ValidationDecision.objects.get(
+        id=result.payload["validation_decision_id"]
+    )
     return Response(
         ValidationDecisionSerializer(validation).data, status=status.HTTP_201_CREATED
     )

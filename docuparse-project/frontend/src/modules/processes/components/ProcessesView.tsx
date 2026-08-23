@@ -50,17 +50,19 @@ export function ProcessesView() {
                         {pipelineQuery.loading ? <Alert>Carregando pipeline...</Alert> : null}
                         {pipelineQuery.data ? (
                             <>
-                                <div className="border-b border-zinc-200 bg-white px-4 py-2">
+                                <div className="border-b border-zinc-200 bg-white px-6 py-3">
                                     <h2 className="text-sm font-medium text-zinc-700">
                                         {pipelineQuery.data.original_filename}
                                     </h2>
                                 </div>
-                                <ProcessPipelineDiagram
-                                    steps={pipelineQuery.data.steps}
-                                    selectedStepKey={selectedStepKey}
-                                    onSelectStep={setSelectedStepKey}
-                                />
-                                <div className="flex-1 border-t border-zinc-200 bg-white">
+                                <div className="px-6">
+                                    <ProcessPipelineDiagram
+                                        steps={pipelineQuery.data.steps}
+                                        selectedStepKey={selectedStepKey}
+                                        onSelectStep={setSelectedStepKey}
+                                    />
+                                </div>
+                                <div className="flex-1 border-t border-zinc-200 bg-white px-2">
                                     <StepDetailPanel step={selectedStep} onRetry={handleRetry} retrying={retrying} />
                                 </div>
                             </>

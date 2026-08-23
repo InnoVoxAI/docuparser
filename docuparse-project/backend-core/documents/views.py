@@ -47,6 +47,7 @@ from .serializers import (
     IntegrationSettingsSerializer,
     LayoutConfigSerializer,
     OCRSettingsSerializer,
+    ProcessSummarySerializer,
     SchemaConfigSerializer,
     ValidationDecisionSerializer,
 )
@@ -57,6 +58,11 @@ from .services.dlq_inspector import (
     requeue_dlq_entry,
 )
 from .services.erp_publisher import publish_erp_integration_requested
+from .services.process_dashboard import (
+    build_pipeline_detail,
+    document_ids_with_error,
+    retry_step,
+)
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.langextract_client import LangExtractClient
 from .services.ocr_client import OCRClient
@@ -507,7 +513,7 @@ def document_validation_view(request, document_id):
     # orchestration_run marca o run como FAILED sozinho se a task abaixo
     # terminar em erro (ver context.py) — não precisa de raise manual; só
     # checar result.status depois do "with" pra decidir a resposta HTTP.
-    with orchestration_run("document_validation"):
+    with orchestration_run("document_validation", document_id=str(document_id)):
         result = validation_decision_task(
             document_id, decision, notes, corrected_fields, user.id
         )
@@ -904,6 +910,52 @@ def email_settings_view(request):
         ]
     )
     return Response(EmailSettingsSerializer(config).data)
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
+def processes_dashboard_view(request):
+    queryset = Document.objects.order_by("-received_at")
+    queryset = _apply_status_filter(queryset, request.query_params.get("status"))
+    queryset = _apply_search(queryset, request.query_params.get("search"))
+
+    page = paginate_queryset(queryset, request)
+    document_ids = [document.id for document in page.items]
+    error_ids = document_ids_with_error(document_ids)
+    serialized = ProcessSummarySerializer(
+        page.items, many=True, context={"document_ids_with_error": error_ids}
+    ).data
+    return Response(page.envelope(serialized))
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
+def document_pipeline_view(request, document_id):
+    document = get_object_or_404(Document, id=document_id)
+    return Response(build_pipeline_detail(document))
+
+
+@api_view(["POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
+def document_retry_step_view(request, document_id, step):
+    get_object_or_404(Document, id=document_id)
+    try:
+        result = retry_step(document_id, step)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(
+        {
+            "status": result.status,
+            "error": (
+                {"type": result.error.type, "message": result.error.message}
+                if result.error
+                else None
+            ),
+        }
+    )
 
 
 @api_view(["GET"])

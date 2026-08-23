@@ -63,6 +63,29 @@ class ExtractionResultSerializer(serializers.ModelSerializer):
         }
 
 
+class ProcessSummarySerializer(serializers.ModelSerializer):
+    """Linha enxuta pra sidebar do dashboard de processos — o detalhe
+    completo (steps/execuções) vem de build_pipeline_detail sob demanda,
+    não daqui."""
+
+    has_error = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Document
+        fields = [
+            "id",
+            "original_filename",
+            "channel",
+            "status",
+            "received_at",
+            "has_error",
+        ]
+
+    def get_has_error(self, obj: Document) -> bool:
+        document_ids_with_error = self.context.get("document_ids_with_error") or set()
+        return obj.id in document_ids_with_error
+
+
 class DocumentListSerializer(serializers.ModelSerializer):
     metadata_channel = serializers.SerializerMethodField()
     extraction_result = ExtractionResultSerializer(read_only=True)

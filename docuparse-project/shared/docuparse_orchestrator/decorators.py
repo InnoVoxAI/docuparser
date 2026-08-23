@@ -35,6 +35,13 @@ def task(
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> TaskResult:
+            # Fallback pra um run_id avulso quando chamado sem orchestration_run
+            # ativa (ex.: script ad hoc, ou testes com um writer fake). Com o
+            # writer Django real isso NÃO basta sozinho: default_django_writer
+            # espera uma OrchestrationRun já existente com esse run_id (FK) —
+            # todo call site real deve sempre chamar dentro de um
+            # `with orchestration_run(...)` (ver documents/services/process_dashboard.py
+            # `retry_step` pra um exemplo de task avulsa feita corretamente).
             run_id = current_run_id.get() or str(uuid.uuid4())
             attempt = 0
             started = time.monotonic()

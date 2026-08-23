@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import type { Query } from '@tanstack/react-query'
 import { api } from '../../../shared/lib/http'
 import { readError } from '../../../shared/utils'
-import type { Paginated, ProcessListParams, ProcessSummary } from '../types'
+import type { Paginated, ProcessFilter, ProcessListParams, ProcessSummary, StepKey } from '../types'
 import { processKeys } from './queryKeys'
 
 const PAGE_SIZE = 25
@@ -32,10 +32,14 @@ async function fetchProcessPage(params: ProcessListParams): Promise<Paginated<Pr
 export function useProcessesQuery() {
     const [page, setPage] = useState(1)
     const [search, setSearchState] = useState('')
+    const [filter, setFilterState] = useState<ProcessFilter | ''>('')
+    const [stage, setStageState] = useState<StepKey | ''>('')
 
     const params: ProcessListParams = { page, page_size: PAGE_SIZE }
     const term = search.trim()
     if (term) params.search = term
+    if (filter) params.filter = filter
+    if (stage) params.stage = stage
 
     const query = useQuery({
         queryKey: processKeys.list(params),
@@ -54,11 +58,25 @@ export function useProcessesQuery() {
         setPage(1)
     }
 
+    const setFilter = (value: ProcessFilter | '') => {
+        setFilterState(value)
+        setPage(1)
+    }
+
+    const setStage = (value: StepKey | '') => {
+        setStageState(value)
+        setPage(1)
+    }
+
     return {
         page,
         setPage,
         search,
         setSearch,
+        filter,
+        setFilter,
+        stage,
+        setStage,
         data: query.data ?? EMPTY_PAGE,
         loading: query.isLoading,
         error: query.error ? readError(query.error, 'Nao foi possivel carregar os processos.') : '',

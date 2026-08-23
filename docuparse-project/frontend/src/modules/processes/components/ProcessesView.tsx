@@ -36,13 +36,17 @@ export function ProcessesView() {
     }
 
     return (
-        <div className="grid h-full grid-cols-[280px_1fr] overflow-hidden rounded-md border border-zinc-200">
+        <div className="grid h-full grid-cols-[340px_1fr] overflow-hidden rounded-md border border-zinc-200">
             <ProcessesSidebar
                 data={processesQuery.data}
                 loading={processesQuery.loading}
                 error={processesQuery.error}
                 search={processesQuery.search}
                 onSearchChange={processesQuery.setSearch}
+                filter={processesQuery.filter}
+                onFilterChange={processesQuery.setFilter}
+                stage={processesQuery.stage}
+                onStageChange={processesQuery.setStage}
                 selectedId={selectedDocumentId}
                 onSelect={selectDocument}
                 onPageChange={processesQuery.setPage}

@@ -2,6 +2,9 @@ import type { Paginated } from '../../types'
 
 export type { Paginated }
 
+export type StepKey = 'register' | 'ocr' | 'extraction' | 'validation_decision'
+export type ProcessFilter = 'fail' | 'pending' | 'completed'
+
 /** Linha enxuta da sidebar — o detalhe completo vem de ProcessPipeline. */
 export interface ProcessSummary {
     id: string
@@ -10,6 +13,7 @@ export interface ProcessSummary {
     status: string
     received_at: string
     has_error: boolean
+    current_stage: StepKey
 }
 
 export interface ProcessListParams {
@@ -17,6 +21,8 @@ export interface ProcessListParams {
     page_size: number
     status?: string
     search?: string
+    filter?: ProcessFilter
+    stage?: StepKey
 }
 
 export type StepExecutionStatus = 'OK' | 'ERROR'
@@ -41,8 +47,6 @@ export interface StepExecution {
      * username de quem clicou "Tentar novamente" ou tomou a decisão. */
     triggered_by: string | null
 }
-
-export type StepKey = 'register' | 'ocr' | 'extraction' | 'validation_decision'
 
 export interface ProcessStep {
     key: StepKey

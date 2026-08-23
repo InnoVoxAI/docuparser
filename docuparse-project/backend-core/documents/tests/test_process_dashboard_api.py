@@ -224,6 +224,41 @@ class ProcessDashboardAPITests(TestCase):
             == 2
         )
 
+    def test_pipeline_marks_validation_step_rejected_not_ok(self) -> None:
+        """The validation_decision TASK succeeds even when the human rejects
+        the document (it did exactly what it was asked) — but the diagram
+        box represents the business outcome, so it must show red/REJECTED,
+        not green/OK, when the document was rejected."""
+        document = Document.objects.create(
+            channel="manual",
+            file_uri="local://placeholder",
+            original_filename="rejected.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            status=Document.Status.VALIDATION_PENDING,
+        )
+        with orchestration_run(
+            "document_validation",
+            document_id=str(document.id),
+            triggered_by=self.user.username,
+        ):
+            result = validation_decision_task(
+                document.id,
+                ValidationDecision.Decision.REJECTED,
+                "Documento ilegível",
+                {},
+                self.user.id,
+            )
+        assert result.status == "ok"
+
+        response = self.client.get(reverse("document-pipeline", args=[document.id]))
+        step = next(
+            s for s in response.json()["steps"] if s["key"] == "validation_decision"
+        )
+        assert step["status"] == "REJECTED"
+        # the underlying execution stays OK — the task itself did not fail
+        assert step["executions"][0]["status"] == "OK"
+
     def test_retry_rejects_when_one_is_already_running_for_the_same_step(self) -> None:
         """Regression: a slow retry (LLM extraction can take 30-90s+) that
         the client gives up on and re-fires must not be allowed to stack a

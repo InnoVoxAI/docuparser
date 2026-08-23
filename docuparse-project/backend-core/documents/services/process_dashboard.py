@@ -76,13 +76,23 @@ def build_pipeline_detail(document: Document) -> dict[str, Any]:
     ]
     for key in STEP_ORDER:
         step_tasks = executions_by_step[key]
+        # order_by("task_name", "-created_at") deixa o mais recente primeiro
+        # dentro de cada grupo de task_name.
+        step_status = step_tasks[0].status if step_tasks else "PENDING"
+        # A task "validation_decision" TEM sucesso ao registrar uma rejeição
+        # (fez exatamente o que devia) — mas a caixa do diagrama representa o
+        # resultado de negócio, não se o mecanismo funcionou. "REJECTED" é um
+        # status de step à parte (não reaproveita "ERROR": o rótulo/cor de
+        # erro no frontend diz "Falhou", que seria enganoso aqui). Não mexe
+        # em `executions[].status` (isso continua refletindo a execução real
+        # da task, sempre OK).
+        if key == "validation_decision" and document.status == Document.Status.REJECTED:
+            step_status = "REJECTED"
         steps.append(
             {
                 "key": key,
                 "label": STEP_LABELS[key],
-                # order_by("task_name", "-created_at") deixa o mais recente
-                # primeiro dentro de cada grupo de task_name.
-                "status": step_tasks[0].status if step_tasks else "PENDING",
+                "status": step_status,
                 "retryable": key in RETRYABLE_STEPS,
                 "executions": [_execution_dict(t) for t in step_tasks],
             }

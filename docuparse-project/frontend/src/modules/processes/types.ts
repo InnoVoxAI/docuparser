@@ -46,6 +46,9 @@ export interface StepExecution {
     /** null = disparo automático (pipeline pós-upload); caso contrário, o
      * username de quem clicou "Tentar novamente" ou tomou a decisão. */
     triggered_by: string | null
+    /** Saída da tentativa (schema/confiança/campos extraídos, decisão+motivo
+     * da validação, etc.) — shape varia por step, já vem redigida do backend. */
+    payload: Record<string, unknown>
 }
 
 export interface ProcessStep {

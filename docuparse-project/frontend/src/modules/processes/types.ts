@@ -20,7 +20,10 @@ export interface ProcessListParams {
 }
 
 export type StepExecutionStatus = 'OK' | 'ERROR'
-export type StepStatus = StepExecutionStatus | 'PENDING'
+// 'REJECTED' só existe no nível do step (validation_decision quando o
+// documento foi rejeitado) — a execução em si sempre foi bem-sucedida
+// (StepExecutionStatus), o rejeitado é o resultado de negócio, não a task.
+export type StepStatus = StepExecutionStatus | 'PENDING' | 'REJECTED'
 
 export interface StepExecution {
     task_id: string

@@ -3,18 +3,21 @@ import type { ProcessStep, StepKey } from '../types'
 const BOX_STYLES: Record<string, string> = {
     OK: 'border-emerald-500 bg-emerald-50 text-emerald-700',
     ERROR: 'border-red-500 bg-red-50 text-red-700',
+    REJECTED: 'border-red-500 bg-red-50 text-red-700',
     PENDING: 'border-zinc-300 bg-zinc-50 text-zinc-500',
 }
 
 const CONNECTOR_STYLES: Record<string, string> = {
     OK: 'bg-emerald-400',
     ERROR: 'bg-red-400',
+    REJECTED: 'bg-red-400',
     PENDING: 'bg-zinc-300',
 }
 
 const STATUS_TEXT: Record<string, string> = {
     OK: 'Concluído',
     ERROR: 'Falhou',
+    REJECTED: 'Rejeitado',
     PENDING: 'Pendente',
 }
 

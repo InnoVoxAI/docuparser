@@ -1,5 +1,5 @@
 import { Alert, EmptyState } from '../../../shared/components'
-import { MousePointerClick } from 'lucide-react'
+import { ExternalLink, MousePointerClick } from 'lucide-react'
 import type { ProcessStep } from '../types'
 
 function formatDateTime(value: string): string {
@@ -15,11 +15,13 @@ export function StepDetailPanel({
     onRetry,
     retrying,
     retryError,
+    onGoToValidation,
 }: {
     step: ProcessStep | null
     onRetry: () => void
     retrying: boolean
     retryError: string
+    onGoToValidation: () => void
 }) {
     if (!step) {
         return (
@@ -40,6 +42,16 @@ export function StepDetailPanel({
                         className="inline-flex h-8 items-center rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {retrying ? 'Tentando novamente...' : 'Tentar novamente'}
+                    </button>
+                ) : null}
+                {step.key === 'validation_decision' ? (
+                    <button
+                        type="button"
+                        onClick={onGoToValidation}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                    >
+                        Revisar na tela de validação
+                        <ExternalLink size={14} aria-hidden="true" />
                     </button>
                 ) : null}
             </div>

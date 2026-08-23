@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { useOutletContext } from 'react-router'
 import { Alert, EmptyState } from '../../../shared/components'
 import { Workflow } from 'lucide-react'
+import type { AppOutletContext } from '../../../types'
 import { useProcessPipelineQuery } from '../hooks/useProcessPipelineQuery'
 import { useProcessesQuery } from '../hooks/useProcessesQuery'
 import { useRetryStepMutation } from '../hooks/useRetryStepMutation'
@@ -12,6 +14,10 @@ import { StepDetailPanel } from './StepDetailPanel'
 export function ProcessesView() {
     const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null)
     const [selectedStepKey, setSelectedStepKey] = useState<StepKey | null>(null)
+    // Módulo `processes` é uma rota irmã de `documents` sob o mesmo AppLayout
+    // (mesma dependência cruzada documentada em ValidationRoute.tsx) — reusa
+    // `navigateToValidation` em vez de duplicar a lógica de seleção+navegação.
+    const { navigateToValidation } = useOutletContext<AppOutletContext>()
 
     const processesQuery = useProcessesQuery()
     const pipelineQuery = useProcessPipelineQuery(selectedDocumentId)
@@ -68,6 +74,7 @@ export function ProcessesView() {
                                         onRetry={handleRetry}
                                         retrying={retrying}
                                         retryError={retryError}
+                                        onGoToValidation={() => navigateToValidation(selectedDocumentId)}
                                     />
                                 </div>
                             </>

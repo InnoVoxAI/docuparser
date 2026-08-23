@@ -30,6 +30,13 @@ export interface StepExecution {
     error_type: string | null
     error_message: string | null
     created_at: string
+    /** Nome da orchestration_run dona desta execução (ex.: "document_processing",
+     * "retry_ocr", "document_validation") — não exibido diretamente, só usado
+     * como contexto; `triggered_by` já resume o que importa pro usuário. */
+    run_name: string
+    /** null = disparo automático (pipeline pós-upload); caso contrário, o
+     * username de quem clicou "Tentar novamente" ou tomou a decisão. */
+    triggered_by: string | null
 }
 
 export type StepKey = 'register' | 'ocr' | 'extraction' | 'validation_decision'

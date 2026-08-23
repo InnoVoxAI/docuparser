@@ -1,4 +1,4 @@
-import { EmptyState } from '../../../shared/components'
+import { Alert, EmptyState } from '../../../shared/components'
 import { MousePointerClick } from 'lucide-react'
 import type { ProcessStep } from '../types'
 
@@ -6,14 +6,20 @@ function formatDateTime(value: string): string {
     return new Date(value).toLocaleString('pt-BR')
 }
 
+function triggerLabel(triggeredBy: string | null): string {
+    return triggeredBy ? `Manual — ${triggeredBy}` : 'Automático'
+}
+
 export function StepDetailPanel({
     step,
     onRetry,
     retrying,
+    retryError,
 }: {
     step: ProcessStep | null
     onRetry: () => void
     retrying: boolean
+    retryError: string
 }) {
     if (!step) {
         return (
@@ -23,6 +29,7 @@ export function StepDetailPanel({
 
     return (
         <div className="space-y-4 p-4">
+            {retryError ? <Alert tone="error">{retryError}</Alert> : null}
             <div className="flex items-center justify-between">
                 <h3 className="text-base font-semibold text-zinc-800">{step.label}</h3>
                 {step.retryable ? (
@@ -58,7 +65,19 @@ export function StepDetailPanel({
                                     {formatDateTime(execution.created_at)}
                                 </span>
                             </div>
-                            <div className="mt-1 text-xs text-zinc-500">Duração: {execution.duration_ms}ms</div>
+                            <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500">
+                                <span>Duração: {execution.duration_ms}ms</span>
+                                <span aria-hidden="true">·</span>
+                                <span
+                                    className={
+                                        execution.triggered_by
+                                            ? 'font-medium text-zinc-700'
+                                            : undefined
+                                    }
+                                >
+                                    {triggerLabel(execution.triggered_by)}
+                                </span>
+                            </div>
                             {execution.error_message ? (
                                 <div className="mt-2 rounded bg-white/60 p-2 font-mono text-xs text-red-700">
                                     {execution.error_type}: {execution.error_message}

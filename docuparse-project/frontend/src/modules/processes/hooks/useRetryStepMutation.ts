@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../shared/lib/http'
+import { readError } from '../../../shared/utils'
 import type { RetryStepResult, StepKey } from '../types'
 import { processKeys } from './queryKeys'
 
@@ -23,5 +24,11 @@ export function useRetryStepMutation() {
             queryClient.invalidateQueries({ queryKey: processKeys.all })
         },
     })
-    return { retryStep: mutation.mutateAsync, retrying: mutation.isPending }
+    return {
+        retryStep: mutation.mutateAsync,
+        retrying: mutation.isPending,
+        retryError: mutation.error
+            ? readError(mutation.error, 'Não foi possível tentar novamente.')
+            : '',
+    }
 }

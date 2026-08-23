@@ -15,7 +15,7 @@ export function ProcessesView() {
 
     const processesQuery = useProcessesQuery()
     const pipelineQuery = useProcessPipelineQuery(selectedDocumentId)
-    const { retryStep, retrying } = useRetryStepMutation()
+    const { retryStep, retrying, retryError } = useRetryStepMutation()
 
     const selectDocument = (id: string) => {
         setSelectedDocumentId(id)
@@ -63,7 +63,12 @@ export function ProcessesView() {
                                     />
                                 </div>
                                 <div className="flex-1 border-t border-zinc-200 bg-white px-2">
-                                    <StepDetailPanel step={selectedStep} onRetry={handleRetry} retrying={retrying} />
+                                    <StepDetailPanel
+                                        step={selectedStep}
+                                        onRetry={handleRetry}
+                                        retrying={retrying}
+                                        retryError={retryError}
+                                    />
                                 </div>
                             </>
                         ) : null}

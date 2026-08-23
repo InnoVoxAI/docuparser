@@ -21,6 +21,7 @@ def orchestration_run(
     *,
     run_id: str | None = None,
     link: trace.Link | None = None,
+    document_id: str | None = None,
     writer: OrchestrationRunWriter = default_django_run_writer,
 ) -> Iterator[str]:
     """Abre uma execução rastreável: todo `@task` chamado dentro deste bloco
@@ -38,7 +39,7 @@ def orchestration_run(
     run_token = current_run_id.set(resolved_run_id)
     task_errors: list = []
     errors_token = current_run_errors.set(task_errors)
-    writer.start(resolved_run_id, name)
+    writer.start(resolved_run_id, name, document_id=document_id)
 
     try:
         with _tracer.start_as_current_span(

@@ -25,6 +25,11 @@ class OrchestrationRun(TimeStampedModel):
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.RUNNING
     )
+    # Sem FK pra documents.Document de propósito: orchestrator nunca importa
+    # documents (a dependência entre esses apps só existe no sentido
+    # contrário). UUIDField simples ainda permite filtrar/indexar por
+    # documento pro dashboard de processos.
+    document_id = models.UUIDField(null=True, blank=True, db_index=True)
     started_at = models.DateTimeField()
     finished_at = models.DateTimeField(null=True, blank=True)
 

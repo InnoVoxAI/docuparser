@@ -34,13 +34,15 @@ def default_django_writer(result: TaskResult) -> None:
 
 
 class OrchestrationRunWriter(Protocol):
-    def start(self, run_id: str, name: str) -> None: ...
+    def start(
+        self, run_id: str, name: str, *, document_id: str | None = None
+    ) -> None: ...
 
     def finish(self, run_id: str, *, status: str) -> None: ...
 
 
 class DjangoOrchestrationRunWriter:
-    def start(self, run_id: str, name: str) -> None:
+    def start(self, run_id: str, name: str, *, document_id: str | None = None) -> None:
         from django.utils import timezone
 
         from orchestrator.models import OrchestrationRun
@@ -50,6 +52,7 @@ class DjangoOrchestrationRunWriter:
             name=name,
             status=OrchestrationRun.Status.RUNNING,
             started_at=timezone.now(),
+            document_id=document_id,
         )
 
     def finish(self, run_id: str, *, status: str) -> None:

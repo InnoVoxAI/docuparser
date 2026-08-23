@@ -40,7 +40,9 @@ def _run_document_processing(document_id: int, tenant: object, link: trace.Link 
     # chamado aqui dentro termina em erro (ver context.py) — não precisa de
     # raise manual pra sinalizar isso; só o "return" natural pra não seguir
     # pra próxima etapa.
-    with orchestration_run("document_processing", link=link):
+    with orchestration_run(
+        "document_processing", link=link, document_id=str(document_id)
+    ):
         result = ocr_task(document_id, tenant_slug=tenant.slug)
         if result.status == "error":
             logger.warning(

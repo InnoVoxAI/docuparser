@@ -10,10 +10,12 @@ from docuparse_orchestrator.decorators import task
 class FakeRunWriter:
     def __init__(self) -> None:
         self.started: list[tuple[str, str]] = []
+        self.started_document_ids: list[str | None] = []
         self.finished: list[tuple[str, str]] = []
 
-    def start(self, run_id: str, name: str) -> None:
+    def start(self, run_id: str, name: str, *, document_id: str | None = None) -> None:
         self.started.append((run_id, name))
+        self.started_document_ids.append(document_id)
 
     def finish(self, run_id: str, *, status: str) -> None:
         self.finished.append((run_id, status))
@@ -48,6 +50,15 @@ def test_orchestration_run_accepts_explicit_run_id():
         assert run_id == "fixed-id"
 
     assert writer.started == [("fixed-id", "document_validation")]
+
+
+def test_orchestration_run_persists_document_id():
+    writer = FakeRunWriter()
+
+    with orchestration_run("document_processing", document_id="doc-1", writer=writer):
+        pass
+
+    assert writer.started_document_ids == ["doc-1"]
 
 
 def test_orchestration_run_marks_failed_when_a_task_errors_without_raising():

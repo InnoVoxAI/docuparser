@@ -104,7 +104,9 @@ class ProcessDashboardAPITests(TestCase):
                 _run_document_processing(document_ok.id, self.tenant, None)
 
             with orchestration_run(
-                "document_validation", document_id=str(document_ok.id)
+                "document_validation",
+                document_id=str(document_ok.id),
+                triggered_by=self.user.username,
             ):
                 validation_decision_task(
                     document_ok.id,
@@ -153,6 +155,15 @@ class ProcessDashboardAPITests(TestCase):
             assert ok_steps["validation_decision"]["status"] == "OK"
             assert ok_steps["validation_decision"]["retryable"] is False
 
+            # automatic pipeline run: no human triggered it
+            assert ok_steps["ocr"]["executions"][0]["triggered_by"] is None
+            assert ok_steps["extraction"]["executions"][0]["triggered_by"] is None
+            # validation is always a human decision
+            assert (
+                ok_steps["validation_decision"]["executions"][0]["triggered_by"]
+                == self.user.username
+            )
+
             # --- detalhe: falha de OCR ---
             error_response = self.client.get(
                 reverse("document-pipeline", args=[document_error.id])
@@ -186,6 +197,11 @@ class ProcessDashboardAPITests(TestCase):
             )
             assert len(ocr_step_after_retry["executions"]) == 2
             assert ocr_step_after_retry["status"] == "OK"
+            # newest execution first: the manual retry, attributed to the caller
+            assert ocr_step_after_retry["executions"][0]["triggered_by"] == self.user.username
+            assert ocr_step_after_retry["executions"][0]["run_name"] == "retry_ocr"
+            # the original automatic attempt stays untouched
+            assert ocr_step_after_retry["executions"][1]["triggered_by"] is None
 
             # --- retry recusado pra validation_decision ---
             rejected = self.client.post(
@@ -206,6 +222,34 @@ class ProcessDashboardAPITests(TestCase):
                 orchestration_run__document_id=document_error.id
             ).count()
             == 2
+        )
+
+    def test_retry_rejects_when_one_is_already_running_for_the_same_step(self) -> None:
+        """Regression: a slow retry (LLM extraction can take 30-90s+) that
+        the client gives up on and re-fires must not be allowed to stack a
+        second concurrent execution for the same document/step."""
+        from django.utils import timezone
+
+        OrchestrationRun.objects.create(
+            run_id="already-running-ocr",
+            name="retry_ocr",
+            status=OrchestrationRun.Status.RUNNING,
+            started_at=timezone.now(),
+            document_id=self.document_no_history.id,
+        )
+
+        response = self.client.post(
+            reverse(
+                "document-retry-step", args=[self.document_no_history.id, "ocr"]
+            )
+        )
+
+        assert response.status_code == 409
+        assert (
+            TaskExecution.objects.filter(
+                orchestration_run__document_id=self.document_no_history.id
+            ).count()
+            == 0
         )
 
     def test_processes_endpoints_require_operations_access(self) -> None:

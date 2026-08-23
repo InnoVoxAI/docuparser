@@ -30,6 +30,9 @@ class OrchestrationRun(TimeStampedModel):
     # contrário). UUIDField simples ainda permite filtrar/indexar por
     # documento pro dashboard de processos.
     document_id = models.UUIDField(null=True, blank=True, db_index=True)
+    # Vazio = disparo automático (pipeline pós-upload). Preenchido (username)
+    # = ação humana — decisão de validação ou retry manual pelo dashboard.
+    triggered_by = models.CharField(max_length=255, blank=True)
     started_at = models.DateTimeField()
     finished_at = models.DateTimeField(null=True, blank=True)
 

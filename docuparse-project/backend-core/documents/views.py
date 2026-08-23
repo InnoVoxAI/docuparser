@@ -59,6 +59,7 @@ from .services.dlq_inspector import (
 )
 from .services.erp_publisher import publish_erp_integration_requested
 from .services.process_dashboard import (
+    RetryAlreadyRunningError,
     build_pipeline_detail,
     document_ids_with_error,
     retry_step,
@@ -513,7 +514,9 @@ def document_validation_view(request, document_id):
     # orchestration_run marca o run como FAILED sozinho se a task abaixo
     # terminar em erro (ver context.py) — não precisa de raise manual; só
     # checar result.status depois do "with" pra decidir a resposta HTTP.
-    with orchestration_run("document_validation", document_id=str(document_id)):
+    with orchestration_run(
+        "document_validation", document_id=str(document_id), triggered_by=user.username
+    ):
         result = validation_decision_task(
             document_id, decision, notes, corrected_fields, user.id
         )
@@ -943,9 +946,11 @@ def document_pipeline_view(request, document_id):
 def document_retry_step_view(request, document_id, step):
     get_object_or_404(Document, id=document_id)
     try:
-        result = retry_step(document_id, step)
+        result = retry_step(document_id, step, triggered_by=request.user.username)
     except ValueError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except RetryAlreadyRunningError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
     return Response(
         {
             "status": result.status,

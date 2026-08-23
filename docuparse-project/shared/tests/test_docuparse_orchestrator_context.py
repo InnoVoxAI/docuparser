@@ -11,11 +11,20 @@ class FakeRunWriter:
     def __init__(self) -> None:
         self.started: list[tuple[str, str]] = []
         self.started_document_ids: list[str | None] = []
+        self.started_triggered_by: list[str | None] = []
         self.finished: list[tuple[str, str]] = []
 
-    def start(self, run_id: str, name: str, *, document_id: str | None = None) -> None:
+    def start(
+        self,
+        run_id: str,
+        name: str,
+        *,
+        document_id: str | None = None,
+        triggered_by: str | None = None,
+    ) -> None:
         self.started.append((run_id, name))
         self.started_document_ids.append(document_id)
+        self.started_triggered_by.append(triggered_by)
 
     def finish(self, run_id: str, *, status: str) -> None:
         self.finished.append((run_id, status))
@@ -59,6 +68,24 @@ def test_orchestration_run_persists_document_id():
         pass
 
     assert writer.started_document_ids == ["doc-1"]
+
+
+def test_orchestration_run_persists_triggered_by():
+    writer = FakeRunWriter()
+
+    with orchestration_run("retry_ocr", triggered_by="operator1", writer=writer):
+        pass
+
+    assert writer.started_triggered_by == ["operator1"]
+
+
+def test_orchestration_run_triggered_by_defaults_to_none():
+    writer = FakeRunWriter()
+
+    with orchestration_run("document_processing", writer=writer):
+        pass
+
+    assert writer.started_triggered_by == [None]
 
 
 def test_orchestration_run_marks_failed_when_a_task_errors_without_raising():

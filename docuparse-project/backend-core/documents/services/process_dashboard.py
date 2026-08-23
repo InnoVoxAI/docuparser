@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.db.models import Q
+
 from documents.models import Document
-from orchestrator.models import TaskExecution
+from orchestrator.models import OrchestrationRun, TaskExecution
 
 STEP_ORDER = ["ocr", "extraction", "validation_decision"]
 STEP_LABELS = {
@@ -35,6 +37,11 @@ def _execution_dict(task: TaskExecution) -> dict[str, Any]:
         "error_type": task.error_type or None,
         "error_message": task.error_message or None,
         "created_at": task.created_at.isoformat(),
+        # run vazio ("") = disparo automático (pipeline pós-upload); preenchido
+        # = ação humana (validação, ou retry manual pelo dashboard) — ver
+        # OrchestrationRun.triggered_by.
+        "run_name": task.orchestration_run.name,
+        "triggered_by": task.orchestration_run.triggered_by or None,
     }
 
 
@@ -88,7 +95,11 @@ def build_pipeline_detail(document: Document) -> dict[str, Any]:
     }
 
 
-def retry_step(document_id, step: str):
+class RetryAlreadyRunningError(Exception):
+    """Já existe uma execução em andamento pra este documento/step."""
+
+
+def retry_step(document_id, step: str, *, triggered_by: str):
     """Roda de novo, síncrono, o @task correspondente ao step, numa
     orchestration_run própria (`retry_{step}`) marcada com `document_id` —
     assim a nova TaskExecution aparece no histórico daquele step no
@@ -97,15 +108,38 @@ def retry_step(document_id, step: str):
     writer fake dos testes unitários tolera isso), mas o writer Django faz
     TaskExecution.objects.create(orchestration_run=...) esperando uma
     OrchestrationRun já existente com aquele run_id — por isso todo call
-    site real (aqui incluído) sempre abre orchestration_run explicitamente."""
+    site real (aqui incluído) sempre abre orchestration_run explicitamente.
+    `triggered_by` (username de quem clicou) é obrigatório aqui — ao
+    contrário do pipeline automático, um retry manual sempre tem um
+    responsável identificável.
+
+    Recusa se já existe uma execução RUNNING pro mesmo documento/step —
+    achado real: um front-end/proxy travado numa chamada lenta (extração via
+    LLM passa fácil de 30-90s) pode acabar disparando uma nova chamada antes
+    da anterior terminar, empilhando execuções concorrentes sem que o
+    usuário tenha clicado de novo. Checagem simples de existência, não uma
+    trava de banco (select_for_update) — suficiente pra barrar o caso
+    patológico, não uma garantia sob concorrência pesada de verdade."""
     if step not in RETRYABLE_STEPS:
         raise ValueError(f"step '{step}' is not retryable")
+
+    already_running = OrchestrationRun.objects.filter(
+        document_id=document_id,
+        status=OrchestrationRun.Status.RUNNING,
+    ).filter(Q(name="document_processing") | Q(name=f"retry_{step}")).exists()
+    if already_running:
+        raise RetryAlreadyRunningError(
+            f"Já existe uma execução de '{STEP_LABELS[step]}' em andamento "
+            "para este documento — aguarde ela terminar."
+        )
 
     from docuparse_orchestrator.context import orchestration_run
 
     from documents.services.ocr_processor import extraction_task, ocr_task
 
-    with orchestration_run(f"retry_{step}", document_id=str(document_id)):
+    with orchestration_run(
+        f"retry_{step}", document_id=str(document_id), triggered_by=triggered_by
+    ):
         if step == "ocr":
             return ocr_task(document_id)
         return extraction_task(document_id)

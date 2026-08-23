@@ -131,6 +131,9 @@ class ProcessDashboardAPITests(TestCase):
             assert by_id[str(document_error.id)]["has_error"] is True
             assert by_id[str(document_ok.id)]["has_error"] is False
             assert by_id[str(self.document_no_history.id)]["has_error"] is False
+            assert by_id[str(document_error.id)]["current_stage"] == "ocr"
+            assert by_id[str(document_ok.id)]["current_stage"] == "validation_decision"
+            assert by_id[str(self.document_no_history.id)]["current_stage"] == "register"
 
             # --- detalhe: sem histórico ---
             no_history_response = self.client.get(
@@ -223,6 +226,67 @@ class ProcessDashboardAPITests(TestCase):
             ).count()
             == 2
         )
+
+    def test_list_filters_by_fail_pending_completed_and_stage(self) -> None:
+        # self.document_no_history: RECEIVED, no execution -> pending + register
+
+        document_approved = Document.objects.create(
+            channel="manual",
+            file_uri="local://placeholder",
+            original_filename="approved.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            status=Document.Status.VALIDATION_PENDING,
+        )
+        with orchestration_run(
+            "document_validation",
+            document_id=str(document_approved.id),
+            triggered_by=self.user.username,
+        ):
+            validation_decision_task(
+                document_approved.id,
+                ValidationDecision.Decision.APPROVED,
+                "",
+                {},
+                self.user.id,
+            )
+
+        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+            document_failed = self._create_document_with_file(storage_dir, "failed.pdf")
+            with patch(
+                "documents.services.ocr_processor.OCRClient"
+            ) as ocr_client_class:
+                ocr_client_class.return_value.process_document.side_effect = (
+                    RuntimeError("indisponível")
+                )
+                _run_document_processing(document_failed.id, self.tenant, None)
+
+            def ids_for(**params) -> set[str]:
+                response = self.client.get(reverse("processes-dashboard"), params)
+                assert response.status_code == 200, response.json()
+                return {row["id"] for row in response.json()["results"]}
+
+            # document_failed stays Document.Status.RECEIVED (OCR failure
+            # doesn't transition it away from that) — "pending" and "fail"
+            # are not mutually exclusive by design, so it matches both.
+            assert ids_for(filter="pending") == {
+                str(self.document_no_history.id),
+                str(document_failed.id),
+            }
+            assert ids_for(filter="completed") == {str(document_approved.id)}
+            assert ids_for(filter="fail") == {str(document_failed.id)}
+            assert ids_for(stage="register") == {str(self.document_no_history.id)}
+            assert ids_for(stage="validation_decision") == {str(document_approved.id)}
+            assert ids_for(stage="ocr") == {str(document_failed.id)}
+
+            assert self.client.get(
+                reverse("processes-dashboard"), {"filter": "bogus"}
+            ).status_code == 400
+            assert self.client.get(
+                reverse("processes-dashboard"), {"stage": "bogus"}
+            ).status_code == 400
 
     def test_pipeline_marks_validation_step_rejected_not_ok(self) -> None:
         """The validation_decision TASK succeeds even when the human rejects

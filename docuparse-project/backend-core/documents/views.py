@@ -59,8 +59,13 @@ from .services.dlq_inspector import (
 )
 from .services.erp_publisher import publish_erp_integration_requested
 from .services.process_dashboard import (
+    PROCESS_FILTERS,
+    STAGE_KEYS,
     RetryAlreadyRunningError,
     build_pipeline_detail,
+    current_stage_by_document,
+    document_ids_matching_filter,
+    document_ids_matching_stage,
     document_ids_with_error,
     retry_step,
 )
@@ -923,11 +928,45 @@ def processes_dashboard_view(request):
     queryset = _apply_status_filter(queryset, request.query_params.get("status"))
     queryset = _apply_search(queryset, request.query_params.get("search"))
 
+    # "fail"/"pending"/"completed" e "stage" são derivados de TaskExecution,
+    # não de um campo direto de Document — não dá pra aplicar como .filter()
+    # simples no queryset. Resolve os IDs que batem ANTES de paginar (senão
+    # count/total_pages ficariam errados), reaproveitando a mesma agregação
+    # em Python já usada pra has_error — aceitável na escala de uma POC, não
+    # pensado pra uma base de milhões de documentos.
+    filter_value = request.query_params.get("filter")
+    stage_value = request.query_params.get("stage")
+    if filter_value or stage_value:
+        candidate_ids = list(queryset.values_list("id", flat=True))
+        if filter_value:
+            if filter_value not in PROCESS_FILTERS:
+                return Response(
+                    {"detail": f"filter inválido: {filter_value!r}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            matching = document_ids_matching_filter(candidate_ids, filter_value)
+            candidate_ids = [i for i in candidate_ids if i in matching]
+        if stage_value:
+            if stage_value not in STAGE_KEYS:
+                return Response(
+                    {"detail": f"stage inválido: {stage_value!r}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            matching = document_ids_matching_stage(candidate_ids, stage_value)
+            candidate_ids = [i for i in candidate_ids if i in matching]
+        queryset = queryset.filter(id__in=candidate_ids)
+
     page = paginate_queryset(queryset, request)
     document_ids = [document.id for document in page.items]
     error_ids = document_ids_with_error(document_ids)
+    stage_by_document = current_stage_by_document(document_ids)
     serialized = ProcessSummarySerializer(
-        page.items, many=True, context={"document_ids_with_error": error_ids}
+        page.items,
+        many=True,
+        context={
+            "document_ids_with_error": error_ids,
+            "stage_by_document": stage_by_document,
+        },
     ).data
     return Response(page.envelope(serialized))
 

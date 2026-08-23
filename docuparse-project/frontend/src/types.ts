@@ -271,6 +271,7 @@ export type ActiveView =
     | 'approved'
     | 'rejected'
     | 'operations'
+    | 'processes'
     | 'settings'
     | 'users'
     | 'roles'

@@ -141,7 +141,14 @@ def process_document_ocr(document_id, tenant_slug: str | None = None) -> Documen
 
 def _ocr_task_body(document_id, tenant_slug: str | None = None) -> dict:
     document = process_document_ocr(document_id, tenant_slug=tenant_slug)
-    return {"document_id": str(document.id)}
+    # Uma referência (URI), não o texto bruto inteiro — evita inflar a linha
+    # de TaskExecution com um blob potencialmente grande; quem quiser o texto
+    # completo lê de storage por esse URI.
+    return {
+        "document_id": str(document.id),
+        "document_type": document.document_type,
+        "raw_text_uri": document.raw_text_uri,
+    }
 
 
 # Wrapper decorado usado pelo orquestrador (processing_queue.py) — retry +
@@ -276,7 +283,17 @@ def auto_extract_after_ocr(document: Document) -> None:
 def _extraction_task_body(document_id) -> dict:
     document = Document.objects.get(id=document_id)
     auto_extract_after_ocr(document)
-    return {"document_id": str(document.id)}
+    payload = {"document_id": str(document.id)}
+    extraction_result = ExtractionResult.objects.filter(document=document).first()
+    if extraction_result:
+        payload.update(
+            {
+                "schema_id": extraction_result.schema_id,
+                "confidence": extraction_result.confidence,
+                "fields": extraction_result.fields,
+            }
+        )
+    return payload
 
 
 # Wrapper decorado usado pelo orquestrador (processing_queue.py) — mesma

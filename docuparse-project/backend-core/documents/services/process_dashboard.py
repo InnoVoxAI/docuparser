@@ -102,7 +102,18 @@ def document_ids_matching_stage(document_ids, stage: str) -> set:
     }
 
 
+_PAYLOAD_KEYS_HIDDEN_FROM_DASHBOARD = {
+    "document_id",  # já é o documento cujo pipeline está sendo olhado
+    "validation_decision_id",  # id interno do registro, sem valor pro usuário
+}
+
+
 def _execution_dict(task: TaskExecution) -> dict[str, Any]:
+    payload = {
+        k: v
+        for k, v in task.payload.items()
+        if k not in _PAYLOAD_KEYS_HIDDEN_FROM_DASHBOARD
+    }
     return {
         "task_id": str(task.task_id),
         "attempt": task.attempt,
@@ -116,6 +127,10 @@ def _execution_dict(task: TaskExecution) -> dict[str, Any]:
         # OrchestrationRun.triggered_by.
         "run_name": task.orchestration_run.name,
         "triggered_by": task.orchestration_run.triggered_by or None,
+        # Saída de uma tentativa bem-sucedida (ex.: schema/confiança/campos
+        # extraídos, ou decisão+motivo da validação) — já vem redigido por
+        # redact_payload() (persistence.py) antes de chegar no banco.
+        "payload": payload,
     }
 
 

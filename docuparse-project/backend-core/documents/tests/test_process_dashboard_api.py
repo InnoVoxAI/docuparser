@@ -15,7 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
 
-from documents.models import Document, ValidationDecision
+from documents.models import Document, LayoutConfig, SchemaConfig, ValidationDecision
 from documents.services.processing_queue import _run_document_processing
 from documents.views import validation_decision_task
 from orchestrator.models import OrchestrationRun, TaskExecution
@@ -288,6 +288,55 @@ class ProcessDashboardAPITests(TestCase):
                 reverse("processes-dashboard"), {"stage": "bogus"}
             ).status_code == 400
 
+    def test_successful_executions_carry_their_output_in_payload(self) -> None:
+        """Not just error logs — a successful attempt's output (what OCR/
+        extraction actually produced) must be visible in the dashboard too."""
+        schema = SchemaConfig.objects.create(
+            schema_id="boleto", version="v1", definition={"fields": ["valor"]}
+        )
+        LayoutConfig.objects.create(
+            layout="boleto_padrao", document_type="", schema_config=schema
+        )
+
+        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+            document = self._create_document_with_file(storage_dir, "output.pdf")
+            document.layout = "boleto_padrao"
+            document.save(update_fields=["layout"])
+
+            with (
+                patch(
+                    "documents.services.ocr_processor.OCRClient"
+                ) as ocr_client_class,
+                patch(
+                    "documents.services.ocr_processor.LangExtractClient"
+                ) as langextract_class,
+            ):
+                ocr_client_class.return_value.process_document.return_value = {
+                    "raw_text": "valor R$ 123,45",
+                    "document_type": "digital_pdf",
+                    "engine_used": "mock",
+                }
+                langextract_class.return_value.extract_with_schema.return_value = {
+                    "fields": {"valor": "R$ 123,45"},
+                    "confidence": 0.87,
+                    "requires_human_validation": True,
+                }
+                _run_document_processing(document.id, self.tenant, None)
+
+            response = self.client.get(reverse("document-pipeline", args=[document.id]))
+            steps = {s["key"]: s for s in response.json()["steps"]}
+
+            ocr_payload = steps["ocr"]["executions"][0]["payload"]
+            assert ocr_payload["document_type"] == "digital_pdf"
+            assert ocr_payload["raw_text_uri"]
+
+            extraction_payload = steps["extraction"]["executions"][0]["payload"]
+            assert extraction_payload["schema_id"] == "boleto"
+            assert extraction_payload["confidence"] == 0.87
+            assert extraction_payload["fields"] == {"valor": "R$ 123,45"}
+
     def test_pipeline_marks_validation_step_rejected_not_ok(self) -> None:
         """The validation_decision TASK succeeds even when the human rejects
         the document (it did exactly what it was asked) — but the diagram
@@ -322,6 +371,14 @@ class ProcessDashboardAPITests(TestCase):
         assert step["status"] == "REJECTED"
         # the underlying execution stays OK — the task itself did not fail
         assert step["executions"][0]["status"] == "OK"
+        # the rejection reason must be visible in the execution's payload
+        assert (
+            step["executions"][0]["payload"]["decision"]
+            == ValidationDecision.Decision.REJECTED
+        )
+        assert step["executions"][0]["payload"]["notes"] == "Documento ilegível"
+        # internal id, no value to the dashboard user — must not leak through
+        assert "validation_decision_id" not in step["executions"][0]["payload"]
 
     def test_retry_rejects_when_one_is_already_running_for_the_same_step(self) -> None:
         """Regression: a slow retry (LLM extraction can take 30-90s+) that

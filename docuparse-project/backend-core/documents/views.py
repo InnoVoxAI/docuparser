@@ -461,7 +461,16 @@ def _validation_decision_body(
     else:
         document.transition_to(Document.Status.VALIDATION_PENDING)
 
-    return {"validation_decision_id": str(validation.id)}
+    return {
+        "validation_decision_id": str(validation.id),
+        "decision": decision,
+        # Motivo da rejeição (obrigatório quando decision=REJECTED, validado
+        # mais acima em document_validation_view) — precisa aparecer no
+        # detalhe do step "Validação" no dashboard, não só na tela de
+        # validação em si.
+        "notes": notes,
+        "corrected_fields": corrected_fields,
+    }
 
 
 # max_attempts=1: gravar ValidationDecision/ExtractionFieldVersion não é

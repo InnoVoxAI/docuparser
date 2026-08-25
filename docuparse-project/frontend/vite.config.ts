@@ -41,15 +41,27 @@ export default defineConfig(({ mode }) => {
                 '/api': {
                     target: env.BACKEND_CORE_URL || 'http://127.0.0.1:8000',
                     changeOrigin: true,
-                    proxyTimeout: 15000,
-                    timeout: 15000,
+                    // 15s era curto demais para chamadas de LLM (extração via
+                    // langextract-service já passou de 90s em teste real) — o
+                    // proxy abortava a conexão com o backend (não o backend em
+                    // si, que seguia rodando), e o que quer que reagisse a essa
+                    // falha no cliente acabava disparando uma nova chamada,
+                    // empilhando execuções concorrentes pro mesmo retry.
+                    proxyTimeout: 120000,
+                    timeout: 120000,
                 },
                 '/com': {
                     target: env.BACKEND_COM_URL || 'http://127.0.0.1:8070',
                     changeOrigin: true,
                     rewrite: (path) => path.replace(/^\/com/, ''),
-                    proxyTimeout: 15000,
-                    timeout: 15000,
+                    // 15s era curto demais para chamadas de LLM (extração via
+                    // langextract-service já passou de 90s em teste real) — o
+                    // proxy abortava a conexão com o backend (não o backend em
+                    // si, que seguia rodando), e o que quer que reagisse a essa
+                    // falha no cliente acabava disparando uma nova chamada,
+                    // empilhando execuções concorrentes pro mesmo retry.
+                    proxyTimeout: 120000,
+                    timeout: 120000,
                 },
             },
         },

@@ -9,6 +9,7 @@ from io import BytesIO
 from django.conf import settings
 from django.utils import timezone
 from docuparse_observability.tracing import capture_current_span_link
+from docuparse_orchestrator.decorators import task
 from docuparse_storage import document_ocr_raw_text_key, get_storage
 from opentelemetry import trace
 
@@ -135,8 +136,26 @@ def process_document_ocr(document_id, tenant_slug: str | None = None) -> Documen
         _conn.schema_name,
         raw_text_uri=stored.uri,
     )
-    auto_extract_after_ocr(document)
     return document
+
+
+def _ocr_task_body(document_id, tenant_slug: str | None = None) -> dict:
+    document = process_document_ocr(document_id, tenant_slug=tenant_slug)
+    # Uma referência (URI), não o texto bruto inteiro — evita inflar a linha
+    # de TaskExecution com um blob potencialmente grande; quem quiser o texto
+    # completo lê de storage por esse URI.
+    return {
+        "document_id": str(document.id),
+        "document_type": document.document_type,
+        "raw_text_uri": document.raw_text_uri,
+    }
+
+
+# Wrapper decorado usado pelo orquestrador (processing_queue.py) — retry +
+# tracing + persistência em cima da mesma lógica de `process_document_ocr`,
+# que continua chamável diretamente (sem retry) pelos endpoints de
+# reprocessamento manual em views.py.
+ocr_task = task("ocr")(_ocr_task_body)
 
 
 def _record_extraction(document: Document, state: str, **details) -> None:
@@ -254,6 +273,32 @@ def auto_extract_after_ocr(document: Document) -> None:
             duration_ms=int((time.monotonic() - started) * 1000),
             trigger="auto",
         )
+        # Propaga para quem chama poder reagir (o @task abaixo precisa da
+        # exceção pra contar como falha/retry; chamadores que preferem o
+        # comportamento antigo — nunca levantar — devem envolver a chamada em
+        # try/except, como as views de reprocessamento manual passam a fazer.
+        raise
+
+
+def _extraction_task_body(document_id) -> dict:
+    document = Document.objects.get(id=document_id)
+    auto_extract_after_ocr(document)
+    payload = {"document_id": str(document.id)}
+    extraction_result = ExtractionResult.objects.filter(document=document).first()
+    if extraction_result:
+        payload.update(
+            {
+                "schema_id": extraction_result.schema_id,
+                "confidence": extraction_result.confidence,
+                "fields": extraction_result.fields,
+            }
+        )
+    return payload
+
+
+# Wrapper decorado usado pelo orquestrador (processing_queue.py) — mesma
+# lógica de `auto_extract_after_ocr`, com retry + tracing + persistência.
+extraction_task = task("extraction")(_extraction_task_body)
 
 
 def run_langextract_for_document(document_id, schema_config_id) -> dict:

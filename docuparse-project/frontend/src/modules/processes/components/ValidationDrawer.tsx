@@ -77,6 +77,7 @@ export function ValidationDrawer({
                             selectedDocumentId={documentId}
                             onValidated={handleValidated}
                             onBackToInbox={onClose}
+                            stacked
                         />
                     ) : (
                         <Alert>Carregando dados do processo...</Alert>

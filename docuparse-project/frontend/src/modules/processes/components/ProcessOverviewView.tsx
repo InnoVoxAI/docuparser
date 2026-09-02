@@ -1,21 +1,24 @@
 import { useNavigate } from 'react-router'
 import { Plus, Workflow } from 'lucide-react'
-import { Alert, EmptyState, Pagination } from '../../../shared/components'
+import { Alert, EmptyState, Pagination, SearchInput } from '../../../shared/components'
 import { navPath } from '../../../shared/utils'
 import { useProcessesQuery } from '../hooks/useProcessesQuery'
 import { ProcessFilters } from './ProcessFilters'
 import { ProcessTable } from './ProcessTable'
 
-/** Página inicial do app: tabela de processos, filtro por status e acesso ao
- * envio de um novo documento. Sem cabeçalho/sidebar — só o conteúdo. */
+/** Página inicial do app: tabela de processos, busca e filtro por status e
+ * acesso ao envio de um novo documento. Sem cabeçalho/sidebar — só o conteúdo. */
 export function ProcessOverviewView() {
     const navigate = useNavigate()
-    const { data, loading, error, statusGroup, setStatusGroup, goToPage } = useProcessesQuery()
+    const { data, loading, error, statusGroup, setStatusGroup, search, setSearch, goToPage } = useProcessesQuery()
 
     return (
         <div className="mx-auto flex max-w-5xl flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-                <ProcessFilters selected={statusGroup} onChange={setStatusGroup} />
+                <div className="flex flex-wrap items-center gap-3">
+                    <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome do arquivo..." />
+                    <ProcessFilters selected={statusGroup} onChange={setStatusGroup} />
+                </div>
                 <button type="button" onClick={() => navigate(navPath('upload'))} className="primary-button">
                     <Plus size={16} aria-hidden="true" />
                     Novo processo

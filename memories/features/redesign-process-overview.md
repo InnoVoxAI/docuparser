@@ -37,8 +37,9 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
   - Não existe "Concluído": classificação acontece depois da validação e
     segue **fora da plataforma**.
 - **Filtro** `?status_group=` em `GET /processes` (aceita CSV; o front manda
-  um valor só) — **dropdown** ("Todos" + os 4 status) no topo da tabela, ao
-  lado do botão "Novo processo". Convive com os `filter`/`stage` antigos.
+  um valor só) — **dropdown** ("Todos" + os 4 status) no topo da tabela.
+  Ao lado, **busca por nome do arquivo** (`?search=`, já suportado por
+  `_apply_search`) e o botão "Novo processo". Convive com `filter`/`stage`.
 - **Breakdown da linha expandida** (`ProcessBreakdown`): 4 caixas
   `Em fila → Ingestão → Validação → Classificação`, derivadas dos steps de
   `GET /documents/{id}/pipeline`. **Fallback importante** (`_STEPS_DONE_BY_STATUS`

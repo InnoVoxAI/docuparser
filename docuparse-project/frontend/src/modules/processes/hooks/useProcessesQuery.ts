@@ -26,14 +26,18 @@ async function fetchProcessPage(params: ProcessListParams): Promise<Paginated<Pr
     return response.data
 }
 
-/** Lista paginada de processos pra tabela da Visão Geral, filtrável pelo
- * status "de negócio" (dropdown — um status por vez, ou "Todos"). */
+/** Lista paginada de processos pra tabela da Visão Geral, filtrável por busca
+ * (nome do arquivo) e pelo status "de negócio" (dropdown — um status por vez,
+ * ou "Todos"). */
 export function useProcessesQuery() {
     const [page, setPage] = useState(1)
     const [statusGroup, setStatusGroupState] = useState<ProcessStatusGroup | ''>('')
+    const [search, setSearchState] = useState('')
 
     const params: ProcessListParams = { page, page_size: PAGE_SIZE }
     if (statusGroup) params.status_group = statusGroup
+    const term = search.trim()
+    if (term) params.search = term
 
     const query = useQuery({
         queryKey: processKeys.list(params),
@@ -55,11 +59,18 @@ export function useProcessesQuery() {
         setStatusGroupState(group)
     }
 
+    const setSearch = (value: string) => {
+        setPage(1)
+        setSearchState(value)
+    }
+
     return {
         page,
         goToPage,
         statusGroup,
         setStatusGroup,
+        search,
+        setSearch,
         data: query.data ?? EMPTY_PAGE,
         loading: query.isLoading,
         fetching: query.isFetching,

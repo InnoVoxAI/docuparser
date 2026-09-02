@@ -18,7 +18,7 @@ describe('Permissões e navegação', () => {
 
     it('exibe apenas itens permitidos (somente inbox.view)', async () => {
         mockMe(['inbox.view'])
-        renderApp()
+        renderApp('/dashboard')
         expect((await screen.findAllByText('Inbox')).length).toBeGreaterThan(0)
         expect(screen.queryAllByText('Dashboard').length).toBeGreaterThan(0)
         // Sem documents.validate / roles.manage / users.manage:
@@ -29,27 +29,27 @@ describe('Permissões e navegação', () => {
 
     it('exibe "Validacao" quando o usuário tem documents.validate', async () => {
         mockMe(['inbox.view', 'documents.validate'])
-        renderApp()
+        renderApp('/dashboard')
         expect((await screen.findAllByText('Validação')).length).toBeGreaterThan(0)
     })
 
     it('exibe itens administrativos quando o usuário tem as permissões', async () => {
         mockMe(['inbox.view', 'roles.manage', 'users.manage'])
-        renderApp()
+        renderApp('/dashboard')
         expect((await screen.findAllByText('Roles')).length).toBeGreaterThan(0)
         expect(screen.queryAllByText('Usuários').length).toBeGreaterThan(0)
     })
 
     it('oculta "Configurações" para operador (sem models.edit)', async () => {
         mockMe(['inbox.view', 'documents.validate', 'operations.access'])
-        renderApp()
+        renderApp('/dashboard')
         expect((await screen.findAllByText('Operações')).length).toBeGreaterThan(0)
         expect(screen.queryAllByText('Configurações')).toHaveLength(0)
     })
 
     it('exibe "Configurações" quando o usuário tem models.edit', async () => {
         mockMe(['inbox.view', 'models.edit'])
-        renderApp()
+        renderApp('/dashboard')
         expect((await screen.findAllByText('Configurações')).length).toBeGreaterThan(0)
     })
 })

@@ -16,14 +16,14 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
 - **`/` = Visão Geral de Processos** para quem tem `inbox.view` OU
   `operations.access` (`app/router.tsx` → `IndexRoute`). Quem não tem nenhuma
   das duas cai na 1ª tela permitida (comportamento antigo do `IndexRedirect`).
-- **Sem sidebar em `/`**: `AppLayout` detecta `pathname === '/'` e renderiza
-  **nenhum cabeçalho** — só o conteúdo + `app/OverviewMenu.tsx`, um botão "≡"
-  flutuante (`fixed` canto sup. dir.) que abre um dropdown com abas
-  Processos/Estatísticas, links pras demais telas (`NAV_ITEMS` + `PermissionGuard`)
-  e Sair. (`OverviewTopBar` foi removido — 2ª iteração de "menos chrome".)
-  As demais rotas seguem com o layout antigo (`AppSidebar`/`AppHeader`/`MobileNav`).
-  Nota: o menu é sempre montado (só `hidden` quando fechado) pra os testes de
-  `permissions/auth/screens` continuarem achando os rótulos de nav.
+- **Sem sidebar em `/` e `/stats`** (`AppLayout.isOverview`): sem cabeçalho —
+  só o conteúdo + `app/OverviewMenu.tsx`, um botão "≡" flutuante (`fixed` canto
+  sup. dir.) cujo dropdown tem **só 3 opções: Processos, Estatísticas, Sair**
+  (por pedido — nada de `NAV_ITEMS`; as demais telas ficam só acessíveis por
+  URL direta, onde a `AppSidebar` volta). `OverviewTopBar` foi removido.
+  Consequência nos testes: `permissions/screens` de nav agora rodam em
+  `renderApp('/dashboard')` (a sidebar só existe fora das telas de processos);
+  `auth` usa o botão "Novo processo" como sinal de "app carregou".
 - **`/processes` → redirect para `/`** (mantido só p/ links antigos). Item
   "Processos" saiu de `NAV_ITEMS`.
 - **Status "de negócio"** (4 rótulos, para analistas, não devs), calculados no

@@ -1,8 +1,6 @@
 import { useState } from 'react'
-import { Link, NavLink } from 'react-router'
-import { Building2, Menu as MenuIcon, X } from 'lucide-react'
-import { PermissionGuard } from '../modules/auth'
-import { NAV_ITEMS, navPath } from './navigation'
+import { NavLink } from 'react-router'
+import { Menu as MenuIcon, X } from 'lucide-react'
 
 const SECTION_TABS = [
     { to: '/', label: 'Processos' },
@@ -10,17 +8,9 @@ const SECTION_TABS = [
 ]
 
 /** As telas de processos (`/` e `/stats`) não têm cabeçalho nem sidebar — só o
- * conteúdo. Este botão flutuante no canto guarda a troca de seção, o acesso às
- * demais telas e o logout, fora do caminho visual. */
-export function OverviewMenu({
-    userName,
-    currentTenant,
-    onLogout,
-}: {
-    userName: string | undefined
-    currentTenant: string | null
-    onLogout: () => void
-}) {
+ * conteúdo. Este botão flutuante no canto guarda a troca de seção e o logout,
+ * fora do caminho visual. */
+export function OverviewMenu({ onLogout }: { onLogout: () => void }) {
     const [open, setOpen] = useState(false)
 
     return (
@@ -37,10 +27,9 @@ export function OverviewMenu({
 
             <div
                 hidden={!open}
-                className="absolute right-0 mt-2 w-56 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg"
+                className="absolute right-0 mt-2 w-44 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg"
             >
-                <div className="flex items-center justify-between px-2 py-1">
-                    <span className="text-sm font-semibold text-zinc-900">{userName || 'Sessão'}</span>
+                <div className="flex justify-end">
                     <button
                         type="button"
                         onClick={() => setOpen(false)}
@@ -50,14 +39,8 @@ export function OverviewMenu({
                         <X size={16} aria-hidden="true" />
                     </button>
                 </div>
-                {currentTenant ? (
-                    <div className="mx-2 mb-1 inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">
-                        <Building2 size={10} aria-hidden="true" />
-                        {currentTenant}
-                    </div>
-                ) : null}
 
-                <nav aria-label="Seções" className="mt-1 flex flex-col">
+                <nav aria-label="Seções" className="flex flex-col">
                     {SECTION_TABS.map((tab) => (
                         <NavLink
                             key={tab.to}
@@ -72,22 +55,6 @@ export function OverviewMenu({
                         >
                             {tab.label}
                         </NavLink>
-                    ))}
-                </nav>
-
-                <div className="my-1 border-t border-zinc-100" />
-
-                <nav aria-label="Outras telas" className="flex flex-col">
-                    {NAV_ITEMS.map((item) => (
-                        <PermissionGuard key={item.id} code={item.permission}>
-                            <Link
-                                to={navPath(item.id)}
-                                onClick={() => setOpen(false)}
-                                className="rounded-md px-2 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
-                            >
-                                {item.label}
-                            </Link>
-                        </PermissionGuard>
                     ))}
                 </nav>
 

@@ -347,15 +347,18 @@ class ProcessDashboardAPITests(TestCase):
                 reverse("processes-dashboard"), {"status_group": "bogus"}
             ).status_code == 400
 
-            # A caixa "Classificação" do pipeline é estática (como "register") e
-            # segue o status do documento.
+            # A caixa "Classificação" nunca aparece como concluída: a
+            # classificação corre fora da plataforma. Mesmo num documento já
+            # aprovado ("Aguardando classificação"), o step fica PENDING — o
+            # frontend deriva o estado "em andamento" de validation == OK.
             classifying_steps = {
                 s["key"]: s
                 for s in self.client.get(
                     reverse("document-pipeline", args=[document_classifying.id])
                 ).json()["steps"]
             }
-            assert classifying_steps["classification"]["status"] == "OK"
+            assert classifying_steps["classification"]["status"] == "PENDING"
+            assert classifying_steps["validation_decision"]["status"] == "OK"
             validating_steps = {
                 s["key"]: s
                 for s in self.client.get(

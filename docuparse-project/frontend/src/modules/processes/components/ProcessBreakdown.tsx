@@ -99,9 +99,10 @@ function deriveBoxes(pipeline: ProcessPipeline): BoxModel[] {
                   : 'Conferência humana dos dados extraídos.',
     }
 
+    // A classificação corre fora da plataforma — nunca aparece como concluída
+    // aqui. "current" = validação aprovada, processo agora nessa etapa.
     let classificationState: BoxState = 'pending'
-    if (classification?.status === 'OK') classificationState = 'done'
-    else if (classification?.status === 'ERROR') classificationState = 'error'
+    if (classification?.status === 'ERROR') classificationState = 'error'
     else if (validation?.status === 'OK') classificationState = 'current'
     const classification_box: BoxModel = {
         key: 'classification',

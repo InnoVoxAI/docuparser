@@ -52,7 +52,10 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
   - **Validação** clicável **apenas aguardando decisão** → `ValidationDrawer`
     (full-height à direita) que **reaproveita `ValidationView` inteira**.
   - Backend ganhou um step estático `classification` em `build_pipeline_detail`
-    (como `register`), estado tirado de `document.status`.
+    (como `register`). **Nunca fica "OK/Concluído"** (a classificação corre
+    fora da plataforma): só `PENDING` ou, em `ERP_FAILED`, `ERROR`. O front
+    deriva "em andamento" quando `validation == OK`. (Bug reportado: caixa
+    "Concluído" num processo "Aguardando classificação".)
 - **Permissão**: `processes_dashboard_view` / `document_pipeline_view` /
   `process_stats_view` usam `require_any_permission("inbox.view",
   "operations.access")` (novo factory em `users/permissions.py`) — a Visão

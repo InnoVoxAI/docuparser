@@ -56,4 +56,20 @@ describe('ProcessBreakdown - acessibilidade', () => {
         button.click()
         expect(onOpenValidation).toHaveBeenCalled()
     })
+
+    it('nunca mostra "Classificação" como concluída, mesmo com validação aprovada', async () => {
+        render(
+            <ProcessBreakdown
+                pipeline={pipeline({ ocr: 'OK', extraction: 'OK', validation_decision: 'OK' })}
+                onOpenLogs={vi.fn()}
+                onOpenValidation={vi.fn()}
+            />,
+        )
+        const classificationItem = (await screen.findByText('Classificação')).closest('li')
+        expect(classificationItem).not.toBeNull()
+        // "em andamento" (validação aprovada, processo agora nessa etapa) —
+        // e nunca "Concluído", que era o bug.
+        expect(classificationItem).toHaveTextContent('Em andamento')
+        expect(classificationItem).not.toHaveTextContent('Concluído')
+    })
 })

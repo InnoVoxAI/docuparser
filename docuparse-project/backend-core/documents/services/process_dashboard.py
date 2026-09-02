@@ -285,13 +285,13 @@ def build_pipeline_detail(document: Document) -> dict[str, Any]:
         )
 
     # "classification" é a última caixa do diagrama e, como "register", é
-    # estática: acontece depois da validação humana e continua fora da
-    # plataforma, então não tem TaskExecution própria pra rastrear aqui. O
-    # estado sai direto do status do documento.
+    # estática (sem TaskExecution própria). A classificação acontece depois da
+    # validação e continua FORA da plataforma — daqui nunca dá pra afirmar que
+    # ela terminou, então a caixa nunca fica "OK/Concluído": no máximo "em
+    # andamento" (o frontend deriva isso de validation == OK). Só ERP_FAILED
+    # vira erro explícito.
     if document.status == Document.Status.ERP_FAILED:
         classification_status = "ERROR"
-    elif document.status in _CLASSIFICATION_STATUSES:
-        classification_status = "OK"
     else:
         classification_status = "PENDING"
     steps.append(

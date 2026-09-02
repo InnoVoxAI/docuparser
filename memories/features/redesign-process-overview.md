@@ -51,7 +51,10 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
   - **Ingestão** clicável **apenas em erro** → `IngestionLogsModal` (logs das
     execuções de ocr/extraction).
   - **Validação** clicável **apenas aguardando decisão** → `ValidationDrawer`
-    (full-height à direita) que **reaproveita `ValidationView` inteira**.
+    (full-height à direita) que **reaproveita `ValidationView` inteira** com
+    `stacked` (arquivo em cima, campos embaixo — o grid `xl:` original abria
+    lado a lado e apertado no drawer). Ambos os popups usam o hook
+    `shared/hooks/useBodyScrollLock` pra travar o scroll do fundo.
   - Backend ganhou um step estático `classification` em `build_pipeline_detail`
     (como `register`). **Nunca fica "OK/Concluído"** (a classificação corre
     fora da plataforma): só `PENDING` ou, em `ERP_FAILED`, `ERROR`. O front

@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useOutletContext } from 'react-router'
 import { X } from 'lucide-react'
 import { Alert } from '../../../shared/components'
+import { useBodyScrollLock } from '../../../shared/hooks'
 // Dependência cruzada legítima (mesma exceção documentada em
 // `ValidationRoute.tsx` / `contracts/module-boundaries.md`): a Visão Geral de
 // Processos reaproveita a tela de Validação inteira em vez de duplicá-la.
@@ -22,6 +23,7 @@ export function ValidationDrawer({
 }) {
     const { selectedDocument, selectedDocumentId, selectDocument, refreshData } = useOutletContext<AppOutletContext>()
     const { data: schemas } = useSchemasQuery()
+    useBodyScrollLock()
 
     // `AppLayout` carrega o Document completo (necessário pra ValidationView)
     // quando `selectedDocumentId` muda — pedimos a seleção ao montar.

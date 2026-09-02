@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { useBodyScrollLock } from '../../../shared/hooks'
 import type { ProcessPipeline, StepExecution } from '../types'
 
 function formatDateTime(value: string): string {
@@ -23,6 +24,7 @@ function collectLogs(pipeline: ProcessPipeline): LogRow[] {
 /** Popup só-leitura com o histórico técnico da Ingestão — aberto ao clicar na
  * caixa "Ingestão" quando ela está em erro. */
 export function IngestionLogsModal({ pipeline, onClose }: { pipeline: ProcessPipeline; onClose: () => void }) {
+    useBodyScrollLock()
     const logs = collectLogs(pipeline)
 
     return (

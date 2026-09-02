@@ -22,6 +22,10 @@ export function AppLayout() {
     // rodam sem a sidebar — só um cabeçalho enxuto — pra diminuir a carga
     // visual das telas mais usadas.
     const isOverview = location.pathname === '/' || location.pathname === '/stats'
+    // A Visão Geral ("/") é travada na altura da viewport: cabeçalho/filtros e
+    // paginação fixos, só a tabela rola. `/stats` continua rolando a página
+    // inteira (é uma pilha de cards, não uma tabela).
+    const isHome = location.pathname === '/'
     const [selectedDocumentId, setSelectedDocumentId] = useState('')
     const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
     const [loading, setLoading] = useState(false)
@@ -127,9 +131,9 @@ export function AppLayout() {
     return (
         <div className="min-h-screen bg-zinc-50 text-zinc-950">
             {isOverview ? (
-                <main className="min-h-screen">
+                <main className={isHome ? 'flex h-screen flex-col overflow-hidden' : 'min-h-screen'}>
                     <OverviewMenu userName={user?.name} currentTenant={currentTenant} onLogout={logout} />
-                    <section className="px-4 py-14 md:px-6 md:py-16">
+                    <section className={`px-4 py-14 md:px-6 md:py-16 ${isHome ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}
                         <Outlet context={outletContext} />

@@ -51,10 +51,10 @@ function ProcessRow({ process }: { process: ProcessSummary }) {
 
 export function ProcessTable({ processes }: { processes: ProcessSummary[] }) {
     return (
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+        <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-zinc-200 bg-white">
             <table className="w-full min-w-[480px] border-collapse text-sm">
-                <thead>
-                    <tr className="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                <thead className="sticky top-0 z-10 bg-white">
+                    <tr className="border-b border-zinc-200 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                         <th scope="col" className="px-4 py-3">
                             Processo
                         </th>

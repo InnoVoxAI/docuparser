@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
-from django.db.models import Q
+from django.db.models import Avg, Count, Q
+from django.utils import timezone
 
 from documents.models import Document
 from orchestrator.models import OrchestrationRun, TaskExecution
@@ -276,6 +278,120 @@ def build_pipeline_detail(document: Document) -> dict[str, Any]:
         "document_id": str(document.id),
         "original_filename": document.original_filename,
         "steps": steps,
+    }
+
+
+# Rótulos amigáveis das etapas do pipeline pra tela de estatísticas (a mesma
+# noção de "onde o processo está" da coluna Status, com um pouco mais de
+# granularidade). "register" = ainda não começou a ser processado.
+STAGE_LABELS = {
+    "register": "Em fila",
+    "ocr": "Ingestão (OCR)",
+    "extraction": "Ingestão (extração)",
+    "validation_decision": "Validação",
+    "classification": "Classificação",
+}
+STAGE_KEYS_WITH_CLASSIFICATION = [*STAGE_KEYS, "classification"]
+
+
+def build_process_stats() -> dict[str, Any]:
+    """Agrega números sobre todos os processos pra tela de estatísticas —
+    quantos em cada fase, quantos com erro, volume, tempos médios. Agregação
+    em Python/ORM sobre toda a base: ok pra POC, não pensado pra milhões de
+    documentos (mesma ressalva do dashboard de processos)."""
+    documents = list(Document.objects.values_list("id", "status"))
+    all_ids = [row[0] for row in documents]
+    status_by_id = {row[0]: row[1] for row in documents}
+    total = len(documents)
+
+    error_doc_ids = {
+        doc_id
+        for doc_id in TaskExecution.objects.filter(
+            status=TaskExecution.Status.ERROR
+        ).values_list("orchestration_run__document_id", flat=True)
+        if doc_id is not None
+    }
+
+    # --- por status "de negócio" (os 4 rótulos da coluna Status) ---
+    by_status = {key: 0 for key in STATUS_GROUP_LABELS}
+    for doc_id, status_value in documents:
+        by_status[business_status_group(status_value, doc_id in error_doc_ids)] += 1
+
+    # --- por etapa atual do pipeline (mais granular que o status) ---
+    stage_by_document = current_stage_by_document(all_ids)
+    by_stage = {key: 0 for key in STAGE_KEYS_WITH_CLASSIFICATION}
+    for doc_id, stage in stage_by_document.items():
+        # classification não tem TaskExecution — deriva do status do documento.
+        if status_by_id.get(doc_id) in _CLASSIFICATION_STATUSES:
+            stage = "classification"
+        by_stage[stage] = by_stage.get(stage, 0) + 1
+
+    # --- erros ---
+    error_executions = TaskExecution.objects.filter(status=TaskExecution.Status.ERROR)
+    errors_by_step = {
+        STAGE_LABELS.get(row["task_name"], row["task_name"]): row["n"]
+        for row in error_executions.values("task_name").annotate(n=Count("id"))
+    }
+    errors_by_type = {
+        (row["error_type"] or "Desconhecido"): row["n"]
+        for row in error_executions.values("error_type").annotate(n=Count("id"))
+    }
+
+    # --- resultado da validação humana ---
+    approved = Document.objects.filter(
+        status__in=[
+            Document.Status.APPROVED,
+            Document.Status.ERP_INTEGRATION_REQUESTED,
+            Document.Status.ERP_SENT,
+            Document.Status.ERP_FAILED,
+        ]
+    ).count()
+    rejected = Document.objects.filter(status=Document.Status.REJECTED).count()
+
+    # --- volume por janela de tempo ---
+    now = timezone.now()
+    volume = {
+        "last_24h": Document.objects.filter(
+            received_at__gte=now - timedelta(hours=24)
+        ).count(),
+        "last_7d": Document.objects.filter(
+            received_at__gte=now - timedelta(days=7)
+        ).count(),
+        "last_30d": Document.objects.filter(
+            received_at__gte=now - timedelta(days=30)
+        ).count(),
+    }
+
+    # --- tempo médio por etapa (ms), só tentativas bem-sucedidas ---
+    avg_duration_ms = {
+        STAGE_LABELS.get(row["task_name"], row["task_name"]): round(row["avg"] or 0)
+        for row in TaskExecution.objects.filter(status=TaskExecution.Status.OK)
+        .values("task_name")
+        .annotate(avg=Avg("duration_ms"))
+        if row["avg"]
+    }
+
+    # --- retries manuais (execuções disparadas por uma pessoa, fora a
+    # decisão de validação em si) ---
+    manual_retries = (
+        TaskExecution.objects.exclude(orchestration_run__triggered_by="")
+        .exclude(orchestration_run__name="document_validation")
+        .count()
+    )
+
+    return {
+        "total": total,
+        "by_status": by_status,
+        "by_stage": by_stage,
+        "errors": {
+            "documents_with_error": len(error_doc_ids & set(all_ids)),
+            "by_step": errors_by_step,
+            "by_type": errors_by_type,
+        },
+        "validation": {"approved": approved, "rejected": rejected},
+        "volume": volume,
+        "avg_duration_ms": avg_duration_ms,
+        "manual_retries": manual_retries,
     }
 
 

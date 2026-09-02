@@ -64,6 +64,7 @@ from .services.process_dashboard import (
     STATUS_GROUP_KEYS,
     RetryAlreadyRunningError,
     build_pipeline_detail,
+    build_process_stats,
     current_stage_by_document,
     document_ids_matching_filter,
     document_ids_matching_stage,
@@ -993,6 +994,13 @@ def processes_dashboard_view(request):
         },
     ).data
     return Response(page.envelope(serialized))
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_any_permission("inbox.view", "operations.access")])
+def process_stats_view(request):
+    return Response(build_process_stats())
 
 
 @api_view(["GET"])

@@ -522,9 +522,81 @@ class ProcessDashboardAPITests(TestCase):
         )
 
         assert client.get(reverse("processes-dashboard")).status_code == 403
+        assert client.get(reverse("processes-stats")).status_code == 403
         assert (
             client.get(
                 reverse("document-pipeline", args=[self.document_no_history.id])
             ).status_code
             == 403
         )
+
+    def test_stats_endpoint_aggregates_status_stage_errors_and_volume(self) -> None:
+        Document.objects.create(
+            channel="manual",
+            file_uri="local://placeholder",
+            original_filename="validating.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            status=Document.Status.VALIDATION_PENDING,
+        )
+        document_approved = Document.objects.create(
+            channel="manual",
+            file_uri="local://placeholder",
+            original_filename="approved.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            status=Document.Status.VALIDATION_PENDING,
+        )
+        with orchestration_run(
+            "document_validation",
+            document_id=str(document_approved.id),
+            triggered_by=self.user.username,
+        ):
+            validation_decision_task(
+                document_approved.id,
+                ValidationDecision.Decision.APPROVED,
+                "",
+                {},
+                self.user.id,
+            )
+
+        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+            document_failed = self._create_document_with_file(storage_dir, "failed.pdf")
+            with patch(
+                "documents.services.ocr_processor.OCRClient"
+            ) as ocr_client_class:
+                ocr_client_class.return_value.process_document.side_effect = (
+                    RuntimeError("indisponível")
+                )
+                _run_document_processing(document_failed.id, self.tenant, None)
+
+            response = self.client.get(reverse("processes-stats"))
+            assert response.status_code == 200
+            stats = response.json()
+
+            # self.document_no_history (RECEIVED) + os 3 criados aqui = 4
+            assert stats["total"] == 4
+            assert stats["by_status"]["erro"] == 1
+            assert stats["by_status"]["aguardando_validacao"] == 1
+            assert stats["by_status"]["aguardando_classificacao"] == 1
+            assert stats["by_status"]["em_fila"] == 1
+            assert sum(stats["by_status"].values()) == 4
+
+            assert stats["by_stage"]["register"] == 1  # no_history
+            assert stats["by_stage"]["ocr"] == 1  # failed, parou no OCR
+            assert stats["by_stage"]["validation_decision"] == 1  # validating
+            assert stats["by_stage"]["classification"] == 1  # approved
+
+            assert stats["errors"]["documents_with_error"] == 1
+            assert stats["errors"]["by_step"]  # ao menos uma etapa com erro
+            assert stats["errors"]["by_type"]
+
+            assert stats["validation"]["approved"] == 1
+            assert stats["validation"]["rejected"] == 0
+
+            # todos criados agora → caem nas 3 janelas
+            assert stats["volume"]["last_24h"] == 4
+            assert stats["volume"]["last_7d"] == 4
+            assert stats["volume"]["last_30d"] == 4

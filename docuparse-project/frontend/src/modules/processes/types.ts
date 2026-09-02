@@ -49,6 +49,34 @@ export interface ProcessListParams {
     status_group?: string
 }
 
+/** Resposta de `GET /processes/stats` — números agregados de todos os processos. */
+export interface ProcessStats {
+    total: number
+    by_status: Record<ProcessStatusGroup, number>
+    /** Chave = etapa do pipeline; valor pré-rotulado pelo backend em `by_stage` usa a chave técnica. */
+    by_stage: Record<string, number>
+    errors: {
+        documents_with_error: number
+        /** Chave já é o rótulo amigável da etapa. */
+        by_step: Record<string, number>
+        by_type: Record<string, number>
+    }
+    validation: { approved: number; rejected: number }
+    volume: { last_24h: number; last_7d: number; last_30d: number }
+    /** Chave já é o rótulo amigável da etapa; valor em milissegundos. */
+    avg_duration_ms: Record<string, number>
+    manual_retries: number
+}
+
+/** Rótulos das etapas do pipeline (espelha `STAGE_LABELS` do backend). */
+export const STAGE_LABELS: Record<string, string> = {
+    register: 'Em fila',
+    ocr: 'Ingestão (OCR)',
+    extraction: 'Ingestão (extração)',
+    validation_decision: 'Validação',
+    classification: 'Classificação',
+}
+
 export type StepExecutionStatus = 'OK' | 'ERROR'
 // 'REJECTED' só existe no nível do step (validation_decision quando o
 // documento foi rejeitado) — a execução em si sempre foi bem-sucedida

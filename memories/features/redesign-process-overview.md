@@ -43,10 +43,25 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
     (full-height à direita) que **reaproveita `ValidationView` inteira**.
   - Backend ganhou um step estático `classification` em `build_pipeline_detail`
     (como `register`), estado tirado de `document.status`.
-- **Permissão**: `processes_dashboard_view` / `document_pipeline_view` passaram
-  de `require_permission("operations.access")` para
-  `require_any_permission("inbox.view", "operations.access")` (novo factory em
-  `users/permissions.py`) — a Visão Geral é a home de qualquer operador.
+- **Permissão**: `processes_dashboard_view` / `document_pipeline_view` /
+  `process_stats_view` usam `require_any_permission("inbox.view",
+  "operations.access")` (novo factory em `users/permissions.py`) — a Visão
+  Geral é a home de qualquer operador.
+
+## Tela de Estatísticas (`/stats`)
+
+Página agregada, também **chromeless** (`AppLayout.isOverview` cobre `/` e
+`/stats`; `OverviewTopBar` ganhou abas "Processos"/"Estatísticas").
+
+- **`GET /processes/stats`** (`build_process_stats` em `process_dashboard.py`):
+  `{ total, by_status (4 grupos), by_stage (register/ocr/extraction/
+  validation_decision/classification), errors {documents_with_error, by_step,
+  by_type}, validation {approved, rejected}, volume {last_24h/7d/30d},
+  avg_duration_ms (por etapa, só execuções OK), manual_retries }`. Agregação
+  Python/ORM sobre toda a base — ok pra POC.
+- Front: `ProcessStatsView` + `StatBreakdown` (barras horizontais),
+  `useProcessStatsQuery` (poll 20s), rota `ProcessStatsRoute` (`{ path: 'stats' }`
+  em `ProcessesRoutes`, gate `inbox.view` OU `operations.access`).
 
 ## Dependência cruzada (aceita)
 
@@ -70,7 +85,8 @@ falhas idêntica à baseline (16). Rodar em CI/container para o verde real.
 
 - Front: `modules/processes/` reescrito — `ProcessOverviewView`, `ProcessTable`,
   `ProcessRowDetail`, `ProcessBreakdown`, `ProcessFilters`,
-  `ProcessStatusBadge`, `IngestionLogsModal`, `ValidationDrawer`. Removidos
+  `ProcessStatusBadge`, `IngestionLogsModal`, `ValidationDrawer`,
+  `ProcessStatsView`, `StatBreakdown`. Removidos
   `ProcessesView`/`ProcessesSidebar`/`ProcessPipelineDiagram`/`StepDetailPanel`/
   `useRetryStepMutation` (retry manual saiu do escopo).
 - Back: `documents/services/process_dashboard.py`, `documents/serializers.py`,

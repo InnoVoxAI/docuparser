@@ -26,6 +26,7 @@ from .views import (
     list_engines_view,
     ocr_settings_view,
     process_document_view,
+    process_stats_view,
     processes_dashboard_view,
     ready_view,
     schema_config_detail_view,
@@ -95,6 +96,7 @@ urlpatterns = [
     path("settings/ocr", ocr_settings_view, name="ocr-settings"),
     path("settings/email", email_settings_view, name="email-settings"),
     path("processes", processes_dashboard_view, name="processes-dashboard"),
+    path("processes/stats", process_stats_view, name="processes-stats"),
     path(
         "documents/<uuid:document_id>/pipeline",
         document_pipeline_view,

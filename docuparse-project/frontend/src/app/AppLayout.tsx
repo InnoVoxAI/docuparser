@@ -18,9 +18,10 @@ export function AppLayout() {
     const location = useLocation()
     const navigate = useNavigate()
     const activeView = activeViewForPath(location.pathname)
-    // A página inicial (Visão Geral de Processos) roda sem a sidebar — só um
-    // cabeçalho enxuto — pra diminuir a carga visual da tela mais usada.
-    const isOverview = location.pathname === '/'
+    // A Visão Geral de Processos ("/") e a tela de Estatísticas ("/stats")
+    // rodam sem a sidebar — só um cabeçalho enxuto — pra diminuir a carga
+    // visual das telas mais usadas.
+    const isOverview = location.pathname === '/' || location.pathname === '/stats'
     const [selectedDocumentId, setSelectedDocumentId] = useState('')
     const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
     const [loading, setLoading] = useState(false)

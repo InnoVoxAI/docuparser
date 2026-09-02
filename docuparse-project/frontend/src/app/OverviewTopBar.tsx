@@ -1,11 +1,16 @@
-import { Link } from 'react-router'
+import { Link, NavLink } from 'react-router'
 import { Building2 } from 'lucide-react'
 import { PermissionGuard } from '../modules/auth'
 import { NAV_ITEMS, navPath } from './navigation'
 
-/** Cabeçalho enxuto da página inicial (Visão Geral de Processos): sem a
- * sidebar de navegação — só a marca, um acesso leve às demais telas e a
- * sessão. Reduz a carga visual da tela que o usuário mais usa. */
+const SECTION_TABS = [
+    { to: '/', label: 'Processos' },
+    { to: '/stats', label: 'Estatísticas' },
+]
+
+/** Cabeçalho enxuto das telas de processos (Visão Geral + Estatísticas): sem a
+ * sidebar de navegação — só a marca, as abas de seção, um acesso leve às demais
+ * telas e a sessão. Reduz a carga visual das telas mais usadas. */
 export function OverviewTopBar({
     userName,
     currentTenant,
@@ -18,7 +23,7 @@ export function OverviewTopBar({
     return (
         <header className="border-b border-zinc-200 bg-white">
             <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                     <Link to="/" className="text-lg font-semibold text-zinc-900">
                         DocuParse
                     </Link>
@@ -28,6 +33,24 @@ export function OverviewTopBar({
                             {currentTenant}
                         </span>
                     ) : null}
+                    <nav aria-label="Seções" className="flex items-center gap-1">
+                        {SECTION_TABS.map((tab) => (
+                            <NavLink
+                                key={tab.to}
+                                to={tab.to}
+                                end
+                                className={({ isActive }) =>
+                                    `rounded-md px-2.5 py-1 text-sm font-medium ${
+                                        isActive
+                                            ? 'bg-zinc-900 text-white'
+                                            : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900'
+                                    }`
+                                }
+                            >
+                                {tab.label}
+                            </NavLink>
+                        ))}
+                    </nav>
                 </div>
                 <div className="flex items-center gap-3">
                     <nav aria-label="Navegação" className="flex flex-wrap items-center gap-x-3 gap-y-1">

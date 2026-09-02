@@ -2,15 +2,40 @@ import type { Paginated } from '../../types'
 
 export type { Paginated }
 
-export type StepKey = 'register' | 'ocr' | 'extraction' | 'validation_decision'
-export type ProcessFilter = 'fail' | 'pending' | 'completed'
+// "classification" é a última caixa do diagrama (acontece depois da validação
+// humana e segue fora da plataforma) — estática, como "register".
+export type StepKey = 'register' | 'ocr' | 'extraction' | 'validation_decision' | 'classification'
 
-/** Linha enxuta da sidebar — o detalhe completo vem de ProcessPipeline. */
+/**
+ * Status "de negócio" — os 4 rótulos que a coluna Status da Visão Geral de
+ * Processos mostra, no lugar dos ~11 valores técnicos de `Document.status`.
+ * Espelha `STATUS_GROUP_LABELS` do backend (`services/process_dashboard.py`).
+ */
+export type ProcessStatusGroup = 'em_fila' | 'aguardando_validacao' | 'aguardando_classificacao' | 'erro'
+
+export const STATUS_GROUP_LABELS: Record<ProcessStatusGroup, string> = {
+    em_fila: 'Em Fila',
+    aguardando_validacao: 'Aguardando validação',
+    aguardando_classificacao: 'Aguardando classificação',
+    erro: 'Erro',
+}
+
+/** Ordem dos chips de filtro no topo da tabela. */
+export const STATUS_GROUP_ORDER: ProcessStatusGroup[] = [
+    'em_fila',
+    'aguardando_validacao',
+    'aguardando_classificacao',
+    'erro',
+]
+
+/** Linha da tabela da Visão Geral — o detalhe (breakdown) vem de ProcessPipeline. */
 export interface ProcessSummary {
     id: string
     original_filename: string
     channel: string
     status: string
+    /** Rótulo "de negócio" pré-calculado pelo backend (ver ProcessStatusGroup). */
+    status_label: string
     received_at: string
     has_error: boolean
     current_stage: StepKey
@@ -19,10 +44,9 @@ export interface ProcessSummary {
 export interface ProcessListParams {
     page: number
     page_size: number
-    status?: string
     search?: string
-    filter?: ProcessFilter
-    stage?: StepKey
+    /** CSV de ProcessStatusGroup (chips são multi-seleção). */
+    status_group?: string
 }
 
 export type StepExecutionStatus = 'OK' | 'ERROR'
@@ -63,9 +87,4 @@ export interface ProcessPipeline {
     document_id: string
     original_filename: string
     steps: ProcessStep[]
-}
-
-export interface RetryStepResult {
-    status: 'ok' | 'error'
-    error: { type: string; message: string } | null
 }

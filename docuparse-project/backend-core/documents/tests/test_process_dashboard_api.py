@@ -288,6 +288,106 @@ class ProcessDashboardAPITests(TestCase):
                 reverse("processes-dashboard"), {"stage": "bogus"}
             ).status_code == 400
 
+    def test_business_status_label_and_status_group_filter(self) -> None:
+        """A coluna Status da Visão Geral mostra um dos 4 rótulos "de negócio"
+        (não o Document.Status técnico), e `status_group` filtra por eles."""
+        document_validating = Document.objects.create(
+            channel="manual",
+            file_uri="local://placeholder",
+            original_filename="validating.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            status=Document.Status.VALIDATION_PENDING,
+        )
+        document_classifying = Document.objects.create(
+            channel="manual",
+            file_uri="local://placeholder",
+            original_filename="classifying.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            status=Document.Status.APPROVED,
+        )
+
+        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
+            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
+        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+            document_failed = self._create_document_with_file(storage_dir, "failed.pdf")
+            with patch(
+                "documents.services.ocr_processor.OCRClient"
+            ) as ocr_client_class:
+                ocr_client_class.return_value.process_document.side_effect = (
+                    RuntimeError("indisponível")
+                )
+                _run_document_processing(document_failed.id, self.tenant, None)
+
+            response = self.client.get(reverse("processes-dashboard"))
+            assert response.status_code == 200
+            labels = {row["id"]: row["status_label"] for row in response.json()["results"]}
+            assert labels[str(self.document_no_history.id)] == "Em Fila"
+            assert labels[str(document_validating.id)] == "Aguardando validação"
+            assert labels[str(document_classifying.id)] == "Aguardando classificação"
+            assert labels[str(document_failed.id)] == "Erro"
+
+            def ids_for(**params) -> set[str]:
+                res = self.client.get(reverse("processes-dashboard"), params)
+                assert res.status_code == 200, res.json()
+                return {row["id"] for row in res.json()["results"]}
+
+            assert ids_for(status_group="erro") == {str(document_failed.id)}
+            assert ids_for(status_group="aguardando_validacao") == {
+                str(document_validating.id)
+            }
+            assert ids_for(status_group="aguardando_classificacao") == {
+                str(document_classifying.id)
+            }
+            assert ids_for(
+                status_group="aguardando_validacao,aguardando_classificacao"
+            ) == {str(document_validating.id), str(document_classifying.id)}
+            assert self.client.get(
+                reverse("processes-dashboard"), {"status_group": "bogus"}
+            ).status_code == 400
+
+            # A caixa "Classificação" do pipeline é estática (como "register") e
+            # segue o status do documento.
+            classifying_steps = {
+                s["key"]: s
+                for s in self.client.get(
+                    reverse("document-pipeline", args=[document_classifying.id])
+                ).json()["steps"]
+            }
+            assert classifying_steps["classification"]["status"] == "OK"
+            validating_steps = {
+                s["key"]: s
+                for s in self.client.get(
+                    reverse("document-pipeline", args=[document_validating.id])
+                ).json()["steps"]
+            }
+            assert validating_steps["classification"]["status"] == "PENDING"
+
+    def test_processes_dashboard_allows_inbox_view_permission(self) -> None:
+        """A Visão Geral é a página inicial do app: um operador com apenas
+        `inbox.view` (sem `operations.access`) precisa conseguir abri-la."""
+        operator = get_user_model().objects.create_user(
+            username="inbox-only", password="test"
+        )
+        role = Role.objects.create(name="InboxOnly")
+        role.permissions.set(
+            [Permission.objects.create(code="inbox.view", description="Inbox")]
+        )
+        UserProfile.objects.create(user=operator, tenant=self.tenant, role_ref=role)
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {_jwt_for(operator, self.tenant)}"
+        )
+
+        assert client.get(reverse("processes-dashboard")).status_code == 200
+        assert (
+            client.get(
+                reverse("document-pipeline", args=[self.document_no_history.id])
+            ).status_code
+            == 200
+        )
+
     def test_successful_executions_carry_their_output_in_payload(self) -> None:
         """Not just error logs — a successful attempt's output (what OCR/
         extraction actually produced) must be visible in the dashboard too."""

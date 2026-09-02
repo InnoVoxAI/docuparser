@@ -47,6 +47,71 @@ COMPLETED_DOCUMENT_STATUSES = [
 
 PROCESS_FILTERS = {"fail", "pending", "completed"}
 
+# --- Status "de negócio" ----------------------------------------------------
+# A tela de Visão Geral de Processos é usada por analistas de negócio, não por
+# desenvolvedores: em vez de expor os ~11 valores técnicos de Document.Status,
+# eles são reduzidos a 4 rótulos que descrevem *onde o processo está parado*.
+# "Classificação" acontece DEPOIS da validação humana e segue fora da
+# plataforma — por isso não existe um estado "Concluído" aqui.
+STATUS_GROUP_LABELS = {
+    "erro": "Erro",
+    "aguardando_validacao": "Aguardando validação",
+    "aguardando_classificacao": "Aguardando classificação",
+    "em_fila": "Em Fila",
+}
+STATUS_GROUP_KEYS = set(STATUS_GROUP_LABELS)
+
+# Estados pós-validação: o documento foi aprovado e agora está em (ou
+# aguardando) a etapa de classificação/integração que corre fora daqui.
+_CLASSIFICATION_STATUSES = {
+    Document.Status.APPROVED,
+    Document.Status.ERP_INTEGRATION_REQUESTED,
+    Document.Status.ERP_SENT,
+    Document.Status.ERP_FAILED,
+}
+
+
+def business_status_group(status: str, has_error: bool) -> str:
+    """Reduz Document.Status (+ presença de falha de execução) a uma das 4
+    chaves de STATUS_GROUP_LABELS. `has_error` vence tudo: qualquer
+    TaskExecution ERROR joga o processo pra "erro" independentemente do
+    status."""
+    if has_error:
+        return "erro"
+    if status == Document.Status.VALIDATION_PENDING:
+        return "aguardando_validacao"
+    if status in _CLASSIFICATION_STATUSES:
+        return "aguardando_classificacao"
+    # RECEIVED / OCR_* / LAYOUT_CLASSIFIED / EXTRACTION_COMPLETED / REJECTED:
+    # ainda não chegou numa etapa que exige ação — segue "na fila".
+    return "em_fila"
+
+
+def business_status_label(status: str, has_error: bool) -> str:
+    return STATUS_GROUP_LABELS[business_status_group(status, has_error)]
+
+
+def document_ids_matching_status_group(document_ids, groups) -> set:
+    """IDs (dentre `document_ids`) cujo status de negócio está em `groups`.
+    Mesma agregação Python de has_error já usada nos outros filtros — ok na
+    escala de uma POC, não pensado pra milhões de documentos."""
+    invalid = set(groups) - STATUS_GROUP_KEYS
+    if invalid:
+        raise ValueError(f"unknown status_group(s): {sorted(invalid)}")
+    wanted = set(groups)
+    error_ids = document_ids_with_error(document_ids)
+    status_by_id = dict(
+        Document.objects.filter(id__in=document_ids).values_list("id", "status")
+    )
+    return {
+        document_id
+        for document_id in document_ids
+        if business_status_group(
+            status_by_id.get(document_id, ""), document_id in error_ids
+        )
+        in wanted
+    }
+
 
 def document_ids_with_error(document_ids) -> set:
     """IDs (dentre `document_ids`) com pelo menos uma TaskExecution ERROR."""
@@ -186,6 +251,26 @@ def build_pipeline_detail(document: Document) -> dict[str, Any]:
                 "executions": [_execution_dict(t) for t in step_tasks],
             }
         )
+
+    # "classification" é a última caixa do diagrama e, como "register", é
+    # estática: acontece depois da validação humana e continua fora da
+    # plataforma, então não tem TaskExecution própria pra rastrear aqui. O
+    # estado sai direto do status do documento.
+    if document.status == Document.Status.ERP_FAILED:
+        classification_status = "ERROR"
+    elif document.status in _CLASSIFICATION_STATUSES:
+        classification_status = "OK"
+    else:
+        classification_status = "PENDING"
+    steps.append(
+        {
+            "key": "classification",
+            "label": "Classificação",
+            "status": classification_status,
+            "retryable": False,
+            "executions": [],
+        }
+    )
 
     return {
         "document_id": str(document.id),

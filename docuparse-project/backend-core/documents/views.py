@@ -25,7 +25,7 @@ from rest_framework.decorators import (
 )
 from rest_framework.response import Response
 from users.authentication import DocuparseAuthentication
-from users.permissions import require_permission
+from users.permissions import require_any_permission, require_permission
 
 from .models import (
     SETTINGS_SINGLETON_ID,
@@ -61,11 +61,13 @@ from .services.erp_publisher import publish_erp_integration_requested
 from .services.process_dashboard import (
     PROCESS_FILTERS,
     STAGE_KEYS,
+    STATUS_GROUP_KEYS,
     RetryAlreadyRunningError,
     build_pipeline_detail,
     current_stage_by_document,
     document_ids_matching_filter,
     document_ids_matching_stage,
+    document_ids_matching_status_group,
     document_ids_with_error,
     retry_step,
 )
@@ -931,21 +933,25 @@ def email_settings_view(request):
 
 @api_view(["GET"])
 @authentication_classes([DocuparseAuthentication])
-@permission_classes([require_permission("operations.access")])
+@permission_classes([require_any_permission("inbox.view", "operations.access")])
 def processes_dashboard_view(request):
     queryset = Document.objects.order_by("-received_at")
     queryset = _apply_status_filter(queryset, request.query_params.get("status"))
     queryset = _apply_search(queryset, request.query_params.get("search"))
 
-    # "fail"/"pending"/"completed" e "stage" são derivados de TaskExecution,
-    # não de um campo direto de Document — não dá pra aplicar como .filter()
-    # simples no queryset. Resolve os IDs que batem ANTES de paginar (senão
-    # count/total_pages ficariam errados), reaproveitando a mesma agregação
-    # em Python já usada pra has_error — aceitável na escala de uma POC, não
-    # pensado pra uma base de milhões de documentos.
+    # "fail"/"pending"/"completed", "stage" e "status_group" são derivados de
+    # TaskExecution / status "de negócio", não de um campo direto de Document —
+    # não dá pra aplicar como .filter() simples no queryset. Resolve os IDs que
+    # batem ANTES de paginar (senão count/total_pages ficariam errados),
+    # reaproveitando a mesma agregação em Python já usada pra has_error —
+    # aceitável na escala de uma POC, não pensado pra milhões de documentos.
     filter_value = request.query_params.get("filter")
     stage_value = request.query_params.get("stage")
-    if filter_value or stage_value:
+    # `status_group` aceita CSV (ex.: "erro,aguardando_validacao") — os chips de
+    # filtro da Visão Geral de Processos são multi-seleção.
+    status_group_value = request.query_params.get("status_group")
+    status_groups = [g.strip() for g in (status_group_value or "").split(",") if g.strip()]
+    if filter_value or stage_value or status_groups:
         candidate_ids = list(queryset.values_list("id", flat=True))
         if filter_value:
             if filter_value not in PROCESS_FILTERS:
@@ -962,6 +968,15 @@ def processes_dashboard_view(request):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             matching = document_ids_matching_stage(candidate_ids, stage_value)
+            candidate_ids = [i for i in candidate_ids if i in matching]
+        if status_groups:
+            invalid = set(status_groups) - STATUS_GROUP_KEYS
+            if invalid:
+                return Response(
+                    {"detail": f"status_group inválido: {sorted(invalid)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            matching = document_ids_matching_status_group(candidate_ids, status_groups)
             candidate_ids = [i for i in candidate_ids if i in matching]
         queryset = queryset.filter(id__in=candidate_ids)
 
@@ -982,7 +997,7 @@ def processes_dashboard_view(request):
 
 @api_view(["GET"])
 @authentication_classes([DocuparseAuthentication])
-@permission_classes([require_permission("operations.access")])
+@permission_classes([require_any_permission("inbox.view", "operations.access")])
 def document_pipeline_view(request, document_id):
     document = get_object_or_404(Document, id=document_id)
     return Response(build_pipeline_detail(document))

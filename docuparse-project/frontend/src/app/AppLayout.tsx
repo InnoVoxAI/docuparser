@@ -129,7 +129,7 @@ export function AppLayout() {
             {isOverview ? (
                 <main className="min-h-screen">
                     <OverviewMenu userName={user?.name} currentTenant={currentTenant} onLogout={logout} />
-                    <section className="px-4 py-5 md:px-6">
+                    <section className="px-4 py-14 md:px-6 md:py-16">
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}
                         <Outlet context={outletContext} />

@@ -14,10 +14,10 @@ export function ProcessOverviewView() {
 
     return (
         <div className="mx-auto flex max-w-5xl flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                    <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome do arquivo..." />
+            <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="flex flex-wrap items-end gap-3">
                     <ProcessFilters selected={statusGroup} onChange={setStatusGroup} />
+                    <SearchInput value={search} onChange={setSearch} placeholder="Buscar por nome do arquivo..." />
                 </div>
                 <button type="button" onClick={() => navigate(navPath('upload'))} className="primary-button">
                     <Plus size={16} aria-hidden="true" />

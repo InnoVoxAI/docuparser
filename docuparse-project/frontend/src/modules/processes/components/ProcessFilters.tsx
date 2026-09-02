@@ -10,8 +10,8 @@ export function ProcessFilters({
     onChange: (group: ProcessStatusGroup | '') => void
 }) {
     return (
-        <label className="flex items-center gap-2 text-sm text-zinc-600">
-            Status
+        <label className="flex flex-col gap-1 text-sm text-zinc-600">
+            <span className="font-medium">Status</span>
             <select
                 value={selected}
                 onChange={(event) => onChange(event.target.value as ProcessStatusGroup | '')}

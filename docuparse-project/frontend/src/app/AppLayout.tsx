@@ -132,7 +132,7 @@ export function AppLayout() {
         <div className="min-h-screen bg-zinc-50 text-zinc-950">
             {isOverview ? (
                 <main className={isHome ? 'flex h-screen flex-col overflow-hidden' : 'min-h-screen'}>
-                    <OverviewMenu onLogout={logout} />
+                    <OverviewMenu userName={user?.name} currentTenant={currentTenant} onLogout={logout} />
                     <section className={`px-4 py-14 md:px-6 md:py-16 ${isHome ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}

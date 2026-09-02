@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router'
-import { Menu as MenuIcon, X } from 'lucide-react'
+import { Building2, Menu as MenuIcon, X } from 'lucide-react'
 
 const SECTION_TABS = [
     { to: '/', label: 'Processos' },
@@ -9,8 +9,16 @@ const SECTION_TABS = [
 
 /** As telas de processos (`/` e `/stats`) não têm cabeçalho nem sidebar — só o
  * conteúdo. Este botão flutuante no canto guarda a troca de seção e o logout,
- * fora do caminho visual. */
-export function OverviewMenu({ onLogout }: { onLogout: () => void }) {
+ * fora do caminho visual. Mostra também o usuário logado. */
+export function OverviewMenu({
+    userName,
+    currentTenant,
+    onLogout,
+}: {
+    userName: string | undefined
+    currentTenant: string | null
+    onLogout: () => void
+}) {
     const [open, setOpen] = useState(false)
 
     return (
@@ -27,18 +35,29 @@ export function OverviewMenu({ onLogout }: { onLogout: () => void }) {
 
             <div
                 hidden={!open}
-                className="absolute right-0 mt-2 w-44 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg"
+                className="absolute right-0 mt-2 w-52 rounded-lg border border-zinc-200 bg-white p-2 shadow-lg"
             >
-                <div className="flex justify-end">
+                <div className="flex items-start justify-between gap-2 px-2 py-1">
+                    <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-zinc-900">{userName || 'Sessão'}</div>
+                        {currentTenant ? (
+                            <div className="mt-0.5 inline-flex items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">
+                                <Building2 size={10} aria-hidden="true" />
+                                {currentTenant}
+                            </div>
+                        ) : null}
+                    </div>
                     <button
                         type="button"
                         onClick={() => setOpen(false)}
                         aria-label="Fechar"
-                        className="text-zinc-400 hover:text-zinc-700"
+                        className="shrink-0 text-zinc-400 hover:text-zinc-700"
                     >
                         <X size={16} aria-hidden="true" />
                     </button>
                 </div>
+
+                <div className="my-1 border-t border-zinc-100" />
 
                 <nav aria-label="Seções" className="flex flex-col">
                     {SECTION_TABS.map((tab) => (

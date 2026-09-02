@@ -72,6 +72,29 @@ _CLASSIFICATION_STATUSES = {
     Document.Status.ERP_FAILED,
 }
 
+# Quando um step não tem TaskExecution registrada (pipeline que não passa pelo
+# orquestrador da POC, dados legados, reprocessamento fora do fluxo...), o
+# `status` do documento ainda diz até onde ele avançou. Sem esse fallback, um
+# documento já em VALIDATION_PENDING aparecia com "Em fila / Ingestão" ainda
+# pendentes no breakdown, contradizendo o rótulo "Aguardando validação".
+_STEPS_DONE_BY_STATUS: dict[str, set[str]] = {
+    Document.Status.RECEIVED: set(),
+    Document.Status.OCR_FAILED: set(),
+    Document.Status.OCR_COMPLETED: {"ocr"},
+    Document.Status.LAYOUT_CLASSIFIED: {"ocr"},
+    Document.Status.EXTRACTION_COMPLETED: {"ocr", "extraction"},
+    Document.Status.VALIDATION_PENDING: {"ocr", "extraction"},
+    Document.Status.APPROVED: {"ocr", "extraction", "validation_decision"},
+    Document.Status.REJECTED: {"ocr", "extraction"},
+    Document.Status.ERP_INTEGRATION_REQUESTED: {
+        "ocr",
+        "extraction",
+        "validation_decision",
+    },
+    Document.Status.ERP_SENT: {"ocr", "extraction", "validation_decision"},
+    Document.Status.ERP_FAILED: {"ocr", "extraction", "validation_decision"},
+}
+
 
 def business_status_group(status: str, has_error: bool) -> str:
     """Reduz Document.Status (+ presença de falha de execução) a uma das 4
@@ -230,11 +253,18 @@ def build_pipeline_detail(document: Document) -> dict[str, Any]:
             "executions": [],
         }
     ]
+    implied_done = _STEPS_DONE_BY_STATUS.get(document.status, set())
     for key in STEP_ORDER:
         step_tasks = executions_by_step[key]
         # order_by("task_name", "-created_at") deixa o mais recente primeiro
-        # dentro de cada grupo de task_name.
-        step_status = step_tasks[0].status if step_tasks else "PENDING"
+        # dentro de cada grupo de task_name. Sem execução registrada, cai no
+        # que o `status` do documento já implica (ver _STEPS_DONE_BY_STATUS).
+        if step_tasks:
+            step_status = step_tasks[0].status
+        elif key in implied_done:
+            step_status = "OK"
+        else:
+            step_status = "PENDING"
         # A task "validation_decision" TEM sucesso ao registrar uma rejeição
         # (fez exatamente o que devia) — mas a caixa do diagrama representa o
         # resultado de negócio, não se o mecanismo funcionou. "REJECTED" é um

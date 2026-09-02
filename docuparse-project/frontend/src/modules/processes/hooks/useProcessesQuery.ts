@@ -26,14 +26,14 @@ async function fetchProcessPage(params: ProcessListParams): Promise<Paginated<Pr
     return response.data
 }
 
-/** Lista paginada de processos pra tabela da Visão Geral, filtrável pelos
- * chips de status "de negócio" (multi-seleção). */
+/** Lista paginada de processos pra tabela da Visão Geral, filtrável pelo
+ * status "de negócio" (dropdown — um status por vez, ou "Todos"). */
 export function useProcessesQuery() {
     const [page, setPage] = useState(1)
-    const [statusGroups, setStatusGroups] = useState<ProcessStatusGroup[]>([])
+    const [statusGroup, setStatusGroupState] = useState<ProcessStatusGroup | ''>('')
 
     const params: ProcessListParams = { page, page_size: PAGE_SIZE }
-    if (statusGroups.length) params.status_group = statusGroups.join(',')
+    if (statusGroup) params.status_group = statusGroup
 
     const query = useQuery({
         queryKey: processKeys.list(params),
@@ -50,22 +50,16 @@ export function useProcessesQuery() {
 
     const goToPage = (next: number) => setPage(Math.max(next, 1))
 
-    const toggleStatusGroup = (group: ProcessStatusGroup) => {
+    const setStatusGroup = (group: ProcessStatusGroup | '') => {
         setPage(1)
-        setStatusGroups((prev) => (prev.includes(group) ? prev.filter((item) => item !== group) : [...prev, group]))
-    }
-
-    const clearStatusGroups = () => {
-        setPage(1)
-        setStatusGroups([])
+        setStatusGroupState(group)
     }
 
     return {
         page,
         goToPage,
-        statusGroups,
-        toggleStatusGroup,
-        clearStatusGroups,
+        statusGroup,
+        setStatusGroup,
         data: query.data ?? EMPTY_PAGE,
         loading: query.isLoading,
         fetching: query.isFetching,

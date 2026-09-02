@@ -363,6 +363,13 @@ class ProcessDashboardAPITests(TestCase):
                 ).json()["steps"]
             }
             assert validating_steps["classification"]["status"] == "PENDING"
+            # Regressão: sem TaskExecution registrada, os steps anteriores à
+            # etapa atual do documento (VALIDATION_PENDING) não podem aparecer
+            # como PENDING — senão o breakdown mostra "Em fila / Ingestão"
+            # ainda em andamento num processo que já está "Aguardando validação".
+            assert validating_steps["ocr"]["status"] == "OK"
+            assert validating_steps["extraction"]["status"] == "OK"
+            assert validating_steps["validation_decision"]["status"] == "PENDING"
 
     def test_processes_dashboard_allows_inbox_view_permission(self) -> None:
         """A Visão Geral é a página inicial do app: um operador com apenas

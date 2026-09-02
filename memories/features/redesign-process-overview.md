@@ -17,9 +17,13 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
   `operations.access` (`app/router.tsx` → `IndexRoute`). Quem não tem nenhuma
   das duas cai na 1ª tela permitida (comportamento antigo do `IndexRedirect`).
 - **Sem sidebar em `/`**: `AppLayout` detecta `pathname === '/'` e renderiza
-  `app/OverviewTopBar.tsx` (marca + navegação enxuta + Sair) no lugar de
-  `AppSidebar`/`AppHeader`/`MobileNav`. As demais rotas seguem com o layout
-  antigo intacto.
+  **nenhum cabeçalho** — só o conteúdo + `app/OverviewMenu.tsx`, um botão "≡"
+  flutuante (`fixed` canto sup. dir.) que abre um dropdown com abas
+  Processos/Estatísticas, links pras demais telas (`NAV_ITEMS` + `PermissionGuard`)
+  e Sair. (`OverviewTopBar` foi removido — 2ª iteração de "menos chrome".)
+  As demais rotas seguem com o layout antigo (`AppSidebar`/`AppHeader`/`MobileNav`).
+  Nota: o menu é sempre montado (só `hidden` quando fechado) pra os testes de
+  `permissions/auth/screens` continuarem achando os rótulos de nav.
 - **`/processes` → redirect para `/`** (mantido só p/ links antigos). Item
   "Processos" saiu de `NAV_ITEMS`.
 - **Status "de negócio"** (4 rótulos, para analistas, não devs), calculados no
@@ -32,11 +36,17 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
   - resto (`RECEIVED`, OCR/extração em curso, `REJECTED`) → **Em Fila**
   - Não existe "Concluído": classificação acontece depois da validação e
     segue **fora da plataforma**.
-- **Filtro** `?status_group=` (CSV, multi-seleção) em `GET /processes` — chips
-  no topo da tabela. Convive com os `filter`/`stage` antigos.
+- **Filtro** `?status_group=` em `GET /processes` (aceita CSV; o front manda
+  um valor só) — **dropdown** ("Todos" + os 4 status) no topo da tabela, ao
+  lado do botão "Novo processo". Convive com os `filter`/`stage` antigos.
 - **Breakdown da linha expandida** (`ProcessBreakdown`): 4 caixas
   `Em fila → Ingestão → Validação → Classificação`, derivadas dos steps de
-  `GET /documents/{id}/pipeline`. Só duas são interativas:
+  `GET /documents/{id}/pipeline`. **Fallback importante** (`_STEPS_DONE_BY_STATUS`
+  em `build_pipeline_detail`): quando um step não tem `TaskExecution`, o
+  `document.status` diz até onde o processo avançou (ex.: `VALIDATION_PENDING`
+  ⇒ ocr/extraction = OK). Sem isso, um processo "Aguardando validação"
+  aparecia com "Em fila / Ingestão" ainda pendentes — bug reportado.
+  Só duas caixas são interativas:
   - **Ingestão** clicável **apenas em erro** → `IngestionLogsModal` (logs das
     execuções de ocr/extraction).
   - **Validação** clicável **apenas aguardando decisão** → `ValidationDrawer`
@@ -51,7 +61,7 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
 ## Tela de Estatísticas (`/stats`)
 
 Página agregada, também **chromeless** (`AppLayout.isOverview` cobre `/` e
-`/stats`; `OverviewTopBar` ganhou abas "Processos"/"Estatísticas").
+`/stats`; `OverviewMenu` flutuante troca de seção).
 
 - **`GET /processes/stats`** (`build_process_stats` em `process_dashboard.py`):
   `{ total, by_status (4 grupos), by_stage (register/ocr/extraction/
@@ -84,11 +94,12 @@ falhas idêntica à baseline (16). Rodar em CI/container para o verde real.
 ## Arquivos principais
 
 - Front: `modules/processes/` reescrito — `ProcessOverviewView`, `ProcessTable`,
-  `ProcessRowDetail`, `ProcessBreakdown`, `ProcessFilters`,
+  `ProcessRowDetail`, `ProcessBreakdown`, `ProcessFilters` (dropdown),
   `ProcessStatusBadge`, `IngestionLogsModal`, `ValidationDrawer`,
-  `ProcessStatsView`, `StatBreakdown`. Removidos
-  `ProcessesView`/`ProcessesSidebar`/`ProcessPipelineDiagram`/`StepDetailPanel`/
-  `useRetryStepMutation` (retry manual saiu do escopo).
+  `ProcessStatsView`, `StatBreakdown`. `app/OverviewMenu.tsx` (menu flutuante).
+  Removidos `ProcessesView`/`ProcessesSidebar`/`ProcessPipelineDiagram`/
+  `StepDetailPanel`/`useRetryStepMutation` (retry manual saiu do escopo),
+  `app/OverviewTopBar.tsx`.
 - Back: `documents/services/process_dashboard.py`, `documents/serializers.py`,
   `documents/views.py`, `users/permissions.py`,
   `documents/tests/test_process_dashboard_api.py`.

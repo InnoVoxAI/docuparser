@@ -10,7 +10,7 @@ import { activeViewForPath } from './navigation'
 import { AppSidebar } from './AppSidebar'
 import { MobileNav } from './MobileNav'
 import { AppHeader } from './AppHeader'
-import { OverviewTopBar } from './OverviewTopBar'
+import { OverviewMenu } from './OverviewMenu'
 
 export function AppLayout() {
     const { user, logout, hasPermission, currentTenant } = useAuth()
@@ -128,7 +128,7 @@ export function AppLayout() {
         <div className="min-h-screen bg-zinc-50 text-zinc-950">
             {isOverview ? (
                 <main className="min-h-screen">
-                    <OverviewTopBar userName={user?.name} currentTenant={currentTenant} onLogout={logout} />
+                    <OverviewMenu userName={user?.name} currentTenant={currentTenant} onLogout={logout} />
                     <section className="px-4 py-5 md:px-6">
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}

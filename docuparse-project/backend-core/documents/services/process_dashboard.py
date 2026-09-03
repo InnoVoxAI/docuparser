@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
-from django.db.models import Q
+from django.db.models import Avg, Count, Q
+from django.utils import timezone
 
 from documents.models import Document
 from orchestrator.models import OrchestrationRun, TaskExecution
@@ -46,6 +48,94 @@ COMPLETED_DOCUMENT_STATUSES = [
 ]
 
 PROCESS_FILTERS = {"fail", "pending", "completed"}
+
+# --- Status "de negócio" ----------------------------------------------------
+# A tela de Visão Geral de Processos é usada por analistas de negócio, não por
+# desenvolvedores: em vez de expor os ~11 valores técnicos de Document.Status,
+# eles são reduzidos a 4 rótulos que descrevem *onde o processo está parado*.
+# "Classificação" acontece DEPOIS da validação humana e segue fora da
+# plataforma — por isso não existe um estado "Concluído" aqui.
+STATUS_GROUP_LABELS = {
+    "erro": "Erro",
+    "aguardando_validacao": "Aguardando validação",
+    "aguardando_classificacao": "Aguardando classificação",
+    "em_fila": "Em Fila",
+}
+STATUS_GROUP_KEYS = set(STATUS_GROUP_LABELS)
+
+# Estados pós-validação: o documento foi aprovado e agora está em (ou
+# aguardando) a etapa de classificação/integração que corre fora daqui.
+_CLASSIFICATION_STATUSES = {
+    Document.Status.APPROVED,
+    Document.Status.ERP_INTEGRATION_REQUESTED,
+    Document.Status.ERP_SENT,
+    Document.Status.ERP_FAILED,
+}
+
+# Quando um step não tem TaskExecution registrada (pipeline que não passa pelo
+# orquestrador da POC, dados legados, reprocessamento fora do fluxo...), o
+# `status` do documento ainda diz até onde ele avançou. Sem esse fallback, um
+# documento já em VALIDATION_PENDING aparecia com "Em fila / Ingestão" ainda
+# pendentes no breakdown, contradizendo o rótulo "Aguardando validação".
+_STEPS_DONE_BY_STATUS: dict[str, set[str]] = {
+    Document.Status.RECEIVED: set(),
+    Document.Status.OCR_FAILED: set(),
+    Document.Status.OCR_COMPLETED: {"ocr"},
+    Document.Status.LAYOUT_CLASSIFIED: {"ocr"},
+    Document.Status.EXTRACTION_COMPLETED: {"ocr", "extraction"},
+    Document.Status.VALIDATION_PENDING: {"ocr", "extraction"},
+    Document.Status.APPROVED: {"ocr", "extraction", "validation_decision"},
+    Document.Status.REJECTED: {"ocr", "extraction"},
+    Document.Status.ERP_INTEGRATION_REQUESTED: {
+        "ocr",
+        "extraction",
+        "validation_decision",
+    },
+    Document.Status.ERP_SENT: {"ocr", "extraction", "validation_decision"},
+    Document.Status.ERP_FAILED: {"ocr", "extraction", "validation_decision"},
+}
+
+
+def business_status_group(status: str, has_error: bool) -> str:
+    """Reduz Document.Status (+ presença de falha de execução) a uma das 4
+    chaves de STATUS_GROUP_LABELS. `has_error` vence tudo: qualquer
+    TaskExecution ERROR joga o processo pra "erro" independentemente do
+    status."""
+    if has_error:
+        return "erro"
+    if status == Document.Status.VALIDATION_PENDING:
+        return "aguardando_validacao"
+    if status in _CLASSIFICATION_STATUSES:
+        return "aguardando_classificacao"
+    # RECEIVED / OCR_* / LAYOUT_CLASSIFIED / EXTRACTION_COMPLETED / REJECTED:
+    # ainda não chegou numa etapa que exige ação — segue "na fila".
+    return "em_fila"
+
+
+def business_status_label(status: str, has_error: bool) -> str:
+    return STATUS_GROUP_LABELS[business_status_group(status, has_error)]
+
+
+def document_ids_matching_status_group(document_ids, groups) -> set:
+    """IDs (dentre `document_ids`) cujo status de negócio está em `groups`.
+    Mesma agregação Python de has_error já usada nos outros filtros — ok na
+    escala de uma POC, não pensado pra milhões de documentos."""
+    invalid = set(groups) - STATUS_GROUP_KEYS
+    if invalid:
+        raise ValueError(f"unknown status_group(s): {sorted(invalid)}")
+    wanted = set(groups)
+    error_ids = document_ids_with_error(document_ids)
+    status_by_id = dict(
+        Document.objects.filter(id__in=document_ids).values_list("id", "status")
+    )
+    return {
+        document_id
+        for document_id in document_ids
+        if business_status_group(
+            status_by_id.get(document_id, ""), document_id in error_ids
+        )
+        in wanted
+    }
 
 
 def document_ids_with_error(document_ids) -> set:
@@ -163,11 +253,18 @@ def build_pipeline_detail(document: Document) -> dict[str, Any]:
             "executions": [],
         }
     ]
+    implied_done = _STEPS_DONE_BY_STATUS.get(document.status, set())
     for key in STEP_ORDER:
         step_tasks = executions_by_step[key]
         # order_by("task_name", "-created_at") deixa o mais recente primeiro
-        # dentro de cada grupo de task_name.
-        step_status = step_tasks[0].status if step_tasks else "PENDING"
+        # dentro de cada grupo de task_name. Sem execução registrada, cai no
+        # que o `status` do documento já implica (ver _STEPS_DONE_BY_STATUS).
+        if step_tasks:
+            step_status = step_tasks[0].status
+        elif key in implied_done:
+            step_status = "OK"
+        else:
+            step_status = "PENDING"
         # A task "validation_decision" TEM sucesso ao registrar uma rejeição
         # (fez exatamente o que devia) — mas a caixa do diagrama representa o
         # resultado de negócio, não se o mecanismo funcionou. "REJECTED" é um
@@ -187,10 +284,144 @@ def build_pipeline_detail(document: Document) -> dict[str, Any]:
             }
         )
 
+    # "classification" é a última caixa do diagrama e, como "register", é
+    # estática (sem TaskExecution própria). A classificação acontece depois da
+    # validação e continua FORA da plataforma — daqui nunca dá pra afirmar que
+    # ela terminou, então a caixa nunca fica "OK/Concluído": no máximo "em
+    # andamento" (o frontend deriva isso de validation == OK). Só ERP_FAILED
+    # vira erro explícito.
+    if document.status == Document.Status.ERP_FAILED:
+        classification_status = "ERROR"
+    else:
+        classification_status = "PENDING"
+    steps.append(
+        {
+            "key": "classification",
+            "label": "Classificação",
+            "status": classification_status,
+            "retryable": False,
+            "executions": [],
+        }
+    )
+
     return {
         "document_id": str(document.id),
         "original_filename": document.original_filename,
         "steps": steps,
+    }
+
+
+# Rótulos amigáveis das etapas do pipeline pra tela de estatísticas (a mesma
+# noção de "onde o processo está" da coluna Status, com um pouco mais de
+# granularidade). "register" = ainda não começou a ser processado.
+STAGE_LABELS = {
+    "register": "Em fila",
+    "ocr": "Ingestão (OCR)",
+    "extraction": "Ingestão (extração)",
+    "validation_decision": "Validação",
+    "classification": "Classificação",
+}
+STAGE_KEYS_WITH_CLASSIFICATION = [*STAGE_KEYS, "classification"]
+
+
+def build_process_stats() -> dict[str, Any]:
+    """Agrega números sobre todos os processos pra tela de estatísticas —
+    quantos em cada fase, quantos com erro, volume, tempos médios. Agregação
+    em Python/ORM sobre toda a base: ok pra POC, não pensado pra milhões de
+    documentos (mesma ressalva do dashboard de processos)."""
+    documents = list(Document.objects.values_list("id", "status"))
+    all_ids = [row[0] for row in documents]
+    status_by_id = {row[0]: row[1] for row in documents}
+    total = len(documents)
+
+    error_doc_ids = {
+        doc_id
+        for doc_id in TaskExecution.objects.filter(
+            status=TaskExecution.Status.ERROR
+        ).values_list("orchestration_run__document_id", flat=True)
+        if doc_id is not None
+    }
+
+    # --- por status "de negócio" (os 4 rótulos da coluna Status) ---
+    by_status = {key: 0 for key in STATUS_GROUP_LABELS}
+    for doc_id, status_value in documents:
+        by_status[business_status_group(status_value, doc_id in error_doc_ids)] += 1
+
+    # --- por etapa atual do pipeline (mais granular que o status) ---
+    stage_by_document = current_stage_by_document(all_ids)
+    by_stage = {key: 0 for key in STAGE_KEYS_WITH_CLASSIFICATION}
+    for doc_id, stage in stage_by_document.items():
+        # classification não tem TaskExecution — deriva do status do documento.
+        if status_by_id.get(doc_id) in _CLASSIFICATION_STATUSES:
+            stage = "classification"
+        by_stage[stage] = by_stage.get(stage, 0) + 1
+
+    # --- erros ---
+    error_executions = TaskExecution.objects.filter(status=TaskExecution.Status.ERROR)
+    errors_by_step = {
+        STAGE_LABELS.get(row["task_name"], row["task_name"]): row["n"]
+        for row in error_executions.values("task_name").annotate(n=Count("id"))
+    }
+    errors_by_type = {
+        (row["error_type"] or "Desconhecido"): row["n"]
+        for row in error_executions.values("error_type").annotate(n=Count("id"))
+    }
+
+    # --- resultado da validação humana ---
+    approved = Document.objects.filter(
+        status__in=[
+            Document.Status.APPROVED,
+            Document.Status.ERP_INTEGRATION_REQUESTED,
+            Document.Status.ERP_SENT,
+            Document.Status.ERP_FAILED,
+        ]
+    ).count()
+    rejected = Document.objects.filter(status=Document.Status.REJECTED).count()
+
+    # --- volume por janela de tempo ---
+    now = timezone.now()
+    volume = {
+        "last_24h": Document.objects.filter(
+            received_at__gte=now - timedelta(hours=24)
+        ).count(),
+        "last_7d": Document.objects.filter(
+            received_at__gte=now - timedelta(days=7)
+        ).count(),
+        "last_30d": Document.objects.filter(
+            received_at__gte=now - timedelta(days=30)
+        ).count(),
+    }
+
+    # --- tempo médio por etapa (ms), só tentativas bem-sucedidas ---
+    avg_duration_ms = {
+        STAGE_LABELS.get(row["task_name"], row["task_name"]): round(row["avg"] or 0)
+        for row in TaskExecution.objects.filter(status=TaskExecution.Status.OK)
+        .values("task_name")
+        .annotate(avg=Avg("duration_ms"))
+        if row["avg"]
+    }
+
+    # --- retries manuais (execuções disparadas por uma pessoa, fora a
+    # decisão de validação em si) ---
+    manual_retries = (
+        TaskExecution.objects.exclude(orchestration_run__triggered_by="")
+        .exclude(orchestration_run__name="document_validation")
+        .count()
+    )
+
+    return {
+        "total": total,
+        "by_status": by_status,
+        "by_stage": by_stage,
+        "errors": {
+            "documents_with_error": len(error_doc_ids & set(all_ids)),
+            "by_step": errors_by_step,
+            "by_type": errors_by_type,
+        },
+        "validation": {"approved": approved, "rejected": rejected},
+        "volume": volume,
+        "avg_duration_ms": avg_duration_ms,
+        "manual_retries": manual_retries,
     }
 
 

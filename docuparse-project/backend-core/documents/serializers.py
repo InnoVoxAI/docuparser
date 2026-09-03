@@ -70,6 +70,7 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
 
     has_error = serializers.SerializerMethodField()
     current_stage = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -78,6 +79,7 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
             "original_filename",
             "channel",
             "status",
+            "status_label",
             "received_at",
             "has_error",
             "current_stage",
@@ -86,6 +88,15 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
     def get_has_error(self, obj: Document) -> bool:
         document_ids_with_error = self.context.get("document_ids_with_error") or set()
         return obj.id in document_ids_with_error
+
+    def get_status_label(self, obj: Document) -> str:
+        # Rótulo "de negócio" (um dos 4 de STATUS_GROUP_LABELS) — é o que a
+        # coluna Status da Visão Geral de Processos mostra, no lugar do valor
+        # técnico de `status`.
+        from documents.services.process_dashboard import business_status_label
+
+        document_ids_with_error = self.context.get("document_ids_with_error") or set()
+        return business_status_label(obj.status, obj.id in document_ids_with_error)
 
     def get_current_stage(self, obj: Document) -> str:
         stage_by_document = self.context.get("stage_by_document") or {}

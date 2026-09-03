@@ -12,12 +12,16 @@ export function ValidationView({
     selectedDocumentId,
     onValidated,
     onBackToInbox,
+    stacked = false,
 }: {
     schemas?: SchemaConfig[]
     selectedDocument: Document | null
     selectedDocumentId: string
     onValidated: () => void | Promise<unknown>
     onBackToInbox: () => void
+    /** Força layout em coluna única (arquivo em cima, campos embaixo) — usado
+     * quando a tela roda num container estreito, como o drawer da Visão Geral. */
+    stacked?: boolean
 }) {
     const extraction = useFieldExtraction({ schemas, selectedDocument, selectedDocumentId })
     const versioning = useFieldVersioning({
@@ -52,7 +56,11 @@ export function ValidationView({
     }
 
     return (
-        <div className="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(460px,1.1fr)]">
+        <div
+            className={
+                stacked ? 'flex flex-col gap-4' : 'grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(460px,1.1fr)]'
+            }
+        >
             <ValidationDocumentPreview selectedDocument={selectedDocument} />
             <ValidationDecisionPanel
                 selectedDocument={selectedDocument}

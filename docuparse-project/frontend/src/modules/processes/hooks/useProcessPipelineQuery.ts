@@ -25,8 +25,13 @@ export function useProcessPipelineQuery(documentId: string | null) {
         refetchInterval: (currentQuery: Query<ProcessPipeline>) => {
             const currentData = currentQuery.state.data
             if (!currentData) return false
-            const stillPending = currentData.steps.some((step) => step.status === 'PENDING')
-            return stillPending ? 3000 : false
+            // Só re-busca enquanto a *ingestão* (ocr/extração) ainda está em
+            // andamento. "Validação" e "Classificação" ficam PENDING esperando
+            // ação humana / etapa externa — não vale ficar batendo no servidor.
+            const ingesting = currentData.steps.some(
+                (step) => (step.key === 'ocr' || step.key === 'extraction') && step.status === 'PENDING',
+            )
+            return ingesting ? 3000 : false
         },
     })
 

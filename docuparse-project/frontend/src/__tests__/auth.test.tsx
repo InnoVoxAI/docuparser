@@ -16,7 +16,9 @@ describe('Autenticação', () => {
     it('restaura a sessão quando há token (via /me) e entra na aplicação', async () => {
         localStorage.setItem('access_token', 'tok')
         renderApp()
-        expect((await screen.findAllByText('Inbox')).length).toBeGreaterThan(0)
+        // "/" é a Visão Geral de Processos — o botão "Novo processo" sinaliza
+        // que a app carregou (não a sidebar, que não existe nessa tela).
+        expect(await screen.findByRole('button', { name: /Novo processo/i })).toBeInTheDocument()
     })
 
     it('faz login pelo formulário, persiste tokens e entra na aplicação', async () => {
@@ -26,7 +28,7 @@ describe('Autenticação', () => {
         await user.type(screen.getByPlaceholderText('••••••••'), 'secret')
         await user.click(screen.getByRole('button', { name: 'Entrar' }))
 
-        expect((await screen.findAllByText('Inbox')).length).toBeGreaterThan(0)
+        expect(await screen.findByRole('button', { name: /Novo processo/i })).toBeInTheDocument()
         expect(localStorage.getItem('access_token')).toBe('test-access')
         expect(localStorage.getItem('refresh_token')).toBe('test-refresh')
     })

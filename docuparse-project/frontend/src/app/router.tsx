@@ -2,7 +2,7 @@ import { Navigate, createBrowserRouter } from 'react-router'
 import { useAuth } from '../modules/auth'
 import { DocumentsRoutes } from '../modules/documents'
 import { OperationsRoutes } from '../modules/operations'
-import { ProcessesRoutes } from '../modules/processes'
+import { ProcessesRoutes, ProcessOverviewView } from '../modules/processes'
 import { SettingsRoutes } from '../modules/settings'
 import { AdminRoutes } from '../modules/admin'
 import { UploadRoutes } from '../modules/upload'
@@ -10,9 +10,17 @@ import { ErrorBoundary } from '../shared/components'
 import { AppLayout } from './AppLayout'
 import { NAV_ITEMS, navPath } from './navigation'
 
-/** Landing em "/" — mesma regra do antigo estado inicial de `activeView` no monólito. */
-function IndexRedirect() {
+/**
+ * Landing em "/" — a Visão Geral de Processos é a página inicial pra quem
+ * opera documentos (`inbox.view`/`operations.access`). Quem não tem nenhuma
+ * das duas (ex.: admin de plataforma só com `tenants.manage`) cai na primeira
+ * tela permitida, como no comportamento antigo.
+ */
+function IndexRoute() {
     const { hasPermission } = useAuth()
+    if (hasPermission('inbox.view') || hasPermission('operations.access')) {
+        return <ProcessOverviewView />
+    }
     const target = NAV_ITEMS.find((item) => hasPermission(item.permission))?.id ?? 'dashboard'
     return <Navigate to={navPath(target)} replace />
 }
@@ -30,7 +38,7 @@ export function createAppRouter() {
             element: <AppLayout />,
             errorElement: <ErrorBoundary />,
             children: [
-                { index: true, element: <IndexRedirect /> },
+                { index: true, element: <IndexRoute /> },
                 ...DocumentsRoutes,
                 ...UploadRoutes,
                 ...OperationsRoutes,

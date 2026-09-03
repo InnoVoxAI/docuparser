@@ -26,6 +26,19 @@ _NETWORK_PEER_ADDRESS_KEY = "network.peer.address"
 
 _configured_services: set[str] = set()
 
+_TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
+
+def is_telemetry_enabled() -> bool:
+    """Liga/desliga OpenTelemetry via `USE_TELEMETRY` (default: desligado).
+
+    Permite rodar sem um Collector disponível (ex.: servidores onde o
+    Collector ainda não foi instalado) sem alterar código de cada serviço —
+    `configure_tracing()` e as instrumentações de biblioteca (`XInstrumentor`)
+    checam esta flag antes de fazer qualquer setup.
+    """
+    return os.environ.get("USE_TELEMETRY", "false").strip().lower() in _TRUTHY_VALUES
+
 
 class RedactingSpanProcessor(SpanProcessor):
     """Remove atributos de span sensíveis antes da exportação (FR-006)."""
@@ -39,7 +52,10 @@ class RedactingSpanProcessor(SpanProcessor):
             return
         normalized = dict(attributes)
         changed = False
-        if _NET_PEER_NAME_KEY not in normalized and _NETWORK_PEER_ADDRESS_KEY in normalized:
+        if (
+            _NET_PEER_NAME_KEY not in normalized
+            and _NETWORK_PEER_ADDRESS_KEY in normalized
+        ):
             normalized[_NET_PEER_NAME_KEY] = normalized[_NETWORK_PEER_ADDRESS_KEY]
             changed = True
         if any(is_denied(key) for key in normalized):
@@ -68,6 +84,9 @@ def configure_tracing(service_name: str) -> None:
     instanciar seu próprio TracerProvider/exporter diretamente (contrato 1).
     """
     if service_name in _configured_services:
+        return
+
+    if not is_telemetry_enabled():
         return
 
     # As instrumentações `requests`/`httpx` só marcam `error.type` no span de

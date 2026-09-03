@@ -84,7 +84,7 @@ Copie esse diretorio para armazenamento externo ao servidor, por exemplo outro d
 
 ## Observações de Desenvolvimento
 
-- Todos os serviços exportam traces (OpenTelemetry) para o `otel-collector`, visualizáveis no Jaeger (`http://127.0.0.1:16686`). Variáveis relevantes: `DEPLOYMENT_ENVIRONMENT` e `OTEL_TAIL_SAMPLING_PERCENTAGE` (ambas com default de dev, configuráveis no `.env` — ver `.env.example`). Detalhes completos (propagação, redação de dados sensíveis, tail sampling) em [docs/TECHNICAL.md](docs/TECHNICAL.md#observabilidade-e-rastreamento-distribuído).
+- Todos os serviços exportam traces (OpenTelemetry) para o `otel-collector`, visualizáveis no Jaeger (`http://127.0.0.1:16686`), desde que `USE_TELEMETRY=true` (padrão `false` fora do `docker-compose.yml` local — em servidores sem Collector instalado, deixe desligado). Variáveis relevantes: `USE_TELEMETRY`, `DEPLOYMENT_ENVIRONMENT` e `OTEL_TAIL_SAMPLING_PERCENTAGE` (as duas últimas com default de dev, configuráveis no `.env` — ver `.env.example`). Detalhes completos (propagação, redação de dados sensíveis, tail sampling) em [docs/TECHNICAL.md](docs/TECHNICAL.md#observabilidade-e-rastreamento-distribuído).
 - O `backend-core` executa `python manage.py migrate --noinput` antes de iniciar no compose.
 - `backend-com` e `backend-core` compartilham o volume `docuparse-storage`; isso permite que o core leia arquivos recebidos por email, WhatsApp ou upload manual.
 - `backend-com` publica `document.received` e sincroniza o evento com `backend-core` por `BACKEND_CORE_DOCUMENT_RECEIVED_URL`.

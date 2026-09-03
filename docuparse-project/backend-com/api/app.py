@@ -9,7 +9,7 @@ from typing import Any
 
 import jwt
 from config import settings
-from docuparse_observability.tracing import configure_tracing
+from docuparse_observability.tracing import configure_tracing, is_telemetry_enabled
 from fastapi import (
     FastAPI,
     File,
@@ -74,7 +74,8 @@ def _log_startup_config() -> None:
 
 
 configure_tracing("backend-com")
-RequestsInstrumentor().instrument()
+if is_telemetry_enabled():
+    RequestsInstrumentor().instrument()
 
 app = FastAPI(
     title="DocuParse Backend COM",
@@ -82,7 +83,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
-FastAPIInstrumentor.instrument_app(app)
+if is_telemetry_enabled():
+    FastAPIInstrumentor.instrument_app(app)
 
 app.add_middleware(
     CORSMiddleware,

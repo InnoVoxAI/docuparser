@@ -25,6 +25,7 @@ dependencies = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.44.0",
     "opentelemetry-instrumentation-fastapi>=0.65b0",
     "opentelemetry-instrumentation-redis>=0.65b0",
+    "opencv-python>=5.0.0.93",
 ]
 
 [project.optional-dependencies]

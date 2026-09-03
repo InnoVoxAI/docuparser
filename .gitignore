@@ -259,3 +259,4 @@ node_modules/
 # Task files
 # tasks.json
 # tasks/
+docuparse-project/backend-core/not-used-with-s3/

@@ -44,12 +44,22 @@ export interface ProcessSummary {
     last_status_change_at: string | null
 }
 
+/** Colunas pelas quais a tabela pode ser ordenada — espelha `ORDERING_FIELDS`
+ * do backend (`services/process_dashboard.py`). */
+export type ProcessOrderingField = 'original_filename' | 'status_label' | 'last_status_change_at'
+
+/** Sentido da ordenação de uma coluna: nenhum (default do backend, mais
+ * recente primeiro), ascendente ou descendente. */
+export type SortDirection = 'asc' | 'desc'
+
 export interface ProcessListParams {
     page: number
     page_size: number
     search?: string
     /** CSV de ProcessStatusGroup (chips são multi-seleção). */
     status_group?: string
+    /** `<campo>` (asc) ou `-<campo>` (desc) — ver ProcessOrderingField. */
+    ordering?: string
 }
 
 /** Resposta de `GET /processes/stats` — números agregados de todos os processos. */

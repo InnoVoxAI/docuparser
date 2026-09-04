@@ -59,10 +59,12 @@ from .services.dlq_inspector import (
 )
 from .services.erp_publisher import publish_erp_integration_requested
 from .services.process_dashboard import (
+    ORDERING_FIELDS,
     PROCESS_FILTERS,
     STAGE_KEYS,
     STATUS_GROUP_KEYS,
     RetryAlreadyRunningError,
+    apply_ordering,
     build_pipeline_detail,
     build_process_stats,
     current_stage_by_document,
@@ -937,7 +939,7 @@ def email_settings_view(request):
 @authentication_classes([DocuparseAuthentication])
 @permission_classes([require_any_permission("inbox.view", "operations.access")])
 def processes_dashboard_view(request):
-    queryset = Document.objects.order_by("-received_at")
+    queryset = Document.objects.all()
     queryset = _apply_status_filter(queryset, request.query_params.get("status"))
     queryset = _apply_search(queryset, request.query_params.get("search"))
 
@@ -981,6 +983,21 @@ def processes_dashboard_view(request):
             matching = document_ids_matching_status_group(candidate_ids, status_groups)
             candidate_ids = [i for i in candidate_ids if i in matching]
         queryset = queryset.filter(id__in=candidate_ids)
+
+    # `?ordering=<campo>` (prefixo `-` = descendente) — colunas clicáveis da
+    # tabela de Processos. Aplicado por último: precisa ser o ORDER BY que
+    # sobrevive até o slice de paginação abaixo.
+    ordering_param = request.query_params.get("ordering")
+    try:
+        queryset = apply_ordering(queryset, ordering_param)
+    except ValueError:
+        return Response(
+            {
+                "detail": f"ordering inválido: {ordering_param!r} "
+                f"(válidos: {sorted(ORDERING_FIELDS)}, com prefixo '-' opcional)"
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     page = paginate_queryset(queryset, request)
     document_ids = [document.id for document in page.items]

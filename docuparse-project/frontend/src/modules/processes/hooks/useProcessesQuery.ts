@@ -3,7 +3,14 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import type { Query } from '@tanstack/react-query'
 import { api } from '../../../shared/lib/http'
 import { readError } from '../../../shared/utils'
-import type { Paginated, ProcessListParams, ProcessStatusGroup, ProcessSummary } from '../types'
+import type {
+    Paginated,
+    ProcessListParams,
+    ProcessOrderingField,
+    ProcessStatusGroup,
+    ProcessSummary,
+    SortDirection,
+} from '../types'
 import { processKeys } from './queryKeys'
 
 const PAGE_SIZE = 25
@@ -33,11 +40,14 @@ export function useProcessesQuery() {
     const [page, setPage] = useState(1)
     const [statusGroup, setStatusGroupState] = useState<ProcessStatusGroup | ''>('')
     const [search, setSearchState] = useState('')
+    // `null` = sem ordenação explícita (default do backend: mais recente primeiro).
+    const [sort, setSort] = useState<{ field: ProcessOrderingField; direction: SortDirection } | null>(null)
 
     const params: ProcessListParams = { page, page_size: PAGE_SIZE }
     if (statusGroup) params.status_group = statusGroup
     const term = search.trim()
     if (term) params.search = term
+    if (sort) params.ordering = sort.direction === 'desc' ? `-${sort.field}` : sort.field
 
     const query = useQuery({
         queryKey: processKeys.list(params),
@@ -64,6 +74,18 @@ export function useProcessesQuery() {
         setSearchState(value)
     }
 
+    // Clique num cabeçalho de coluna: não estava ordenando por ela -> ascendente;
+    // já estava ascendente -> descendente; já estava descendente -> limpa (volta
+    // ao default). Mesmo ciclo de 3 estados usado em tabelas do estilo GitHub/Notion.
+    const toggleSort = (field: ProcessOrderingField) => {
+        setPage(1)
+        setSort((current) => {
+            if (!current || current.field !== field) return { field, direction: 'asc' }
+            if (current.direction === 'asc') return { field, direction: 'desc' }
+            return null
+        })
+    }
+
     return {
         page,
         goToPage,
@@ -71,6 +93,8 @@ export function useProcessesQuery() {
         setStatusGroup,
         search,
         setSearch,
+        sort,
+        toggleSort,
         data: query.data ?? EMPTY_PAGE,
         loading: query.isLoading,
         fetching: query.isFetching,

@@ -10,7 +10,8 @@ import { ProcessTable } from './ProcessTable'
  * acesso ao envio de um novo documento. Sem cabeçalho/sidebar — só o conteúdo. */
 export function ProcessOverviewView() {
     const navigate = useNavigate()
-    const { data, loading, error, statusGroup, setStatusGroup, search, setSearch, goToPage } = useProcessesQuery()
+    const { data, loading, error, statusGroup, setStatusGroup, search, setSearch, sort, toggleSort, goToPage } =
+        useProcessesQuery()
 
     return (
         <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-4">
@@ -35,7 +36,7 @@ export function ProcessOverviewView() {
                 </div>
             ) : (
                 <div className="flex min-h-0 flex-1 flex-col gap-3">
-                    <ProcessTable processes={data.results} />
+                    <ProcessTable processes={data.results} sort={sort} onToggleSort={toggleSort} />
                     <Pagination
                         page={data.page}
                         totalPages={data.total_pages}

@@ -20,6 +20,7 @@ const ALL: ProcessSummary[] = [
         received_at: new Date().toISOString(),
         has_error: false,
         current_stage: 'validation_decision',
+        last_status_change_at: new Date().toISOString(),
     },
     {
         id: 'b',
@@ -30,6 +31,7 @@ const ALL: ProcessSummary[] = [
         received_at: new Date().toISOString(),
         has_error: false,
         current_stage: 'register',
+        last_status_change_at: new Date().toISOString(),
     },
 ]
 

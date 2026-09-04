@@ -71,6 +71,7 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
     has_error = serializers.SerializerMethodField()
     current_stage = serializers.SerializerMethodField()
     status_label = serializers.SerializerMethodField()
+    last_status_change_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -83,6 +84,7 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
             "received_at",
             "has_error",
             "current_stage",
+            "last_status_change_at",
         ]
 
     def get_has_error(self, obj: Document) -> bool:
@@ -101,6 +103,14 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
     def get_current_stage(self, obj: Document) -> str:
         stage_by_document = self.context.get("stage_by_document") or {}
         return stage_by_document.get(obj.id, "register")
+
+    def get_last_status_change_at(self, obj: Document):
+        # "Última atualização" da linha: quando o documento entrou na fase
+        # atual (última TaskExecution, ou `received_at` se ainda não teve
+        # nenhuma) — ver `last_status_change_by_document`.
+        mapping = self.context.get("last_status_change_by_document") or {}
+        value = mapping.get(obj.id) or obj.received_at
+        return value.isoformat() if value else None
 
 
 class DocumentListSerializer(serializers.ModelSerializer):

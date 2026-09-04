@@ -70,6 +70,7 @@ from .services.process_dashboard import (
     document_ids_matching_stage,
     document_ids_matching_status_group,
     document_ids_with_error,
+    last_status_change_by_document,
     retry_step,
 )
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
@@ -985,12 +986,14 @@ def processes_dashboard_view(request):
     document_ids = [document.id for document in page.items]
     error_ids = document_ids_with_error(document_ids)
     stage_by_document = current_stage_by_document(document_ids)
+    last_status_change = last_status_change_by_document(page.items)
     serialized = ProcessSummarySerializer(
         page.items,
         many=True,
         context={
             "document_ids_with_error": error_ids,
             "stage_by_document": stage_by_document,
+            "last_status_change_by_document": last_status_change,
         },
     ).data
     return Response(page.envelope(serialized))

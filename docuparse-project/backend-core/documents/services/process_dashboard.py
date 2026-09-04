@@ -148,21 +148,51 @@ def document_ids_with_error(document_ids) -> set:
     )
 
 
-def current_stage_by_document(document_ids) -> dict:
-    """Última task (por -created_at) de cada documento, ou "register" se
-    nenhuma TaskExecution existir ainda pra ele (não começou o pipeline)."""
+def latest_activity_by_document(document_ids) -> dict:
+    """Última TaskExecution (por -created_at) de cada documento — a
+    "transição de fase" mais recente detectada pelo pipeline. Base de
+    `current_stage_by_document` e `last_status_change_by_document`: uma
+    query só, reaproveitada pelas duas leituras (stage e timestamp) pra não
+    duplicar o `SELECT` em quem precisa das duas."""
     tasks = (
         TaskExecution.objects.filter(orchestration_run__document_id__in=document_ids)
         .select_related("orchestration_run")
         .order_by("-created_at")
     )
-    stage_by_document: dict = {}
+    activity_by_document: dict = {}
     for task in tasks:
-        stage_by_document.setdefault(task.orchestration_run.document_id, task.task_name)
+        activity_by_document.setdefault(
+            task.orchestration_run.document_id, (task.task_name, task.created_at)
+        )
+    return activity_by_document
+
+
+def current_stage_by_document(document_ids) -> dict:
+    """Nome da etapa (`STAGE_KEYS`) em que cada documento está agora, ou
+    "register" se nenhuma TaskExecution existir ainda pra ele (não começou
+    o pipeline)."""
+    activity_by_document = latest_activity_by_document(document_ids)
     return {
-        document_id: stage_by_document.get(document_id, "register")
+        document_id: activity_by_document.get(document_id, ("register", None))[0]
         for document_id in document_ids
     }
+
+
+def last_status_change_by_document(documents) -> dict:
+    """Quando cada documento entrou na fase em que está agora — o
+    `created_at` da TaskExecution mais recente (ela É a transição: cada
+    task registrada representa o pipeline avançando o documento pra uma
+    nova etapa/status), ou `received_at` pra quem ainda não tem nenhuma
+    (ainda "em fila", sem transição registrada). `documents` é um iterável
+    de instâncias `Document` (precisa de `.id`/`.received_at` carregados —
+    não faz outra query pra buscá-los)."""
+    document_ids = [document.id for document in documents]
+    activity_by_document = latest_activity_by_document(document_ids)
+    result: dict = {}
+    for document in documents:
+        _stage, changed_at = activity_by_document.get(document.id, (None, None))
+        result[document.id] = changed_at or document.received_at
+    return result
 
 
 def document_ids_matching_filter(document_ids, filter_value: str) -> set:

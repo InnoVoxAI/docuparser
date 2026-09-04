@@ -36,6 +36,21 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
   - resto (`RECEIVED`, OCR/extração em curso, `REJECTED`) → **Em Fila**
   - Não existe "Concluído": classificação acontece depois da validação e
     segue **fora da plataforma**.
+- **Coluna "Última atualização"** (3ª coluna da tabela, ticket dedicado):
+  quando o processo entrou na fase atual. Backend em
+  `documents/services/process_dashboard.py`:
+  - `latest_activity_by_document(document_ids)` — 1 query, última
+    `TaskExecution` (`-created_at`) por documento → `dict[id, (stage,
+    created_at)]`. Fonte única reaproveitada por `current_stage_by_document`
+    (só o `stage`) e por `last_status_change_by_document(documents)` (o
+    `created_at`, com fallback pro `received_at` do documento quando ainda
+    não existe nenhuma TaskExecution — "em fila" desde que chegou).
+  - Cada `TaskExecution` **é** a transição de fase — não foi preciso um
+    campo novo em `Document`/migration; é só expor o que o pipeline já
+    registra. Exposto como `last_status_change_at` (ISO 8601) no
+    `ProcessSummarySerializer`.
+  - Front: `ProcessSummary.last_status_change_at`, renderizado com
+    `shared/utils/formatDate` (já existia, não usado antes na Visão Geral).
 - **Filtro** `?status_group=` em `GET /processes` (aceita CSV; o front manda
   um valor só) — **dropdown** ("Todos" + os 4 status) no topo da tabela.
   Ao lado, **busca por nome do arquivo** (`?search=`, já suportado por

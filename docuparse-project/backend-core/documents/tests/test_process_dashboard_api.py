@@ -398,6 +398,92 @@ class ProcessDashboardAPITests(TestCase):
             == 200
         )
 
+    def test_last_status_change_at_reflects_most_recent_transition(self) -> None:
+        """"Última atualização" (coluna nova da tabela de Processos) precisa
+        acompanhar a transição de fase mais recente detectada pelo backend —
+        não um timestamp estático de quando o documento foi criado."""
+
+        def row_for(document_id) -> dict:
+            response = self.client.get(reverse("processes-dashboard"))
+            assert response.status_code == 200
+            return {r["id"]: r for r in response.json()["results"]}[str(document_id)]
+
+        # Sem nenhuma TaskExecution ainda ("em fila"): cai no received_at.
+        no_history = row_for(self.document_no_history.id)
+        assert (
+            no_history["last_status_change_at"]
+            == self.document_no_history.received_at.isoformat()
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
+            document = self._create_document_with_file(storage_dir, "transitions.pdf")
+            with (
+                patch(
+                    "documents.services.ocr_processor.OCRClient"
+                ) as ocr_client_class,
+                patch(
+                    "documents.services.ocr_processor.LangExtractClient"
+                ) as langextract_class,
+            ):
+                ocr_client_class.return_value.process_document.return_value = {
+                    "raw_text": "algum texto",
+                    "document_type": "digital_pdf",
+                    "engine_used": "mock",
+                }
+                langextract_class.return_value.extract_with_schema.return_value = {
+                    "fields": {},
+                    "confidence": 0.5,
+                    "requires_human_validation": True,
+                }
+                _run_document_processing(document.id, self.tenant, None)
+
+            # Transição 1: "em fila" -> "aguardando validação" (ocr+extração
+            # rodaram; a task mais recente é a extração).
+            extraction_task = TaskExecution.objects.filter(
+                orchestration_run__document_id=document.id, task_name="extraction"
+            ).latest("created_at")
+            after_extraction = row_for(document.id)
+            assert (
+                after_extraction["last_status_change_at"]
+                == extraction_task.created_at.isoformat()
+            )
+            assert (
+                after_extraction["last_status_change_at"]
+                != no_history["last_status_change_at"]
+            )
+
+            # Transição 2: "aguardando validação" -> "aguardando classificação"
+            # (decisão humana registrada).
+            with orchestration_run(
+                "document_validation",
+                document_id=str(document.id),
+                triggered_by=self.user.username,
+            ):
+                validation_decision_task(
+                    document.id,
+                    ValidationDecision.Decision.APPROVED,
+                    "",
+                    {},
+                    self.user.id,
+                )
+            validation_task = TaskExecution.objects.filter(
+                orchestration_run__document_id=document.id,
+                task_name="validation_decision",
+            ).latest("created_at")
+            after_validation = row_for(document.id)
+            assert (
+                after_validation["last_status_change_at"]
+                == validation_task.created_at.isoformat()
+            )
+            assert (
+                after_validation["last_status_change_at"]
+                != after_extraction["last_status_change_at"]
+            )
+
     def test_successful_executions_carry_their_output_in_payload(self) -> None:
         """Not just error logs — a successful attempt's output (what OCR/
         extraction actually produced) must be visible in the dashboard too."""

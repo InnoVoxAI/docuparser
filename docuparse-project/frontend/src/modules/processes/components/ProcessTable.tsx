@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { formatDate } from '../../../shared/utils'
 import type { ProcessSummary } from '../types'
 import { ProcessStatusBadge } from './ProcessStatusBadge'
 import { ProcessRowDetail } from './ProcessRowDetail'
@@ -37,10 +38,13 @@ function ProcessRow({ process }: { process: ProcessSummary }) {
                 <td className="px-4 py-3">
                     <ProcessStatusBadge label={process.status_label} />
                 </td>
+                <td className="px-4 py-3 whitespace-nowrap text-zinc-500">
+                    {formatDate(process.last_status_change_at)}
+                </td>
             </tr>
             {expanded ? (
                 <tr>
-                    <td colSpan={2} className="p-0">
+                    <td colSpan={3} className="p-0">
                         <ProcessRowDetail documentId={process.id} />
                     </td>
                 </tr>
@@ -52,7 +56,7 @@ function ProcessRow({ process }: { process: ProcessSummary }) {
 export function ProcessTable({ processes }: { processes: ProcessSummary[] }) {
     return (
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-zinc-200 bg-white">
-            <table className="w-full min-w-[480px] border-collapse text-sm">
+            <table className="w-full min-w-[640px] border-collapse text-sm">
                 <thead className="sticky top-0 z-10 bg-white">
                     <tr className="border-b border-zinc-200 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                         <th scope="col" className="px-4 py-3">
@@ -60,6 +64,9 @@ export function ProcessTable({ processes }: { processes: ProcessSummary[] }) {
                         </th>
                         <th scope="col" className="px-4 py-3">
                             Status
+                        </th>
+                        <th scope="col" className="px-4 py-3">
+                            Última atualização
                         </th>
                     </tr>
                 </thead>

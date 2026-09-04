@@ -209,7 +209,7 @@ services:
     build:
       context: .
       dockerfile: backend-core/Dockerfile
-    command: sh -c "python manage.py migrate_schemas --shared && python manage.py consume_events"
+    command: sh -c "uv run python manage.py migrate_schemas --shared && uv run python manage.py consume_events"
     profiles:
       - async-workers
     volumes:

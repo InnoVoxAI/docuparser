@@ -361,7 +361,6 @@ def build_process_stats() -> dict[str, Any]:
     documentos (mesma ressalva do dashboard de processos)."""
     documents = list(Document.objects.values_list("id", "status"))
     all_ids = [row[0] for row in documents]
-    status_by_id = {row[0]: row[1] for row in documents}
     total = len(documents)
 
     error_doc_ids = {
@@ -378,12 +377,23 @@ def build_process_stats() -> dict[str, Any]:
         by_status[business_status_group(status_value, doc_id in error_doc_ids)] += 1
 
     # --- por etapa atual do pipeline (mais granular que o status) ---
+    # "classification" e "validation_decision" não dependem de existir uma
+    # TaskExecution: o `status` já diz que o documento está esperando lá
+    # (achado real, via docker: um documento em VALIDATION_PENDING cuja
+    # extração rodou mas ninguém decidiu ainda não tem TaskExecution de
+    # validation_decision — cair pra "register"/"em fila" via
+    # current_stage_by_document estaria errado). Só ocr/extraction seguem o
+    # histórico de execução, que é o que faz sentido pra elas (ainda em
+    # ingestão de verdade).
     stage_by_document = current_stage_by_document(all_ids)
     by_stage = {key: 0 for key in STAGE_KEYS_WITH_CLASSIFICATION}
-    for doc_id, stage in stage_by_document.items():
-        # classification não tem TaskExecution — deriva do status do documento.
-        if status_by_id.get(doc_id) in _CLASSIFICATION_STATUSES:
+    for doc_id, status_value in documents:
+        if status_value in _CLASSIFICATION_STATUSES:
             stage = "classification"
+        elif status_value == Document.Status.VALIDATION_PENDING:
+            stage = "validation_decision"
+        else:
+            stage = stage_by_document.get(doc_id, "register")
         by_stage[stage] = by_stage.get(stage, 0) + 1
 
     # --- erros ---

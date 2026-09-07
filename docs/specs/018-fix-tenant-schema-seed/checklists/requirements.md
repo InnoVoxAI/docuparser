@@ -1,7 +1,7 @@
-# Specification Quality Checklist: Provisionamento automático de schemas/layouts padrão para novos tenants
+# Specification Quality Checklist: Catálogo global de tipos de documento (schemas/layouts) compartilhado entre tenants
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
-**Created**: 2026-07-29
+**Created**: 2026-07-29 · **Replanejado**: 2026-09-07
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
@@ -31,5 +31,8 @@
 
 ## Notes
 
-- Validação passou de primeira, sem [NEEDS CLARIFICATION] pendente. Termos técnicos (SchemaConfig/LayoutConfig, seed_data.py, ensure_default_schemas) aparecem apenas no campo `Input` (citação literal do pedido original) — o corpo do spec usa a linguagem de negócio "tipos de documento padrão".
-- Detalhes de implementação (função reutilizável, extração de código, onde vive o backfill) ficam propositalmente fora do spec — pertencem ao `/speckit-plan`.
+- **Replanejamento (2026-09-07)**: a feature deixou de ser "provisionar defaults por tenant" e passou a ser "catálogo global compartilhado, não pertencente a tenant". A causa raiz do bug original é eliminada, não remediada.
+- Três decisões de arquitetura foram fixadas com o solicitante antes da redação e estão registradas em Assumptions: (1) 100% global, sem override por tenant; (2) gestão do catálogo restrita a operador de plataforma, tenants somente-leitura; (3) sem customização de tenant em produção hoje — se a transição encontrar divergência, para e sinaliza (FR-010).
+- Termos como `SchemaConfig`/`LayoutConfig`, `ensure_default_schemas`, `seed_data.py` aparecem apenas no bloco `Input`/contexto (citação do pedido) e nas notas; o corpo usa linguagem de negócio ("catálogo de tipos de documento").
+- FR-016 exige atualizar a documentação normativa (referência de modelo de dados, decisão 010-multi-tenancy-schemas US4) e marcar a nota de bug conhecido como resolvida — o "como" fica para o `/speckit-plan`.
+- Reversão parcial e consciente da decisão 010-multi-tenancy-schemas US4 (apenas para o catálogo de tipos de documento; OCR/integração/email settings continuam por tenant).

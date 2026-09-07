@@ -53,6 +53,19 @@ chamada tanto por `seed_data.py` (primeiro seed) quanto por `_provision_tenant` 
 tenant novo).
 
 ## Status
-
 Documentado em `docs/specs/017-tenant-admin-onboarding/tasks.md` (T040) como débito
-técnico. Não corrigido — decisão consciente de manter fora do escopo desta feature.
+técnico. **Replanejado em 2026-09-07** (spec `018-fix-tenant-schema-seed`): em vez de
+seedar o catálogo por tenant, a arquitetura muda para um **catálogo global de tipos de
+documento** (SchemaConfig/LayoutConfig no schema `public`, não pertencentes a tenant).
+Isso elimina a causa raiz. A "correção sugerida" acima (seed por tenant via
+`_provision_tenant` / `seed_default_schemas`) fica **obsoleta**.
+
+Decisões fixadas: (1) 100% global, sem override por tenant; (2) só operador de plataforma
+(permissão `tenants.manage`) cria/edita/remove — tenants somente-leitura; (3) sem
+customização real em produção hoje → migração única consolida as cópias por-schema numa
+global a partir da fonte canônica (`models/*/definition.py`); se encontrar divergência,
+para e sinaliza. Também reverte parcialmente `010-multi-tenancy-schemas` US4 (apenas para
+o catálogo; OCR/integration/email settings continuam por tenant).
+
+Ver [[Catálogo global de tipos de documento (schemas/layouts) compartilhado entre tenants]].
+Ainda **não implementado** — spec redigido, aguardando `/speckit-plan`.

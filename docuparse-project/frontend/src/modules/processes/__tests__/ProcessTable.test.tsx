@@ -1,7 +1,7 @@
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { server } from '../../../__tests__/mocks/server'
 import { renderWithQueryClient } from '../../../__tests__/utils'
 import { ProcessTable } from '../components/ProcessTable'
@@ -26,7 +26,13 @@ function process(overrides: Partial<ProcessSummary> = {}): ProcessSummary {
 
 describe('ProcessTable', () => {
     it('mostra nome, status de negócio e última atualização de cada processo', () => {
-        renderWithQueryClient(<ProcessTable processes={[process({ last_status_change_at: '2026-03-05T14:30:00Z' })]} />)
+        renderWithQueryClient(
+            <ProcessTable
+                processes={[process({ last_status_change_at: '2026-03-05T14:30:00Z' })]}
+                sort={null}
+                onToggleSort={vi.fn()}
+            />,
+        )
         expect(screen.getByText('nota-fiscal.pdf')).toBeInTheDocument()
         expect(screen.getByText('Aguardando validação')).toBeInTheDocument()
         expect(screen.getByText('Última atualização')).toBeInTheDocument()
@@ -35,8 +41,33 @@ describe('ProcessTable', () => {
     })
 
     it('exibe "-" quando o processo não tem última atualização', () => {
-        renderWithQueryClient(<ProcessTable processes={[process({ last_status_change_at: null })]} />)
+        renderWithQueryClient(
+            <ProcessTable processes={[process({ last_status_change_at: null })]} sort={null} onToggleSort={vi.fn()} />,
+        )
         expect(screen.getByText('-')).toBeInTheDocument()
+    })
+
+    it('chama onToggleSort com o campo certo ao clicar num cabeçalho sem ordenação', async () => {
+        const onToggleSort = vi.fn()
+        const user = userEvent.setup()
+        renderWithQueryClient(<ProcessTable processes={[process()]} sort={null} onToggleSort={onToggleSort} />)
+
+        expect(screen.getByRole('columnheader', { name: 'Processo' })).toHaveAttribute('aria-sort', 'none')
+
+        await user.click(screen.getByRole('button', { name: 'Ordenar por Processo' }))
+        expect(onToggleSort).toHaveBeenCalledWith('original_filename')
+    })
+
+    it('mostra a seta ativa só na coluna que está ordenando', () => {
+        renderWithQueryClient(
+            <ProcessTable
+                processes={[process()]}
+                sort={{ field: 'original_filename', direction: 'asc' }}
+                onToggleSort={vi.fn()}
+            />,
+        )
+        expect(screen.getByRole('columnheader', { name: 'Processo' })).toHaveAttribute('aria-sort', 'ascending')
+        expect(screen.getByRole('columnheader', { name: 'Status' })).toHaveAttribute('aria-sort', 'none')
     })
 
     it('expande a linha e mostra as 4 caixas do processo', async () => {
@@ -68,7 +99,7 @@ describe('ProcessTable', () => {
             ),
         )
         const user = userEvent.setup()
-        renderWithQueryClient(<ProcessTable processes={[process()]} />)
+        renderWithQueryClient(<ProcessTable processes={[process()]} sort={null} onToggleSort={vi.fn()} />)
 
         await user.click(screen.getByRole('button', { name: /nota-fiscal\.pdf/ }))
 

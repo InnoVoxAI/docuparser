@@ -484,6 +484,97 @@ class ProcessDashboardAPITests(TestCase):
                 != after_extraction["last_status_change_at"]
             )
 
+    def test_ordering_by_filename_status_and_last_update(self) -> None:
+        """`?ordering=<campo>` (prefixo '-' = descendente) ordena a tabela de
+        Processos pelas colunas clicáveis: nome do arquivo, status "de
+        negócio" (em_fila < aguardando_validacao < aguardando_classificacao <
+        erro) e última atualização."""
+        doc_b = Document.objects.create(
+            channel="manual",
+            file_uri="local://placeholder",
+            original_filename="b-boleto.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            status=Document.Status.VALIDATION_PENDING,
+        )
+        doc_a = Document.objects.create(
+            channel="manual",
+            file_uri="local://placeholder",
+            original_filename="a-nota.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            status=Document.Status.RECEIVED,
+        )
+        doc_c = Document.objects.create(
+            channel="manual",
+            file_uri="local://placeholder",
+            original_filename="c-recibo.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            status=Document.Status.APPROVED,
+        )
+        # self.document_no_history (setUp): "no-history.pdf", RECEIVED, mais
+        # antigo que os 3 acima (criado antes deles).
+
+        def ids_for(ordering: str) -> list[str]:
+            response = self.client.get(
+                reverse("processes-dashboard"), {"ordering": ordering}
+            )
+            assert response.status_code == 200, response.json()
+            return [row["id"] for row in response.json()["results"]]
+
+        # --- por nome de arquivo ---
+        filenames = {
+            str(doc_a.id): "a-nota.pdf",
+            str(doc_b.id): "b-boleto.pdf",
+            str(doc_c.id): "c-recibo.pdf",
+            str(self.document_no_history.id): "no-history.pdf",
+        }
+        ascending_ids = ids_for("original_filename")
+        assert [filenames[i] for i in ascending_ids] == sorted(filenames.values())
+        assert ids_for("-original_filename") == list(reversed(ascending_ids))
+
+        # --- por status "de negócio" ---
+        # a-nota/no-history = em_fila (RECEIVED), b-boleto = aguardando_validacao,
+        # c-recibo = aguardando_classificacao (APPROVED). a-nota e no-history
+        # empatam no rank (em_fila) — desempate estável por received_at é o
+        # mesmo nos dois sentidos, então comparamos por grupo (índice), não a
+        # lista inteira invertida (isso quebraria só por causa do empate).
+        ranked = ids_for("status_label")
+        assert ranked.index(str(doc_a.id)) < ranked.index(str(doc_b.id))
+        assert ranked.index(str(self.document_no_history.id)) < ranked.index(
+            str(doc_b.id)
+        )
+        assert ranked.index(str(doc_b.id)) < ranked.index(str(doc_c.id))
+
+        ranked_desc = ids_for("-status_label")
+        assert ranked_desc.index(str(doc_c.id)) < ranked_desc.index(str(doc_b.id))
+        assert ranked_desc.index(str(doc_b.id)) < ranked_desc.index(str(doc_a.id))
+        assert ranked_desc.index(str(doc_b.id)) < ranked_desc.index(
+            str(self.document_no_history.id)
+        )
+
+        # --- por última atualização (nenhum tem TaskExecution -> cai no
+        # received_at, que segue a ordem de criação) ---
+        expected_oldest_first = [
+            str(self.document_no_history.id),
+            str(doc_b.id),
+            str(doc_a.id),
+            str(doc_c.id),
+        ]
+        assert ids_for("last_status_change_at") == expected_oldest_first
+        assert ids_for("-last_status_change_at") == list(
+            reversed(expected_oldest_first)
+        )
+
+        # --- inválido ---
+        assert (
+            self.client.get(
+                reverse("processes-dashboard"), {"ordering": "bogus"}
+            ).status_code
+            == 400
+        )
+
     def test_successful_executions_carry_their_output_in_payload(self) -> None:
         """Not just error logs — a successful attempt's output (what OCR/
         extraction actually produced) must be visible in the dashboard too."""

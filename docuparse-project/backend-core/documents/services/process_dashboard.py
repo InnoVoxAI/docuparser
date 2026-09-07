@@ -3,7 +3,21 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from django.db.models import Avg, Count, Q
+from django.db.models import (
+    Avg,
+    Case,
+    Count,
+    DateTimeField,
+    Exists,
+    F,
+    IntegerField,
+    OuterRef,
+    Q,
+    Subquery,
+    Value,
+    When,
+)
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from documents.models import Document
@@ -71,6 +85,95 @@ _CLASSIFICATION_STATUSES = {
     Document.Status.ERP_SENT,
     Document.Status.ERP_FAILED,
 }
+
+# --- Ordenação da tabela de Processos ---------------------------------------
+# Mesma ordem visual de STATUS_GROUP_ORDER no frontend (types.ts) — não é a
+# mesma regra que business_status_group() (aquela decide em Python sobre um
+# documento já carregado; esta vira SQL via Case/When pra ordenar no banco
+# ANTES de paginar), mas usa as mesmas constantes (_CLASSIFICATION_STATUSES,
+# VALIDATION_PENDING) pra não divergir da lógica de negócio.
+STATUS_GROUP_RANK = {
+    "em_fila": 0,
+    "aguardando_validacao": 1,
+    "aguardando_classificacao": 2,
+    "erro": 3,
+}
+
+# Nome do param (`?ordering=`) -> nome do campo/annotation anotado no queryset.
+# Espelha os campos que a tabela do frontend já mostra (ProcessSummary), pra
+# "ordene pela coluna X" ser literal.
+ORDERING_FIELDS = {
+    "original_filename": "original_filename",
+    "status_label": "_status_rank",
+    "last_status_change_at": "_last_status_change_at",
+}
+
+
+def annotate_ordering_fields(queryset):
+    """Adiciona ao queryset as colunas calculadas usadas por `apply_ordering`:
+    `_last_status_change_at` (mesma regra de `last_status_change_by_document`,
+    expressa como subquery pra funcionar corretamente com LIMIT/OFFSET — sem
+    isso, ordenar por "Última atualização" exigiria carregar a tabela inteira
+    em Python antes de paginar) e `_status_rank` (posição do status "de
+    negócio", ver STATUS_GROUP_RANK). Só é chamada quando `?ordering=` pede
+    uma dessas duas colunas — `original_filename` ordena direto, sem
+    annotation."""
+    latest_task_at = (
+        TaskExecution.objects.filter(orchestration_run__document_id=OuterRef("pk"))
+        .order_by("-created_at")
+        .values("created_at")[:1]
+    )
+    has_error_for_sort = Exists(
+        TaskExecution.objects.filter(
+            orchestration_run__document_id=OuterRef("pk"),
+            status=TaskExecution.Status.ERROR,
+        )
+    )
+    return queryset.annotate(
+        _last_status_change_at=Coalesce(
+            Subquery(latest_task_at, output_field=DateTimeField()),
+            F("received_at"),
+            output_field=DateTimeField(),
+        ),
+        _has_error_for_sort=has_error_for_sort,
+    ).annotate(
+        _status_rank=Case(
+            When(_has_error_for_sort=True, then=Value(STATUS_GROUP_RANK["erro"])),
+            When(
+                status=Document.Status.VALIDATION_PENDING,
+                then=Value(STATUS_GROUP_RANK["aguardando_validacao"]),
+            ),
+            When(
+                status__in=list(_CLASSIFICATION_STATUSES),
+                then=Value(STATUS_GROUP_RANK["aguardando_classificacao"]),
+            ),
+            default=Value(STATUS_GROUP_RANK["em_fila"]),
+            output_field=IntegerField(),
+        )
+    )
+
+
+def apply_ordering(queryset, ordering_param: str | None):
+    """Aplica `?ordering=<campo>` (prefixo `-` = descendente) ao queryset da
+    tabela de Processos. `None`/vazio mantém o default (`-received_at`, mais
+    recentes primeiro). Levanta `ValueError` se o campo não for um dos
+    ORDERING_FIELDS — quem chama decide o 400."""
+    if not ordering_param:
+        return queryset.order_by("-received_at")
+
+    descending = ordering_param.startswith("-")
+    field = ordering_param[1:] if descending else ordering_param
+    if field not in ORDERING_FIELDS:
+        raise ValueError(field)
+
+    annotated_field = ORDERING_FIELDS[field]
+    if annotated_field.startswith("_"):
+        queryset = annotate_ordering_fields(queryset)
+    ordering = f"-{annotated_field}" if descending else annotated_field
+    # Desempate estável por received_at (mais recente primeiro) — várias linhas
+    # podem empatar em status_rank/last_status_change_at (ex.: vários "Em Fila").
+    return queryset.order_by(ordering, "-received_at")
+
 
 # Quando um step não tem TaskExecution registrada (pipeline que não passa pelo
 # orquestrador da POC, dados legados, reprocessamento fora do fluxo...), o

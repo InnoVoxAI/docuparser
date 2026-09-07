@@ -278,36 +278,7 @@ class EmailSettings(TimeStampedModel):
     is_active = models.BooleanField(default=True)
 
 
-class SchemaConfig(TimeStampedModel):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    schema_id = models.CharField(max_length=128)
-    version = models.CharField(max_length=32)
-    definition = models.JSONField(default=dict)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["schema_id", "version"],
-                name="unique_schema_config_version",
-            ),
-        ]
-
-
-class LayoutConfig(TimeStampedModel):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    layout = models.CharField(max_length=128)
-    document_type = models.CharField(max_length=64)
-    schema_config = models.ForeignKey(
-        SchemaConfig, on_delete=models.PROTECT, related_name="layout_configs"
-    )
-    confidence_threshold = models.FloatField(default=0.75)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["layout", "document_type"],
-                name="unique_layout_config",
-            ),
-        ]
+# SchemaConfig / LayoutConfig foram movidos para o app `catalog` (SHARED_APPS,
+# schema `public`) — catálogo global de tipos de documento. Ver spec 018.
+# As tabelas legadas por-tenant são removidas em
+# `documents/0015_drop_catalog_models` (com guarda de divergência).

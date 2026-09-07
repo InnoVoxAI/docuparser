@@ -30,6 +30,10 @@ SHARED_APPS = [
     "tenants",
     "corsheaders",
     "users",
+    # Catálogo global de tipos de documento (SchemaConfig/LayoutConfig) —
+    # tabelas únicas em `public`, lidas por qualquer tenant via search_path.
+    # NÃO pertence a TENANT_APPS (ver spec 018).
+    "catalog",
 ]
 
 TENANT_APPS = [

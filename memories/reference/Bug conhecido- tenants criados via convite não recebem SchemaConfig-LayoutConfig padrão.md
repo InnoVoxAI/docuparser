@@ -54,5 +54,27 @@ tenant novo).
 
 ## Status
 
-Documentado em `docs/specs/017-tenant-admin-onboarding/tasks.md` (T040) como débito
-técnico. Não corrigido — decisão consciente de manter fora do escopo desta feature.
+**RESOLVIDO** (branch `018-fix-tenant-schema-seed`, 2026-09-07 — `/speckit-implement`).
+
+O catálogo de tipos de documento (`SchemaConfig`/`LayoutConfig`) foi movido para um
+**app global `catalog`** (SHARED_APPS, schema `public`): uma única cópia lida por todos
+os tenants via `search_path`. Não há mais passo de provisionamento — um tenant novo
+enxerga o catálogo imediatamente (teste de regressão:
+`tenants/tests/test_provisioning.py::NewTenantGlobalCatalogRegressionTests`).
+
+O que mudou:
+- novo `docuparse-project/backend-core/catalog/` (models, defaults, serializers, views,
+  permissions, migrations `0001_initial` + `0002_seed_default_catalog`);
+- fonte canônica única em `catalog/defaults.py::default_catalog_specs()` (lê
+  `models/*/definition.py`) — substitui as duas listas divergentes;
+- `documents/0014_drop_legacy_catalog_constraints` (não-destrutivo) +
+  `documents/0015_drop_catalog_models` (destrutivo, com guarda de divergência
+  `assert_only_canonical_rows` + `catalog/management/commands/check_catalog_divergence.py`);
+- escrita no catálogo passou a exigir `tenants.manage` (era `models.edit`); `tenantAdmin`
+  fica somente-leitura, refletido no frontend (`ExtractionPanel` → modo leitura +
+  `CatalogScopeNotice`);
+- código morto removido: `documents/startup.py::ensure_default_schemas`, o `try/except`
+  mudo em `documents/apps.py`, o laço de seed por-tenant em `seed_data.py`.
+
+Documentado no histórico do plano: `docs/specs/018-fix-tenant-schema-seed/`.
+Ver [[Catálogo global de tipos de documento (schemas/layouts) compartilhado entre tenants]].

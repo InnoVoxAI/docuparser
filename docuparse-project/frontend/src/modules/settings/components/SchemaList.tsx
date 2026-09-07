@@ -8,8 +8,11 @@ import { DeleteSchemaModal } from './DeleteSchemaModal'
  * `onDeleted` (que antes propagava `onChanged()`) foi removido — a lista de
  * `schemas` vem de `useSchemasQuery` (invalidada automaticamente pela
  * mutação de exclusão), então este componente só precisa fechar o modal.
+ *
+ * `readOnly` (spec 018): o catálogo é global e só o operador de plataforma
+ * (`tenants.manage`) pode excluir — para os demais, esconde o botão.
  */
-export function SchemaList({ schemas }: { schemas: SchemaConfig[] }) {
+export function SchemaList({ schemas, readOnly = false }: { schemas: SchemaConfig[]; readOnly?: boolean }) {
     const [targetSchema, setTargetSchema] = useState<SchemaConfig | null>(null)
     return (
         <>
@@ -22,14 +25,16 @@ export function SchemaList({ schemas }: { schemas: SchemaConfig[] }) {
                         {schemas.map((schema) => (
                             <div key={schema.id} className="flex items-center justify-between px-4 py-3">
                                 <div className="text-sm font-medium">{schema.schema_id}</div>
-                                <button
-                                    type="button"
-                                    onClick={() => setTargetSchema(schema)}
-                                    className="flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                                >
-                                    <Trash2 size={12} />
-                                    Excluir
-                                </button>
+                                {readOnly ? null : (
+                                    <button
+                                        type="button"
+                                        onClick={() => setTargetSchema(schema)}
+                                        className="flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                                    >
+                                        <Trash2 size={12} />
+                                        Excluir
+                                    </button>
+                                )}
                             </div>
                         ))}
                     </div>

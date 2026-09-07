@@ -207,3 +207,29 @@ class TenantSchemaIsolationTests:
 
         tenant_a.delete()
         tenant_b.delete()
+
+
+@pytest.mark.tenant_db
+class NewTenantGlobalCatalogRegressionTests:
+    """Regressão do bug original (spec 018): um tenant provisionado do zero
+    enxerga o catálogo global de tipos de documento (2 schemas + 3 layouts) sem
+    qualquer passo de seed — o catálogo vive em `public` (app `catalog`,
+    SHARED_APPS) e é lido via search_path.
+
+    NOTA: mesma convenção de `TenantSchemaIsolationTests` neste arquivo.
+    """
+
+    def test_new_tenant_sees_global_catalog_without_seed(self) -> None:
+        from catalog.models import LayoutConfig, SchemaConfig
+        from django_tenants.utils import schema_context
+
+        slug = "fresh-catalog-tenant"
+        tenant = Tenant.objects.create(
+            slug=slug, name="Fresh", schema_name=f"tenant_{slug}"
+        )
+        try:
+            with schema_context(tenant.schema_name):
+                assert LayoutConfig.objects.count() == 3
+                assert SchemaConfig.objects.count() == 2
+        finally:
+            tenant.delete()

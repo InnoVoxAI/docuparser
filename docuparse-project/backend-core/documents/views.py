@@ -4,9 +4,10 @@ from io import BytesIO
 import models.boleto.schemas as _boleto_classifier
 import models.contadeagua.schemas as _agua_classifier
 import models.nota_fiscal.schemas as _nf_classifier
+from catalog.models import SchemaConfig
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db.models import Prefetch, ProtectedError, Q, TextField
+from django.db.models import Prefetch, Q, TextField
 from django.db.models.functions import Cast
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404
@@ -33,9 +34,7 @@ from .models import (
     EmailSettings,
     ExtractionResult,
     IntegrationSettings,
-    LayoutConfig,
     OCRSettings,
-    SchemaConfig,
     ValidationDecision,
 )
 from .pagination import paginate_queryset
@@ -45,10 +44,8 @@ from .serializers import (
     EmailSettingsSerializer,
     ExtractionFieldVersionSerializer,
     IntegrationSettingsSerializer,
-    LayoutConfigSerializer,
     OCRSettingsSerializer,
     ProcessSummarySerializer,
-    SchemaConfigSerializer,
     ValidationDecisionSerializer,
 )
 from .services import field_versioning
@@ -58,6 +55,10 @@ from .services.dlq_inspector import (
     requeue_dlq_entry,
 )
 from .services.erp_publisher import publish_erp_integration_requested
+from .services.event_consumers import DuplicateDocumentError, consume_document_received
+from .services.langextract_client import LangExtractClient
+from .services.ocr_client import OCRClient
+from .services.ocr_processor import auto_extract_after_ocr, process_document_ocr
 from .services.process_dashboard import (
     ORDERING_FIELDS,
     PROCESS_FILTERS,
@@ -75,10 +76,6 @@ from .services.process_dashboard import (
     last_status_change_by_document,
     retry_step,
 )
-from .services.event_consumers import DuplicateDocumentError, consume_document_received
-from .services.langextract_client import LangExtractClient
-from .services.ocr_client import OCRClient
-from .services.ocr_processor import auto_extract_after_ocr, process_document_ocr
 from .services.processing_queue import (
     submit_document_processing,
 )
@@ -427,9 +424,7 @@ def document_reprocess_ocr_view(request, document_id):
 def _validation_decision_body(
     document_id, decision, notes, corrected_fields, user_id
 ) -> dict:
-    document = Document.objects.select_related("extraction_result").get(
-        id=document_id
-    )
+    document = Document.objects.select_related("extraction_result").get(id=document_id)
     user = get_user_model().objects.get(id=user_id)
 
     validation = ValidationDecision.objects.create(
@@ -732,88 +727,8 @@ def document_langextract_view(request, document_id):
     return Response(result)
 
 
-@api_view(["GET", "POST"])
-@authentication_classes([DocuparseAuthentication])
-@permission_classes([require_permission("models.edit")])
-def schema_configs_view(request):
-    if request.method == "GET":
-        queryset = SchemaConfig.objects.all().order_by("schema_id", "version")
-        return Response(SchemaConfigSerializer(queryset, many=True).data)
-
-    serializer = SchemaConfigSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-    config, created = SchemaConfig.objects.update_or_create(
-        schema_id=serializer.validated_data["schema_id"],
-        version=serializer.validated_data["version"],
-        defaults={
-            "definition": serializer.validated_data.get("definition") or {},
-            "is_active": serializer.validated_data.get("is_active", True),
-        },
-    )
-    response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-    return Response(SchemaConfigSerializer(config).data, status=response_status)
-
-
-PROTECTED_SCHEMA_IDS = ["nota_fiscal_default", "conta_agua_default"]
-
-
-@api_view(["GET", "PATCH", "DELETE"])
-@authentication_classes([DocuparseAuthentication])
-@permission_classes([require_permission("models.edit")])
-def schema_config_detail_view(request, schema_id):
-    config = get_object_or_404(SchemaConfig, id=schema_id)
-    if request.method == "GET":
-        return Response(SchemaConfigSerializer(config).data)
-    if request.method == "DELETE":
-        if config.schema_id in PROTECTED_SCHEMA_IDS:
-            return Response(
-                {"detail": "Este modelo é padrão do sistema e não pode ser excluído."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        try:
-            config.delete()
-        except ProtectedError:
-            return Response(
-                {
-                    "detail": "Este modelo possui layouts vinculados e não pode ser excluído."
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-    serializer = SchemaConfigSerializer(config, data=request.data, partial=True)
-    serializer.is_valid(raise_exception=True)
-    for field in ("schema_id", "version", "definition", "is_active"):
-        if field in serializer.validated_data:
-            setattr(config, field, serializer.validated_data[field])
-    config.save(
-        update_fields=["schema_id", "version", "definition", "is_active", "updated_at"]
-    )
-    return Response(SchemaConfigSerializer(config).data)
-
-
-@api_view(["GET", "POST"])
-@authentication_classes([DocuparseAuthentication])
-@permission_classes([require_permission("models.edit")])
-def layout_configs_view(request):
-    if request.method == "GET":
-        queryset = LayoutConfig.objects.select_related("schema_config").order_by(
-            "layout"
-        )
-        return Response(LayoutConfigSerializer(queryset, many=True).data)
-
-    serializer = LayoutConfigSerializer(data=request.data)
-    serializer.is_valid(raise_exception=True)
-    config = LayoutConfig.objects.create(
-        layout=serializer.validated_data["layout"],
-        document_type=serializer.validated_data["document_type"],
-        schema_config=serializer.validated_data["schema_config"],
-        confidence_threshold=serializer.validated_data.get(
-            "confidence_threshold", 0.75
-        ),
-        is_active=serializer.validated_data.get("is_active", True),
-    )
-    return Response(LayoutConfigSerializer(config).data, status=status.HTTP_201_CREATED)
+# NOTE: schema-configs / layout-configs endpoints movidos para o app `catalog`
+# (spec 018) — catálogo global, escrita restrita a `tenants.manage`.
 
 
 @api_view(["GET", "PATCH"])
@@ -954,7 +869,9 @@ def processes_dashboard_view(request):
     # `status_group` aceita CSV (ex.: "erro,aguardando_validacao") — os chips de
     # filtro da Visão Geral de Processos são multi-seleção.
     status_group_value = request.query_params.get("status_group")
-    status_groups = [g.strip() for g in (status_group_value or "").split(",") if g.strip()]
+    status_groups = [
+        g.strip() for g in (status_group_value or "").split(",") if g.strip()
+    ]
     if filter_value or stage_value or status_groups:
         candidate_ids = list(queryset.values_list("id", flat=True))
         if filter_value:

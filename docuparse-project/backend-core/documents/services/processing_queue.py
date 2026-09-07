@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from django.db import connection
 from docuparse_observability.tracing import capture_current_span_link
+from docuparse_orchestrator.context import orchestration_run
 from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
@@ -28,39 +29,37 @@ def _tenant_from_connection() -> object:
 def submit_document_processing(document_id: int) -> None:
     tenant = _tenant_from_connection()
     link = capture_current_span_link()
-    _executor.submit(_run_processing_safely, document_id, tenant, link)
+    _executor.submit(_run_document_processing, document_id, tenant, link)
 
 
-def _run_processing_safely(document_id: int, tenant: object, link: trace.Link | None) -> None:
-    with _tracer.start_as_current_span(
-        "document.ocr_processing", links=[link] if link else []
-    ) as span:
-        try:
-            from documents.services.ocr_processor import process_document_ocr
+def _run_document_processing(document_id: int, tenant: object, link: trace.Link | None) -> None:
+    connection.set_tenant(tenant)
+    from documents.services.ocr_processor import extraction_task, ocr_task
 
-            connection.set_tenant(tenant)
-            process_document_ocr(document_id, tenant_slug=tenant.slug)
-        except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(trace.StatusCode.ERROR, str(exc))
-            # `last_step` aponta qual dependência caiu (storage_read/ocr_request/
-            # storage_write) sem precisar correlacionar com as linhas `step=` acima.
-            # Causa no corpo da mensagem, não em `extra`: o formatter padrão não
-            # renderiza campos de `extra`, então isto emitia só o próprio nome.
-            try:
-                from documents.services.ocr_processor import current_step
-
-                last_step = current_step()
-            except Exception:
-                last_step = "unknown"
+    # orchestration_run marca o run como FAILED sozinho quando qualquer @task
+    # chamado aqui dentro termina em erro (ver context.py) — não precisa de
+    # raise manual pra sinalizar isso; só o "return" natural pra não seguir
+    # pra próxima etapa.
+    with orchestration_run(
+        "document_processing", link=link, document_id=str(document_id)
+    ):
+        result = ocr_task(document_id, tenant_slug=tenant.slug)
+        if result.status == "error":
             logger.warning(
-                "processing_queue_failed | document_id=%s | tenant=%s | last_step=%s | error_type=%s | error=%s",
+                "document_processing_failed | document_id=%s | tenant=%s | step=ocr | error=%s",
                 document_id,
                 getattr(tenant, "slug", "?"),
-                last_step,
-                type(exc).__name__,
-                exc,
-                exc_info=True,
+                result.error.message,
+            )
+            return
+
+        result = extraction_task(document_id)
+        if result.status == "error":
+            logger.warning(
+                "document_processing_failed | document_id=%s | tenant=%s | step=extraction | error=%s",
+                document_id,
+                getattr(tenant, "slug", "?"),
+                result.error.message,
             )
 
 

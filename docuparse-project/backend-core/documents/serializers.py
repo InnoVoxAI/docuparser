@@ -63,6 +63,56 @@ class ExtractionResultSerializer(serializers.ModelSerializer):
         }
 
 
+class ProcessSummarySerializer(serializers.ModelSerializer):
+    """Linha enxuta pra sidebar do dashboard de processos — o detalhe
+    completo (steps/execuções) vem de build_pipeline_detail sob demanda,
+    não daqui."""
+
+    has_error = serializers.SerializerMethodField()
+    current_stage = serializers.SerializerMethodField()
+    status_label = serializers.SerializerMethodField()
+    last_status_change_at = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Document
+        fields = [
+            "id",
+            "original_filename",
+            "channel",
+            "status",
+            "status_label",
+            "received_at",
+            "has_error",
+            "current_stage",
+            "last_status_change_at",
+        ]
+
+    def get_has_error(self, obj: Document) -> bool:
+        document_ids_with_error = self.context.get("document_ids_with_error") or set()
+        return obj.id in document_ids_with_error
+
+    def get_status_label(self, obj: Document) -> str:
+        # Rótulo "de negócio" (um dos 4 de STATUS_GROUP_LABELS) — é o que a
+        # coluna Status da Visão Geral de Processos mostra, no lugar do valor
+        # técnico de `status`.
+        from documents.services.process_dashboard import business_status_label
+
+        document_ids_with_error = self.context.get("document_ids_with_error") or set()
+        return business_status_label(obj.status, obj.id in document_ids_with_error)
+
+    def get_current_stage(self, obj: Document) -> str:
+        stage_by_document = self.context.get("stage_by_document") or {}
+        return stage_by_document.get(obj.id, "register")
+
+    def get_last_status_change_at(self, obj: Document):
+        # "Última atualização" da linha: quando o documento entrou na fase
+        # atual (última TaskExecution, ou `received_at` se ainda não teve
+        # nenhuma) — ver `last_status_change_by_document`.
+        mapping = self.context.get("last_status_change_by_document") or {}
+        value = mapping.get(obj.id) or obj.received_at
+        return value.isoformat() if value else None
+
+
 class DocumentListSerializer(serializers.ModelSerializer):
     metadata_channel = serializers.SerializerMethodField()
     extraction_result = ExtractionResultSerializer(read_only=True)

@@ -34,6 +34,7 @@ SHARED_APPS = [
 
 TENANT_APPS = [
     "documents",
+    "orchestrator",
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + list(TENANT_APPS)
@@ -91,15 +92,19 @@ MIDDLEWARE = [
 # aqui (não em wsgi.py) para cobrir também os management commands que não
 # passam pelo WSGIHandler (consume_events, migrate, etc.) — settings.py é
 # importado por todo entrypoint Django, WSGI ou CLI.
-from docuparse_observability.tracing import configure_tracing  # noqa: E402
+from docuparse_observability.tracing import (  # noqa: E402
+    configure_tracing,
+    is_telemetry_enabled,
+)
 from opentelemetry.instrumentation.django import DjangoInstrumentor  # noqa: E402
 from opentelemetry.instrumentation.redis import RedisInstrumentor  # noqa: E402
 from opentelemetry.instrumentation.requests import RequestsInstrumentor  # noqa: E402
 
 configure_tracing("backend-core")
-DjangoInstrumentor().instrument()
-RequestsInstrumentor().instrument()
-RedisInstrumentor().instrument()
+if is_telemetry_enabled():
+    DjangoInstrumentor().instrument()
+    RequestsInstrumentor().instrument()
+    RedisInstrumentor().instrument()
 
 ROOT_URLCONF = "core.urls"
 

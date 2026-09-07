@@ -873,6 +873,7 @@ O Collector aplica `tailsamplingprocessor` (`otel-collector-config.yaml`) com du
 
 | Variável | Onde é usada | Descrição |
 |---|---|---|
+| `USE_TELEMETRY` | Todos os serviços (exceto `otel-collector`) | Liga/desliga o tracing (`configure_tracing()` e as instrumentações de biblioteca). Padrão `false` — só ativa exportação/instrumentação quando setada como `true`/`1`/`yes`/`on`. Permite rodar sem um Collector disponível (ex.: servidores onde ele ainda não foi instalado). O `docker-compose.yml` local seta `true` por padrão, já que sobe o `otel-collector` junto |
 | `OTEL_SERVICE_NAME` | Todos os serviços | Nome do serviço no atributo de resource `service.name` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Todos os serviços | Endpoint do Collector (padrão `http://otel-collector:4317`) |
 | `DEPLOYMENT_ENVIRONMENT` | Todos os serviços | Popula `deployment.environment` (dev/staging/production) |

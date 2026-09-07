@@ -10,6 +10,7 @@ import { activeViewForPath } from './navigation'
 import { AppSidebar } from './AppSidebar'
 import { MobileNav } from './MobileNav'
 import { AppHeader } from './AppHeader'
+import { OverviewMenu } from './OverviewMenu'
 
 export function AppLayout() {
     const { user, logout, hasPermission, currentTenant } = useAuth()
@@ -17,6 +18,14 @@ export function AppLayout() {
     const location = useLocation()
     const navigate = useNavigate()
     const activeView = activeViewForPath(location.pathname)
+    // A Visão Geral de Processos ("/") e a tela de Estatísticas ("/stats")
+    // rodam sem a sidebar — só um cabeçalho enxuto — pra diminuir a carga
+    // visual das telas mais usadas.
+    const isOverview = location.pathname === '/' || location.pathname === '/stats'
+    // A Visão Geral ("/") é travada na altura da viewport: cabeçalho/filtros e
+    // paginação fixos, só a tabela rola. `/stats` continua rolando a página
+    // inteira (é uma pilha de cards, não uma tabela).
+    const isHome = location.pathname === '/'
     const [selectedDocumentId, setSelectedDocumentId] = useState('')
     const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
     const [loading, setLoading] = useState(false)
@@ -81,6 +90,13 @@ export function AppLayout() {
         navigate(navPath('validation'))
     }
 
+    // Seleciona o documento sem navegar — usado pelo drawer de Validação da
+    // Visão Geral, que reaproveita o mesmo carregamento de `selectedDocument`
+    // feito pelos `useEffect` acima.
+    const selectDocument = (documentId: string) => {
+        setSelectedDocumentId(documentId)
+    }
+
     const handleReprocessDocument = async (id: string) => {
         try {
             await reprocessDocument(id)
@@ -100,41 +116,51 @@ export function AppLayout() {
         }
     }
 
+    const outletContext = {
+        selectedDocumentId,
+        selectedDocument,
+        refreshSignal,
+        refreshData,
+        navigateToValidation,
+        selectDocument,
+        handleReprocessDocument,
+        handleDeleteDocument,
+        onSelectRejected: setRejectedModal,
+    } satisfies AppOutletContext
+
     return (
         <div className="min-h-screen bg-zinc-50 text-zinc-950">
-            <div className="flex min-h-screen">
-                <AppSidebar
-                    userName={user?.name}
-                    currentTenant={currentTenant}
-                    activeView={activeView}
-                    onLogout={logout}
-                />
-
-                <main className="min-w-0 flex-1">
-                    <AppHeader activeView={activeView} onRefresh={refreshData} />
-                    <MobileNav activeView={activeView} />
-
-                    <section className="px-4 py-5 md:px-6">
+            {isOverview ? (
+                <main className={isHome ? 'flex h-screen flex-col overflow-hidden' : 'min-h-screen'}>
+                    <OverviewMenu userName={user?.name} currentTenant={currentTenant} onLogout={logout} />
+                    <section className={`px-4 py-14 md:px-6 md:py-16 ${isHome ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
                         {error ? <Alert tone="error">{error}</Alert> : null}
                         {loading ? <Alert>Carregando dados...</Alert> : null}
-
-                        <Outlet
-                            context={
-                                {
-                                    selectedDocumentId,
-                                    selectedDocument,
-                                    refreshSignal,
-                                    refreshData,
-                                    navigateToValidation,
-                                    handleReprocessDocument,
-                                    handleDeleteDocument,
-                                    onSelectRejected: setRejectedModal,
-                                } satisfies AppOutletContext
-                            }
-                        />
+                        <Outlet context={outletContext} />
                     </section>
                 </main>
-            </div>
+            ) : (
+                <div className="flex min-h-screen">
+                    <AppSidebar
+                        userName={user?.name}
+                        currentTenant={currentTenant}
+                        activeView={activeView}
+                        onLogout={logout}
+                    />
+
+                    <main className="min-w-0 flex-1">
+                        <AppHeader activeView={activeView} onRefresh={refreshData} />
+                        <MobileNav activeView={activeView} />
+
+                        <section className="px-4 py-5 md:px-6">
+                            {error ? <Alert tone="error">{error}</Alert> : null}
+                            {loading ? <Alert>Carregando dados...</Alert> : null}
+
+                            <Outlet context={outletContext} />
+                        </section>
+                    </main>
+                </div>
+            )}
             {rejectedModal ? (
                 <RejectedDocumentModal
                     doc={rejectedModal}

@@ -271,6 +271,7 @@ export type ActiveView =
     | 'approved'
     | 'rejected'
     | 'operations'
+    | 'processes'
     | 'settings'
     | 'users'
     | 'roles'
@@ -290,6 +291,8 @@ export interface AppOutletContext {
     refreshSignal: number
     refreshData: (silent?: boolean) => Promise<void>
     navigateToValidation: (documentId: string) => void
+    /** Seleciona o documento sem trocar de rota (drawer de Validação da Visão Geral). */
+    selectDocument: (documentId: string) => void
     handleReprocessDocument: (id: string) => Promise<void>
     handleDeleteDocument: (id: string) => Promise<void>
     onSelectRejected: (doc: Document | null) => void

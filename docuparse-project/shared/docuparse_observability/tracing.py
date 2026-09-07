@@ -9,15 +9,10 @@ from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanProcessor
 from opentelemetry.trace import Link
 
+from docuparse_observability.redaction import is_denied
+
 _DEFAULT_OTLP_ENDPOINT = "http://otel-collector:4317"
 _EXPORT_TIMEOUT_SECONDS = 2
-
-# Denylist explícita (data-model.md): removida mesmo se alguma biblioteca de
-# instrumentação tentar capturá-la. A allowlist correspondente não é aplicada
-# aqui — instrumentações automáticas já não emitem atributos fora dela por
-# padrão; este processor é a rede de segurança contra o que sobrar/escapar.
-_DENYLIST_ATTRIBUTES = {"http.request.body", "http.response.body", "authorization"}
-_DENYLIST_SUFFIXES = ("_token", "_secret", "_password")
 
 # `opentelemetry-instrumentation-{requests,httpx}` só emitem o atributo
 # `net.peer.name` (contracts/tracing-conventions.md item 4, data-model.md) em
@@ -30,6 +25,19 @@ _NET_PEER_NAME_KEY = "net.peer.name"
 _NETWORK_PEER_ADDRESS_KEY = "network.peer.address"
 
 _configured_services: set[str] = set()
+
+_TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
+
+def is_telemetry_enabled() -> bool:
+    """Liga/desliga OpenTelemetry via `USE_TELEMETRY` (default: desligado).
+
+    Permite rodar sem um Collector disponível (ex.: servidores onde o
+    Collector ainda não foi instalado) sem alterar código de cada serviço —
+    `configure_tracing()` e as instrumentações de biblioteca (`XInstrumentor`)
+    checam esta flag antes de fazer qualquer setup.
+    """
+    return os.environ.get("USE_TELEMETRY", "false").strip().lower() in _TRUTHY_VALUES
 
 
 class RedactingSpanProcessor(SpanProcessor):
@@ -44,12 +52,15 @@ class RedactingSpanProcessor(SpanProcessor):
             return
         normalized = dict(attributes)
         changed = False
-        if _NET_PEER_NAME_KEY not in normalized and _NETWORK_PEER_ADDRESS_KEY in normalized:
+        if (
+            _NET_PEER_NAME_KEY not in normalized
+            and _NETWORK_PEER_ADDRESS_KEY in normalized
+        ):
             normalized[_NET_PEER_NAME_KEY] = normalized[_NETWORK_PEER_ADDRESS_KEY]
             changed = True
-        if any(_is_denied(key) for key in normalized):
+        if any(is_denied(key) for key in normalized):
             normalized = {
-                key: value for key, value in normalized.items() if not _is_denied(key)
+                key: value for key, value in normalized.items() if not is_denied(key)
             }
             changed = True
         if not changed:
@@ -65,11 +76,6 @@ class RedactingSpanProcessor(SpanProcessor):
         return True
 
 
-def _is_denied(key: str) -> bool:
-    lowered = key.lower()
-    return lowered in _DENYLIST_ATTRIBUTES or lowered.endswith(_DENYLIST_SUFFIXES)
-
-
 def configure_tracing(service_name: str) -> None:
     """Bootstrap único do TracerProvider para o processo atual.
 
@@ -78,6 +84,9 @@ def configure_tracing(service_name: str) -> None:
     instanciar seu próprio TracerProvider/exporter diretamente (contrato 1).
     """
     if service_name in _configured_services:
+        return
+
+    if not is_telemetry_enabled():
         return
 
     # As instrumentações `requests`/`httpx` só marcam `error.type` no span de

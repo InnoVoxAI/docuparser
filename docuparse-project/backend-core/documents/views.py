@@ -14,6 +14,8 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 from docuparse_events import event_bus_from_env
+from docuparse_orchestrator.context import orchestration_run
+from docuparse_orchestrator.decorators import task
 from docuparse_storage import get_storage
 from rest_framework import status
 from rest_framework.decorators import (
@@ -23,7 +25,7 @@ from rest_framework.decorators import (
 )
 from rest_framework.response import Response
 from users.authentication import DocuparseAuthentication
-from users.permissions import require_permission
+from users.permissions import require_any_permission, require_permission
 
 from .models import (
     SETTINGS_SINGLETON_ID,
@@ -45,6 +47,7 @@ from .serializers import (
     IntegrationSettingsSerializer,
     LayoutConfigSerializer,
     OCRSettingsSerializer,
+    ProcessSummarySerializer,
     SchemaConfigSerializer,
     ValidationDecisionSerializer,
 )
@@ -55,10 +58,27 @@ from .services.dlq_inspector import (
     requeue_dlq_entry,
 )
 from .services.erp_publisher import publish_erp_integration_requested
+from .services.process_dashboard import (
+    ORDERING_FIELDS,
+    PROCESS_FILTERS,
+    STAGE_KEYS,
+    STATUS_GROUP_KEYS,
+    RetryAlreadyRunningError,
+    apply_ordering,
+    build_pipeline_detail,
+    build_process_stats,
+    current_stage_by_document,
+    document_ids_matching_filter,
+    document_ids_matching_stage,
+    document_ids_matching_status_group,
+    document_ids_with_error,
+    last_status_change_by_document,
+    retry_step,
+)
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.langextract_client import LangExtractClient
 from .services.ocr_client import OCRClient
-from .services.ocr_processor import process_document_ocr
+from .services.ocr_processor import auto_extract_after_ocr, process_document_ocr
 from .services.processing_queue import (
     submit_document_processing,
 )
@@ -350,6 +370,16 @@ def document_file_view(request, document_id):
     )
 
 
+def _auto_extract_ignoring_errors(document) -> None:
+    """auto_extract_after_ocr now raises on failure (needed by extraction_task's
+    retry/error tracking in the automatic pipeline) — manual OCR endpoints keep
+    the previous behavior of never failing the OCR response over extraction."""
+    try:
+        auto_extract_after_ocr(document)
+    except Exception:
+        pass
+
+
 @api_view(["POST"])
 def document_process_ocr_view(request, document_id):
     auth_error = _internal_token_error(request)
@@ -366,6 +396,7 @@ def document_process_ocr_view(request, document_id):
         return Response(
             {"detail": f"Falha no OCR: {exc}"}, status=status.HTTP_502_BAD_GATEWAY
         )
+    _auto_extract_ignoring_errors(document)
     return Response(DocumentDetailSerializer(document).data)
 
 
@@ -389,7 +420,71 @@ def document_reprocess_ocr_view(request, document_id):
             {"detail": f"Falha no reprocessamento OCR: {exc}"},
             status=status.HTTP_502_BAD_GATEWAY,
         )
+    _auto_extract_ignoring_errors(document)
     return Response(DocumentDetailSerializer(document).data)
+
+
+def _validation_decision_body(
+    document_id, decision, notes, corrected_fields, user_id
+) -> dict:
+    document = Document.objects.select_related("extraction_result").get(
+        id=document_id
+    )
+    user = get_user_model().objects.get(id=user_id)
+
+    validation = ValidationDecision.objects.create(
+        document=document,
+        decided_by=user,
+        decision=decision,
+        corrected_fields=corrected_fields,
+        notes=notes,
+    )
+
+    if corrected_fields and hasattr(document, "extraction_result"):
+        document.extraction_result.requires_human_validation = False
+        document.extraction_result.save(
+            update_fields=["requires_human_validation", "updated_at"]
+        )
+        active = field_versioning.get_active_version(document)
+        try:
+            field_versioning.save_manual_edit(
+                document,
+                incoming_fields=[
+                    {"name": name, "value": value}
+                    for name, value in corrected_fields.items()
+                ],
+                base_version_number=active.version_number if active else None,
+                created_by=user,
+            )
+        except (field_versioning.NoChangesError, field_versioning.EmptyFieldListError):
+            pass  # sem alteração efetiva ou lista vazia: não cria versão
+
+    if decision == ValidationDecision.Decision.APPROVED:
+        document.transition_to(Document.Status.APPROVED)
+        publish_erp_integration_requested(document)
+    elif decision == ValidationDecision.Decision.REJECTED:
+        document.transition_to(Document.Status.REJECTED)
+    else:
+        document.transition_to(Document.Status.VALIDATION_PENDING)
+
+    return {
+        "validation_decision_id": str(validation.id),
+        "decision": decision,
+        # Motivo da rejeição (obrigatório quando decision=REJECTED, validado
+        # mais acima em document_validation_view) — precisa aparecer no
+        # detalhe do step "Validação" no dashboard, não só na tela de
+        # validação em si.
+        "notes": notes,
+        "corrected_fields": corrected_fields,
+    }
+
+
+# max_attempts=1: gravar ValidationDecision/ExtractionFieldVersion não é
+# idempotente (.create()) — repetir a tentativa duplicaria registros de
+# auditoria em vez de só tentar de novo uma chamada de rede transitória.
+validation_decision_task = task("validation_decision", max_attempts=1)(
+    _validation_decision_body
+)
 
 
 @api_view(["POST"])
@@ -434,42 +529,27 @@ def document_validation_view(request, document_id):
         if user is None:
             user = User.objects.create_user(username="operador", password="operador")
 
-    validation = ValidationDecision.objects.create(
-        document=document,
-        decided_by=user,
-        decision=decision,
-        corrected_fields=request.data.get("corrected_fields") or {},
-        notes=notes,
-    )
-
     corrected_fields = request.data.get("corrected_fields") or {}
-    if corrected_fields and hasattr(document, "extraction_result"):
-        document.extraction_result.requires_human_validation = False
-        document.extraction_result.save(
-            update_fields=["requires_human_validation", "updated_at"]
+
+    # orchestration_run marca o run como FAILED sozinho se a task abaixo
+    # terminar em erro (ver context.py) — não precisa de raise manual; só
+    # checar result.status depois do "with" pra decidir a resposta HTTP.
+    with orchestration_run(
+        "document_validation", document_id=str(document_id), triggered_by=user.username
+    ):
+        result = validation_decision_task(
+            document_id, decision, notes, corrected_fields, user.id
         )
-        active = field_versioning.get_active_version(document)
-        try:
-            field_versioning.save_manual_edit(
-                document,
-                incoming_fields=[
-                    {"name": name, "value": value}
-                    for name, value in corrected_fields.items()
-                ],
-                base_version_number=active.version_number if active else None,
-                created_by=user,
-            )
-        except (field_versioning.NoChangesError, field_versioning.EmptyFieldListError):
-            pass  # sem alteração efetiva ou lista vazia: não cria versão
 
-    if decision == ValidationDecision.Decision.APPROVED:
-        document.transition_to(Document.Status.APPROVED)
-        publish_erp_integration_requested(document)
-    elif decision == ValidationDecision.Decision.REJECTED:
-        document.transition_to(Document.Status.REJECTED)
-    else:
-        document.transition_to(Document.Status.VALIDATION_PENDING)
+    if result.status == "error":
+        return Response(
+            {"detail": f"Falha ao registrar decisão: {result.error.message}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
 
+    validation = ValidationDecision.objects.get(
+        id=result.payload["validation_decision_id"]
+    )
     return Response(
         ValidationDecisionSerializer(validation).data, status=status.HTTP_201_CREATED
     )
@@ -853,6 +933,125 @@ def email_settings_view(request):
         ]
     )
     return Response(EmailSettingsSerializer(config).data)
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_any_permission("inbox.view", "operations.access")])
+def processes_dashboard_view(request):
+    queryset = Document.objects.all()
+    queryset = _apply_status_filter(queryset, request.query_params.get("status"))
+    queryset = _apply_search(queryset, request.query_params.get("search"))
+
+    # "fail"/"pending"/"completed", "stage" e "status_group" são derivados de
+    # TaskExecution / status "de negócio", não de um campo direto de Document —
+    # não dá pra aplicar como .filter() simples no queryset. Resolve os IDs que
+    # batem ANTES de paginar (senão count/total_pages ficariam errados),
+    # reaproveitando a mesma agregação em Python já usada pra has_error —
+    # aceitável na escala de uma POC, não pensado pra milhões de documentos.
+    filter_value = request.query_params.get("filter")
+    stage_value = request.query_params.get("stage")
+    # `status_group` aceita CSV (ex.: "erro,aguardando_validacao") — os chips de
+    # filtro da Visão Geral de Processos são multi-seleção.
+    status_group_value = request.query_params.get("status_group")
+    status_groups = [g.strip() for g in (status_group_value or "").split(",") if g.strip()]
+    if filter_value or stage_value or status_groups:
+        candidate_ids = list(queryset.values_list("id", flat=True))
+        if filter_value:
+            if filter_value not in PROCESS_FILTERS:
+                return Response(
+                    {"detail": f"filter inválido: {filter_value!r}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            matching = document_ids_matching_filter(candidate_ids, filter_value)
+            candidate_ids = [i for i in candidate_ids if i in matching]
+        if stage_value:
+            if stage_value not in STAGE_KEYS:
+                return Response(
+                    {"detail": f"stage inválido: {stage_value!r}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            matching = document_ids_matching_stage(candidate_ids, stage_value)
+            candidate_ids = [i for i in candidate_ids if i in matching]
+        if status_groups:
+            invalid = set(status_groups) - STATUS_GROUP_KEYS
+            if invalid:
+                return Response(
+                    {"detail": f"status_group inválido: {sorted(invalid)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            matching = document_ids_matching_status_group(candidate_ids, status_groups)
+            candidate_ids = [i for i in candidate_ids if i in matching]
+        queryset = queryset.filter(id__in=candidate_ids)
+
+    # `?ordering=<campo>` (prefixo `-` = descendente) — colunas clicáveis da
+    # tabela de Processos. Aplicado por último: precisa ser o ORDER BY que
+    # sobrevive até o slice de paginação abaixo.
+    ordering_param = request.query_params.get("ordering")
+    try:
+        queryset = apply_ordering(queryset, ordering_param)
+    except ValueError:
+        return Response(
+            {
+                "detail": f"ordering inválido: {ordering_param!r} "
+                f"(válidos: {sorted(ORDERING_FIELDS)}, com prefixo '-' opcional)"
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    page = paginate_queryset(queryset, request)
+    document_ids = [document.id for document in page.items]
+    error_ids = document_ids_with_error(document_ids)
+    stage_by_document = current_stage_by_document(document_ids)
+    last_status_change = last_status_change_by_document(page.items)
+    serialized = ProcessSummarySerializer(
+        page.items,
+        many=True,
+        context={
+            "document_ids_with_error": error_ids,
+            "stage_by_document": stage_by_document,
+            "last_status_change_by_document": last_status_change,
+        },
+    ).data
+    return Response(page.envelope(serialized))
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_any_permission("inbox.view", "operations.access")])
+def process_stats_view(request):
+    return Response(build_process_stats())
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_any_permission("inbox.view", "operations.access")])
+def document_pipeline_view(request, document_id):
+    document = get_object_or_404(Document, id=document_id)
+    return Response(build_pipeline_detail(document))
+
+
+@api_view(["POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("operations.access")])
+def document_retry_step_view(request, document_id, step):
+    get_object_or_404(Document, id=document_id)
+    try:
+        result = retry_step(document_id, step, triggered_by=request.user.username)
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except RetryAlreadyRunningError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+    return Response(
+        {
+            "status": result.status,
+            "error": (
+                {"type": result.error.type, "message": result.error.message}
+                if result.error
+                else None
+            ),
+        }
+    )
 
 
 @api_view(["GET"])

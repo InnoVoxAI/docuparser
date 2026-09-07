@@ -22,8 +22,8 @@ export function renderWithQueryClient(ui: ReactElement) {
 // produção liga-se ao `window.location`/`history` reais, que persistem entre
 // testes no mesmo jsdom — sem isso, navegação feita por um teste anterior
 // vazaria como rota inicial do próximo.
-export function renderApp() {
-    window.history.replaceState(null, '', '/')
+export function renderApp(initialPath = '/') {
+    window.history.replaceState(null, '', initialPath)
     return render(
         <QueryClientProvider client={queryClient}>
             <AuthProvider>

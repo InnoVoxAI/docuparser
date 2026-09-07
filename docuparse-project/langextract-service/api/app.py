@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from application.extraction_event_worker import start_worker_thread_from_env
-from docuparse_observability.tracing import configure_tracing
+from docuparse_observability.tracing import configure_tracing, is_telemetry_enabled
 from domain.extractor import extract_fields
 from domain.llm_extractor import extract_with_llm
 from fastapi import FastAPI, Request
@@ -18,8 +18,9 @@ from api.schemas import ExtractRequest, ExtractResponse
 logger = logging.getLogger(__name__)
 
 configure_tracing("langextract-service")
-HTTPXClientInstrumentor().instrument()
-RedisInstrumentor().instrument()
+if is_telemetry_enabled():
+    HTTPXClientInstrumentor().instrument()
+    RedisInstrumentor().instrument()
 
 
 @asynccontextmanager
@@ -39,7 +40,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
-FastAPIInstrumentor.instrument_app(app)
+if is_telemetry_enabled():
+    FastAPIInstrumentor.instrument_app(app)
 
 
 @app.exception_handler(Exception)

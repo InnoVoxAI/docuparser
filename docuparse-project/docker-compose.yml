@@ -152,6 +152,7 @@ services:
     env_file:
       - .env
     environment:
+      USE_TELEMETRY: ${USE_TELEMETRY:-true}
       OTEL_SERVICE_NAME: backend-core
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
@@ -208,7 +209,7 @@ services:
     build:
       context: .
       dockerfile: backend-core/Dockerfile
-    command: sh -c "python manage.py migrate_schemas --shared && python manage.py consume_events"
+    command: sh -c "uv run python manage.py migrate_schemas --shared && uv run python manage.py consume_events"
     profiles:
       - async-workers
     volumes:
@@ -266,6 +267,7 @@ services:
     ports:
       - "8070:8070"
     environment:
+      USE_TELEMETRY: ${USE_TELEMETRY:-true}
       OTEL_SERVICE_NAME: backend-com
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
@@ -314,6 +316,7 @@ services:
     env_file:
       - .env
     environment:
+      USE_TELEMETRY: ${USE_TELEMETRY:-true}
       OTEL_SERVICE_NAME: backend-ocr
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
@@ -396,6 +399,7 @@ services:
     ports:
       - "8090:8090"
     environment:
+      USE_TELEMETRY: ${USE_TELEMETRY:-true}
       OTEL_SERVICE_NAME: layout-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
@@ -473,6 +477,7 @@ services:
     ports:
       - "8091:8091"
     environment:
+      USE_TELEMETRY: ${USE_TELEMETRY:-true}
       OTEL_SERVICE_NAME: langextract-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
@@ -658,6 +663,7 @@ services:
       - ./contracts:/contracts:ro
       - ./shared:/shared:ro
     environment:
+      USE_TELEMETRY: ${USE_TELEMETRY:-true}
       OTEL_SERVICE_NAME: camunda-workers
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}

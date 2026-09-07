@@ -124,6 +124,51 @@ export const handlers = [
         HttpResponse.json({ results: [], count: 0, active_version_number: 1 }),
     ),
 
+    // --- Visão Geral de Processos ---
+    http.get(`${OCR}/processes`, ({ request }) => {
+        const params = new URL(request.url).searchParams
+        const page = Math.max(parseInt(params.get('page') ?? '1', 10) || 1, 1)
+        const pageSize = Math.min(Math.max(parseInt(params.get('page_size') ?? '25', 10) || 25, 1), 25)
+        return HttpResponse.json({ results: [], count: 0, page, page_size: pageSize, total_pages: 0 })
+    }),
+    http.get(`${OCR}/processes/stats`, () =>
+        HttpResponse.json({
+            total: 0,
+            by_status: { em_fila: 0, aguardando_validacao: 0, aguardando_classificacao: 0, erro: 0 },
+            by_stage: {},
+            errors: { documents_with_error: 0, by_step: {}, by_type: {} },
+            validation: { approved: 0, rejected: 0 },
+            volume: { last_24h: 0, last_7d: 0, last_30d: 0 },
+            avg_duration_ms: {},
+            manual_retries: 0,
+        }),
+    ),
+    http.get(`${OCR}/documents/:id/pipeline`, ({ params }) =>
+        HttpResponse.json({
+            document_id: params.id,
+            original_filename: 'doc.pdf',
+            steps: [
+                { key: 'register', label: 'Registro', status: 'OK', retryable: false, executions: [] },
+                { key: 'ocr', label: 'OCR', status: 'PENDING', retryable: true, executions: [] },
+                { key: 'extraction', label: 'Extração', status: 'PENDING', retryable: true, executions: [] },
+                {
+                    key: 'validation_decision',
+                    label: 'Validação',
+                    status: 'PENDING',
+                    retryable: false,
+                    executions: [],
+                },
+                {
+                    key: 'classification',
+                    label: 'Classificação',
+                    status: 'PENDING',
+                    retryable: false,
+                    executions: [],
+                },
+            ],
+        }),
+    ),
+
     // --- Validação / classificação ---
     http.post(`${OCR}/classify-text`, () => HttpResponse.json({ schema_id: null })),
     http.post(`${OCR}/documents/:id/validate`, () =>

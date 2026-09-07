@@ -33,14 +33,16 @@ describe('Telas / navegação (smoke)', () => {
     })
 
     it('renderiza todos os itens de navegação para um usuário com todas as permissões', async () => {
-        renderApp()
+        // A sidebar (com todos os NAV_ITEMS) só aparece nas rotas com layout
+        // completo — as telas de processos (`/`, `/stats`) rodam sem ela.
+        renderApp('/dashboard')
         for (const label of [
             'Upload',
             'Inbox',
             'Dashboard',
-            'Validacao',
-            'Operacoes',
-            'Configuracoes',
+            'Validação',
+            'Operações',
+            'Configurações',
             'Usuários',
             'Roles',
         ]) {
@@ -52,10 +54,10 @@ describe('Telas / navegação (smoke)', () => {
     // muda a URL de fato (React Router), não só um estado interno de view.
     it('navega por rotas reais ao clicar nos itens de menu', async () => {
         const user = userEvent.setup()
-        renderApp()
-        await user.click((await screen.findAllByText('Dashboard'))[0])
-        expect(window.location.pathname).toBe('/dashboard')
+        renderApp('/dashboard')
         await user.click((await screen.findAllByText('Inbox'))[0])
         expect(window.location.pathname).toBe('/inbox')
+        await user.click((await screen.findAllByText('Dashboard'))[0])
+        expect(window.location.pathname).toBe('/dashboard')
     })
 })

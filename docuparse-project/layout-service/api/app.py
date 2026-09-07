@@ -5,7 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from application.layout_event_worker import start_worker_thread_from_env
-from docuparse_observability.tracing import configure_tracing
+from docuparse_observability.tracing import configure_tracing, is_telemetry_enabled
 from docuparse_storage import get_storage
 from domain.classifier import classify_layout
 from fastapi import FastAPI, Request
@@ -18,7 +18,8 @@ from api.schemas import ClassifyLayoutRequest, ClassifyLayoutResponse
 logger = logging.getLogger(__name__)
 
 configure_tracing("layout-service")
-RedisInstrumentor().instrument()
+if is_telemetry_enabled():
+    RedisInstrumentor().instrument()
 
 
 def _resolve_raw_text(request: ClassifyLayoutRequest) -> str:
@@ -52,7 +53,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
-FastAPIInstrumentor.instrument_app(app)
+if is_telemetry_enabled():
+    FastAPIInstrumentor.instrument_app(app)
 
 
 @app.exception_handler(Exception)

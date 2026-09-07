@@ -2,7 +2,7 @@ import asyncio
 
 import structlog
 from config import settings
-from docuparse_observability.tracing import configure_tracing
+from docuparse_observability.tracing import configure_tracing, is_telemetry_enabled
 from opentelemetry.instrumentation.grpc import GrpcInstrumentorClient
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from pyzeebe import ZeebeWorker, create_insecure_channel
@@ -14,8 +14,9 @@ from workers.ocr import process_ocr, reprocess_ocr
 from workers.validation import validate_document
 
 configure_tracing("camunda-workers")
-HTTPXClientInstrumentor().instrument()
-GrpcInstrumentorClient().instrument()
+if is_telemetry_enabled():
+    HTTPXClientInstrumentor().instrument()
+    GrpcInstrumentorClient().instrument()
 
 log = structlog.get_logger()
 

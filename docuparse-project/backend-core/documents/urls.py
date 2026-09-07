@@ -22,15 +22,12 @@ from .views import (
     email_settings_view,
     health_view,
     integration_settings_view,
-    layout_configs_view,
     list_engines_view,
     ocr_settings_view,
     process_document_view,
     process_stats_view,
     processes_dashboard_view,
     ready_view,
-    schema_config_detail_view,
-    schema_configs_view,
 )
 
 urlpatterns = [
@@ -83,13 +80,7 @@ urlpatterns = [
         document_field_versions_view,
         name="document-field-versions",
     ),
-    path("schema-configs", schema_configs_view, name="schema-configs"),
-    path(
-        "schema-configs/<uuid:schema_id>",
-        schema_config_detail_view,
-        name="schema-config-detail",
-    ),
-    path("layout-configs", layout_configs_view, name="layout-configs"),
+    # schema-configs / layout-configs → agora servidos por catalog.urls (spec 018)
     path(
         "settings/integrations", integration_settings_view, name="integration-settings"
     ),

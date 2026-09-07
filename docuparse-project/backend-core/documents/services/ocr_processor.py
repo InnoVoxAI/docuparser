@@ -6,6 +6,7 @@ import threading
 import time
 from io import BytesIO
 
+from catalog.models import LayoutConfig, SchemaConfig
 from django.conf import settings
 from django.utils import timezone
 from docuparse_observability.tracing import capture_current_span_link
@@ -13,7 +14,7 @@ from docuparse_orchestrator.decorators import task
 from docuparse_storage import document_ocr_raw_text_key, get_storage
 from opentelemetry import trace
 
-from documents.models import Document, ExtractionResult, LayoutConfig, SchemaConfig
+from documents.models import Document, ExtractionResult
 from documents.services.langextract_client import LangExtractClient
 from documents.services.ocr_client import OCRClient
 

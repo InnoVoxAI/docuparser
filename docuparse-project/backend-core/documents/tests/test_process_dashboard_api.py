@@ -4,21 +4,22 @@ import os
 import tempfile
 from unittest.mock import patch
 
+from catalog.models import LayoutConfig, SchemaConfig
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
 from docuparse_orchestrator.context import orchestration_run
 from docuparse_storage import LocalStorage, document_original_key
+from orchestrator.models import OrchestrationRun, TaskExecution
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from tenants.models import Tenant, UserProfile
 from users.models import Permission, Role
 
-from documents.models import Document, LayoutConfig, SchemaConfig, ValidationDecision
+from documents.models import Document, ValidationDecision
 from documents.services.processing_queue import _run_document_processing
 from documents.views import validation_decision_task
-from orchestrator.models import OrchestrationRun, TaskExecution
 
 
 def _jwt_for(user, tenant) -> str:
@@ -84,9 +85,7 @@ class ProcessDashboardAPITests(TestCase):
             document_error = self._create_document_with_file(storage_dir, "error.pdf")
 
             with (
-                patch(
-                    "documents.services.ocr_processor.OCRClient"
-                ) as ocr_client_class,
+                patch("documents.services.ocr_processor.OCRClient") as ocr_client_class,
                 patch(
                     "documents.services.ocr_processor.LangExtractClient"
                 ) as langextract_class,
@@ -133,7 +132,9 @@ class ProcessDashboardAPITests(TestCase):
             assert by_id[str(self.document_no_history.id)]["has_error"] is False
             assert by_id[str(document_error.id)]["current_stage"] == "ocr"
             assert by_id[str(document_ok.id)]["current_stage"] == "validation_decision"
-            assert by_id[str(self.document_no_history.id)]["current_stage"] == "register"
+            assert (
+                by_id[str(self.document_no_history.id)]["current_stage"] == "register"
+            )
 
             # --- detalhe: sem histórico ---
             no_history_response = self.client.get(
@@ -201,7 +202,10 @@ class ProcessDashboardAPITests(TestCase):
             assert len(ocr_step_after_retry["executions"]) == 2
             assert ocr_step_after_retry["status"] == "OK"
             # newest execution first: the manual retry, attributed to the caller
-            assert ocr_step_after_retry["executions"][0]["triggered_by"] == self.user.username
+            assert (
+                ocr_step_after_retry["executions"][0]["triggered_by"]
+                == self.user.username
+            )
             assert ocr_step_after_retry["executions"][0]["run_name"] == "retry_ocr"
             # the original automatic attempt stays untouched
             assert ocr_step_after_retry["executions"][1]["triggered_by"] is None
@@ -251,9 +255,11 @@ class ProcessDashboardAPITests(TestCase):
                 self.user.id,
             )
 
-        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
-            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
-        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
             document_failed = self._create_document_with_file(storage_dir, "failed.pdf")
             with patch(
                 "documents.services.ocr_processor.OCRClient"
@@ -281,12 +287,18 @@ class ProcessDashboardAPITests(TestCase):
             assert ids_for(stage="validation_decision") == {str(document_approved.id)}
             assert ids_for(stage="ocr") == {str(document_failed.id)}
 
-            assert self.client.get(
-                reverse("processes-dashboard"), {"filter": "bogus"}
-            ).status_code == 400
-            assert self.client.get(
-                reverse("processes-dashboard"), {"stage": "bogus"}
-            ).status_code == 400
+            assert (
+                self.client.get(
+                    reverse("processes-dashboard"), {"filter": "bogus"}
+                ).status_code
+                == 400
+            )
+            assert (
+                self.client.get(
+                    reverse("processes-dashboard"), {"stage": "bogus"}
+                ).status_code
+                == 400
+            )
 
     def test_business_status_label_and_status_group_filter(self) -> None:
         """A coluna Status da Visão Geral mostra um dos 4 rótulos "de negócio"
@@ -308,9 +320,11 @@ class ProcessDashboardAPITests(TestCase):
             status=Document.Status.APPROVED,
         )
 
-        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
-            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
-        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
             document_failed = self._create_document_with_file(storage_dir, "failed.pdf")
             with patch(
                 "documents.services.ocr_processor.OCRClient"
@@ -322,7 +336,9 @@ class ProcessDashboardAPITests(TestCase):
 
             response = self.client.get(reverse("processes-dashboard"))
             assert response.status_code == 200
-            labels = {row["id"]: row["status_label"] for row in response.json()["results"]}
+            labels = {
+                row["id"]: row["status_label"] for row in response.json()["results"]
+            }
             assert labels[str(self.document_no_history.id)] == "Em Fila"
             assert labels[str(document_validating.id)] == "Aguardando validação"
             assert labels[str(document_classifying.id)] == "Aguardando classificação"
@@ -343,9 +359,12 @@ class ProcessDashboardAPITests(TestCase):
             assert ids_for(
                 status_group="aguardando_validacao,aguardando_classificacao"
             ) == {str(document_validating.id), str(document_classifying.id)}
-            assert self.client.get(
-                reverse("processes-dashboard"), {"status_group": "bogus"}
-            ).status_code == 400
+            assert (
+                self.client.get(
+                    reverse("processes-dashboard"), {"status_group": "bogus"}
+                ).status_code
+                == 400
+            )
 
             # A caixa "Classificação" nunca aparece como concluída: a
             # classificação corre fora da plataforma. Mesmo num documento já
@@ -399,7 +418,7 @@ class ProcessDashboardAPITests(TestCase):
         )
 
     def test_last_status_change_at_reflects_most_recent_transition(self) -> None:
-        """"Última atualização" (coluna nova da tabela de Processos) precisa
+        """ "Última atualização" (coluna nova da tabela de Processos) precisa
         acompanhar a transição de fase mais recente detectada pelo backend —
         não um timestamp estático de quando o documento foi criado."""
 
@@ -422,9 +441,7 @@ class ProcessDashboardAPITests(TestCase):
         ):
             document = self._create_document_with_file(storage_dir, "transitions.pdf")
             with (
-                patch(
-                    "documents.services.ocr_processor.OCRClient"
-                ) as ocr_client_class,
+                patch("documents.services.ocr_processor.OCRClient") as ocr_client_class,
                 patch(
                     "documents.services.ocr_processor.LangExtractClient"
                 ) as langextract_class,
@@ -585,17 +602,17 @@ class ProcessDashboardAPITests(TestCase):
             layout="boleto_padrao", document_type="", schema_config=schema
         )
 
-        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
-            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
-        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
             document = self._create_document_with_file(storage_dir, "output.pdf")
             document.layout = "boleto_padrao"
             document.save(update_fields=["layout"])
 
             with (
-                patch(
-                    "documents.services.ocr_processor.OCRClient"
-                ) as ocr_client_class,
+                patch("documents.services.ocr_processor.OCRClient") as ocr_client_class,
                 patch(
                     "documents.services.ocr_processor.LangExtractClient"
                 ) as langextract_class,
@@ -682,9 +699,7 @@ class ProcessDashboardAPITests(TestCase):
         )
 
         response = self.client.post(
-            reverse(
-                "document-retry-step", args=[self.document_no_history.id, "ocr"]
-            )
+            reverse("document-retry-step", args=[self.document_no_history.id, "ocr"])
         )
 
         assert response.status_code == 409
@@ -700,9 +715,7 @@ class ProcessDashboardAPITests(TestCase):
             username="no-access", password="test"
         )
         role = Role.objects.create(name="SemAcesso")
-        UserProfile.objects.create(
-            user=unprivileged, tenant=self.tenant, role_ref=role
-        )
+        UserProfile.objects.create(user=unprivileged, tenant=self.tenant, role_ref=role)
         client = APIClient()
         client.credentials(
             HTTP_AUTHORIZATION=f"Bearer {_jwt_for(unprivileged, self.tenant)}"
@@ -747,9 +760,11 @@ class ProcessDashboardAPITests(TestCase):
                 self.user.id,
             )
 
-        with tempfile.TemporaryDirectory() as storage_dir, patch.dict(
-            os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}
-        ), self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir):
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
             document_failed = self._create_document_with_file(storage_dir, "failed.pdf")
             with patch(
                 "documents.services.ocr_processor.OCRClient"

@@ -1,5 +1,4 @@
 import { readError } from '../../../shared/utils'
-import { useAuth } from '../../auth'
 import type { LayoutConfig, SchemaConfig, SchemaExample, SchemaField } from '../../../types'
 import { SETTINGS_TABS, type LayoutForm, type ReferenceReview, type SchemaForm } from '../types'
 import { loadExistingSchemaAction } from './loadExistingSchemaAction'
@@ -37,7 +36,6 @@ interface Params {
  * #7 do handoff de T036-T040).
  */
 export function useSchemaFormActions(params: Params) {
-    const { currentTenant } = useAuth()
     const {
         schemas,
         layouts,
@@ -81,7 +79,6 @@ export function useSchemaFormActions(params: Params) {
         try {
             const response = await saveSchema({
                 id: selectedSchemaId || undefined,
-                tenant_slug: currentTenant ?? '',
                 schema_id: schemaForm.schema_id,
                 version: schemaForm.version,
                 definition: schemaDefinition as Record<string, unknown>,
@@ -100,7 +97,6 @@ export function useSchemaFormActions(params: Params) {
             const draftDefinition = { ...(schemaDefinition as Record<string, unknown>), status: 'draft' }
             const response = await saveSchema({
                 id: selectedSchemaId || undefined,
-                tenant_slug: currentTenant ?? '',
                 schema_id: schemaForm.schema_id,
                 version: schemaForm.version,
                 definition: draftDefinition,

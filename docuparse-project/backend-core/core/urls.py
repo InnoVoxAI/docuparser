@@ -12,6 +12,7 @@ public_urlpatterns = [
 # Tenant URLs: served only after JWTTenantMiddleware sets the active schema.
 # All document-processing and settings endpoints live here.
 urlpatterns = public_urlpatterns + [
+    path("api/ocr/", include("catalog.urls")),
     path("api/ocr/", include("documents.urls")),
     path("api/ocr/", include("users.users_urls")),
 ]

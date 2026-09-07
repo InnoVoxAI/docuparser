@@ -169,6 +169,15 @@ enforcement in the service layer).
 `SchemaConfig` constraint becomes `UniqueConstraint(fields=["schema_id", "version"])`.
 `LayoutConfig` constraint becomes `UniqueConstraint(fields=["layout", "document_type"])`.
 
+> **Superseded by 018 (2026-09-07)**: `SchemaConfig` e `LayoutConfig` passaram a
+> ser **globais** — vivem no app `catalog` (SHARED_APPS, schema `public`), uma
+> única cópia lida por todos os tenants via `search_path`. A independência
+> por-tenant descrita na 010 (US4) **não se aplica mais a eles**. As tabelas
+> legadas `documents_schemaconfig`/`documents_layoutconfig` são removidas por
+> `documents/0015_drop_catalog_models` (com guarda de divergência). Escrita no
+> catálogo passou a exigir `tenants.manage`. OCR/Integration/Email settings
+> continuam por-tenant. Ver `docs/specs/018-fix-tenant-schema-seed/`.
+
 ---
 
 ## JWTTenantMiddleware — Schema Resolution Flow

@@ -3,14 +3,16 @@ import { api } from '../../../shared/lib/http'
 import { settingsKeys } from './queryKeys'
 
 export interface CreateLayoutInput {
-    tenant_slug: string
     layout: string
     document_type: string
     schema_config_id: string
     confidence_threshold: number
 }
 
-/** `createLayout` (POST `/layout-configs`) — ver comentário em `useSchemaMutations`. */
+/**
+ * `createLayout` (POST `/layout-configs`) — ver comentário em `useSchemaMutations`.
+ * Catálogo global (spec 018): sem `tenant_slug` no payload.
+ */
 export function useLayoutMutations() {
     const queryClient = useQueryClient()
     const createMutation = useMutation({

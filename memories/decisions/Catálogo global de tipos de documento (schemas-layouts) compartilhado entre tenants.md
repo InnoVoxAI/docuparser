@@ -43,7 +43,46 @@ compartilhado, vivendo no schema `public` — não pertencem a nenhum tenant.**
 
 ## Status
 
-Spec redigido e validado (`docs/specs/018-fix-tenant-schema-seed/spec.md`). **Não implementado.** Próximo passo: `/speckit-plan`.
+**IMPLEMENTADO** — branch `018-fix-tenant-schema-seed`, 2026-09-07 (`/speckit-implement`).
+Ainda não commitado / mergeado.
+
+Entregue conforme o plano (`docs/specs/018-fix-tenant-schema-seed/`):
+
+- **App `catalog`** (`docuparse-project/backend-core/catalog/`) em `SHARED_APPS` após `users`:
+  `models.py` (SchemaConfig/LayoutConfig + `TimeStampedModel` local, constraints canônicas
+  `unique_schema_config_version` / `unique_layout_config`), `defaults.py`
+  (`default_catalog_specs()`, `PROTECTED_SCHEMA_IDS`, `seed_default_catalog()` idempotente),
+  `serializers.py`, `permissions.py` (`CatalogPermission`: leitura = `models.edit` OU
+  `tenants.manage`, escrita = `tenants.manage`, token de serviço sempre liberado),
+  `views.py` + `urls.py` (mesmas rotas `/api/ocr/schema-configs`, `.../<uuid>`,
+  `/api/ocr/layout-configs`), `management/commands/check_catalog_divergence.py`.
+- **Migrações**: `catalog/0001_initial`, `catalog/0002_seed_default_catalog` (RunPython);
+  `documents/0014_drop_legacy_catalog_constraints` (não-destrutivo, resolve colisão de nome
+  de constraint durante a coexistência); `documents/0015_drop_catalog_models`
+  (`assert_only_canonical_rows` como guarda de divergência → `RuntimeError` nomeando o
+  schema, seguido de `DeleteModel` x2). **`0015` ainda NÃO foi aplicado em produção** — ver
+  runbook em `quickstart.md` (backup + `check_catalog_divergence` pré-deploy).
+- **Imports reapontados** para `catalog.models`: `ocr_processor.py`, `documents/views.py`
+  (`document_langextract_view`), testes.
+- **Código morto removido**: `documents/startup.py::ensure_default_schemas`, o `try/except`
+  mudo em `documents/apps.py::ready()`, o laço de seed por-tenant em `seed_data.py`
+  (substituído por uma chamada única `seed_default_catalog()` no schema público).
+- **Frontend** (`modules/settings`): `tenant_slug` removido de `useSchemaMutations` /
+  `useLayoutMutations` (+ callers); `ExtractionPanel` divide em `ExtractionBuilder`
+  (só `tenants.manage`) vs. visão somente-leitura; novo `CatalogScopeNotice`
+  ("afeta todos os tenants" / "somente leitura"); `SchemaList` ganhou prop `readOnly`.
+- **Docs**: nota "Superseded by 018" em `docs/specs/010-multi-tenancy-schemas/data-model.md`;
+  `CLAUDE.md` SPECKIT → `018.../plan.md`.
+
+Testes: `pytest catalog documents orchestrator users tenants` → 223 passed, 1 skipped.
+Frontend `vitest` módulo `settings` → verde; typecheck/lint limpos. (`flows.test.tsx` e
+`pagination.test.tsx` falham no HEAD limpo — pré-existentes, não relacionados.)
+
+Limitação conhecida: os testes `tenant_db` de classe pytest simples
+(`CatalogGlobalityTests`, regressão cross-tenant) não são coletados pelo
+`python_classes = Test*` do `pytest.ini` — mesmo problema pré-existente de
+`tenants/tests/test_isolation.py::TenantIsolationTests`. Cobertura equivalente vive em
+`CatalogPermissionMatrixTests` (`TestCase`, coletado).
 
 ## Relations
 

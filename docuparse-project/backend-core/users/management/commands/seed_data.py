@@ -164,55 +164,13 @@ class Command(BaseCommand):
         else:
             self.stdout.write("seed_data: admin profile already exists")
 
-        # ── Per-tenant schema: SchemaConfig and LayoutConfig ──────────────────
-        # SchemaConfig / LayoutConfig are tenant-app models — must use schema_context.
-        import models.contadeagua.definition as _agua_def
-        import models.nota_fiscal.definition as _nf_def
-        from django_tenants.utils import schema_context
-        from documents.models import LayoutConfig, SchemaConfig
+        # ── Catálogo global de tipos de documento (schema `public`) ───────────
+        # Não há mais laço por-tenant: o catálogo é único e global (spec 018).
+        # `catalog/0002_seed_default_catalog` já popula em toda subida via
+        # `migrate_schemas --shared`; esta chamada é defensiva para o caminho
+        # `manage.py migrate` puro (sqlite/dev) e mantém o primeiro boot
+        # auto-suficiente. Idempotente.
+        from catalog.defaults import seed_default_catalog
 
-        DEFAULT_SCHEMAS = [
-            {
-                "schema_id": _nf_def.SCHEMA_ID,
-                "version": _nf_def.VERSION,
-                "definition": _nf_def.EXTRACTION_DEFINITION,
-            },
-            {
-                "schema_id": _agua_def.SCHEMA_ID,
-                "version": _agua_def.VERSION,
-                "definition": _agua_def.EXTRACTION_DEFINITION,
-            },
-        ]
-        DEFAULT_LAYOUT_CONFIGS = [
-            {"layout": "nota_fiscal", "schema_id": _nf_def.SCHEMA_ID},
-            {"layout": "fatura_condominio", "schema_id": _agua_def.SCHEMA_ID},
-            {"layout": "fatura_energia", "schema_id": _agua_def.SCHEMA_ID},
-        ]
-
-        for t in Tenant.objects.filter(is_active=True):
-            with schema_context(t.schema_name):
-                for spec in DEFAULT_SCHEMAS:
-                    _, c = SchemaConfig.objects.update_or_create(
-                        schema_id=spec["schema_id"],
-                        version=spec["version"],
-                        defaults={"definition": spec["definition"], "is_active": True},
-                    )
-                    self.stdout.write(
-                        f"seed_data [{t.slug}]: {'created' if c else 'updated'} schema {spec['schema_id']}"
-                    )
-
-                for lc_spec in DEFAULT_LAYOUT_CONFIGS:
-                    schema = SchemaConfig.objects.filter(
-                        schema_id=lc_spec["schema_id"], is_active=True
-                    ).first()
-                    if not schema:
-                        continue
-                    _, c = LayoutConfig.objects.get_or_create(
-                        layout=lc_spec["layout"],
-                        document_type="",
-                        defaults={"schema_config": schema, "is_active": True},
-                    )
-                    if c:
-                        self.stdout.write(
-                            f"seed_data [{t.slug}]: created layout config {lc_spec['layout']}"
-                        )
+        seed_default_catalog()
+        self.stdout.write("seed_data: global document-type catalog ready")

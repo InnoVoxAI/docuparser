@@ -4,16 +4,17 @@ import os
 import tempfile
 from unittest.mock import patch
 
+from catalog.models import LayoutConfig, SchemaConfig
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase
+from documents.models import Document, ValidationDecision
+from documents.services.processing_queue import _run_document_processing
+from documents.views import validation_decision_task
 from docuparse_orchestrator.context import orchestration_run
 from docuparse_storage import LocalStorage, document_original_key
 from tenants.models import Tenant
 
-from documents.models import Document, LayoutConfig, SchemaConfig, ValidationDecision
-from documents.services.processing_queue import _run_document_processing
-from documents.views import validation_decision_task
 from orchestrator.models import OrchestrationRun, TaskExecution
 
 

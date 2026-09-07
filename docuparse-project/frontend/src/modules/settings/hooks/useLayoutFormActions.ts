@@ -1,5 +1,4 @@
 import { readError } from '../../../shared/utils'
-import { useAuth } from '../../auth'
 import type { SchemaExample, SchemaField } from '../../../types'
 import { DEFAULT_LANGEXTRACT_FIELDS } from '../../../models/recibo/schemas'
 import { DEFAULT_LANGEXTRACT_PROMPT } from '../../../models/recibo/prompts'
@@ -26,7 +25,6 @@ interface Params {
  * (FR-012).
  */
 export function useLayoutFormActions(params: Params) {
-    const { currentTenant } = useAuth()
     const {
         layoutForm,
         setLayoutForm,
@@ -44,7 +42,6 @@ export function useLayoutFormActions(params: Params) {
         setMessage('')
         try {
             await createLayoutMutation({
-                tenant_slug: currentTenant ?? '',
                 layout: layoutForm.layout,
                 document_type: layoutForm.document_type,
                 schema_config_id: layoutForm.schema_config_id,

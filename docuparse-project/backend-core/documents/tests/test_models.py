@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from catalog.models import LayoutConfig, SchemaConfig
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, connection
 from django.test import TestCase
@@ -13,8 +14,6 @@ from documents.models import (
     DocumentEvent,
     ERPIntegrationAttempt,
     ExtractionResult,
-    LayoutConfig,
-    SchemaConfig,
     ValidationDecision,
 )
 

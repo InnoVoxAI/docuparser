@@ -5,6 +5,7 @@ import os
 import tempfile
 from unittest.mock import patch
 
+from catalog.models import LayoutConfig, SchemaConfig
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase
@@ -23,9 +24,7 @@ from documents.models import (
     ERPIntegrationAttempt,
     ExtractionResult,
     IntegrationSettings,
-    LayoutConfig,
     OCRSettings,
-    SchemaConfig,
     ValidationDecision,
 )
 
@@ -610,53 +609,8 @@ class DocumentsAPITests(TestCase):
         assert config.inbox_folder == "INBOX/Docs"
         assert config.blocked_senders == "blocked@example.test"
 
-    def test_schema_and_layout_config_endpoints(self) -> None:
-        schema_response = self.client.post(
-            reverse("schema-configs"),
-            {
-                "tenant_slug": self.tenant.slug,
-                "schema_id": "boleto",
-                "version": "v1",
-                "definition": {"fields": ["valor"]},
-                "is_active": True,
-            },
-            format="json",
-        )
-        assert schema_response.status_code == 201
-        schema = SchemaConfig.objects.get()
-
-        layout_response = self.client.post(
-            reverse("layout-configs"),
-            {
-                "tenant_slug": self.tenant.slug,
-                "layout": "boleto_bb",
-                "document_type": "scanned_image",
-                "schema_config_id": str(schema.id),
-                "confidence_threshold": 0.8,
-            },
-            format="json",
-        )
-
-        assert layout_response.status_code == 201
-        assert LayoutConfig.objects.get().schema_config == schema
-        assert self.client.get(reverse("schema-configs")).status_code == 200
-        assert self.client.get(reverse("layout-configs")).status_code == 200
-
-        draft_response = self.client.patch(
-            reverse("schema-config-detail", args=[schema.id]),
-            {
-                "definition": {"fields": ["valor", "vencimento"], "status": "draft"},
-                "is_active": True,
-            },
-            format="json",
-        )
-
-        schema.refresh_from_db()
-        assert draft_response.status_code == 200
-        assert schema.definition == {
-            "fields": ["valor", "vencimento"],
-            "status": "draft",
-        }
+    # test_schema_and_layout_config_endpoints → movido para
+    # catalog/tests/test_catalog_api.py (catálogo global, escrita = tenants.manage).
 
     def test_dlq_operation_endpoints(self) -> None:
         with (

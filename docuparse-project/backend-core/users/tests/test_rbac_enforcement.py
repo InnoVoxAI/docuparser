@@ -12,11 +12,14 @@ import os
 import tempfile
 from unittest.mock import patch
 
+# Catálogo global (spec 018): a LEITURA de schema-configs/layout-configs aceita
+# `models.edit` OU `tenants.manage`; a ESCRITA exige `tenants.manage`. Estes
+# testes só exercem GET, então a matriz operator/tenantAdmin/admin não muda.
+from catalog.models import SchemaConfig
 from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
-from documents.models import SchemaConfig
 from docuparse_events import EventMessage, LocalJsonlEventBus, publish_dead_letter
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken

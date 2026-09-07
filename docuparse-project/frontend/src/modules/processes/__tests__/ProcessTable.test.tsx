@@ -19,15 +19,24 @@ function process(overrides: Partial<ProcessSummary> = {}): ProcessSummary {
         received_at: new Date().toISOString(),
         has_error: false,
         current_stage: 'validation_decision',
+        last_status_change_at: new Date().toISOString(),
         ...overrides,
     }
 }
 
 describe('ProcessTable', () => {
-    it('mostra nome e status de negócio de cada processo', () => {
-        renderWithQueryClient(<ProcessTable processes={[process()]} />)
+    it('mostra nome, status de negócio e última atualização de cada processo', () => {
+        renderWithQueryClient(<ProcessTable processes={[process({ last_status_change_at: '2026-03-05T14:30:00Z' })]} />)
         expect(screen.getByText('nota-fiscal.pdf')).toBeInTheDocument()
         expect(screen.getByText('Aguardando validação')).toBeInTheDocument()
+        expect(screen.getByText('Última atualização')).toBeInTheDocument()
+        // "Última atualização" não pode ficar vazia/traço quando o backend manda um valor.
+        expect(screen.queryByText('-')).not.toBeInTheDocument()
+    })
+
+    it('exibe "-" quando o processo não tem última atualização', () => {
+        renderWithQueryClient(<ProcessTable processes={[process({ last_status_change_at: null })]} />)
+        expect(screen.getByText('-')).toBeInTheDocument()
     })
 
     it('expande a linha e mostra as 4 caixas do processo', async () => {

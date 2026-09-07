@@ -39,6 +39,9 @@ export interface ProcessSummary {
     received_at: string
     has_error: boolean
     current_stage: StepKey
+    /** Quando o processo entrou na fase atual (última transição de status
+     * detectada pelo backend) — `received_at` enquanto ainda "em fila". */
+    last_status_change_at: string | null
 }
 
 export interface ProcessListParams {

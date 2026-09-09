@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { ProcessStatsView } from '../components/ProcessStatsView'
@@ -18,9 +19,17 @@ const stats: ProcessStats = {
     manual_retries: 1,
 }
 
+function renderStats(data: ProcessStats) {
+    return render(
+        <MemoryRouter>
+            <ProcessStatsView stats={data} />
+        </MemoryRouter>,
+    )
+}
+
 describe('ProcessStatsView', () => {
     it('mostra os números agregados principais', () => {
-        render(<ProcessStatsView stats={stats} />)
+        renderStats(stats)
 
         expect(screen.getByText('Processos no total')).toBeInTheDocument()
         // cartão "com erro"
@@ -36,6 +45,20 @@ describe('ProcessStatsView', () => {
         expect(screen.getByText(/Ingestão \(extração\) — 42 s/)).toBeInTheDocument()
     })
 
+    it('as caixas de status linkam pra Processos já filtrado (e nada mais vira link)', () => {
+        renderStats(stats)
+
+        const hrefs = new Set(screen.getAllByRole('link').map((a) => a.getAttribute('href')))
+        expect(hrefs).toEqual(
+            new Set([
+                '/?status=em_fila',
+                '/?status=aguardando_validacao',
+                '/?status=aguardando_classificacao',
+                '/?status=erro',
+            ]),
+        )
+    })
+
     it('lida com base vazia sem quebrar', () => {
         const empty: ProcessStats = {
             total: 0,
@@ -47,7 +70,7 @@ describe('ProcessStatsView', () => {
             avg_duration_ms: {},
             manual_retries: 0,
         }
-        render(<ProcessStatsView stats={empty} />)
+        renderStats(empty)
         expect(screen.getAllByText('Nenhum erro registrado.').length).toBeGreaterThan(0)
         expect(screen.getByText(/não há execuções concluídas o suficiente/i)).toBeInTheDocument()
     })

@@ -35,11 +35,11 @@ const ALL: ProcessSummary[] = [
     },
 ]
 
-function renderView() {
+function renderView(initialEntry = '/') {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     return render(
         <QueryClientProvider client={client}>
-            <MemoryRouter>
+            <MemoryRouter initialEntries={[initialEntry]}>
                 <ProcessOverviewView />
             </MemoryRouter>
         </QueryClientProvider>,
@@ -71,5 +71,46 @@ describe('ProcessOverviewView', () => {
 
         await waitFor(() => expect(screen.queryByText('nota-fiscal.pdf')).not.toBeInTheDocument())
         expect(screen.getByText('boleto-condominio.pdf')).toBeInTheDocument()
+    })
+
+    it('abre já filtrada pelo status do query param `?status=` (link vindo da Estatísticas)', async () => {
+        const seen: (string | null)[] = []
+        server.use(
+            http.get(`${OCR}/processes`, ({ request }) => {
+                const group = new URL(request.url).searchParams.get('status_group')
+                seen.push(group)
+                const results = group
+                    ? ALL.filter((row) => (group === 'erro' ? row.has_error : row.status === 'RECEIVED'))
+                    : ALL
+                return HttpResponse.json({
+                    results,
+                    count: results.length,
+                    page: 1,
+                    page_size: 25,
+                    total_pages: 1,
+                })
+            }),
+        )
+        renderView('/?status=erro')
+
+        // O request pro backend carrega status_group=erro.
+        await waitFor(() => expect(seen).toContain('erro'))
+        // E o dropdown reflete o filtro ativo.
+        expect(screen.getByRole('combobox')).toHaveValue('erro')
+    })
+
+    it('ignora um `?status=` inválido (mostra todos)', async () => {
+        const seen: (string | null)[] = []
+        server.use(
+            http.get(`${OCR}/processes`, ({ request }) => {
+                seen.push(new URL(request.url).searchParams.get('status_group'))
+                return HttpResponse.json({ results: ALL, count: ALL.length, page: 1, page_size: 25, total_pages: 1 })
+            }),
+        )
+        renderView('/?status=bogus')
+
+        expect(await screen.findByText('nota-fiscal.pdf')).toBeInTheDocument()
+        expect(seen.every((g) => g === null)).toBe(true)
+        expect(screen.getByRole('combobox')).toHaveValue('')
     })
 })

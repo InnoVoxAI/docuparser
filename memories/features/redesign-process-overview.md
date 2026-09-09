@@ -55,6 +55,15 @@ Redesenho para reduzir carga cognitiva: a antiga tela `/processes`
   um valor só) — **dropdown** ("Todos" + os 4 status) no topo da tabela.
   Ao lado, **busca por nome do arquivo** (`?search=`, já suportado por
   `_apply_search`) e o botão "Novo processo". Convive com `filter`/`stage`.
+  - O filtro de status vive no **query param `?status=` da URL da página**
+    (`/?status=erro`), lido/escrito por `useProcessesQuery` via
+    `useSearchParams` (`parseStatusGroup` valida contra `STATUS_GROUP_ORDER`;
+    valor inválido → sem filtro). `?status=` (front, user-facing) → mapeia pro
+    `?status_group=` (API). Fica compartilhável/bookmarkável.
+  - **Estatísticas linka pra cá já filtrado**: as caixas de status de
+    `ProcessStatsView` (as 4 linhas do breakdown "Por status" + os 3 cartões
+    de topo que são status) são `<Link to={/?status=<group>}>`. Clicar abre a
+    Visão Geral com o dropdown/`status_group` já aplicado.
 - **Breakdown da linha expandida** (`ProcessBreakdown`): 4 caixas
   `Em fila → Ingestão → Validação → Classificação`, derivadas dos steps de
   `GET /documents/{id}/pipeline`. **Fallback importante** (`_STEPS_DONE_BY_STATUS`

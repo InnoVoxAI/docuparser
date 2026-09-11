@@ -32,12 +32,12 @@ export function ValidationSaveControls({
 }) {
     return (
         <>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-1 flex-wrap items-center gap-2">
                 <button
                     type="button"
                     disabled={saving}
                     onClick={onOpenConfirmSave}
-                    className="inline-flex h-9 items-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                    className="inline-flex h-9 basis-40 flex-1 items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
                 >
                     <Save size={16} aria-hidden="true" />
                     {saving ? 'Salvando...' : 'Salvar Alterações'}
@@ -45,7 +45,7 @@ export function ValidationSaveControls({
                 <button
                     type="button"
                     onClick={onOpenHistory}
-                    className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                    className="inline-flex h-9 basis-40 flex-1 items-center justify-center gap-2 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
                 >
                     <History size={16} aria-hidden="true" />
                     Visualizar Histórico

@@ -7,6 +7,7 @@ export type {
     ExtractionFieldVersion,
     FieldVersionsResponse,
     FieldRow,
+    FieldsMap,
     SaveMessage,
     SchemaConfig,
     ChannelMetadata,

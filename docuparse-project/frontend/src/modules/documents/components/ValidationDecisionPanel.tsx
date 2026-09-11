@@ -1,10 +1,11 @@
-import { CheckCircle2, ClipboardCheck, XCircle } from 'lucide-react'
-import { Alert, EmptyState, StatusBadge } from '../../../shared/components'
+import { useState } from 'react'
+import { ClipboardCheck } from 'lucide-react'
+import { Alert, EmptyState } from '../../../shared/components'
 import type { Document, FieldRow, FieldVersionsResponse, SaveMessage, SchemaConfig } from '../types'
 import { DocumentMetadataPanel } from './DocumentMetadataPanel'
 import { LangExtractPanel } from './LangExtractPanel'
-import { ReadOnlyTranscriptionFormatted } from './ReadOnlyTranscriptionFormatted'
-import { ValidationSaveControls } from './ValidationSaveControls'
+import { RejectReasonDialog } from './RejectReasonDialog'
+import { ValidationActionsBar } from './ValidationActionsBar'
 
 export function ValidationDecisionPanel({
     selectedDocument,
@@ -17,6 +18,7 @@ export function ValidationDecisionPanel({
     extracting,
     extractMessage,
     onRunExtract,
+    hasUnsavedChanges,
     saving,
     saveMessage,
     confirmSaveOpen,
@@ -47,6 +49,9 @@ export function ValidationDecisionPanel({
     extracting: boolean
     extractMessage: string
     onRunExtract: () => void | Promise<unknown>
+    /** Salvar/Histórico só fazem sentido — e só aparecem — quando há edição
+     * de campos ainda não persistida. */
+    hasUnsavedChanges: boolean
     saving: boolean
     saveMessage: SaveMessage | null
     confirmSaveOpen: boolean
@@ -67,36 +72,19 @@ export function ValidationDecisionPanel({
     onApprove: () => void | Promise<unknown>
     onReject: () => void | Promise<unknown>
 }) {
+    const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
+
     return (
         <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white p-4">
             {!selectedDocument ? (
                 <EmptyState icon={ClipboardCheck} text="Selecione um documento pendente." />
             ) : (
                 <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <StatusBadge status={selectedDocument.status} />
-                    </div>
-                    <DocumentMetadataPanel document={selectedDocument} />
-                    {!selectedDocument.extraction_result ? (
-                        <Alert>
-                            {selectedDocument.status === 'OCR_COMPLETED'
-                                ? 'OCR concluido. Extração de campos pendente — verifique se existe um layout configurado para este tipo de documento.'
-                                : 'Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.'}
-                        </Alert>
-                    ) : null}
-                    <ReadOnlyTranscriptionFormatted value={selectedDocument.full_transcription_formatted} />
-                    <LangExtractPanel
-                        documentId={selectedDocumentId}
-                        schemas={schemas}
-                        selectedSchemaId={selectedSchemaId}
-                        onSchemaChange={onSchemaChange}
-                        extracting={extracting}
-                        extractMessage={extractMessage}
-                        onRunExtract={onRunExtract}
-                        fieldRows={fieldRows}
-                        onFieldRowsChange={onFieldRowsChange}
-                    />
-                    <ValidationSaveControls
+                    {/* Tudo que a decisão precisa, no topo — não deve exigir rolar a
+                    tela toda. */}
+                    <ValidationActionsBar
+                        status={selectedDocument.status}
+                        hasUnsavedChanges={hasUnsavedChanges}
                         saving={saving}
                         saveMessage={saveMessage}
                         confirmSaveOpen={confirmSaveOpen}
@@ -109,26 +97,44 @@ export function ValidationDecisionPanel({
                         historyLoading={historyLoading}
                         historyError={historyError}
                         onOpenHistory={onOpenHistory}
+                        submitting={submitting}
+                        onApprove={onApprove}
+                        onReject={() => setRejectDialogOpen(true)}
                     />
-                    <textarea
-                        value={notes}
-                        onChange={(event) => onNotesChange(event.target.value)}
-                        className={`input min-h-[86px]${notesError ? ' border-red-500 ring-1 ring-red-500' : ''}`}
-                        placeholder="Motivo da rejeição (obrigatório para rejeitar)"
+                    {submitError && !rejectDialogOpen ? <Alert tone="error">{submitError}</Alert> : null}
+
+                    <DocumentMetadataPanel document={selectedDocument} />
+                    {!selectedDocument.extraction_result ? (
+                        <Alert>
+                            {selectedDocument.status === 'OCR_COMPLETED'
+                                ? 'OCR concluido. Extração de campos pendente — verifique se existe um layout configurado para este tipo de documento.'
+                                : 'Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.'}
+                        </Alert>
+                    ) : null}
+                    <LangExtractPanel
+                        documentId={selectedDocumentId}
+                        schemas={schemas}
+                        selectedSchemaId={selectedSchemaId}
+                        onSchemaChange={onSchemaChange}
+                        extracting={extracting}
+                        extractMessage={extractMessage}
+                        onRunExtract={onRunExtract}
+                        fieldRows={fieldRows}
+                        onFieldRowsChange={onFieldRowsChange}
                     />
-                    {submitError ? <Alert tone="error">{submitError}</Alert> : null}
-                    <div className="flex flex-wrap gap-2">
-                        <button type="button" disabled={submitting} onClick={onApprove} className="success-button">
-                            <CheckCircle2 size={16} aria-hidden="true" />
-                            Aprovar
-                        </button>
-                        <button type="button" disabled={submitting} onClick={onReject} className="danger-button">
-                            <XCircle size={16} aria-hidden="true" />
-                            Rejeitar
-                        </button>
-                    </div>
                 </div>
             )}
+            {rejectDialogOpen ? (
+                <RejectReasonDialog
+                    notes={notes}
+                    onNotesChange={onNotesChange}
+                    notesError={notesError}
+                    submitError={submitError}
+                    submitting={submitting}
+                    onConfirm={onReject}
+                    onCancel={() => setRejectDialogOpen(false)}
+                />
+            ) : null}
         </section>
     )
 }

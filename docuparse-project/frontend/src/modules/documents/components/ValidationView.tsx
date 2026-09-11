@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { ClipboardCheck } from 'lucide-react'
 import { useDocumentDecision } from '../hooks/useDocumentDecision'
 import { useFieldExtraction } from '../hooks/useFieldExtraction'
 import { useFieldVersioning } from '../hooks/useFieldVersioning'
+import { deriveFieldRowsFromFields } from '../utils'
 import type { Document, SchemaConfig } from '../types'
 import { ValidationDecisionPanel } from './ValidationDecisionPanel'
 import { ValidationDocumentPreview } from './ValidationDocumentPreview'
@@ -38,6 +40,15 @@ export function ValidationView({
         onValidated,
         onBackToInbox,
     })
+    // Salvar/Histórico só fazem sentido quando os campos na tela divergem do
+    // que está persistido — compara contra o mesmo parsing usado pra popular
+    // `fieldRows` (deriveFieldRowsFromFields), não contra o mapa bruto.
+    const hasUnsavedChanges = useMemo(
+        () =>
+            JSON.stringify(extraction.fieldRows) !==
+            JSON.stringify(deriveFieldRowsFromFields(selectedDocument?.extraction_result?.fields)),
+        [extraction.fieldRows, selectedDocument?.extraction_result?.fields],
+    )
 
     if (!selectedDocumentId) {
         return (
@@ -58,10 +69,9 @@ export function ValidationView({
     return (
         <div
             className={
-                stacked ? 'flex flex-col gap-4' : 'grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(460px,1.1fr)]'
+                stacked ? 'flex flex-col gap-4' : 'grid gap-4 xl:grid-cols-[minmax(460px,1.1fr)_minmax(360px,0.9fr)]'
             }
         >
-            <ValidationDocumentPreview selectedDocument={selectedDocument} />
             <ValidationDecisionPanel
                 selectedDocument={selectedDocument}
                 selectedDocumentId={selectedDocumentId}
@@ -73,6 +83,7 @@ export function ValidationView({
                 extracting={extraction.extracting}
                 extractMessage={extraction.extractMessage}
                 onRunExtract={extraction.runLangExtract}
+                hasUnsavedChanges={hasUnsavedChanges}
                 saving={versioning.saving}
                 saveMessage={versioning.saveMessage}
                 confirmSaveOpen={versioning.confirmSaveOpen}
@@ -96,6 +107,7 @@ export function ValidationView({
                 onApprove={() => decision.submitDecision('approved')}
                 onReject={() => decision.submitDecision('rejected')}
             />
+            <ValidationDocumentPreview selectedDocument={selectedDocument} />
         </div>
     )
 }

@@ -24,9 +24,9 @@ export function ValidationDrawer({
     const { selectedDocument, selectedDocumentId, selectDocument, refreshData } = useOutletContext<AppOutletContext>()
     const { data: schemas } = useSchemasQuery()
     useBodyScrollLock()
-    // Expandido = ocupa a largura toda; o conteúdo fica centrado num limite de
-    // leitura confortável (estilo modal do Jira). Reseta a cada abertura (o
-    // componente é montado de novo por ProcessRowDetail).
+    // Expandido = ocupa a largura toda; o conteúdo fica centrado em 80% da
+    // tela. Reseta a cada abertura (o componente é montado de novo por
+    // ProcessRowDetail).
     const [expanded, setExpanded] = useState(false)
 
     // `AppLayout` carrega o Document completo (necessário pra ValidationView)
@@ -57,14 +57,14 @@ export function ValidationDrawer({
             aria-label="Fechar validação"
         >
             <aside
-                className={`flex h-full w-full flex-col overflow-y-auto bg-zinc-50 shadow-xl ${
-                    expanded ? '' : 'max-w-2xl'
+                className={`flex h-full w-full flex-col bg-zinc-50 shadow-xl ${
+                    expanded ? 'overflow-hidden' : 'overflow-y-auto max-w-2xl'
                 }`}
                 role="dialog"
                 aria-modal="true"
                 aria-label="Validação do processo"
             >
-                <header className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-zinc-200 bg-white px-4 py-3">
+                <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 bg-white px-4 py-3">
                     <h2 className="truncate text-sm font-semibold text-zinc-800">
                         Validação — {selectedDocument?.original_filename ?? 'carregando...'}
                     </h2>
@@ -87,7 +87,11 @@ export function ValidationDrawer({
                         </button>
                     </div>
                 </header>
-                <div className={`p-4 ${expanded ? 'mx-auto w-full max-w-4xl' : ''}`}>
+                <div
+                    className={
+                        expanded ? 'mx-auto min-h-0 w-[80%] flex-1 overflow-hidden p-4' : 'p-4'
+                    }
+                >
                     {ready ? (
                         <ValidationView
                             schemas={schemas}
@@ -95,7 +99,8 @@ export function ValidationDrawer({
                             selectedDocumentId={documentId}
                             onValidated={handleValidated}
                             onBackToInbox={onClose}
-                            stacked
+                            stacked={!expanded}
+                            previewFirst={expanded}
                         />
                     ) : (
                         <Alert>Carregando dados do processo...</Alert>

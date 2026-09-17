@@ -38,6 +38,7 @@ export function ValidationDecisionPanel({
     submitting,
     onApprove,
     onReject,
+    fillHeight = false,
 }: {
     selectedDocument: Document | null
     selectedDocumentId: string
@@ -71,15 +72,24 @@ export function ValidationDecisionPanel({
     submitting: boolean
     onApprove: () => void | Promise<unknown>
     onReject: () => void | Promise<unknown>
+    /** Só a lista de campos rola por dentro; o resto (ações, metadados) fica
+     * fixo — usado no drawer expandido, que não deve rolar a página toda. */
+    fillHeight?: boolean
 }) {
     const [rejectDialogOpen, setRejectDialogOpen] = useState(false)
 
     return (
-        <section className="min-h-[360px] rounded-md border border-zinc-200 bg-white p-4">
+        <section
+            className={
+                fillHeight
+                    ? 'flex h-full min-h-0 flex-col rounded-md border border-zinc-200 bg-white p-4'
+                    : 'min-h-[360px] rounded-md border border-zinc-200 bg-white p-4'
+            }
+        >
             {!selectedDocument ? (
                 <EmptyState icon={ClipboardCheck} text="Selecione um documento pendente." />
             ) : (
-                <div className="space-y-4">
+                <div className={fillHeight ? 'flex min-h-0 flex-1 flex-col gap-4' : 'space-y-4'}>
                     {/* Tudo que a decisão precisa, no topo — não deve exigir rolar a
                     tela toda. */}
                     <ValidationActionsBar
@@ -111,17 +121,34 @@ export function ValidationDecisionPanel({
                                 : 'Documento recebido. O OCR automatico ainda nao concluiu; use Atualizar em alguns instantes.'}
                         </Alert>
                     ) : null}
-                    <LangExtractPanel
-                        documentId={selectedDocumentId}
-                        schemas={schemas}
-                        selectedSchemaId={selectedSchemaId}
-                        onSchemaChange={onSchemaChange}
-                        extracting={extracting}
-                        extractMessage={extractMessage}
-                        onRunExtract={onRunExtract}
-                        fieldRows={fieldRows}
-                        onFieldRowsChange={onFieldRowsChange}
-                    />
+                    {fillHeight ? (
+                        <div className="min-h-0 flex-1 overflow-hidden">
+                            <LangExtractPanel
+                                documentId={selectedDocumentId}
+                                schemas={schemas}
+                                selectedSchemaId={selectedSchemaId}
+                                onSchemaChange={onSchemaChange}
+                                extracting={extracting}
+                                extractMessage={extractMessage}
+                                onRunExtract={onRunExtract}
+                                fieldRows={fieldRows}
+                                onFieldRowsChange={onFieldRowsChange}
+                                fillHeight
+                            />
+                        </div>
+                    ) : (
+                        <LangExtractPanel
+                            documentId={selectedDocumentId}
+                            schemas={schemas}
+                            selectedSchemaId={selectedSchemaId}
+                            onSchemaChange={onSchemaChange}
+                            extracting={extracting}
+                            extractMessage={extractMessage}
+                            onRunExtract={onRunExtract}
+                            fieldRows={fieldRows}
+                            onFieldRowsChange={onFieldRowsChange}
+                        />
+                    )}
                 </div>
             )}
             {rejectDialogOpen ? (

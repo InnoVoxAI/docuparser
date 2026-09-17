@@ -29,10 +29,11 @@ export function ExtractedFieldCell({
         <div className={spanClassFor(row.value)}>
             {/* min-h reserva espaço pra 2 linhas — sem isso, um rótulo longo numa
             célula da mesma linha empurra só o próprio input pra baixo,
-            desalinhando com os campos vizinhos de rótulo curto. */}
-            <span className="mb-1 block min-h-8 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                {label}
-            </span>
+            desalinhando com os campos vizinhos de rótulo curto. items-end
+            cola o texto no input em vez de deixar o vão sobrar entre eles. */}
+            <div className="mb-1 flex min-h-8 items-end">
+                <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{label}</span>
+            </div>
             <div className="relative">
                 <input
                     value={row.value}

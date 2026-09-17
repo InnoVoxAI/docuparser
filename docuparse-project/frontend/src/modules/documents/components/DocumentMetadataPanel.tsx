@@ -22,17 +22,21 @@ export function DocumentMetadataPanel({ document }: { document: Document }) {
             <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3">
                 {rows.map((row) => (
                     <div key={row.label}>
-                        <span className="mb-1 block min-h-8 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                            {row.label}
-                        </span>
+                        <div className="mb-1 flex min-h-8 items-end">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                                {row.label}
+                            </span>
+                        </div>
                         <div className="break-words text-sm text-zinc-800">{row.value}</div>
                     </div>
                 ))}
                 {attachments.length > 0 ? (
                     <div className="col-span-full">
-                        <span className="mb-1 block min-h-8 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                            Anexos
-                        </span>
+                        <div className="mb-1 flex min-h-8 items-end">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                                Anexos
+                            </span>
+                        </div>
                         <div className="space-y-0.5">
                             {attachments.map((a: unknown, i: number) => (
                                 <div key={i} className="text-sm text-zinc-800">

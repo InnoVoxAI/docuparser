@@ -1,0 +1,108 @@
+"Issue Type","Epic Name","Epic Link","Summary","Description","Priority","Labels"
+"Epic","DOC-TYPE-BOLETO","","[EPIC] Reconhecimento de boletos como tipo de documento","Hoje o pipeline (backend-core, backend-ocr, langextract-service) reconhece nota fiscal e faturas de agua/energia como tipos de documento de primeira classe, via catalogo global catalog.SchemaConfig/LayoutConfig (spec 018). Boleto precisa do mesmo tratamento.
+
+DESCOBERTA (2026-09-21): ja existe codigo parcial/orfao para boleto:
+- backend-core/models/boleto/schemas.py: heuristica is_likely()/score() ja usada por ocr_processor._classify_raw_text() (backend-core/documents/services/ocr_processor.py:387-399), com SCHEMA_ID = ""boleto_default"".
+- langextract-service/domain/extractor.py + domain/schemas.py: SCHEMA_BY_LAYOUT ja mapeia boleto_caixa/boleto_bb/boleto_bradesco -> schema ""boleto"", com extrator regex funcional (_extract_boleto) para linha_digitavel/vencimento/valor/beneficiario.
+- PORTANTO FALTA: nao existe models/boleto/definition.py (so nota_fiscal e contadeagua tem), e catalog/defaults.py::default_catalog_specs() nao inclui boleto. Resultado: _classify_raw_text() pode retornar ""boleto_default"", mas SchemaConfig.objects.filter(schema_id=""boleto_default"") nunca encontra nada - a classificacao morre silenciosamente e cai no fallback generico.
+
+Este epico fecha essa lacuna.","High","doc-type-identification,boleto"
+"Story","","DOC-TYPE-BOLETO","Criar models/boleto/definition.py com schema de extracao completo","Contexto: models/nota_fiscal/definition.py e models/contadeagua/definition.py seguem um padrao (SCHEMA_ID, VERSION, MODEL_NAME, FIELDS, PROMPT_INSTRUCTIONS, PROMPT_GUARDRAILS, EXAMPLES, POST_PROCESSING, EXTRACTION_DEFINITION). Boleto nao tem esse arquivo - so a heuristica de classificacao (models/boleto/schemas.py).
+
+Criar backend-core/models/boleto/definition.py com SCHEMA_ID = ""boleto_default"" (reaproveitar o id ja usado por schemas.py::is_likely), campos minimos: linha_digitavel, codigo_barras, banco_emissor, cedente/beneficiario, cnpj_cedente, sacado/pagador, cnpj_cpf_sacado, nosso_numero, data_documento, data_vencimento, valor_documento, valor_desconto, valor_juros_multa, valor_pago, local_pagamento, instrucoes.
+
+Criterios de aceite:
+- definition.py segue o mesmo shape de nota_fiscal/definition.py
+- EXTRACTION_DEFINITION['document_type'] consistente com o resto do catalogo
+- Campos cobrem pelo menos o que o regex stub do langextract-service ja extrai (linha_digitavel, vencimento, valor, beneficiario)
+- Pelo menos 3 EXAMPLES reais (usar boletos de teste existentes se houver em docs_teste/)","High","doc-type-identification,boleto,backend-core"
+"Story","","DOC-TYPE-BOLETO","Registrar boleto no catalogo global (SchemaConfig/LayoutConfig)","Contexto: catalog/defaults.py::default_catalog_specs() e a fonte unica de verdade do catalogo global (spec 018-fix-tenant-schema-seed). Hoje so registra nota_fiscal e contadeagua (2 schemas, 3 layouts).
+
+Adicionar:
+- import de models.boleto.definition
+- entrada em schemas (schema_id=boleto_default)
+- entradas em layouts para os formatos de banco relevantes (boleto_caixa, boleto_bb, boleto_bradesco, boleto_generico - alinhar com o que langextract-service/domain/schemas.py::SCHEMA_BY_LAYOUT ja assume)
+
+Criterios de aceite:
+- seed_default_catalog() idempotente cria os novos SchemaConfig/LayoutConfig em ambiente limpo
+- Migration de seed (padrao catalog/0002_seed_default_catalog.py) ou nova migration incremental - CONFIRMAR antes se 0002 ja rodou em producao (guardrail do CLAUDE.md: perguntar antes de mexer em migrations que ja podem ter rodado em producao)
+- catalog/management/commands/check_catalog_divergence.py atualizado se necessario
+- _classify_raw_text() (ocr_processor.py) encontra o SchemaConfig de boleto corretamente apos o seed - testar ponta a ponta com um boleto real","High","doc-type-identification,boleto,backend-core,migration"
+"Story","","DOC-TYPE-BOLETO","Reconciliar extracao de boleto entre langextract-service e catalog","Contexto: ja existe um extrator regex de boleto funcional em langextract-service/domain/extractor.py::_extract_boleto, aparentemente desacoplado do pipeline principal (catalog + backend-core/documents/services/langextract_client.py).
+
+Definir se: (a) esse extrator stub e legado/mock a remover, ou (b) e um fallback intencional que deve continuar existindo em paralelo ao EXTRACTION_DEFINITION baseado em LLM. Investigar antes de decidir arquitetura - evitar manter dois caminhos de extracao de boleto divergentes sem necessidade.
+
+Criterios de aceite:
+- Decisao documentada (memoria/ADR) sobre o papel do extrator regex do langextract-service vs. o fluxo catalog/EXTRACTION_DEFINITION
+- Sem duplicacao de regras de negocio de extracao entre os dois caminhos","Medium","doc-type-identification,boleto,tech-debt,langextract-service"
+"Epic","DOC-CLASSIFICATION-PDC","","[EPIC] Classificacao automatica em plano de contas","Apos identificar o tipo do documento (NF/recibo), o sistema precisa classifica-lo numa conta do plano de contas (RH, Manutencao, Servicos Basicos, Impostos...) usando regras sobre CNPJ e natureza do documento.
+
+Estado atual: Document (backend-core/documents/models.py) tem document_type, layout e metadata (JSONField), mas nenhum conceito de 'plano de contas' ou 'conta classificada' existe hoje no datamodel - este epico introduz esse conceito do zero.","High","doc-classification,plano-de-contas"
+"Story","","DOC-CLASSIFICATION-PDC","Modelar Plano de Contas (chart of accounts)","Nao existe esse conceito no datamodel atual. Definir:
+- Onde vive: novo app Django, ou dentro de um app existente?
+- Escopo: global (como catalog.SchemaConfig, spec 018) ou por tenant (configuracao fiscal e provavelmente especifica de cada cliente, ao contrario do catalogo de tipos de documento que e global)?
+- Estrutura minima: conta (ex. 'Servicos Basicos', 'Impostos', 'Manutencao'), possivelmente hierarquica
+
+Criterios de aceite:
+- Decisao de escopo (global vs. tenant) documentada e justificada
+- Modelo criado com migration
+- CRUD basico (admin ou API) para operador cadastrar/editar contas","High","doc-classification,plano-de-contas,datamodel"
+"Story","","DOC-CLASSIFICATION-PDC","Motor de regras de classificacao por CNPJ/natureza do documento","Implementar motor de regras que classifica NF/recibo em conta do plano de contas:
+- CNPJ de concessionaria (agua/luz/gas) -> Servicos Basicos
+- CNPJ/natureza INSS -> Impostos
+- RPA + dedetizacao -> Servicos
+
+Em aberto: definir fonte dos CNPJs de concessionarias (lista mantida manualmente pelo operador? base publica/CNAE via Receita Federal?).
+
+Criterios de aceite:
+- Motor de regras extensivel (novas regras sem reescrever logica central)
+- Regras dos 3 casos acima cobertas por teste
+- Fonte de dados de CNPJ de concessionarias definida e documentada","High","doc-classification,plano-de-contas,regras-de-negocio"
+"Story","","DOC-CLASSIFICATION-PDC","Persistir conta classificada e evento de auditoria","Persistir o resultado da classificacao (conta do plano de contas) associado ao Document - provavelmente novo campo/FK em backend-core/documents/models.py::Document (hoje so tem document_type/layout/metadata), e emitir DocumentEvent (ja existe o modelo, ver documents/models.py:75) para auditoria/rastreabilidade.
+
+Criterios de aceite:
+- Campo/relacao nova em Document (ou modelo relacionado) com migration
+- DocumentEvent emitido a cada classificacao (automatica ou manual)
+- Historico de reclassificacoes preservado (nao sobrescreve sem rastro)","Medium","doc-classification,plano-de-contas,datamodel"
+"Story","","DOC-CLASSIFICATION-PDC","Tela de revisao/override de classificacao pelo operador","Regra automatica erra; operador precisa de tela para corrigir a conta classificada antes de aprovar o documento (fluxo similar ao de validacao ja existente - ver status VALIDATION_PENDING em Document.Status).
+
+Criterios de aceite:
+- Operador ve a conta sugerida automaticamente e pode trocar por outra do plano de contas
+- Override fica registrado (quem mudou, de/para) via DocumentEvent","Medium","doc-classification,plano-de-contas,frontend"
+"Epic","DOC-MERGE-PAGAMENTO","","[EPIC] Merge de documentos - processo de pagamento (NF + boleto)","Hoje 'processo' na UI e 1:1 com Document (ver ProcessSummarySerializer em backend-core/documents/serializers.py, que deriva o processo de um unico Document - nao existe nenhum modelo de agrupamento). Este epico introduz o conceito de processo de pagamento agrupando NF + boleto(s) correlatos, com matching automatico por CNPJ/valor e confirmacao humana obrigatoria.","Medium","document-merging,processo-pagamento"
+"Story","","DOC-MERGE-PAGAMENTO","Campo de rastreio de origem comum (mesmo email/whatsapp + janela de tempo)","Document (backend-core/documents/models.py) tem channel e correlation_id, mas nenhum identificador de 'mesma origem/conversa'. Adicionar campo (ex. source_thread_id) que agrupa documentos recebidos no mesmo email/conversa de WhatsApp, e definir janela de tempo configuravel para considerar documentos como candidatos a match.
+
+Criterios de aceite:
+- Novo campo populado no momento do upload/ingestao (backend-com)
+- Janela de tempo configuravel (nao hardcoded)
+- Migration sem quebrar correlation_id existente","Medium","document-merging,processo-pagamento,datamodel"
+"Story","","DOC-MERGE-PAGAMENTO","Modelo de Processo de Pagamento agrupando documentos","Criar novo modelo (ex. PaymentProcess) relacionando N Documents (tipicamente 1 NF + 1..N boletos). Hoje nao existe nada equivalente - ProcessSummarySerializer deriva 'processo' de um unico Document.
+
+Criterios de aceite:
+- Modelo com migration, FK/M2M para Document
+- Nao quebra o fluxo atual de 'processo = documento avulso' para documentos sem match (ex. NF sem boleto associado ainda)
+- API/serializer expondo o agrupamento para o frontend","Medium","document-merging,processo-pagamento,datamodel"
+"Story","","DOC-MERGE-PAGAMENTO","Algoritmo de matching CNPJ + valor entre NF e boleto","Regras de matching:
+- Mesmo CNPJ + valor bate -> match
+- Mesmo CNPJ, boleto de valor MENOR que a NF -> match (permite N boletos por NF)
+- Mesmo CNPJ, boleto de valor MAIOR que a NF -> nao faz match
+- CNPJ diferente -> nao faz match
+
+Depende dos campos CNPJ/valor ja extraidos pelos schemas de nota_fiscal e boleto (ver EPIC Doc Type Identification).
+
+Criterios de aceite:
+- Os 4 casos acima cobertos por teste automatizado
+- Match roda automaticamente quando um novo documento candidato chega dentro da janela de tempo (story de rastreio de origem)","Medium","document-merging,processo-pagamento,regras-de-negocio"
+"Story","","DOC-MERGE-PAGAMENTO","Fluxo de confirmacao obrigatoria do match pelo operador","Nenhum match (automatico ou manual) vira processo de pagamento sem confirmacao humana. Precisa de tela de revisao mostrando o match sugerido (NF + boleto(s)) para o operador aprovar ou rejeitar.
+
+Criterios de aceite:
+- Match automatico fica em estado pendente ate confirmacao
+- Rejeicao devolve os documentos ao pool sem match
+- Confirmacao registrada (quem, quando) via DocumentEvent","Medium","document-merging,processo-pagamento,frontend"
+"Story","","DOC-MERGE-PAGAMENTO","Tela de match manual (fallback sem match automatico)","Quando nao ha match automatico, oferecer ao operador todos os documentos disponiveis sem match (com opcao de tambem ver os que ja tem match) para selecionar manualmente o par NF+boleto e confirmar.
+
+Criterios de aceite:
+- Lista filtravel de documentos sem match
+- Selecao manual gera o mesmo fluxo de confirmacao da story anterior
+- Operador consegue desfazer selecao antes de confirmar","Medium","document-merging,processo-pagamento,frontend"
+"Epic","PROCESS-CREATION-FUTURO","","[EPIC] Process Creation (backlog - futuro)","Marcado pelo usuario como 'Para Futuro'. Depende diretamente do modelo de agrupamento (PaymentProcess) criado no epico Document Merging - nao detalhar em stories ate aquele epico estar definido/implementado.","Lowest","process-creation,futuro,backlog"

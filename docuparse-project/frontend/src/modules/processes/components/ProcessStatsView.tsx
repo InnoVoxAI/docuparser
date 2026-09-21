@@ -1,8 +1,12 @@
+import { Link } from 'react-router'
 import { Alert } from '../../../shared/components'
 import { STAGE_LABELS, STATUS_GROUP_LABELS, STATUS_GROUP_ORDER } from '../types'
-import type { ProcessStats } from '../types'
+import type { ProcessStats, ProcessStatusGroup } from '../types'
 import { StatBreakdown } from './StatBreakdown'
 import type { StatRow } from './StatBreakdown'
+
+/** Link pra Visão Geral de Processos já filtrada por um status "de negócio". */
+const processesHref = (group: ProcessStatusGroup) => `/?status=${group}`
 
 const STATUS_BAR_CLASS: Record<string, string> = {
     em_fila: 'bg-zinc-400',
@@ -18,12 +22,35 @@ function formatDuration(ms: number): string {
     return `${(ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`
 }
 
-function StatCard({ label, value, tone }: { label: string; value: number | string; tone?: string }) {
-    return (
-        <div className="rounded-lg border border-zinc-200 bg-white p-4">
+function StatCard({
+    label,
+    value,
+    tone,
+    to,
+}: {
+    label: string
+    value: number | string
+    tone?: string
+    /** Se definido, o cartão vira um link (ex.: pra Processos já filtrado). */
+    to?: string
+}) {
+    const inner = (
+        <>
             <div className={`text-2xl font-semibold tabular-nums ${tone ?? 'text-zinc-900'}`}>{value}</div>
             <div className="mt-1 text-xs font-medium text-zinc-500">{label}</div>
-        </div>
+        </>
+    )
+    const className = 'block rounded-lg border border-zinc-200 bg-white p-4'
+    return to ? (
+        <Link
+            to={to}
+            className={`${className} transition hover:border-zinc-300 hover:bg-zinc-50`}
+            title={`Ver processos: ${label}`}
+        >
+            {inner}
+        </Link>
+    ) : (
+        <div className={className}>{inner}</div>
     )
 }
 
@@ -39,6 +66,7 @@ export function ProcessStatsView({ stats }: { stats: ProcessStats }) {
         label: STATUS_GROUP_LABELS[group],
         value: stats.by_status[group] ?? 0,
         barClass: STATUS_BAR_CLASS[group],
+        to: processesHref(group),
     }))
 
     const stageRows: StatRow[] = STAGE_ORDER.filter((key) => (stats.by_stage[key] ?? 0) > 0).map((key) => ({
@@ -56,16 +84,19 @@ export function ProcessStatsView({ stats }: { stats: ProcessStats }) {
                     label="Aguardando validação"
                     value={stats.by_status.aguardando_validacao}
                     tone="text-amber-600"
+                    to={processesHref('aguardando_validacao')}
                 />
                 <StatCard
                     label="Aguardando classificação"
                     value={stats.by_status.aguardando_classificacao}
                     tone="text-sky-600"
+                    to={processesHref('aguardando_classificacao')}
                 />
                 <StatCard
                     label="Com erro"
                     value={stats.errors.documents_with_error}
                     tone={stats.errors.documents_with_error > 0 ? 'text-red-600' : undefined}
+                    to={processesHref('erro')}
                 />
             </div>
 

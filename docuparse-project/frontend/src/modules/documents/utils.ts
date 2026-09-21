@@ -1,5 +1,5 @@
 import { api } from '../../shared/lib/http'
-import type { ExtractionResult } from './types'
+import type { ExtractionResult, FieldRow, FieldsMap } from './types'
 
 // Resultado do polling de uma extração assíncrona (ver pollDocumentExtraction).
 type ExtractionPollOutcome =
@@ -39,6 +39,28 @@ export async function pollDocumentExtraction(
     return { status: 'timeout' }
 }
 
+// Siglas que devem ficar maiúsculas ao invés de "Title Case" normal.
+const FIELD_NAME_ACRONYMS = new Set(['cnpj', 'cpf', 'nf', 'nfe', 'cep', 'uf', 'ie', 'erp', 'id'])
+
+/** Transforma a chave técnica de um campo extraído (ex.: "valor_total",
+ * "cnpjFornecedor") num rótulo legível pra tela de Validação (ex.: "Valor
+ * Total", "CNPJ Fornecedor") — a análise não deveria ver snake_case/camelCase. */
+export function humanizeFieldName(name: string): string {
+    const spaced = name
+        .replace(/[_-]+/g, ' ')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .trim()
+    if (!spaced) return name
+    return spaced
+        .split(/\s+/)
+        .map((word) =>
+            FIELD_NAME_ACRONYMS.has(word.toLowerCase())
+                ? word.toUpperCase()
+                : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+        )
+        .join(' ')
+}
+
 export function parseFieldEntry(raw: unknown): { value: string; confidence: number | null } {
     if (raw === null || raw === undefined) return { value: '', confidence: null }
     if (typeof raw === 'object' && 'value' in raw) {
@@ -62,4 +84,19 @@ export function parseFieldEntry(raw: unknown): { value: string; confidence: numb
         }
     }
     return { value: String(raw), confidence: null }
+}
+
+/** Converte `extraction_result.fields` (mapa bruto do backend) nas mesmas
+ * `FieldRow[]` que a tela de Validação edita — usado tanto pra popular
+ * `fieldRows` quanto, em `useFieldExtraction`, pra saber se o que está na
+ * tela ainda bate com o que foi persistido (`hasUnsavedChanges`). */
+export function deriveFieldRowsFromFields(fields: FieldsMap | null | undefined): FieldRow[] {
+    if (!fields) return []
+    return Object.entries(fields)
+        .filter(([, value]) => value !== '' && value !== null && value !== undefined)
+        .map(([name, raw]) => {
+            const { value, confidence } = parseFieldEntry(raw)
+            return { name, value, confidence }
+        })
+        .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado')
 }

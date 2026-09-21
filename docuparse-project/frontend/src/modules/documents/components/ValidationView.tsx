@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { ClipboardCheck } from 'lucide-react'
 import { useDocumentDecision } from '../hooks/useDocumentDecision'
 import { useFieldExtraction } from '../hooks/useFieldExtraction'
 import { useFieldVersioning } from '../hooks/useFieldVersioning'
+import { deriveFieldRowsFromFields } from '../utils'
 import type { Document, SchemaConfig } from '../types'
 import { ValidationDecisionPanel } from './ValidationDecisionPanel'
 import { ValidationDocumentPreview } from './ValidationDocumentPreview'
@@ -13,15 +15,22 @@ export function ValidationView({
     onValidated,
     onBackToInbox,
     stacked = false,
+    previewFirst = false,
 }: {
     schemas?: SchemaConfig[]
     selectedDocument: Document | null
     selectedDocumentId: string
     onValidated: () => void | Promise<unknown>
     onBackToInbox: () => void
-    /** Força layout em coluna única (arquivo em cima, campos embaixo) — usado
-     * quando a tela roda num container estreito, como o drawer da Visão Geral. */
+    /** Força layout em coluna única (campos em cima, arquivo embaixo) — usado
+     * quando a tela roda num container estreito, como o drawer da Visão Geral
+     * recolhido. Ao contrário de `previewFirst`, a página rola normalmente
+     * (o drawer recolhido não trava a altura). */
     stacked?: boolean
+    /** Coloca o preview do arquivo na coluna esquerda em vez da direita —
+     * usado quando o drawer da Visão Geral está expandido. Sem efeito em modo
+     * stacked. */
+    previewFirst?: boolean
 }) {
     const extraction = useFieldExtraction({ schemas, selectedDocument, selectedDocumentId })
     const versioning = useFieldVersioning({
@@ -38,6 +47,15 @@ export function ValidationView({
         onValidated,
         onBackToInbox,
     })
+    // Salvar/Histórico só fazem sentido quando os campos na tela divergem do
+    // que está persistido — compara contra o mesmo parsing usado pra popular
+    // `fieldRows` (deriveFieldRowsFromFields), não contra o mapa bruto.
+    const hasUnsavedChanges = useMemo(
+        () =>
+            JSON.stringify(extraction.fieldRows) !==
+            JSON.stringify(deriveFieldRowsFromFields(selectedDocument?.extraction_result?.fields)),
+        [extraction.fieldRows, selectedDocument?.extraction_result?.fields],
+    )
 
     if (!selectedDocumentId) {
         return (
@@ -55,47 +73,93 @@ export function ValidationView({
         )
     }
 
+    // Só o drawer expandido roda numa altura fixa (a do drawer) — ali só a
+    // lista de campos deve rolar por dentro, nunca a página toda. O drawer
+    // recolhido (`stacked`) e a rota standalone de Validação mantêm o scroll
+    // de página normal.
+    const fillHeight = previewFirst
+
+    const decisionPanel = (
+        <ValidationDecisionPanel
+            selectedDocument={selectedDocument}
+            selectedDocumentId={selectedDocumentId}
+            schemas={schemas}
+            fieldRows={extraction.fieldRows}
+            onFieldRowsChange={extraction.setFieldRows}
+            selectedSchemaId={extraction.selectedSchemaId}
+            onSchemaChange={extraction.setSelectedSchemaId}
+            extracting={extraction.extracting}
+            extractMessage={extraction.extractMessage}
+            onRunExtract={extraction.runLangExtract}
+            hasUnsavedChanges={hasUnsavedChanges}
+            saving={versioning.saving}
+            saveMessage={versioning.saveMessage}
+            confirmSaveOpen={versioning.confirmSaveOpen}
+            onOpenConfirmSave={() => versioning.setConfirmSaveOpen(true)}
+            onCancelConfirmSave={() => versioning.setConfirmSaveOpen(false)}
+            onSaveFields={versioning.handleSaveFields}
+            historyOpen={versioning.historyOpen}
+            onCloseHistory={() => versioning.setHistoryOpen(false)}
+            history={versioning.history}
+            historyLoading={versioning.historyLoading}
+            historyError={versioning.historyError}
+            onOpenHistory={versioning.openHistory}
+            notes={decision.notes}
+            onNotesChange={(value) => {
+                decision.setNotes(value)
+                decision.setNotesError(false)
+            }}
+            notesError={decision.notesError}
+            submitError={decision.submitError}
+            submitting={decision.submitting}
+            onApprove={() => decision.submitDecision('approved')}
+            onReject={() => decision.submitDecision('rejected')}
+            fillHeight={fillHeight}
+        />
+    )
+    const documentPreview = (
+        <ValidationDocumentPreview selectedDocument={selectedDocument} fillHeight={fillHeight} />
+    )
+
+    if (stacked) {
+        return (
+            <div className="flex flex-col gap-4">
+                {decisionPanel}
+                {documentPreview}
+            </div>
+        )
+    }
+
+    if (previewFirst) {
+        // Modo expandido do drawer: painéis lado a lado, mas só quando o
+        // container (não a viewport — por isso `@container`/`@[...]`, já que
+        // esse painel roda dentro dos 80% de largura do drawer, não da tela
+        // toda) tem espaço pras duas larguras mínimas + gap (852px). Abaixo
+        // disso cai pra coluna única (campos com rolagem própria em cima,
+        // preview numa altura fixa embaixo) — uma divisão via `flex-wrap`
+        // bagunçaria a altura porque um item sozinho numa linha não fica
+        // limitado à altura da linha.
+        return (
+            <div className="@container h-full min-h-0">
+                <div className="flex h-full min-h-0 flex-col gap-8 @[880px]:flex-row">
+                    {/* Empilhado (estreito): mesma ordem do modo `stacked` —
+                    campos em cima, preview embaixo. Lado a lado (largo):
+                    `order` inverte pra preview ficar à esquerda. */}
+                    <div className="min-h-0 flex-1 @[880px]:order-2 @[880px]:min-w-[460px] @[880px]:flex-[1.1]">
+                        {decisionPanel}
+                    </div>
+                    <div className="h-72 shrink-0 @[880px]:order-1 @[880px]:h-auto @[880px]:min-w-[360px] @[880px]:shrink @[880px]:flex-[0.9]">
+                        {documentPreview}
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     return (
-        <div
-            className={
-                stacked ? 'flex flex-col gap-4' : 'grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(460px,1.1fr)]'
-            }
-        >
-            <ValidationDocumentPreview selectedDocument={selectedDocument} />
-            <ValidationDecisionPanel
-                selectedDocument={selectedDocument}
-                selectedDocumentId={selectedDocumentId}
-                schemas={schemas}
-                fieldRows={extraction.fieldRows}
-                onFieldRowsChange={extraction.setFieldRows}
-                selectedSchemaId={extraction.selectedSchemaId}
-                onSchemaChange={extraction.setSelectedSchemaId}
-                extracting={extraction.extracting}
-                extractMessage={extraction.extractMessage}
-                onRunExtract={extraction.runLangExtract}
-                saving={versioning.saving}
-                saveMessage={versioning.saveMessage}
-                confirmSaveOpen={versioning.confirmSaveOpen}
-                onOpenConfirmSave={() => versioning.setConfirmSaveOpen(true)}
-                onCancelConfirmSave={() => versioning.setConfirmSaveOpen(false)}
-                onSaveFields={versioning.handleSaveFields}
-                historyOpen={versioning.historyOpen}
-                onCloseHistory={() => versioning.setHistoryOpen(false)}
-                history={versioning.history}
-                historyLoading={versioning.historyLoading}
-                historyError={versioning.historyError}
-                onOpenHistory={versioning.openHistory}
-                notes={decision.notes}
-                onNotesChange={(value) => {
-                    decision.setNotes(value)
-                    decision.setNotesError(false)
-                }}
-                notesError={decision.notesError}
-                submitError={decision.submitError}
-                submitting={decision.submitting}
-                onApprove={() => decision.submitDecision('approved')}
-                onReject={() => decision.submitDecision('rejected')}
-            />
+        <div className="grid gap-4 xl:grid-cols-[minmax(460px,1.1fr)_minmax(360px,0.9fr)]">
+            {decisionPanel}
+            {documentPreview}
         </div>
     )
 }

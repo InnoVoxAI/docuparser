@@ -1,15 +1,17 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import type { Query } from '@tanstack/react-query'
 import { api } from '../../../shared/lib/http'
 import { readError } from '../../../shared/utils'
-import type {
-    Paginated,
-    ProcessListParams,
-    ProcessOrderingField,
-    ProcessStatusGroup,
-    ProcessSummary,
-    SortDirection,
+import {
+    STATUS_GROUP_ORDER,
+    type Paginated,
+    type ProcessListParams,
+    type ProcessOrderingField,
+    type ProcessStatusGroup,
+    type ProcessSummary,
+    type SortDirection,
 } from '../types'
 import { processKeys } from './queryKeys'
 
@@ -33,12 +35,19 @@ async function fetchProcessPage(params: ProcessListParams): Promise<Paginated<Pr
     return response.data
 }
 
+function parseStatusGroup(value: string | null): ProcessStatusGroup | '' {
+    return value && (STATUS_GROUP_ORDER as readonly string[]).includes(value) ? (value as ProcessStatusGroup) : ''
+}
+
 /** Lista paginada de processos pra tabela da Visão Geral, filtrável por busca
  * (nome do arquivo) e pelo status "de negócio" (dropdown — um status por vez,
- * ou "Todos"). */
+ * ou "Todos"). O status vive no query param `?status=` da URL: assim a
+ * Estatísticas consegue linkar direto pra cá já filtrado, e o filtro fica
+ * compartilhável/bookmarkável. */
 export function useProcessesQuery() {
     const [page, setPage] = useState(1)
-    const [statusGroup, setStatusGroupState] = useState<ProcessStatusGroup | ''>('')
+    const [searchParams, setSearchParams] = useSearchParams()
+    const statusGroup = parseStatusGroup(searchParams.get('status'))
     const [search, setSearchState] = useState('')
     // `null` = sem ordenação explícita (default do backend: mais recente primeiro).
     const [sort, setSort] = useState<{ field: ProcessOrderingField; direction: SortDirection } | null>(null)
@@ -66,7 +75,15 @@ export function useProcessesQuery() {
 
     const setStatusGroup = (group: ProcessStatusGroup | '') => {
         setPage(1)
-        setStatusGroupState(group)
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev)
+                if (group) next.set('status', group)
+                else next.delete('status')
+                return next
+            },
+            { replace: true },
+        )
     }
 
     const setSearch = (value: string) => {

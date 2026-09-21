@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../../shared/lib/http'
 import { readError } from '../../../shared/utils'
-import { parseFieldEntry, pollDocumentExtraction } from '../utils'
+import { deriveFieldRowsFromFields, pollDocumentExtraction } from '../utils'
 import type { Document, ExtractionResult, FieldRow, SchemaConfig } from '../types'
 
 /**
@@ -29,15 +29,7 @@ export function useFieldExtraction({
         const isLangExtracted = result && result.schema_id !== 'legacy_ocr'
         const persistedFields = isLangExtracted ? result.fields : null
         if (persistedFields && Object.keys(persistedFields).length > 0) {
-            setFieldRows(
-                Object.entries(persistedFields)
-                    .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                    .map(([name, raw]) => {
-                        const { value, confidence } = parseFieldEntry(raw)
-                        return { name, value, confidence }
-                    })
-                    .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
-            )
+            setFieldRows(deriveFieldRowsFromFields(persistedFields))
         } else {
             setFieldRows([])
         }
@@ -71,16 +63,7 @@ export function useFieldExtraction({
     }, [selectedDocument?.id])
 
     const applyExtractionData = (data: ExtractionResult) => {
-        const fields = data.fields || {}
-        setFieldRows(
-            Object.entries(fields)
-                .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-                .map(([name, raw]) => {
-                    const { value, confidence } = parseFieldEntry(raw)
-                    return { name, value, confidence }
-                })
-                .filter((row) => row.value !== '' && row.value.toLowerCase() !== 'valor não encontrado'),
-        )
+        setFieldRows(deriveFieldRowsFromFields(data.fields || {}))
         const pct = data.confidence != null ? ` Confianca: ${(data.confidence * 100).toFixed(0)}%` : ''
         setExtractMessage(`Extracao concluida.${pct}`)
     }

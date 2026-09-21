@@ -43,10 +43,18 @@ describe('Validação — salvar campos e histórico', () => {
         expect(await screen.findByDisplayValue('100')).toBeInTheDocument()
     })
 
+    it('esconde Salvar Alterações/Visualizar Histórico até haver edição não salva', async () => {
+        renderValidation()
+        await screen.findByDisplayValue('100')
+
+        expect(screen.queryByRole('button', { name: /Salvar Alterações/i })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Visualizar Histórico/i })).not.toBeInTheDocument()
+    })
+
     it('salva alterações com confirmação e cria nova versão (201)', async () => {
         const user = userEvent.setup()
         renderValidation()
-        await screen.findByDisplayValue('100')
+        await user.type(await screen.findByDisplayValue('100'), '5')
 
         await user.click(screen.getByRole('button', { name: /Salvar Alterações/i }))
         // diálogo de confirmação
@@ -63,7 +71,7 @@ describe('Validação — salvar campos e histórico', () => {
         )
         const user = userEvent.setup()
         renderValidation()
-        await screen.findByDisplayValue('100')
+        await user.type(await screen.findByDisplayValue('100'), '5')
 
         await user.click(screen.getByRole('button', { name: /Salvar Alterações/i }))
         await user.click(screen.getByRole('button', { name: /^Salvar$/i }))
@@ -91,7 +99,7 @@ describe('Validação — salvar campos e histórico', () => {
         expect(onValidated).toHaveBeenCalled()
     })
 
-    it('exige motivo ao rejeitar e bloqueia o envio', async () => {
+    it('rejeitar abre um popup exigindo o motivo', async () => {
         const user = userEvent.setup()
         const onBackToInbox = vi.fn()
         renderWithQueryClient(
@@ -105,12 +113,14 @@ describe('Validação — salvar campos e histórico', () => {
         )
         await screen.findByDisplayValue('100')
 
-        await user.click(screen.getByRole('button', { name: /Rejeitar/i }))
-        expect(await screen.findByText(/motivo da rejeição é obrigatório/i)).toBeInTheDocument()
+        await user.click(screen.getByRole('button', { name: /^Rejeitar$/i }))
+        expect(await screen.findByRole('dialog', { name: 'Rejeitar documento' })).toBeInTheDocument()
+        // Sem motivo, a confirmação fica desabilitada — não dá pra rejeitar em branco.
+        expect(screen.getByRole('button', { name: 'Confirmar rejeição' })).toBeDisabled()
         expect(onBackToInbox).not.toHaveBeenCalled()
     })
 
-    it('rejeita com motivo informado', async () => {
+    it('rejeita com motivo informado no popup', async () => {
         const user = userEvent.setup()
         const onBackToInbox = vi.fn()
         renderWithQueryClient(
@@ -124,12 +134,13 @@ describe('Validação — salvar campos e histórico', () => {
         )
         await screen.findByDisplayValue('100')
 
-        await user.type(screen.getByPlaceholderText(/Motivo da rejeição/i), 'Valor divergente')
-        await user.click(screen.getByRole('button', { name: /Rejeitar/i }))
+        await user.click(screen.getByRole('button', { name: /^Rejeitar$/i }))
+        await user.type(screen.getByPlaceholderText('Motivo da rejeição'), 'Valor divergente')
+        await user.click(screen.getByRole('button', { name: 'Confirmar rejeição' }))
         await waitFor(() => expect(onBackToInbox).toHaveBeenCalled())
     })
 
-    it('permite adicionar e remover um campo editável', async () => {
+    it('permite adicionar e remover um campo extraído', async () => {
         const user = userEvent.setup()
         renderWithQueryClient(
             <ValidationView
@@ -142,12 +153,18 @@ describe('Validação — salvar campos e histórico', () => {
         )
         await screen.findByDisplayValue('100')
 
-        const before = screen.getAllByPlaceholderText('campo').length
-        await user.click(screen.getByRole('button', { name: /Adicionar/i }))
-        expect(screen.getAllByPlaceholderText('campo').length).toBe(before + 1)
+        await user.click(screen.getByRole('button', { name: 'Adicionar campo' }))
+        await user.type(screen.getByPlaceholderText('Nome do campo'), 'numero_pedido')
+        await user.type(screen.getByPlaceholderText('Valor'), '42')
+        await user.click(screen.getByRole('button', { name: /^Adicionar$/ }))
 
-        await user.click(screen.getAllByRole('button', { name: /Remover/i })[0])
-        expect(screen.getAllByPlaceholderText('campo').length).toBe(before)
+        // Chave técnica vira rótulo legível ("numero_pedido" -> "Numero Pedido"),
+        // não um input de nome cru.
+        expect(await screen.findByDisplayValue('42')).toBeInTheDocument()
+        expect(screen.getByLabelText('Numero Pedido')).toHaveValue('42')
+
+        await user.click(screen.getByRole('button', { name: 'Remover campo Numero Pedido' }))
+        expect(screen.queryByDisplayValue('42')).not.toBeInTheDocument()
     })
 
     it('abre o histórico de versões (somente leitura)', async () => {
@@ -172,7 +189,7 @@ describe('Validação — salvar campos e histórico', () => {
         )
         const user = userEvent.setup()
         renderValidation()
-        await screen.findByDisplayValue('100')
+        await user.type(await screen.findByDisplayValue('100'), '5')
 
         await user.click(screen.getByRole('button', { name: /Visualizar Histórico/i }))
         expect(await screen.findByText(/Histórico de versões/i)).toBeInTheDocument()

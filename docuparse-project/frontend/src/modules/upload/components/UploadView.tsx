@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { FileText, Upload } from 'lucide-react'
 import { EmptyState, Field } from '../../../shared/components'
 import { readError } from '../../../shared/utils'
-import { comApi } from '../../../shared/lib/http'
+import { uploadManualDocument } from '../../../shared/lib/upload'
 
 export function UploadView({ onUploaded }: { onUploaded: () => void | Promise<unknown> }) {
     const [file, setFile] = useState<File | null>(null)
@@ -24,20 +24,15 @@ export function UploadView({ onUploaded }: { onUploaded: () => void | Promise<un
     }, [file])
 
     const submitUpload = async () => {
-        if (!canSubmit) {
+        if (!file || !canSubmit) {
             return
         }
         setSubmitting(true)
         setMessage('')
-        const formData = new FormData()
-        if (file) formData.append('file', file)
-        if (sender.trim()) {
-            formData.append('sender', sender)
-        }
 
         try {
-            const response = await comApi.post('/documents/manual', formData)
-            setMessage(`Documento recebido: ${response.data.document_id}`)
+            const data = await uploadManualDocument(file, sender)
+            setMessage(`Documento recebido: ${data.document_id}`)
             setFile(null)
             await onUploaded()
         } catch (requestError) {

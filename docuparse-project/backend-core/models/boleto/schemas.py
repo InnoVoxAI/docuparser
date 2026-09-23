@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 SCHEMA_ID = "boleto_default"
 
@@ -21,10 +22,15 @@ _BARCODE_RE = re.compile(r"\b\d{44}\b")
 _THRESHOLD = 4
 
 
+def _strip_accents(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
 def score(raw_text: str) -> int:
     if not raw_text:
         return 0
-    text = str(raw_text).lower()
+    text = _strip_accents(str(raw_text).lower())
     s = sum(1 for kw in _KEYWORDS if kw in text)
     if _LINHA_DIGITAVEL_RE.search(text):
         s += 3

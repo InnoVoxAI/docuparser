@@ -3,11 +3,11 @@ title: Roadmap — Doc Type Identification, Classification, Merging (backlog Jir
 type: note
 permalink: docuparser/decisions/roadmap-doc-type-identification-classification-merging-backlog-jira
 tags:
-- roadmap
-- jira
-- boleto
-- plano-de-contas
-- document-merging
+  - roadmap
+  - jira
+  - boleto
+  - plano-de-contas
+  - document-merging
 ---
 
 ## Contexto
@@ -50,6 +50,12 @@ POST_PROCESSING, EXTRACTION_DEFINITION); (2) registrar no catálogo global
 (3) reconciliar/decidir o papel do extrator regex órfão do
 langextract-service (legado a remover, ou fallback intencional?).
 
+**Status (2026-09-20)**: story (1) feita, `models/boleto/definition.py` existe
+(ainda não registrado no catálogo, isso é a story 2). Nomes de campos portados
+do `frontend/src/models/boleto/` (ex: `beneficiario_nome`, `cnpj_cpf_pagador`,
+`pagavel_em`), não os nomes literais do ticket (`cedente`, `sacado`,
+`local_pagamento`), para o seed bater com o que `applyBoleto()` aplica no front.
+
 ## EPIC 2 — Doc Classification: plano de contas
 
 Não existe nenhum conceito de "plano de contas" no datamodel hoje —
@@ -57,6 +63,7 @@ Não existe nenhum conceito de "plano de contas" no datamodel hoje —
 `layout`, `metadata` (JSON). É greenfield.
 
 Regras de negócio definidas pelo usuário:
+
 - CNPJ de concessionária (água/luz/gás) → Serviços Básicos
 - INSS → Impostos
 - RPA + dedetização → Serviços
@@ -76,6 +83,7 @@ de um único Document — **não existe nenhum modelo de agrupamento**). Este
 épico introduz esse conceito.
 
 Regras de matching definidas pelo usuário:
+
 - Mesmo CNPJ + valor bate → match
 - Mesmo CNPJ, boleto de valor MENOR que a NF → match (N boletos por NF ok)
 - Mesmo CNPJ, boleto de valor MAIOR que a NF → não faz match

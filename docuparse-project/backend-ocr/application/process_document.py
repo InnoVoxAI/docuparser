@@ -45,6 +45,10 @@ from infrastructure.fallback.fallback_handler import merge_fallback_result
 
 logger = logging.getLogger(__name__)
 
+# Abaixo disso, texto do Docling é tratado como camada textual residual
+# (ex: só cabeçalho/rodapé em volta de uma imagem) e dispara OCR por imagem.
+DOCLING_MIN_CHARS_PER_PAGE = 300
+
 # Registry de engines disponíveis — lazy loading para evitar falhas de import
 ENGINE_REGISTRY: dict[str, BaseOCREngine] = {}
 
@@ -164,18 +168,21 @@ def process_document(
             raise e
 
     # ──────────────────────────────────────────────────────────────────────────
-    # 3.5 FALLBACK POR TEXTO VAZIO (DoclingEngine em PDF sem camada textual)
+    # 3.5 FALLBACK POR TEXTO ESCASSO (DoclingEngine em PDF sem camada textual útil)
     # ──────────────────────────────────────────────────────────────────────────
-    # DoclingEngine sinaliza fallback_recommended quando não encontra texto no PDF.
-    # Isso acontece quando o PDF é uma imagem escaneada sem camada de texto digital.
-    # O classificador pode ter rotulado o arquivo como digital_pdf por conta de
-    # características visuais (linhas de tabela), mas se não há texto extraível,
-    # precisamos tentar um engine de OCR por imagem.
+    # DoclingEngine sinaliza fallback_recommended quando o texto do PDF é pobre.
+    # Isso acontece quando o PDF é uma imagem escaneada sem camada de texto digital,
+    # ou quando o conteúdo principal é uma imagem embutida e a camada textual só
+    # tem cabeçalho/rodapé. O classificador pode ter rotulado o arquivo como
+    # digital_pdf por conta de características visuais (linhas de tabela), mas
+    # sem texto suficiente precisamos tentar um engine de OCR por imagem.
     engine_meta = ocr_result.get("_meta", {})
+    page_count = (ocr_result.get("document_info") or {}).get("page_count") or 1
+    docling_chars = len(ocr_result.get("raw_text", "").strip())
     if (
         engine_name == "docling"
         and engine_meta.get("fallback_recommended")
-        and not ocr_result.get("raw_text", "").strip()
+        and docling_chars < DOCLING_MIN_CHARS_PER_PAGE * page_count
     ):
         image_fallback_name = (
             "openrouter" if "openrouter" in ENGINE_REGISTRY else "tesseract"
@@ -183,7 +190,7 @@ def process_document(
         if image_fallback_name in ENGINE_REGISTRY:
             try:
                 logger.info(
-                    "DoclingEngine retornou texto vazio com fallback_recommended=True; "
+                    f"DoclingEngine retornou texto escasso ({docling_chars} chars) com fallback_recommended=True; "
                     f"ativando fallback com engine de imagem: {image_fallback_name}"
                 )
                 image_fallback_engine = ENGINE_REGISTRY[image_fallback_name]
@@ -200,10 +207,10 @@ def process_document(
                 engine_name = f"docling_with_{image_fallback_name}_fallback"
                 doc_type = "scanned_image"
                 logger.info(
-                    f"Fallback por texto vazio bem-sucedido: engine={engine_name}"
+                    f"Fallback por texto escasso bem-sucedido: engine={engine_name}"
                 )
             except Exception as fallback_e:
-                logger.warning(f"Fallback por texto vazio falhou: {fallback_e}")
+                logger.warning(f"Fallback por texto escasso falhou: {fallback_e}")
 
     field_positions = {}
 

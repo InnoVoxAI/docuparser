@@ -127,6 +127,48 @@ def test_process_document_routes_digital_pdf_to_docling(monkeypatch) -> None:
     assert result["raw_text"] == "texto pdf"
 
 
+def _docling_then_openrouter(monkeypatch, docling_text: str) -> None:
+    monkeypatch.setattr(
+        process_module, "classify_document", lambda filename, content: "digital_pdf"
+    )
+    image_text = " ".join(["linha digitavel beneficiario pagador vencimento"] * 20)
+    monkeypatch.setattr(
+        process_module,
+        "ENGINE_REGISTRY",
+        {
+            "docling": FakeEngine(
+                {
+                    "raw_text": docling_text,
+                    "document_info": {"page_count": 1},
+                    "_meta": {"engine": "docling", "fallback_recommended": True},
+                }
+            ),
+            "openrouter": FakeEngine(
+                {"raw_text": image_text, "_meta": {"engine": "openrouter"}}
+            ),
+        },
+    )
+
+
+def test_process_document_ocrs_image_when_docling_text_is_sparse(
+    monkeypatch,
+) -> None:
+    _docling_then_openrouter(monkeypatch, "www.banese.com.br Pagina 6 Modelo do boleto")
+
+    result = process_module.process_document(b"%PDF", "boleto.pdf")
+
+    assert result["engine_used"] == "docling_with_openrouter_fallback"
+    assert result["raw_text"].startswith("linha digitavel")
+
+
+def test_process_document_keeps_docling_when_text_is_sufficient(monkeypatch) -> None:
+    _docling_then_openrouter(monkeypatch, "x" * 400)
+
+    result = process_module.process_document(b"%PDF", "darf.pdf")
+
+    assert result["engine_used"] == "docling"
+
+
 def test_process_document_routes_image_pdf_to_openrouter(monkeypatch) -> None:
     monkeypatch.setattr(
         process_module, "classify_document", lambda filename, content: "scanned_image"

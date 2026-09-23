@@ -21,15 +21,15 @@ assert_only_canonical_rows = importlib.import_module(
 
 class SeedIdempotencyTests(TestCase):
     def test_seed_default_catalog_is_idempotent(self) -> None:
-        # catalog/0002 já rodou — o catálogo canônico existe (2 + 3).
-        assert SchemaConfig.objects.count() == 2
-        assert LayoutConfig.objects.count() == 3
+        # catalog/0002+0003 já rodaram — o catálogo canônico existe (3 + 6).
+        assert SchemaConfig.objects.count() == 3
+        assert LayoutConfig.objects.count() == 6
 
         seed_default_catalog()
         seed_default_catalog()
 
-        assert SchemaConfig.objects.count() == 2
-        assert LayoutConfig.objects.count() == 3
+        assert SchemaConfig.objects.count() == 3
+        assert LayoutConfig.objects.count() == 6
 
 
 class _FakeManager:

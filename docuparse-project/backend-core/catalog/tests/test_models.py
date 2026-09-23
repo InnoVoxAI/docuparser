@@ -6,8 +6,8 @@ from django.test import TestCase
 
 from catalog.models import LayoutConfig, SchemaConfig
 
-# NOTA: o catálogo canônico (2 SchemaConfig + 3 LayoutConfig) já existe no banco
-# de teste — `catalog/0002_seed_default_catalog` roda no setup. Os testes abaixo
+# NOTA: o catálogo canônico (3 SchemaConfig + 6 LayoutConfig) já existe no banco
+# de teste — `catalog/0002` e `0003` rodam no setup. Os testes abaixo
 # usam identificadores próprios para não colidir com o seed.
 
 

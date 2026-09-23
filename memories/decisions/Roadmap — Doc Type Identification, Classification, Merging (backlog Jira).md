@@ -56,6 +56,15 @@ do `frontend/src/models/boleto/` (ex: `beneficiario_nome`, `cnpj_cpf_pagador`,
 `pagavel_em`), não os nomes literais do ticket (`cedente`, `sacado`,
 `local_pagamento`), para o seed bater com o que `applyBoleto()` aplica no front.
 
+**Status (2026-09-23)**: story (2) feita, `boleto_default` + layouts
+`boleto_caixa`/`boleto_bb`/`boleto_bradesco` no `default_catalog_specs()`,
+seed via nova migration `catalog/0003_seed_boleto_catalog` (0002 intocada).
+Teste e2e com boleto Itaú: classificado e extraído com `boleto_default`, mas o
+LLM (`LANGEXTRACT_MODEL=qwen-2.5-7b`) errou `linha_digitavel` (45 dígitos,
+OCR estava correto) e não achou `pagador_nome`/`valor_documento`. Gap de
+plataforma: `post_processing` das definitions não é consumido por nenhum código
+(datas não normalizadas, checksum não validado), vale para todos os schemas.
+
 ## EPIC 2 — Doc Classification: plano de contas
 
 Não existe nenhum conceito de "plano de contas" no datamodel hoje —

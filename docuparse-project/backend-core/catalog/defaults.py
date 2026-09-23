@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any, TypedDict
 
 # schema_ids que não podem ser excluídos via API (são padrão do sistema).
-PROTECTED_SCHEMA_IDS = ["nota_fiscal_default", "conta_agua_default"]
+PROTECTED_SCHEMA_IDS = ["nota_fiscal_default", "conta_agua_default", "boleto_default"]
 
 
 class SchemaSpec(TypedDict):
@@ -34,7 +34,8 @@ class CatalogSpecs(TypedDict):
 
 def default_catalog_specs() -> CatalogSpecs:
     """Lê as definições canônicas de `models/*/definition.py` e devolve o
-    conjunto canônico do catálogo global: 2 schemas + 3 layouts."""
+    conjunto canônico do catálogo global: 3 schemas + 6 layouts."""
+    import models.boleto.definition as _boleto_def
     import models.contadeagua.definition as _agua_def
     import models.nota_fiscal.definition as _nf_def
 
@@ -48,6 +49,11 @@ def default_catalog_specs() -> CatalogSpecs:
             "schema_id": _agua_def.SCHEMA_ID,
             "version": _agua_def.VERSION,
             "definition": _agua_def.EXTRACTION_DEFINITION,
+        },
+        {
+            "schema_id": _boleto_def.SCHEMA_ID,
+            "version": _boleto_def.VERSION,
+            "definition": _boleto_def.EXTRACTION_DEFINITION,
         },
     ]
     layouts: list[LayoutSpec] = [
@@ -65,6 +71,21 @@ def default_catalog_specs() -> CatalogSpecs:
             "layout": "fatura_energia",
             "document_type": "",
             "schema_id": _agua_def.SCHEMA_ID,
+        },
+        {
+            "layout": "boleto_caixa",
+            "document_type": "",
+            "schema_id": _boleto_def.SCHEMA_ID,
+        },
+        {
+            "layout": "boleto_bb",
+            "document_type": "",
+            "schema_id": _boleto_def.SCHEMA_ID,
+        },
+        {
+            "layout": "boleto_bradesco",
+            "document_type": "",
+            "schema_id": _boleto_def.SCHEMA_ID,
         },
     ]
     return {"schemas": schemas, "layouts": layouts}

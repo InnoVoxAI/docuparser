@@ -64,6 +64,12 @@ LLM (`LANGEXTRACT_MODEL=qwen-2.5-7b`) errou `linha_digitavel` (45 dígitos,
 OCR estava correto) e não achou `pagador_nome`/`valor_documento`. Gap de
 plataforma: `post_processing` das definitions não é consumido por nenhum código
 (datas não normalizadas, checksum não validado), vale para todos os schemas.
+Depois: layout `boleto_generico` (bancos não reconhecidos) adicionado ao
+layout-service e ao catálogo; `0002` em produção ainda não confirmado.
+
+**Status (2026-09-27)**: story (3) feita, opção (a): extrator regex e
+`SCHEMA_BY_LAYOUT` removidos, catálogo é a única fonte de regras. Ver
+[[Extração catálogo-only - remoção do extrator regex do langextract-service]].
 
 ## EPIC 2 — Doc Classification: plano de contas
 

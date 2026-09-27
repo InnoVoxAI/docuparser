@@ -17,7 +17,7 @@ Este documento descreve como a UI de "Configuracoes > Extracao" se relaciona com
 4. backend-core consome "extraction.completed" e grava ExtractionResult no banco.
 5. UI de validacao consome o resultado para o operador aprovar/corrigir.
 
-O fluxo acima nao usa as configuracoes da aba "Extracao". A UI salva schemas e layouts no backend-core, mas o langextract-service atual usa regras fixas em codigo.
+O langextract-service extrai via LLM usando o SchemaConfig.definition do catalogo: no fluxo sincrono o backend-core envia a definition; no worker ela e buscada pelo LayoutConfig do layout. Nao ha regras de extracao fixas em codigo (ver memories/decisions "Extração catálogo-only").
 
 ## Front-end (Configuracoes > Extracao) -> Backend core
 
@@ -86,19 +86,17 @@ O fluxo acima nao usa as configuracoes da aba "Extracao". A UI salva schemas e l
 ### Endpoints
 
 - POST /api/v1/extract
-  - Faz extracao via codigo fixo e retorna ExtractResponse.
-  - Arquivos: [docuparse-project/langextract-service/api/app.py](docuparse-project/langextract-service/api/app.py#L13-L40), [docuparse-project/langextract-service/domain/extractor.py](docuparse-project/langextract-service/domain/extractor.py#L1-L62)
+  - Exige schema_definition (422 sem ele) e extrai via LLM, retornando ExtractResponse.
+  - Arquivos: [docuparse-project/langextract-service/api/app.py](docuparse-project/langextract-service/api/app.py), [docuparse-project/langextract-service/domain/llm_extractor.py](docuparse-project/langextract-service/domain/llm_extractor.py)
 
 ### Worker de eventos
 
-- Consome "layout.classified" e publica "extraction.completed".
-  - Arquivo: [docuparse-project/langextract-service/application/extraction_event_worker.py](docuparse-project/langextract-service/application/extraction_event_worker.py#L25-L132)
+- Consome "layout.classified", busca o SchemaConfig do layout no backend-core e publica "extraction.completed". Sem schema no catalogo, nao publica nada.
+  - Arquivos: [docuparse-project/langextract-service/application/extraction_event_worker.py](docuparse-project/langextract-service/application/extraction_event_worker.py), [docuparse-project/langextract-service/domain/backend_core_client.py](docuparse-project/langextract-service/domain/backend_core_client.py)
 
 ### Regras de extracao atuais
 
-- Mapeamento fixo de layout -> schema: [docuparse-project/langextract-service/domain/schemas.py](docuparse-project/langextract-service/domain/schemas.py#L18-L30)
-- Extracao por regex para "boleto" e "fatura", e fallback generico.
-  - Arquivo: [docuparse-project/langextract-service/domain/extractor.py](docuparse-project/langextract-service/domain/extractor.py#L7-L58)
+- Layout -> schema vem do LayoutConfig do catalogo global (backend-core). O extrator regex e o mapa fixo SCHEMA_BY_LAYOUT foram removidos em 2026-09-27.
 
 ## Backend core: consumo de extraction.completed
 
@@ -122,11 +120,11 @@ O fluxo acima nao usa as configuracoes da aba "Extracao". A UI salva schemas e l
 
 ## Lacunas e falhas encontradas
 
-1. LangExtract service nao consome as configuracoes salvas no backend-core (SchemaConfig e LayoutConfig). A extracao continua fixa em codigo.
+1. (Resolvido em 2026-09-27) LangExtract service nao consumia SchemaConfig/LayoutConfig no worker; a extracao era fixa em codigo.
 2. A UI nao chama /api/v1/extract para teste visual; o preview e gerado no front-end.
 3. Nao ha endpoint no backend-core para executar extracao usando o schema salvo nem para validar/registrar exemplos.
-4. O mapeamento de layout -> schema no langextract-service e fixo (SCHEMA_BY_LAYOUT) e nao considera LayoutConfig salvo no banco.
-5. O versionamento do schema (SchemaConfig.version) ainda nao e usado no langextract-service.
+4. (Resolvido em 2026-09-27) O mapeamento de layout -> schema era fixo (SCHEMA_BY_LAYOUT) e ignorava o LayoutConfig.
+5. (Resolvido em 2026-09-27) SchemaConfig.version agora chega ao langextract-service nos dois fluxos.
 6. Regras de pos-processamento e traceabilidade existem na UI, mas nao sao aplicadas na extracao real.
 
 ## O que ja esta pronto e usado

@@ -12,14 +12,3 @@ class ExtractedDocument(BaseModel):
     fields: dict[str, Any]
     confidence: float = Field(ge=0.0, le=1.0)
     requires_human_validation: bool
-
-
-SCHEMA_BY_LAYOUT = {
-    "boleto_caixa": "boleto",
-    "boleto_bb": "boleto",
-    "boleto_bradesco": "boleto",
-    "boleto_generico": "boleto",
-    "fatura_energia": "fatura",
-    "fatura_condominio": "fatura",
-    "generic": "generic",
-}

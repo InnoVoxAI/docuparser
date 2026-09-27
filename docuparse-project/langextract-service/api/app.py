@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 
 from application.extraction_event_worker import start_worker_thread_from_env
 from docuparse_observability.tracing import configure_tracing, is_telemetry_enabled
-from domain.extractor import extract_fields
 from domain.llm_extractor import extract_with_llm
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -74,17 +73,11 @@ async def readiness_check():
 
 @app.post("/api/v1/extract", response_model=ExtractResponse)
 async def extract_endpoint(request: ExtractRequest) -> ExtractResponse:
-    # When a schema_definition is supplied use the LLM extractor; otherwise fall back to regex.
-    if request.schema_definition:
-        extracted = extract_with_llm(
-            request.raw_text,
-            request.schema_definition,
-            tenant_id=str(request.metadata.get("tenant_id", "unknown")),
-        )
-    else:
-        extracted = extract_fields(
-            request.raw_text, request.layout, request.document_type
-        )
+    extracted = extract_with_llm(
+        request.raw_text,
+        request.schema_definition,
+        tenant_id=str(request.metadata.get("tenant_id", "unknown")),
+    )
 
     return ExtractResponse(
         schema_id=extracted.schema_id,

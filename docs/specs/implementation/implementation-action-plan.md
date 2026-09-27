@@ -624,7 +624,7 @@ Preencher antes das fases que dependem de integracoes reais.
   - `curl -s -i http://127.0.0.1:8091/health`
 - Pendencias:
   - Usar `langextract-worker` no profile `async-workers` somente na virada para fluxo assincrono.
-  - Substituir/adaptar extrator deterministico para LLM mockado quando o provedor for definido.
+  - (Resolvido em 2026-09-27) Extrator deterministico removido; extracao so via LLM + catalogo, testes com LLM mockado.
 
 ### T-0402 - Implementar schemas versionados de extracao
 

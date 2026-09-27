@@ -5,8 +5,9 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 from uuid import uuid4
 
 from docuparse_events import (
@@ -19,7 +20,6 @@ from docuparse_events import (
 from docuparse_observability import log_event
 from docuparse_storage import get_storage
 from domain.backend_core_client import fetch_schema_for_layout
-from domain.extractor import extract_fields
 from domain.llm_extractor import extract_with_llm
 from events import ExtractionCompletedEvent, LayoutClassifiedEvent
 from opentelemetry import trace
@@ -38,9 +38,7 @@ def _traced_consumer(span_name: str) -> Callable[[F], F]:
         @functools.wraps(func)
         def wrapper(payload: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
             link = extract_trace_link(payload)
-            with _tracer.start_as_current_span(
-                span_name, links=[link] if link else []
-            ):
+            with _tracer.start_as_current_span(span_name, links=[link] if link else []):
                 return func(payload, *args, **kwargs)
 
         return wrapper  # type: ignore[return-value]
@@ -63,49 +61,44 @@ def handle_layout_classified_event(
     publisher: EventPublisher,
     *,
     source: str = "langextract-service",
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     event = LayoutClassifiedEvent.model_validate(payload)
     raw_text_uri = str(event.data.metadata.get("raw_text_uri", ""))
     raw_payload = json.loads(storage.get_bytes(raw_text_uri).decode("utf-8"))
     raw_text = str(raw_payload.get("raw_text", ""))
 
-    # --- Extraction strategy selection ---
-    # 1. Try to load the SchemaConfig definition linked to this layout in backend-core.
-    # 2. If found: use the LLM extractor with the full prompt + field list from the schema.
-    # 3. If not found (no config, service unreachable, etc.): fall back to the legacy
-    #    regex-based extractor so existing layouts keep working unchanged.
+    # O catálogo (SchemaConfig ligado ao layout) é a única fonte de regras de
+    # extração. Sem schema não há extração, igual ao `pending_no_schema` do
+    # fluxo síncrono do backend-core.
     schema_definition, confidence_threshold = fetch_schema_for_layout(
         tenant_id=event.tenant_id,
         layout=event.data.layout,
         document_type=event.data.document_type,
     )
+    if not schema_definition:
+        log_event(
+            logger,
+            "langextract.extraction_skipped_no_schema",
+            tenant_id=event.tenant_id,
+            document_id=str(event.document_id),
+            layout=event.data.layout,
+        )
+        return None
 
-    if schema_definition:
-        log_event(
-            logger,
-            "langextract.using_llm_extraction",
-            tenant_id=event.tenant_id,
-            document_id=str(event.document_id),
-            layout=event.data.layout,
-            schema_id=schema_definition.get("schema_id"),
-        )
-        extracted = extract_with_llm(
-            raw_text,
-            schema_definition,
-            tenant_id=event.tenant_id,
-            confidence_threshold=confidence_threshold,
-        )
-    else:
-        log_event(
-            logger,
-            "langextract.using_regex_extraction",
-            tenant_id=event.tenant_id,
-            document_id=str(event.document_id),
-            layout=event.data.layout,
-        )
-        extracted = extract_fields(
-            raw_text, event.data.layout, event.data.document_type
-        )
+    log_event(
+        logger,
+        "langextract.using_llm_extraction",
+        tenant_id=event.tenant_id,
+        document_id=str(event.document_id),
+        layout=event.data.layout,
+        schema_id=schema_definition.get("schema_id"),
+    )
+    extracted = extract_with_llm(
+        raw_text,
+        schema_definition,
+        tenant_id=event.tenant_id,
+        confidence_threshold=confidence_threshold,
+    )
 
     output = ExtractionCompletedEvent(
         event_id=uuid4(),

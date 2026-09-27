@@ -38,7 +38,11 @@ def fetch_schema_for_layout(
     )
     internal_token = os.getenv("DOCUPARSE_INTERNAL_SERVICE_TOKEN", "").strip()
 
-    headers: dict[str, str] = {"Content-Type": "application/json"}
+    # backend-core exige X-Tenant em chamadas autenticadas pelo token interno.
+    headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "X-Tenant": tenant_id,
+    }
     if internal_token:
         headers["Authorization"] = f"Bearer {internal_token}"
 
@@ -134,7 +138,11 @@ def fetch_schema_for_layout(
         document_type,
         tenant_id,
     )
-    return definition, confidence_threshold
+    return {
+        **definition,
+        "schema_id": schema_config.get("schema_id"),
+        "version": schema_config.get("version"),
+    }, confidence_threshold
 
 
 def _get_json(url: str, headers: dict[str, str]) -> Any:

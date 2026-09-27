@@ -6,7 +6,7 @@ from django.test import TestCase
 
 from catalog.models import LayoutConfig, SchemaConfig
 
-# NOTA: o catálogo canônico (3 SchemaConfig + 6 LayoutConfig) já existe no banco
+# NOTA: o catálogo canônico (3 SchemaConfig + 7 LayoutConfig) já existe no banco
 # de teste — `catalog/0002` e `0003` rodam no setup. Os testes abaixo
 # usam identificadores próprios para não colidir com o seed.
 

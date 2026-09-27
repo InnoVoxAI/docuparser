@@ -18,6 +18,7 @@ SCHEMA_BY_LAYOUT = {
     "boleto_caixa": "boleto",
     "boleto_bb": "boleto",
     "boleto_bradesco": "boleto",
+    "boleto_generico": "boleto",
     "fatura_energia": "fatura",
     "fatura_condominio": "fatura",
     "generic": "generic",

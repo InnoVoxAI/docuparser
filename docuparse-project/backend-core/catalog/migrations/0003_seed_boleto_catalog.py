@@ -13,7 +13,7 @@ def seed(apps, schema_editor):
 
 class Migration(migrations.Migration):
     """Reaplica o seed idempotente de `catalog.defaults` para incluir o schema
-    `boleto_default` e seus 3 LayoutConfig em bases onde a 0002 já rodou."""
+    `boleto_default` e seus 4 LayoutConfig em bases onde a 0002 já rodou."""
 
     dependencies = [
         ("catalog", "0002_seed_default_catalog"),

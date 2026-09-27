@@ -34,7 +34,7 @@ class CatalogSpecs(TypedDict):
 
 def default_catalog_specs() -> CatalogSpecs:
     """Lê as definições canônicas de `models/*/definition.py` e devolve o
-    conjunto canônico do catálogo global: 3 schemas + 6 layouts."""
+    conjunto canônico do catálogo global: 3 schemas + 7 layouts."""
     import models.boleto.definition as _boleto_def
     import models.contadeagua.definition as _agua_def
     import models.nota_fiscal.definition as _nf_def
@@ -84,6 +84,11 @@ def default_catalog_specs() -> CatalogSpecs:
         },
         {
             "layout": "boleto_bradesco",
+            "document_type": "",
+            "schema_id": _boleto_def.SCHEMA_ID,
+        },
+        {
+            "layout": "boleto_generico",
             "document_type": "",
             "schema_id": _boleto_def.SCHEMA_ID,
         },

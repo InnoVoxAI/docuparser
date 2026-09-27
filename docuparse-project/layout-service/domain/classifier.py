@@ -8,10 +8,17 @@ LAYOUTS = {
     "boleto_caixa",
     "boleto_bb",
     "boleto_bradesco",
+    "boleto_generico",
     "fatura_energia",
     "fatura_condominio",
     "generic",
 }
+
+
+_BANK_BOLETO_LAYOUTS = ("boleto_caixa", "boleto_bb", "boleto_bradesco")
+_LINHA_DIGITAVEL_RE = re.compile(
+    r"\b\d{5}\.?\d{5}\s*\d{5}\.?\d{6}\s*\d{5}\.?\d{6}\s*\d\s*\d{14}\b"
+)
 
 
 @dataclass(frozen=True)
@@ -30,10 +37,20 @@ def classify_layout(
         "boleto_caixa": _score_boleto_caixa(text),
         "boleto_bb": _score_boleto_bb(text),
         "boleto_bradesco": _score_boleto_bradesco(text),
+        "boleto_generico": _score_boleto_generico(text),
         "fatura_energia": _score_fatura_energia(text),
         "fatura_condominio": _score_fatura_condominio(text),
     }
     layout, confidence = max(scores.items(), key=lambda item: item[1])
+
+    # Banco identificado prevalece sobre o layout generico de boleto.
+    if layout == "boleto_generico":
+        bank_layout, bank_confidence = max(
+            ((name, scores[name]) for name in _BANK_BOLETO_LAYOUTS),
+            key=lambda item: item[1],
+        )
+        if bank_confidence >= 0.45:
+            layout, confidence = bank_layout, bank_confidence
 
     if confidence < 0.45:
         layout = "generic"
@@ -114,6 +131,26 @@ def _score_boleto_bradesco(text: str) -> float:
             "vencimento": 0.1,
         },
     )
+
+
+def _score_boleto_generico(text: str) -> float:
+    score = _weighted_score(
+        text,
+        {
+            "ficha de compensa": 0.15,
+            "linha digitavel": 0.10,
+            "local de pagamento": 0.10,
+            "benefici": 0.10,
+            "cedente": 0.10,
+            "pagador": 0.10,
+            "nosso n": 0.10,
+            "vencimento": 0.10,
+            "boleto": 0.05,
+        },
+    )
+    if _LINHA_DIGITAVEL_RE.search(text):
+        score += 0.35
+    return min(score, 0.99)
 
 
 def _score_fatura_energia(text: str) -> float:

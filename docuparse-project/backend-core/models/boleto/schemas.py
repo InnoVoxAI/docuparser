@@ -19,7 +19,7 @@ _LINHA_DIGITAVEL_RE = re.compile(
     r"\b\d{5}\.?\d{5}\s+\d{5}\.?\d{6}\s+\d{5}\.?\d{6}\s+\d\s+\d{14}\b"
 )
 _BARCODE_RE = re.compile(r"\b\d{44}\b")
-_THRESHOLD = 4
+THRESHOLD = 4
 
 
 def _strip_accents(text: str) -> str:
@@ -39,5 +39,5 @@ def score(raw_text: str) -> int:
     return s
 
 
-def is_likely(raw_text: str, threshold: int = _THRESHOLD) -> bool:
+def is_likely(raw_text: str, threshold: int = THRESHOLD) -> bool:
     return score(raw_text) >= threshold

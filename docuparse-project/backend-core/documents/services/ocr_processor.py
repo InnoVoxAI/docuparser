@@ -12,6 +12,7 @@ from django.utils import timezone
 from docuparse_observability.tracing import capture_current_span_link
 from docuparse_orchestrator.decorators import task
 from docuparse_storage import document_ocr_raw_text_key, get_storage
+from models.classifier import classify
 from opentelemetry import trace
 
 from documents.models import Document, ExtractionResult
@@ -384,28 +385,13 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
         raise
 
 
-def _classify_raw_text(raw_text: str) -> str | None:
-    """Returns the schema_id that best matches the document text, or None."""
-    import models.boleto.schemas as _boleto
-    import models.contadeagua.schemas as _agua
-    import models.nota_fiscal.schemas as _nf
-
-    if _nf.is_likely(raw_text):
-        return _nf.SCHEMA_ID
-    if _agua.is_likely(raw_text):
-        return _agua.SCHEMA_ID
-    if _boleto.is_likely(raw_text):
-        return _boleto.SCHEMA_ID
-    return None
-
-
 def _resolve_schema_for_extraction(
     document: Document, raw_text: str
 ) -> SchemaConfig | None:
     """
     Priority:
     1. Explicit LayoutConfig via document.layout (admin-configured)
-    2. Text-based classifier — mirrors classify_text_view heuristic
+    2. Text-based classifier (`models.classifier.classify`, shared with classify_text_view)
     3. LayoutConfig by document.document_type (fallback for custom schemas)
     """
     if document.layout:
@@ -417,7 +403,7 @@ def _resolve_schema_for_extraction(
         if cfg and cfg.schema_config:
             return cfg.schema_config
 
-    schema_id = _classify_raw_text(raw_text)
+    schema_id = classify(raw_text)
     if schema_id:
         sc = SchemaConfig.objects.filter(schema_id=schema_id, is_active=True).first()
         if sc:

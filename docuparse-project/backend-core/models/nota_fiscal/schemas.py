@@ -25,7 +25,7 @@ _KEYWORDS = [
 ]
 
 _ACCESS_KEY_RE = re.compile(r"\b\d{44}\b")
-_THRESHOLD = 4
+THRESHOLD = 4
 
 
 def score(raw_text: str) -> int:
@@ -38,5 +38,5 @@ def score(raw_text: str) -> int:
     return s
 
 
-def is_likely(raw_text: str, threshold: int = _THRESHOLD) -> bool:
+def is_likely(raw_text: str, threshold: int = THRESHOLD) -> bool:
     return score(raw_text) >= threshold

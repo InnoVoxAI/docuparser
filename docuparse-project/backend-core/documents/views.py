@@ -1,9 +1,6 @@
 import json
 from io import BytesIO
 
-import models.boleto.schemas as _boleto_classifier
-import models.contadeagua.schemas as _agua_classifier
-import models.nota_fiscal.schemas as _nf_classifier
 from catalog.models import SchemaConfig
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -18,6 +15,7 @@ from docuparse_events import event_bus_from_env
 from docuparse_orchestrator.context import orchestration_run
 from docuparse_orchestrator.decorators import task
 from docuparse_storage import get_storage
+from models.classifier import classify
 from rest_framework import status
 from rest_framework.decorators import (
     api_view,
@@ -178,20 +176,12 @@ def list_engines_view(request):
 def classify_text_view(request):
     """Classify OCR text and return the best matching document schema_id.
 
-    Cascade: nota_fiscal → contadeagua → boleto → null.
-    Mirrors the heuristics previously embedded in the frontend.
+    Same heuristic as the upload pipeline (`models.classifier.classify`).
     """
     text = (request.data or {}).get("text", "")
     if not text:
         return Response({"schema_id": None})
-
-    if _nf_classifier.is_likely(text):
-        return Response({"schema_id": _nf_classifier.SCHEMA_ID})
-    if _agua_classifier.is_likely(text):
-        return Response({"schema_id": _agua_classifier.SCHEMA_ID})
-    if _boleto_classifier.is_likely(text):
-        return Response({"schema_id": _boleto_classifier.SCHEMA_ID})
-    return Response({"schema_id": None})
+    return Response({"schema_id": classify(text)})
 
 
 @csrf_exempt

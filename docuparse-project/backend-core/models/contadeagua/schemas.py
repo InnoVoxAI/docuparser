@@ -25,7 +25,7 @@ _KEYWORDS = [
     "economia",
 ]
 
-_THRESHOLD = 3
+THRESHOLD = 3
 
 
 def score(raw_text: str) -> int:
@@ -35,5 +35,5 @@ def score(raw_text: str) -> int:
     return sum(1 for kw in _KEYWORDS if kw in text)
 
 
-def is_likely(raw_text: str, threshold: int = _THRESHOLD) -> bool:
+def is_likely(raw_text: str, threshold: int = THRESHOLD) -> bool:
     return score(raw_text) >= threshold

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 from rest_framework.request import Request
 
 
@@ -64,4 +64,22 @@ def require_any_permission(*codes: str) -> type[BasePermission]:
         f"HasAny_{suffix}",
         (HasAnyDocuparsePermission,),
         {"required_permissions": tuple(codes)},
+    )
+
+
+def require_permission_by_method(read: str, write: str) -> type[BasePermission]:
+    """Factory: safe methods (GET/HEAD/OPTIONS) need `read`, the rest need `write`."""
+    read_permission = require_permission(read)
+    write_permission = require_permission(write)
+
+    def has_permission(self: BasePermission, request: Request, view: Any) -> bool:
+        permission = (
+            read_permission if request.method in SAFE_METHODS else write_permission
+        )
+        return permission().has_permission(request, view)
+
+    return type(
+        f"Has_{read.replace('.', '_')}_write_{write.replace('.', '_')}",
+        (BasePermission,),
+        {"has_permission": has_permission},
     )

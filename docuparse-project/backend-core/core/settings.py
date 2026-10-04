@@ -39,6 +39,9 @@ SHARED_APPS = [
 TENANT_APPS = [
     "documents",
     "orchestrator",
+    # Condomínios e plano de contas: dado fiscal de cada cliente, por schema.
+    "condominiums",
+    "accounting",
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + list(TENANT_APPS)

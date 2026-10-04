@@ -90,6 +90,12 @@ aberto — lista manual? CNAE/Receita Federal?); (3) persistir conta
 classificada + `DocumentEvent` de auditoria; (4) tela de revisão/override
 pelo operador.
 
+**Status (2026-09-30)**: story (1) implementada na branch `022-chart-of-accounts`.
+O escopo final é **por condomínio** (não por tenant), com os apps `condominiums` e
+`accounting` em TENANT_APPS. Surgiu uma story nova antes do motor de regras:
+identificar o condomínio de cada documento. Ver
+[[docuparser/decisions/plano-de-contas-por-condominio-escopo-e-modelo]].
+
 ## EPIC 3 — Document Merging: NF + boleto como processo de pagamento
 
 Hoje "processo" na UI é 1:1 com `Document`

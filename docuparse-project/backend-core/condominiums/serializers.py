@@ -1,28 +1,9 @@
 from __future__ import annotations
 
-import re
-
 from rest_framework import serializers
 
 from condominiums.models import Condominium
-
-_CNPJ_FORMAT = re.compile(r"[0-9A-Z]{12}[0-9]{2}")
-_CNPJ_WEIGHTS = (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
-
-
-def _cnpj_check_digit(base: str) -> str:
-    weights = _CNPJ_WEIGHTS[-len(base) :]
-    total = sum((ord(char) - 48) * weight for char, weight in zip(base, weights))
-    remainder = total % 11
-    return "0" if remainder < 2 else str(11 - remainder)
-
-
-def is_valid_cnpj(cnpj: str) -> bool:
-    """Valida formato e dígitos verificadores, inclusive do CNPJ alfanumérico."""
-    if not _CNPJ_FORMAT.fullmatch(cnpj) or len(set(cnpj)) == 1:
-        return False
-    first = _cnpj_check_digit(cnpj[:12])
-    return cnpj[12:] == first + _cnpj_check_digit(cnpj[:12] + first)
+from condominiums.tax_ids import is_valid_cnpj, normalize_tax_id
 
 
 class CondominiumSerializer(serializers.ModelSerializer):
@@ -43,7 +24,7 @@ class CondominiumSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate_cnpj(self, value: str) -> str:
-        cnpj = re.sub(r"[\s./-]", "", value).upper()
+        cnpj = normalize_tax_id(value)
         if not cnpj:
             return ""
         if not is_valid_cnpj(cnpj):

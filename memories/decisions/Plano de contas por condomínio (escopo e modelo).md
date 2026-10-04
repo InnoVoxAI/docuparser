@@ -48,6 +48,9 @@ pode voltar como follow-up "copiar plano").
   Pai no mesmo condomínio e ausência de ciclo são validados no serializer.
   O nome é `LedgerAccount`, e não `Account`, para não confundir com conta de
   login nem com a conta bancária que aparece nos boletos.
+- Na story do motor de regras (2026-10-04) o `LedgerAccount` ganhou `nature`
+  (opcional, única por condomínio) e surgiu o cadastro `SupplierRule`. Ver
+  [[docuparser/decisions/motor-de-regras-de-classificacao-em-conta-fornecedor-e-conteudo]].
 
 ## API
 

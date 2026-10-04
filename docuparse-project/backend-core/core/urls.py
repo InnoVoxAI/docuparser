@@ -13,6 +13,8 @@ public_urlpatterns = [
 # All document-processing and settings endpoints live here.
 urlpatterns = public_urlpatterns + [
     path("api/ocr/", include("catalog.urls")),
+    path("api/ocr/", include("condominiums.urls")),
+    path("api/ocr/", include("accounting.urls")),
     path("api/ocr/", include("documents.urls")),
     path("api/ocr/", include("users.users_urls")),
 ]

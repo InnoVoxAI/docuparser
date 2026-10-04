@@ -96,6 +96,12 @@ O escopo final é **por condomínio** (não por tenant), com os apps `condominiu
 identificar o condomínio de cada documento. Ver
 [[docuparser/decisions/plano-de-contas-por-condominio-escopo-e-modelo]].
 
+**Status (2026-10-04)**: story (2) implementada na branch `023-classification-rules`.
+Fonte das concessionárias: cadastro de fornecedores por condomínio mantido pelo
+operador (CNAE descartado). Regras de conteúdo para INSS, FGTS e recibo de pessoa
+física. Ainda não ligada ao pipeline. Ver
+[[docuparser/decisions/motor-de-regras-de-classificacao-em-conta-fornecedor-e-conteudo]].
+
 ## EPIC 3 — Document Merging: NF + boleto como processo de pagamento
 
 Hoje "processo" na UI é 1:1 com `Document`

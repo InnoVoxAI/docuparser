@@ -14,3 +14,8 @@ tags:
   usuário usa como referência (SVG com agrupamentos por app, setas ortogonais,
   legenda, clique destaca ligações), e sempre mostrando como as tabelas novas se
   ligam aos modelos existentes. Sem seções extras de texto.
+- Não usar os PDFs soltos na raiz do repo (ex. `01_2025_DARF.pdf`) como base de
+  análise. Documentos reais de clientes ficam em `docs_por_plano_de_contas/`
+  (ver [[docuparser/reference/docs-por-plano-de-contas-dataset-de-documentos-reais]]).
+  **Por quê:** em 2026-10-04 o usuário corrigiu uma análise do motor de regras
+  feita sobre o DARF da raiz.

@@ -5,7 +5,7 @@ from typing import Any
 from condominiums.tax_ids import is_valid_tax_id, normalize_tax_id
 from rest_framework import serializers
 
-from accounting.models import LedgerAccount, SupplierRule
+from accounting.models import DocumentClassification, LedgerAccount, SupplierRule
 
 
 def _is_self_or_descendant(candidate: LedgerAccount, account: LedgerAccount) -> bool:
@@ -134,3 +134,32 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
                 {"keyword": "Já existe uma regra para este fornecedor com este trecho."}
             )
         return attrs
+
+
+class DocumentClassificationSerializer(serializers.ModelSerializer):
+    document_id = serializers.UUIDField(read_only=True)
+    ledger_account_id = serializers.UUIDField(read_only=True)
+    classified_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DocumentClassification
+        fields = [
+            "document_id",
+            "ledger_account_id",
+            "origin",
+            "rule_id",
+            "reason",
+            "classified_by",
+            "updated_at",
+        ]
+
+    def get_classified_by(self, obj: DocumentClassification) -> str | None:
+        return obj.classified_by.get_username() if obj.classified_by else None
+
+
+class ManualClassificationSerializer(serializers.Serializer):
+    ledger_account_id = serializers.PrimaryKeyRelatedField(
+        queryset=LedgerAccount.objects.filter(is_active=True),
+        source="ledger_account",
+        error_messages={"does_not_exist": "Conta não encontrada ou inativa."},
+    )

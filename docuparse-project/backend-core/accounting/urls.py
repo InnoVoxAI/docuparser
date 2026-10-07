@@ -1,13 +1,14 @@
 from django.urls import path
 
 from .views import (
+    document_ledger_account_view,
     ledger_account_detail_view,
     ledger_accounts_view,
     supplier_rule_detail_view,
     supplier_rules_view,
 )
 
-# Aninhado sob o condomínio: plano de contas e regras são por condomínio.
+# Plano de contas e regras são aninhados sob o condomínio; a conta do documento, sob o documento.
 urlpatterns = [
     path(
         "condominiums/<uuid:condominium_id>/ledger-accounts",
@@ -28,5 +29,10 @@ urlpatterns = [
         "condominiums/<uuid:condominium_id>/supplier-rules/<uuid:supplier_rule_id>",
         supplier_rule_detail_view,
         name="supplier-rule-detail",
+    ),
+    path(
+        "documents/<uuid:document_id>/ledger-account",
+        document_ledger_account_view,
+        name="document-ledger-account",
     ),
 ]

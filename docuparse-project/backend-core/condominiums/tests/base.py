@@ -15,6 +15,7 @@ User = get_user_model()
 ROLE_PERMISSIONS = {
     "tenantAdmin": ["inbox.view", "models.edit"],
     "operator": ["inbox.view"],
+    "reviewer": ["inbox.view", "documents.validate"],
 }
 
 

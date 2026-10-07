@@ -16,6 +16,7 @@ def test_known_event_models_cover_required_contracts() -> None:
         "ocr.failed",
         "layout.classified",
         "extraction.completed",
+        "document.classified",
         "erp.integration.requested",
         "erp.sent",
         "erp.failed",

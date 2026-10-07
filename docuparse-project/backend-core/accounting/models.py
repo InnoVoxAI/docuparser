@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.conf import settings
 from django.db import models
 from documents.models import TimeStampedModel
 
@@ -77,3 +78,29 @@ class SupplierRule(TimeStampedModel):
                 name="unique_supplier_rule_per_condominium",
             ),
         ]
+
+
+class DocumentClassification(TimeStampedModel):
+    """Conta atual do documento. O histórico fica nos DocumentEvent `document.classified`."""
+
+    class Origin(models.TextChoices):
+        AUTOMATIC = "automatic", "Automática"
+        MANUAL = "manual", "Manual"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.OneToOneField(
+        "documents.Document", on_delete=models.CASCADE, related_name="classification"
+    )
+    ledger_account = models.ForeignKey(
+        LedgerAccount, on_delete=models.PROTECT, related_name="classifications"
+    )
+    origin = models.CharField(max_length=16, choices=Origin.choices)
+    rule_id = models.CharField(max_length=64, blank=True, default="")
+    reason = models.CharField(max_length=255, blank=True, default="")
+    classified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="document_classifications",
+    )

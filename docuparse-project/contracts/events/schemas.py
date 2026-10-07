@@ -110,6 +110,31 @@ class ExtractionCompletedEvent(BaseEvent):
     data: ExtractionCompletedData
 
 
+class LedgerAccountRef(EventModel):
+    """Conta do plano de contas como estava quando o evento foi emitido."""
+
+    id: UUID
+    code: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+
+
+class DocumentClassifiedData(EventModel):
+    origin: Literal["automatic", "manual"]
+    # False quando a sugestão automática não trocou a conta (escolha manual vigente
+    # ou nenhuma regra encontrou conta).
+    applied: bool
+    ledger_account: LedgerAccountRef | None = None
+    previous_ledger_account: LedgerAccountRef | None = None
+    rule_id: str = ""
+    reason: str = ""
+    classified_by: str | None = None
+
+
+class DocumentClassifiedEvent(BaseEvent):
+    event_type: Literal["document.classified"] = "document.classified"
+    data: DocumentClassifiedData
+
+
 class ERPIntegrationRequestedData(EventModel):
     connector: str = Field(min_length=1)
     payload: dict[str, Any]
@@ -153,6 +178,7 @@ EVENT_MODELS = {
     "ocr.failed": OCRFailedEvent,
     "layout.classified": LayoutClassifiedEvent,
     "extraction.completed": ExtractionCompletedEvent,
+    "document.classified": DocumentClassifiedEvent,
     "erp.integration.requested": ERPIntegrationRequestedEvent,
     "erp.sent": ERPSentEvent,
     "erp.failed": ERPFailedEvent,

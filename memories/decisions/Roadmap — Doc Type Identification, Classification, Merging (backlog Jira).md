@@ -102,6 +102,16 @@ operador (CNAE descartado). Regras de conteúdo para INSS, FGTS e recibo de pess
 física. Ainda não ligada ao pipeline. Ver
 [[docuparser/decisions/motor-de-regras-de-classificacao-em-conta-fornecedor-e-conteudo]].
 
+**Status (2026-10-07)**: story (3) implementada na branch `024-persist-classification`:
+estado em `accounting.DocumentClassification`, histórico em `DocumentEvent`
+`document.classified`, endpoint manual `PUT /documents/<id>/ledger-account`. Ver
+[[docuparser/decisions/persistencia-da-classificacao-em-conta-e-auditoria-por-document-event]].
+Ainda falta a story "Identificar o condomínio de cada documento" (texto escrito em
+2026-10-07, ainda não criada no Jira), que é o que liga a classificação automática ao
+pipeline: `Document.condominium`, identificação por CNPJ do pagador e por nomes
+alternativos, escolha manual e disparo de `classify_document` nos três pontos que gravam
+a extração, mais o caso de documentos sem schema (ex. recibo de pessoa física).
+
 ## EPIC 3 — Document Merging: NF + boleto como processo de pagamento
 
 Hoje "processo" na UI é 1:1 com `Document`

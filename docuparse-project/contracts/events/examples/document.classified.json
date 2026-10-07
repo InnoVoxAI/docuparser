@@ -1,0 +1,23 @@
+{
+  "event_id": "66666666-6666-4666-8666-666666666666",
+  "event_type": "document.classified",
+  "event_version": "v1",
+  "occurred_at": "2026-05-01T10:03:00+00:00",
+  "tenant_id": "tenant-demo",
+  "document_id": "22222222-2222-4222-8222-222222222222",
+  "correlation_id": "33333333-3333-4333-8333-333333333333",
+  "source": "backend-core",
+  "data": {
+    "origin": "automatic",
+    "applied": true,
+    "ledger_account": {
+      "id": "77777777-7777-4777-8777-777777777777",
+      "code": "2.1.01",
+      "name": "Água"
+    },
+    "previous_ledger_account": null,
+    "rule_id": "supplier",
+    "reason": "fornecedor 09769035000164",
+    "classified_by": null
+  }
+}

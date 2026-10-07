@@ -6,6 +6,7 @@ from condominiums.models import Condominium
 from condominiums.permissions import CondominiumPermission
 from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
+from documents.models import Document
 from rest_framework import status
 from rest_framework.decorators import (
     api_view,
@@ -15,9 +16,16 @@ from rest_framework.decorators import (
 from rest_framework.request import Request
 from rest_framework.response import Response
 from users.authentication import DocuparseAuthentication
+from users.permissions import require_permission
 
 from accounting.models import LedgerAccount, SupplierRule
-from accounting.serializers import LedgerAccountSerializer, SupplierRuleSerializer
+from accounting.serializers import (
+    DocumentClassificationSerializer,
+    LedgerAccountSerializer,
+    ManualClassificationSerializer,
+    SupplierRuleSerializer,
+)
+from accounting.services import set_manual_classification
 
 
 @api_view(["GET", "POST"])
@@ -116,3 +124,22 @@ def supplier_rule_detail_view(
     )
     serializer.is_valid(raise_exception=True)
     return Response(SupplierRuleSerializer(serializer.save()).data)
+
+
+@api_view(["PUT"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("documents.validate")])
+def document_ledger_account_view(request: Request, document_id: UUID) -> Response:
+    """Operador define ou corrige a conta do documento (classificação manual)."""
+    document = get_object_or_404(Document, id=document_id)
+    if not request.user.is_authenticated:
+        return Response(
+            {"detail": "A classificação manual exige um usuário autenticado."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    serializer = ManualClassificationSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    classification = set_manual_classification(
+        document, serializer.validated_data["ledger_account"], request.user
+    )
+    return Response(DocumentClassificationSerializer(classification).data)

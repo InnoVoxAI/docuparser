@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
 from condominiums.tax_ids import is_valid_tax_id, normalize_tax_id
+from condominiums.text import normalize_text
 
 if TYPE_CHECKING:
     from accounting.models import LedgerAccount
@@ -19,13 +19,6 @@ _TAX_ID_IN_TEXT = re.compile(
     r"\b[0-9A-Z]{2}\.[0-9A-Z]{3}\.[0-9A-Z]{3}/[0-9A-Z]{4}-\d{2}\b"
     r"|\b\d{3}\.\d{3}\.\d{3}-\d{2}\b"
 )
-
-
-def normalize_text(text: str) -> str:
-    """Maiúsculas, sem acentos e com espaços colapsados, para comparar trechos."""
-    decomposed = unicodedata.normalize("NFKD", text)
-    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
-    return " ".join(stripped.upper().split())
 
 
 @dataclass(frozen=True)

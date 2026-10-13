@@ -23,9 +23,14 @@ from accounting.serializers import (
     DocumentClassificationSerializer,
     LedgerAccountSerializer,
     ManualClassificationSerializer,
+    ManualCondominiumSerializer,
     SupplierRuleSerializer,
 )
-from accounting.services import set_manual_classification
+from accounting.services import (
+    run_classification_safely,
+    set_document_condominium,
+    set_manual_classification,
+)
 
 
 @api_view(["GET", "POST"])
@@ -137,9 +142,38 @@ def document_ledger_account_view(request: Request, document_id: UUID) -> Respons
             {"detail": "A classificação manual exige um usuário autenticado."},
             status=status.HTTP_403_FORBIDDEN,
         )
-    serializer = ManualClassificationSerializer(data=request.data)
+    serializer = ManualClassificationSerializer(
+        data=request.data, context={"document": document}
+    )
     serializer.is_valid(raise_exception=True)
     classification = set_manual_classification(
         document, serializer.validated_data["ledger_account"], request.user
     )
     return Response(DocumentClassificationSerializer(classification).data)
+
+
+@api_view(["PUT"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("documents.validate")])
+def document_condominium_view(request: Request, document_id: UUID) -> Response:
+    """Operador define ou corrige o condomínio; a classificação é refeita nele."""
+    document = get_object_or_404(Document, id=document_id)
+    if not request.user.is_authenticated:
+        return Response(
+            {"detail": "Definir o condomínio exige um usuário autenticado."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    serializer = ManualCondominiumSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    condominium = serializer.validated_data["condominium"]
+    set_document_condominium(document, condominium, request.user)
+    classification = run_classification_safely(document)
+    return Response(
+        {
+            "document_id": str(document.id),
+            "condominium_id": str(condominium.id),
+            "classification": DocumentClassificationSerializer(classification).data
+            if classification
+            else None,
+        }
+    )

@@ -120,8 +120,10 @@ class LedgerAccountRef(EventModel):
 
 class DocumentClassifiedData(EventModel):
     origin: Literal["automatic", "manual"]
-    # False quando a sugestão automática não trocou a conta (escolha manual vigente
-    # ou nenhuma regra encontrou conta).
+    # Se o estado do documento mudou. False quando a sugestão automática não trocou
+    # a conta (escolha manual vigente) ou nenhuma regra encontrou conta. Com
+    # `applied` e sem `ledger_account`, a conta anterior foi removida porque
+    # pertencia a outro condomínio.
     applied: bool
     ledger_account: LedgerAccountRef | None = None
     previous_ledger_account: LedgerAccountRef | None = None
@@ -133,6 +135,35 @@ class DocumentClassifiedData(EventModel):
 class DocumentClassifiedEvent(BaseEvent):
     event_type: Literal["document.classified"] = "document.classified"
     data: DocumentClassifiedData
+
+
+class CondominiumRef(EventModel):
+    """Condomínio como estava quando o evento foi emitido."""
+
+    id: UUID
+    name: str = Field(min_length=1)
+    cnpj: str = ""
+
+
+class CondominiumIdentifiedData(EventModel):
+    origin: Literal["automatic", "manual"]
+    # Se o condomínio do documento mudou. False quando nenhum condomínio foi
+    # reconhecido no documento.
+    applied: bool
+    # Como o condomínio foi reconhecido: CNPJ do pagador extraído, CNPJ no texto
+    # bruto, nome ou nome alternativo no documento, ou escolha do operador.
+    method: Literal["payer_tax_id", "text_tax_id", "name", "manual"] | None = None
+    condominium: CondominiumRef | None = None
+    previous_condominium: CondominiumRef | None = None
+    reason: str = ""
+    identified_by: str | None = None
+
+
+class CondominiumIdentifiedEvent(BaseEvent):
+    event_type: Literal["document.condominium_identified"] = (
+        "document.condominium_identified"
+    )
+    data: CondominiumIdentifiedData
 
 
 class ERPIntegrationRequestedData(EventModel):
@@ -179,6 +210,7 @@ EVENT_MODELS = {
     "layout.classified": LayoutClassifiedEvent,
     "extraction.completed": ExtractionCompletedEvent,
     "document.classified": DocumentClassifiedEvent,
+    "document.condominium_identified": CondominiumIdentifiedEvent,
     "erp.integration.requested": ERPIntegrationRequestedEvent,
     "erp.sent": ERPSentEvent,
     "erp.failed": ERPFailedEvent,

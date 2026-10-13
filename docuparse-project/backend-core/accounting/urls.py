@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    document_condominium_view,
     document_ledger_account_view,
     ledger_account_detail_view,
     ledger_accounts_view,
@@ -34,5 +35,10 @@ urlpatterns = [
         "documents/<uuid:document_id>/ledger-account",
         document_ledger_account_view,
         name="document-ledger-account",
+    ),
+    path(
+        "documents/<uuid:document_id>/condominium",
+        document_condominium_view,
+        name="document-condominium",
     ),
 ]

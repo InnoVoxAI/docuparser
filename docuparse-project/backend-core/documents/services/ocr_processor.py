@@ -6,6 +6,7 @@ import threading
 import time
 from io import BytesIO
 
+from accounting.services import run_classification_safely
 from catalog.models import LayoutConfig, SchemaConfig
 from django.conf import settings
 from django.utils import timezone
@@ -216,6 +217,9 @@ def auto_extract_after_ocr(document: Document) -> None:
             document_type=document.document_type,
             trigger="auto",
         )
+        # Sem schema não há extração, mas regras de conteúdo (ex. recibo de
+        # pessoa física) ainda classificam o documento pelo texto bruto.
+        run_classification_safely(document)
         return
 
     started = time.monotonic()
@@ -280,6 +284,8 @@ def auto_extract_after_ocr(document: Document) -> None:
         # comportamento antigo — nunca levantar — devem envolver a chamada em
         # try/except, como as views de reprocessamento manual passam a fazer.
         raise
+
+    run_classification_safely(document)
 
 
 def _extraction_task_body(document_id) -> dict:
@@ -361,6 +367,7 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
             confidence=result.get("confidence"),
             trigger="manual",
         )
+        run_classification_safely(document)
         return result
     except Exception as exc:
         logger.error(

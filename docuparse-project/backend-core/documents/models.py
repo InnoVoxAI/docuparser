@@ -60,6 +60,15 @@ class Document(TimeStampedModel):
     correlation_id = models.UUIDField(default=uuid.uuid4, db_index=True)
     received_at = models.DateTimeField(default=timezone.now)
     metadata = models.JSONField(default=dict, blank=True)
+    # Condomínio ao qual o documento pertence; define o plano de contas usado
+    # na classificação. Nulo até ser identificado (automática ou manualmente).
+    condominium = models.ForeignKey(
+        "condominiums.Condominium",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="documents",
+    )
 
     class Meta:
         indexes = [

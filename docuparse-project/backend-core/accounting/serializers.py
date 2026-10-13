@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from condominiums.models import Condominium
 from condominiums.tax_ids import is_valid_tax_id, normalize_tax_id
 from rest_framework import serializers
 
@@ -158,8 +159,32 @@ class DocumentClassificationSerializer(serializers.ModelSerializer):
 
 
 class ManualClassificationSerializer(serializers.Serializer):
+    """Espera `context["document"]`: a conta precisa ser do condomínio dele."""
+
     ledger_account_id = serializers.PrimaryKeyRelatedField(
         queryset=LedgerAccount.objects.filter(is_active=True),
         source="ledger_account",
         error_messages={"does_not_exist": "Conta não encontrada ou inativa."},
+    )
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        document = self.context["document"]
+        if document.condominium_id is None:
+            raise serializers.ValidationError(
+                {
+                    "ledger_account_id": "Defina o condomínio do documento antes de escolher a conta."
+                }
+            )
+        if attrs["ledger_account"].condominium_id != document.condominium_id:
+            raise serializers.ValidationError(
+                {"ledger_account_id": "A conta precisa ser do condomínio do documento."}
+            )
+        return attrs
+
+
+class ManualCondominiumSerializer(serializers.Serializer):
+    condominium_id = serializers.PrimaryKeyRelatedField(
+        queryset=Condominium.objects.filter(is_active=True),
+        source="condominium",
+        error_messages={"does_not_exist": "Condomínio não encontrado ou inativo."},
     )

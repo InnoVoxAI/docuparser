@@ -188,7 +188,9 @@ class ManualClassificationAPITests(TenantAPITestCase):
             condominium=self.condominium, code="2.1.01", name="Água"
         )
         self.document = Document.objects.create(
-            channel="manual", file_uri="local://documents/condos/doc/original"
+            channel="manual",
+            file_uri="local://documents/condos/doc/original",
+            condominium=self.condominium,
         )
         self.url = reverse("document-ledger-account", args=[self.document.id])
 
@@ -254,3 +256,20 @@ class ManualClassificationAPITests(TenantAPITestCase):
             response = self._put(self.water.id)
         assert response.status_code == 403
         assert not self.document.events.exists()
+
+    def test_requires_the_documents_condominium_first(self) -> None:
+        self.document.condominium = None
+        self.document.save()
+        response = self._put(self.water.id)
+        assert response.status_code == 400
+        assert "condomínio" in response.json()["ledger_account_id"][0]
+        assert not self.document.events.exists()
+
+    def test_account_must_belong_to_the_documents_condominium(self) -> None:
+        other = Condominium.objects.create(name="Outro Edifício")
+        foreign = LedgerAccount.objects.create(
+            condominium=other, code="2.1.01", name="Água"
+        )
+        response = self._put(foreign.id)
+        assert response.status_code == 400
+        assert "ledger_account_id" in response.json()

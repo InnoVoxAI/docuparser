@@ -1,0 +1,23 @@
+{
+  "event_id": "88888888-8888-4888-8888-888888888888",
+  "event_type": "document.condominium_identified",
+  "event_version": "v1",
+  "occurred_at": "2026-05-01T10:02:00+00:00",
+  "tenant_id": "tenant-demo",
+  "document_id": "22222222-2222-4222-8222-222222222222",
+  "correlation_id": "33333333-3333-4333-8333-333333333333",
+  "source": "backend-core",
+  "data": {
+    "origin": "automatic",
+    "applied": true,
+    "method": "payer_tax_id",
+    "condominium": {
+      "id": "99999999-9999-4999-8999-999999999999",
+      "name": "Edifício Exemplo",
+      "cnpj": "11222333000181"
+    },
+    "previous_condominium": null,
+    "reason": "cnpj_cpf_pagador 11222333000181",
+    "identified_by": null
+  }
+}

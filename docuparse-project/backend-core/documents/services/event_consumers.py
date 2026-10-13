@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
+from accounting.services import run_classification_safely
 from django.db import transaction
 from docuparse_events import extract_trace_link
 from docuparse_observability import log_event
@@ -38,9 +40,7 @@ def _traced_consumer(span_name: str) -> Callable[[F], F]:
         @functools.wraps(func)
         def wrapper(payload: dict[str, Any]) -> Any:
             link = extract_trace_link(payload)
-            with _tracer.start_as_current_span(
-                span_name, links=[link] if link else []
-            ):
+            with _tracer.start_as_current_span(span_name, links=[link] if link else []):
                 return func(payload)
 
         return wrapper  # type: ignore[return-value]
@@ -131,7 +131,9 @@ def consume_extraction_completed(payload: dict[str, Any]) -> Document:
             event_type=event.event_type,
             status=document.status,
         )
-        return document
+    # Fora da transação do evento: a classificação nunca desfaz o consumo.
+    run_classification_safely(document)
+    return document
 
 
 @_traced_consumer("ocr.completed process")

@@ -14,6 +14,9 @@ class Condominium(TimeStampedModel):
     cnpj = models.CharField(max_length=14, blank=True, default="")
     # Id do condomínio no ERP (Superlógica).
     external_id = models.CharField(max_length=64, blank=True, default="")
+    # Outros nomes sob os quais o condomínio aparece nos documentos (ex.
+    # "EDIFICIO AVIS LIBERTAS"); usados para identificá-lo quando não há CNPJ.
+    aliases = models.JSONField(default=list, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:

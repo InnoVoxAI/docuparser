@@ -42,10 +42,10 @@ DOC-CLASSIFICATION-PDC, implementada em 2026-10-07 na branch `024-persist-classi
 
 ## Limitações conhecidas
 
-- **Não está ligado ao pipeline.** `classify_document` precisa do condomínio do documento,
-  que ainda não existe. Ver a story "Identificar o condomínio de cada documento".
-- A classificação manual não valida que a conta é do condomínio do documento, pelo mesmo
-  motivo. Passa a validar quando `Document.condominium` existir.
+- Resolvido em 2026-10-07 (ver
+  [[docuparser/decisions/identificacao-do-condominio-e-classificacao-ligada-ao-pipeline]]):
+  o motor foi ligado ao pipeline, `Document.condominium` existe e a classificação manual
+  valida que a conta é do condomínio do documento.
 - Não há endpoint de leitura do histórico nem da conta atual (story 4); o histórico está
   nos `DocumentEvent` com `event_type="document.classified"`.
 - Reclassificação automática sem regra aplicável mantém a sugestão antiga (pode ficar

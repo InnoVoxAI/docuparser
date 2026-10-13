@@ -4,12 +4,9 @@ import re
 from typing import TYPE_CHECKING, Protocol
 
 from condominiums.tax_ids import is_valid_cpf
+from condominiums.text import normalize_text
 
-from accounting.classification.facts import (
-    Classification,
-    DocumentFacts,
-    normalize_text,
-)
+from accounting.classification.facts import Classification, DocumentFacts
 from accounting.models import LedgerAccount
 
 if TYPE_CHECKING:

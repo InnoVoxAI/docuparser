@@ -69,3 +69,33 @@ class CondominiumAPITests(TenantAPITestCase):
         response = self.client.get(reverse("condominiums"))
         assert response.status_code == 200
         assert response.json() == []
+
+    def test_aliases_are_trimmed_and_deduplicated(self) -> None:
+        response = self._create(
+            name="Edifício Exemplo",
+            aliases=["  Edifício Exemplos ", "EDIFICIO EXEMPLOS", ""],
+        )
+        assert response.status_code == 201
+        assert response.json()["aliases"] == ["Edifício Exemplos"]
+
+    def test_alias_cannot_point_to_two_condominiums(self) -> None:
+        assert (
+            self._create(name="Edifício A", aliases=["Edifício Beta"]).status_code
+            == 201
+        )
+        same_alias = self._create(name="Edifício B", aliases=["EDIFICIO BETA"])
+        assert same_alias.status_code == 400
+        assert "aliases" in same_alias.json()
+        same_name = self._create(name="Edifício C", aliases=["edifício a"])
+        assert same_name.status_code == 400
+
+    def test_patch_replaces_the_aliases(self) -> None:
+        condominium = Condominium.objects.create(
+            name="Edifício Exemplo", aliases=["Antigo"]
+        )
+        url = reverse("condominium-detail", args=[condominium.id])
+        patch = self.client.patch(url, {"aliases": ["Novo Nome"]}, format="json")
+        assert patch.status_code == 200
+        assert patch.json()["aliases"] == ["Novo Nome"]
+        keep = self.client.patch(url, {"name": "Edifício Exemplo 2"}, format="json")
+        assert keep.json()["aliases"] == ["Novo Nome"]

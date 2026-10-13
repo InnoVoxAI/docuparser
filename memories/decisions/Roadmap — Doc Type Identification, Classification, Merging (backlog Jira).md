@@ -106,11 +106,15 @@ física. Ainda não ligada ao pipeline. Ver
 estado em `accounting.DocumentClassification`, histórico em `DocumentEvent`
 `document.classified`, endpoint manual `PUT /documents/<id>/ledger-account`. Ver
 [[docuparser/decisions/persistencia-da-classificacao-em-conta-e-auditoria-por-document-event]].
-Ainda falta a story "Identificar o condomínio de cada documento" (texto escrito em
-2026-10-07, ainda não criada no Jira), que é o que liga a classificação automática ao
-pipeline: `Document.condominium`, identificação por CNPJ do pagador e por nomes
-alternativos, escolha manual e disparo de `classify_document` nos três pontos que gravam
-a extração, mais o caso de documentos sem schema (ex. recibo de pessoa física).
+
+**Status (2026-10-07, depois)**: a story "Identificar o condomínio de cada documento" foi
+implementada na branch `025-identify-condominium` (ainda sem ticket no Jira), junto com a
+ligação do motor ao pipeline: `Document.condominium`, identificação por CNPJ do pagador,
+CNPJ no texto e nomes alternativos, endpoint manual e disparo de `run_classification_safely`
+nos pontos que gravam a extração, inclusive documentos sem schema. Ver
+[[docuparser/decisions/identificacao-do-condominio-e-classificacao-ligada-ao-pipeline]].
+Falta a story 4 (telas, leitura na API, código da conta no envio ao ERP) e refazer a
+classificação quando o operador edita campos.
 
 ## EPIC 3 — Document Merging: NF + boleto como processo de pagamento
 

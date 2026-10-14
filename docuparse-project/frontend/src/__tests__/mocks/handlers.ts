@@ -169,6 +169,10 @@ export const handlers = [
         }),
     ),
 
+    // --- Plano de contas / condomínios: por padrão o tenant não cadastrou nenhum ---
+    http.get(`${OCR}/condominiums`, () => HttpResponse.json([])),
+    http.get(`${OCR}/condominiums/:id/ledger-accounts`, () => HttpResponse.json([])),
+
     // --- Validação / classificação ---
     http.post(`${OCR}/classify-text`, () => HttpResponse.json({ schema_id: null })),
     http.post(`${OCR}/documents/:id/validate`, () =>

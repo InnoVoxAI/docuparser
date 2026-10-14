@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ClipboardCheck } from 'lucide-react'
 import { Alert, EmptyState } from '../../../shared/components'
 import type { Document, FieldRow, FieldVersionsResponse, SaveMessage, SchemaConfig } from '../types'
+import { ClassificationReviewPanel } from './ClassificationReviewPanel'
 import { DocumentMetadataPanel } from './DocumentMetadataPanel'
 import { LangExtractPanel } from './LangExtractPanel'
 import { RejectReasonDialog } from './RejectReasonDialog'
@@ -38,6 +39,7 @@ export function ValidationDecisionPanel({
     submitting,
     onApprove,
     onReject,
+    onClassificationChanged,
     fillHeight = false,
 }: {
     selectedDocument: Document | null
@@ -72,6 +74,8 @@ export function ValidationDecisionPanel({
     submitting: boolean
     onApprove: () => void | Promise<unknown>
     onReject: () => void | Promise<unknown>
+    /** Recarrega o documento depois que o operador troca condomínio ou conta. */
+    onClassificationChanged: () => void | Promise<unknown>
     /** Só a lista de campos rola por dentro; o resto (ações, metadados) fica
      * fixo — usado no drawer expandido, que não deve rolar a página toda. */
     fillHeight?: boolean
@@ -114,6 +118,7 @@ export function ValidationDecisionPanel({
                     {submitError && !rejectDialogOpen ? <Alert tone="error">{submitError}</Alert> : null}
 
                     <DocumentMetadataPanel document={selectedDocument} />
+                    <ClassificationReviewPanel document={selectedDocument} onChanged={onClassificationChanged} />
                     {!selectedDocument.extraction_result ? (
                         <Alert>
                             {selectedDocument.status === 'OCR_COMPLETED'

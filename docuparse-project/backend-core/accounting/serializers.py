@@ -137,9 +137,16 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class LedgerAccountRefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LedgerAccount
+        fields = ["id", "code", "name"]
+
+
 class DocumentClassificationSerializer(serializers.ModelSerializer):
     document_id = serializers.UUIDField(read_only=True)
     ledger_account_id = serializers.UUIDField(read_only=True)
+    ledger_account = LedgerAccountRefSerializer(read_only=True)
     classified_by = serializers.SerializerMethodField()
 
     class Meta:
@@ -147,6 +154,7 @@ class DocumentClassificationSerializer(serializers.ModelSerializer):
         fields = [
             "document_id",
             "ledger_account_id",
+            "ledger_account",
             "origin",
             "rule_id",
             "reason",

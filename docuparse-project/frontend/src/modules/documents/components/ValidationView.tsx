@@ -114,6 +114,7 @@ export function ValidationView({
             submitting={decision.submitting}
             onApprove={() => decision.submitDecision('approved')}
             onReject={() => decision.submitDecision('rejected')}
+            onClassificationChanged={onValidated}
             fillHeight={fillHeight}
         />
     )

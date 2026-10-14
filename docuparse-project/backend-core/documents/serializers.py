@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from accounting.serializers import DocumentClassificationSerializer
 from docuparse_storage import get_storage
 from rest_framework import serializers
 
@@ -189,10 +190,23 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
     full_transcription_formatted = serializers.SerializerMethodField()
     ocr_metadata = serializers.SerializerMethodField()
     active_field_version_number = serializers.SerializerMethodField()
+    condominium = serializers.SerializerMethodField()
+    classification = serializers.SerializerMethodField()
 
     def get_active_field_version_number(self, obj: Document) -> int | None:
         active = obj.field_versions.filter(is_active=True).first()
         return active.version_number if active else None
+
+    def get_condominium(self, obj: Document) -> dict | None:
+        if obj.condominium is None:
+            return None
+        return {"id": str(obj.condominium.id), "name": obj.condominium.name}
+
+    def get_classification(self, obj: Document) -> dict | None:
+        classification = getattr(obj, "classification", None)
+        if classification is None:
+            return None
+        return DocumentClassificationSerializer(classification).data
 
     class Meta:
         model = Document
@@ -212,6 +226,8 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             "received_at",
             "metadata",
             "extraction_result",
+            "condominium",
+            "classification",
             "full_transcription",
             "full_transcription_formatted",
             "ocr_metadata",

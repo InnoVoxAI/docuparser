@@ -11,5 +11,7 @@ export type {
     SaveMessage,
     SchemaConfig,
     ChannelMetadata,
+    DocumentClassification,
+    LedgerAccountRef,
     EmailModalDoc,
 } from '../../types'

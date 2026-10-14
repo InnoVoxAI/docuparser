@@ -116,6 +116,13 @@ nos pontos que gravam a extração, inclusive documentos sem schema. Ver
 Falta a story 4 (telas, leitura na API, código da conta no envio ao ERP) e refazer a
 classificação quando o operador edita campos.
 
+**Status (2026-10-14)**: story (4), parte da revisão/override da conta, implementada na
+branch `026-classification-review-ui`: painel na tela de validação, `GET /documents/<id>`
+com condomínio e classificação, trava depois da decisão. Ver
+[[docuparser/decisions/revisao-e-override-da-conta-classificada-na-tela-de-validacao]].
+Seguem sem tela: cadastro de condomínios, plano de contas e fornecedores; e o código da
+conta ainda não vai no envio ao ERP.
+
 ## EPIC 3 — Document Merging: NF + boleto como processo de pagamento
 
 Hoje "processo" na UI é 1:1 com `Document`

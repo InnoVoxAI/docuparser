@@ -72,6 +72,23 @@ export type DocumentStatus =
     | 'ERP_SENT'
     | 'ERP_FAILED'
 
+/** Conta do plano de contas como o detalhe do documento a devolve. */
+export interface LedgerAccountRef {
+    id: string
+    code: string
+    name: string
+}
+
+/** Conta atual do documento: sugerida pelo motor de regras ou escolhida pelo operador. */
+export interface DocumentClassification {
+    ledger_account: LedgerAccountRef
+    origin: 'automatic' | 'manual'
+    rule_id: string
+    reason: string
+    classified_by: string | null
+    updated_at: string
+}
+
 export interface Document {
     id: string
     status: DocumentStatus
@@ -85,6 +102,8 @@ export interface Document {
     metadata?: Record<string, unknown>
     metadata_channel?: Record<string, unknown> | null
     extraction_result: ExtractionResult | null
+    condominium?: { id: string; name: string } | null
+    classification?: DocumentClassification | null
     active_field_version_number: number | null
     full_transcription?: string
     full_transcription_formatted?: string

@@ -131,6 +131,30 @@ def supplier_rule_detail_view(
     return Response(SupplierRuleSerializer(serializer.save()).data)
 
 
+# Depois da decisão do operador o documento segue para o ERP: conta e condomínio
+# deixam de ser editáveis.
+LOCKED_STATUSES = frozenset(
+    {
+        Document.Status.APPROVED,
+        Document.Status.REJECTED,
+        Document.Status.ERP_INTEGRATION_REQUESTED,
+        Document.Status.ERP_SENT,
+        Document.Status.ERP_FAILED,
+    }
+)
+
+
+def _locked_response(document: Document) -> Response | None:
+    if document.status not in LOCKED_STATUSES:
+        return None
+    return Response(
+        {
+            "detail": "O documento já foi decidido e não aceita mais alterações de classificação."
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 @api_view(["PUT"])
 @authentication_classes([DocuparseAuthentication])
 @permission_classes([require_permission("documents.validate")])
@@ -142,6 +166,8 @@ def document_ledger_account_view(request: Request, document_id: UUID) -> Respons
             {"detail": "A classificação manual exige um usuário autenticado."},
             status=status.HTTP_403_FORBIDDEN,
         )
+    if (locked := _locked_response(document)) is not None:
+        return locked
     serializer = ManualClassificationSerializer(
         data=request.data, context={"document": document}
     )
@@ -163,6 +189,8 @@ def document_condominium_view(request: Request, document_id: UUID) -> Response:
             {"detail": "Definir o condomínio exige um usuário autenticado."},
             status=status.HTTP_403_FORBIDDEN,
         )
+    if (locked := _locked_response(document)) is not None:
+        return locked
     serializer = ManualCondominiumSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     condominium = serializer.validated_data["condominium"]

@@ -317,7 +317,11 @@ def document_received_event_view(request):
 @permission_classes([require_permission("inbox.view")])
 def document_detail_view(request, document_id):
     document = get_object_or_404(
-        Document.objects.prefetch_related("events"),
+        Document.objects.select_related(
+            "condominium",
+            "classification__ledger_account",
+            "classification__classified_by",
+        ).prefetch_related("events"),
         id=document_id,
     )
     return Response(DocumentDetailSerializer(document).data)

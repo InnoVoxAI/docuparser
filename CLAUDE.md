@@ -37,6 +37,10 @@ at docs/specs/018-fix-tenant-schema-seed/plan.md
 
 - Sempre que houver modificações verifique a necessidade de atualizar documentos acima descritos, ou memorias.
 
+## Documentação com wagent
+Para documentar com wagent considere que este projeto é chamado de `cortex`.
+
+
 ## Guardrails
 
 - Não editar secrets, credenciais de produção ou arquivos listados em `.aiignore`.

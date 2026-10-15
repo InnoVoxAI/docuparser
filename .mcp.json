@@ -18,6 +18,11 @@
 			"env": {
 				"MODEL": "claude-code"
 			}
+		},
+		"wagent": {
+			"type": "http",
+			"url": "https://wagent.innovox.ai/mcp",
+			"headers": { "Authorization": "Bearer <YOUR TOKEN>" }
 		}
 	}
 }

@@ -291,6 +291,8 @@ export type ActiveView =
     | 'rejected'
     | 'operations'
     | 'processes'
+    | 'registry'
+    | 'registry-import'
     | 'settings'
     | 'users'
     | 'roles'

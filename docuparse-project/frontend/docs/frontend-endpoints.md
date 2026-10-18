@@ -76,6 +76,19 @@ O token (`access_token` do `localStorage`) é anexado como `Authorization: Beare
 | POST | `/layout-configs` | [`useLayoutMutations.ts:17`](../src/modules/settings/hooks/useLayoutMutations.ts#L17) |
 | POST | `/classify-text` | [`useAutoClassification.ts:36`](../src/modules/settings/hooks/useAutoClassification.ts#L36), [`useFieldExtraction.ts:59`](../src/modules/documents/hooks/useFieldExtraction.ts#L59) |
 
+### Cadastros e importação do Superlógica
+
+| Método | Path | Origem |
+|---|---|---|
+| GET / POST | `/condominiums` | [`registry.service.ts`](../src/modules/registry/services/registry.service.ts) (`fetchCondominiums`, `createCondominium`) |
+| GET | `/charts-of-accounts` · `/charts-of-accounts/{id}/ledger-accounts` | [`registry.service.ts`](../src/modules/registry/services/registry.service.ts) (`fetchCharts`, `fetchChartAccounts`) |
+| GET | `/import/overview` | [`registry.service.ts`](../src/modules/registry/services/registry.service.ts) (`fetchOverview`) |
+| POST | `/import/sync` | [`registry.service.ts`](../src/modules/registry/services/registry.service.ts) (`startSync`) |
+| POST | `/import/test-connection` | [`IntegrationSettingsPanel.tsx`](../src/modules/settings/components/IntegrationSettingsPanel.tsx) |
+| GET | `/import/proposals` | [`registry.service.ts`](../src/modules/registry/services/registry.service.ts) (`fetchProposals`) |
+| POST | `/import/proposals/{id}/approve` · `/reject` · `/resolve` | [`registry.service.ts`](../src/modules/registry/services/registry.service.ts) |
+| POST | `/import/proposals/approve` · `/reject` (em lote, `{ids}`) | [`registry.service.ts`](../src/modules/registry/services/registry.service.ts) |
+
 ### Admin (users / roles / permissions) — via `/api/ocr`
 
 | Método | Path | Origem |

@@ -1,4 +1,14 @@
-import { AlertTriangle, Building2, ClipboardCheck, Inbox, LayoutDashboard, Settings, Upload } from 'lucide-react'
+import {
+    AlertTriangle,
+    Building2,
+    ClipboardCheck,
+    Database,
+    Inbox,
+    LayoutDashboard,
+    ListChecks,
+    Settings,
+    Upload,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { ActiveView } from '../types'
 import { navPath } from '../shared/utils'
@@ -17,6 +27,8 @@ export const NAV_ITEMS: NavItem[] = [
     { id: 'inbox', label: 'Inbox', icon: Inbox, permission: 'inbox.view' },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, permission: 'inbox.view' },
     { id: 'validation', label: 'Validação', icon: ClipboardCheck, permission: 'documents.validate' },
+    { id: 'registry', label: 'Cadastros', icon: Database, permission: 'inbox.view' },
+    { id: 'registry-import', label: 'Confirmar importação', icon: ListChecks, permission: 'inbox.view' },
     { id: 'operations', label: 'Operações', icon: AlertTriangle, permission: 'operations.access' },
     { id: 'settings', label: 'Configurações', icon: Settings, permission: 'models.edit' },
     { id: 'users', label: 'Usuários', icon: Settings, permission: 'users.manage' },

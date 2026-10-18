@@ -3,6 +3,7 @@ import { useAuth } from '../modules/auth'
 import { DocumentsRoutes } from '../modules/documents'
 import { OperationsRoutes } from '../modules/operations'
 import { ProcessesRoutes, ProcessOverviewView } from '../modules/processes'
+import { RegistryRoutes } from '../modules/registry'
 import { SettingsRoutes } from '../modules/settings'
 import { AdminRoutes } from '../modules/admin'
 import { UploadRoutes } from '../modules/upload'
@@ -43,6 +44,7 @@ export function createAppRouter() {
                 ...UploadRoutes,
                 ...OperationsRoutes,
                 ...ProcessesRoutes,
+                ...RegistryRoutes,
                 ...SettingsRoutes,
                 ...AdminRoutes,
                 { path: '*', element: <Navigate to="/" replace /> },

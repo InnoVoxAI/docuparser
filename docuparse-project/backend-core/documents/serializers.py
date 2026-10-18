@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from accounting.serializers import DocumentClassificationSerializer
+from condominiums.tax_ids import is_valid_cnpj, normalize_tax_id
 from docuparse_storage import get_storage
 from rest_framework import serializers
 
@@ -286,6 +287,19 @@ class ValidationDecisionSerializer(serializers.ModelSerializer):
 
 
 class IntegrationSettingsSerializer(serializers.ModelSerializer):
+    # Aceita o CNPJ formatado; é gravado sem pontuação.
+    administrator_cnpj = serializers.CharField(
+        required=False, allow_blank=True, max_length=18
+    )
+    # Os tokens só entram; a resposta informa apenas se estão configurados.
+    superlogica_app_token = serializers.CharField(
+        write_only=True, required=False, max_length=512
+    )
+    superlogica_access_token = serializers.CharField(
+        write_only=True, required=False, max_length=512
+    )
+    superlogica_credentials_configured = serializers.SerializerMethodField()
+
     class Meta:
         model = IntegrationSettings
         fields = [
@@ -295,10 +309,30 @@ class IntegrationSettingsSerializer(serializers.ModelSerializer):
             "approved_export_format",
             "superlogica_base_url",
             "superlogica_mode",
+            "administrator_cnpj",
+            "superlogica_app_token",
+            "superlogica_access_token",
+            "superlogica_credentials_configured",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_superlogica_credentials_configured(self, obj: IntegrationSettings) -> bool:
+        return bool(obj.superlogica_app_token_enc and obj.superlogica_access_token_enc)
+
+    def validate_administrator_cnpj(self, value: str) -> str:
+        cnpj = normalize_tax_id(value)
+        if cnpj and not is_valid_cnpj(cnpj):
+            raise serializers.ValidationError("CNPJ inválido.")
+        return cnpj
+
+    def validate(self, attrs: dict) -> dict:
+        if ("superlogica_app_token" in attrs) != ("superlogica_access_token" in attrs):
+            raise serializers.ValidationError(
+                {"superlogica_access_token": "Informe os dois tokens juntos."}
+            )
+        return attrs
 
 
 class OCRSettingsSerializer(serializers.ModelSerializer):

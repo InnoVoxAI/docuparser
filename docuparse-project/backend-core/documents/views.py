@@ -15,6 +15,7 @@ from docuparse_events import event_bus_from_env
 from docuparse_orchestrator.context import orchestration_run
 from docuparse_orchestrator.decorators import task
 from docuparse_storage import get_storage
+from erp_import.credentials import CredentialsError, save_superlogica_tokens
 from models.classifier import classify
 from rest_framework import status
 from rest_framework.decorators import (
@@ -746,9 +747,18 @@ def integration_settings_view(request):
         "approved_export_format",
         "superlogica_base_url",
         "superlogica_mode",
+        "administrator_cnpj",
     ):
         if field in serializer.validated_data:
             setattr(config, field, serializer.validated_data[field])
+    data = serializer.validated_data
+    if "superlogica_app_token" in data:
+        try:
+            save_superlogica_tokens(
+                config, data["superlogica_app_token"], data["superlogica_access_token"]
+            )
+        except CredentialsError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     config.save(
         update_fields=[
             "approved_export_enabled",
@@ -756,6 +766,9 @@ def integration_settings_view(request):
             "approved_export_format",
             "superlogica_base_url",
             "superlogica_mode",
+            "administrator_cnpj",
+            "superlogica_app_token_enc",
+            "superlogica_access_token_enc",
             "updated_at",
         ]
     )

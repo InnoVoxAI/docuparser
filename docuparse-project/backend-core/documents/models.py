@@ -233,6 +233,11 @@ class IntegrationSettings(TimeStampedModel):
     superlogica_mode = models.CharField(
         max_length=32, choices=SuperlogicaMode.choices, default=SuperlogicaMode.DISABLED
     )
+    # Tokens do Superlógica cifrados (ver erp_import.credentials); nunca saem pela API.
+    superlogica_app_token_enc = models.TextField(blank=True, default="")
+    superlogica_access_token_enc = models.TextField(blank=True, default="")
+    # CNPJ da administradora, sem pontuação: nunca identifica um condomínio.
+    administrator_cnpj = models.CharField(max_length=14, blank=True, default="")
 
 
 class OCRSettings(TimeStampedModel):

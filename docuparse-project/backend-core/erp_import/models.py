@@ -47,10 +47,10 @@ class ImportProposal(TimeStampedModel):
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pendente"
+        # Aprovada e resolvida já foram aplicadas ao cadastro.
         APPROVED = "approved", "Aprovada"
         RESOLVED = "resolved", "Conflito resolvido"
         REJECTED = "rejected", "Rejeitada"
-        APPLIED = "applied", "Aplicada"
         SUPERSEDED = "superseded", "Substituída"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

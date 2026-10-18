@@ -168,6 +168,10 @@ def plan_condominiums(
 
         if external_id in conflicts:
             data["conflict_kind"] = CNPJ_DUPLICATED
+            # O CNPJ original: a proposta entra sem ele, e o operador pode atribuí-lo.
+            data["source_cnpj"] = next(
+                r.cnpj for r in conflicts[external_id] if r.external_id == external_id
+            )
             data["cnpj_candidates"] = [
                 {"external_id": r.external_id, "name": r.name, "address": r.address}
                 for r in conflicts[external_id]

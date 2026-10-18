@@ -106,7 +106,6 @@ class Migration(migrations.Migration):
                             ("approved", "Aprovada"),
                             ("resolved", "Conflito resolvido"),
                             ("rejected", "Rejeitada"),
-                            ("applied", "Aplicada"),
                             ("superseded", "Substituída"),
                         ],
                         default="pending",

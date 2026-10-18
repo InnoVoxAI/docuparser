@@ -1,12 +1,13 @@
 """Sincronização com a fonte e decisões do operador sobre as propostas.
 
 A sincronização só grava `ImportBatch` e `ImportProposal`. `Condominium`,
-`ChartOfAccounts` e `LedgerAccount` só mudam quando uma proposta é aplicada.
+`ChartOfAccounts` e `LedgerAccount` só mudam quando uma decisão aplica a proposta.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from accounting.models import ChartOfAccounts, LedgerAccount
 from condominiums.models import Condominium
@@ -15,6 +16,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from erp_import import planning
+from erp_import.apply import ApplyError, InvalidDecision, apply_proposal
 from erp_import.models import ImportBatch, ImportProposal
 from erp_import.planning import LocalState, ProposalDraft
 from erp_import.sources.base import RegistrySource, SourceError
@@ -22,10 +24,15 @@ from erp_import.sources.base import RegistrySource, SourceError
 logger = logging.getLogger(__name__)
 
 UNEXPECTED_ERROR = "Erro inesperado ao sincronizar. Tente novamente."
+STALE_BATCH_ERROR = "A sincronização foi interrompida antes de terminar."
+# Um lote "em andamento" há mais tempo que isso é considerado morto.
+STALE_AFTER = timedelta(minutes=15)
+
+__all__ = ["ApplyError", "InvalidDecision"]
 
 
-class InvalidDecision(Exception):
-    """A decisão não cabe no estado ou no tipo da proposta."""
+class SyncInProgress(Exception):
+    """Já existe uma sincronização em andamento."""
 
 
 def load_local_state(source_name: str) -> LocalState:
@@ -60,41 +67,48 @@ def load_local_state(source_name: str) -> LocalState:
     return LocalState(condominiums, cnpj_owners, charts, accounts)
 
 
-def _signature(draft: ProposalDraft) -> tuple:
-    return (
-        draft.action,
-        draft.data,
-        draft.diff,
-        list(draft.warnings),
-    )
+def _signature(action: str, data: dict, diff: dict, warnings: list) -> tuple:
+    return (action, data, diff, list(warnings))
 
 
 def _persist(batch: ImportBatch, drafts: list[ProposalDraft]) -> None:
-    """Grava os rascunhos, sem repetir proposta pendente idêntica de lote anterior."""
+    """Grava os rascunhos, sem repetir o que já está pendente ou foi rejeitado igual."""
+    P = ImportProposal
     open_proposals = {
         (p.entity_type, p.external_id): p
-        for p in ImportProposal.objects.filter(status=ImportProposal.Status.PENDING)
+        for p in P.objects.filter(status=P.Status.PENDING)
     }
+    # Última rejeição de cada entidade: a mesma proposta não volta a cada sincronização.
+    rejected = {
+        (p.entity_type, p.external_id): p
+        for p in P.objects.filter(status=P.Status.REJECTED).order_by("decided_at")
+    }
+
     drafted = {(d.entity_type, d.external_id) for d in drafts}
     for key, stale in open_proposals.items():
         if key not in drafted:
-            stale.status = ImportProposal.Status.SUPERSEDED
+            stale.status = P.Status.SUPERSEDED
             stale.save(update_fields=["status", "updated_at"])
 
     for draft in drafts:
-        previous = open_proposals.get((draft.entity_type, draft.external_id))
+        key = (draft.entity_type, draft.external_id)
+        signature = _signature(draft.action, draft.data, draft.diff, draft.warnings)
+
+        declined = rejected.get(key)
+        if declined is not None and signature == _signature(
+            declined.action, declined.data, declined.diff, declined.warnings
+        ):
+            continue
+
+        previous = open_proposals.get(key)
         if previous is not None:
-            same = _signature(draft) == (
-                previous.action,
-                previous.data,
-                previous.diff,
-                previous.warnings,
-            )
-            if same:
+            if signature == _signature(
+                previous.action, previous.data, previous.diff, previous.warnings
+            ):
                 continue
-            previous.status = ImportProposal.Status.SUPERSEDED
+            previous.status = P.Status.SUPERSEDED
             previous.save(update_fields=["status", "updated_at"])
-        ImportProposal.objects.create(
+        P.objects.create(
             batch=batch,
             entity_type=draft.entity_type,
             external_id=draft.external_id,
@@ -105,15 +119,26 @@ def _persist(batch: ImportBatch, drafts: list[ProposalDraft]) -> None:
         )
 
 
-def run_sync(
-    source: RegistrySource,
-    user: AbstractBaseUser | None,
-    administrator_cnpj: str = "",
+def create_batch(source_name: str, user: AbstractBaseUser | None) -> ImportBatch:
+    """Abre um lote. Recusa se já houver um em andamento; lote morto é encerrado antes."""
+    with transaction.atomic():
+        running = ImportBatch.objects.select_for_update().filter(
+            status=ImportBatch.Status.RUNNING
+        )
+        cutoff = timezone.now() - STALE_AFTER
+        for stale in running.filter(created_at__lt=cutoff):
+            _finish(stale, ImportBatch.Status.ERROR, STALE_BATCH_ERROR)
+        if running.filter(created_at__gte=cutoff).exists():
+            raise SyncInProgress("Já existe uma sincronização em andamento.")
+        return ImportBatch.objects.create(
+            source=source_name, started_by=user, status=ImportBatch.Status.RUNNING
+        )
+
+
+def execute_batch(
+    batch: ImportBatch, source: RegistrySource, administrator_cnpj: str = ""
 ) -> ImportBatch:
     """Lê a fonte e grava as propostas. Falha na fonte deixa o lote em erro, sem propostas."""
-    batch = ImportBatch.objects.create(
-        source=source.source_name, started_by=user, status=ImportBatch.Status.RUNNING
-    )
     try:
         condominiums = source.list_condominiums()
         charts = source.list_charts()
@@ -140,25 +165,42 @@ def _finish(batch: ImportBatch, status: str, message: str = "") -> ImportBatch:
     return batch
 
 
+# Planos antes das contas e dos condomínios que dependem deles.
+_APPLY_ORDER = {
+    ImportProposal.EntityType.CHART: 0,
+    ImportProposal.EntityType.ACCOUNT: 1,
+    ImportProposal.EntityType.CONDOMINIUM: 2,
+}
+
+
 def _decide(
     proposal: ImportProposal,
     user: AbstractBaseUser,
     status: str,
     resolution: dict | None = None,
 ) -> ImportProposal:
+    """Registra a decisão e, se aprovada ou resolvida, aplica a mudança na mesma transação."""
+    P = ImportProposal
     with transaction.atomic():
-        locked = ImportProposal.objects.select_for_update().get(pk=proposal.pk)
-        if locked.status != ImportProposal.Status.PENDING:
+        locked = (
+            P.objects.select_for_update().select_related("batch").get(pk=proposal.pk)
+        )
+        if locked.status == status:
+            return locked  # repetir a decisão não repete a mudança
+        if locked.status != P.Status.PENDING:
             raise InvalidDecision("A proposta já foi decidida ou substituída.")
-        is_conflict = locked.action == ImportProposal.Action.CONFLICT
-        if status == ImportProposal.Status.APPROVED and is_conflict:
+        is_conflict = locked.action == P.Action.CONFLICT
+        if status == P.Status.APPROVED and is_conflict:
             raise InvalidDecision("Conflitos precisam ser resolvidos, não aprovados.")
-        if status == ImportProposal.Status.RESOLVED and not is_conflict:
+        if status == P.Status.RESOLVED and not is_conflict:
             raise InvalidDecision("Só conflitos podem ser resolvidos.")
+
         locked.status = status
         locked.resolution = resolution or {}
         locked.decided_by = user
         locked.decided_at = timezone.now()
+        if status in (P.Status.APPROVED, P.Status.RESOLVED):
+            apply_proposal(locked)
         locked.save()
         return locked
 
@@ -171,10 +213,7 @@ def reject(proposal: ImportProposal, user: AbstractBaseUser) -> ImportProposal:
     return _decide(proposal, user, ImportProposal.Status.REJECTED)
 
 
-def resolve(
-    proposal: ImportProposal, user: AbstractBaseUser, resolution: dict
-) -> ImportProposal:
-    """Operador resolve um conflito; `resolution` depende do tipo (`data["conflict_kind"]`)."""
+def _validate_resolution(proposal: ImportProposal, resolution: dict) -> None:
     kind = proposal.data.get("conflict_kind")
     if kind == planning.CNPJ_DUPLICATED:
         allowed = {c["external_id"] for c in proposal.data["cnpj_candidates"]}
@@ -189,4 +228,48 @@ def resolve(
             raise InvalidDecision(
                 "Informe se o cadastro local com este CNPJ é o mesmo condomínio."
             )
-    return _decide(proposal, user, ImportProposal.Status.RESOLVED, resolution)
+    else:
+        raise InvalidDecision("Conflito de tipo desconhecido.")
+
+
+def resolve(
+    proposal: ImportProposal, user: AbstractBaseUser, resolution: dict
+) -> list[ImportProposal]:
+    """Operador resolve um conflito. A escolha de CNPJ vale para todos os registros
+    do grupo, que são resolvidos juntos."""
+    P = ImportProposal
+    _validate_resolution(proposal, resolution)
+    group = [proposal]
+    if proposal.data["conflict_kind"] == planning.CNPJ_DUPLICATED:
+        ids = {c["external_id"] for c in proposal.data["cnpj_candidates"]}
+        group += [
+            p
+            for p in P.objects.filter(
+                status=P.Status.PENDING,
+                action=P.Action.CONFLICT,
+                entity_type=P.EntityType.CONDOMINIUM,
+            ).exclude(pk=proposal.pk)
+            if p.data.get("conflict_kind") == planning.CNPJ_DUPLICATED
+            and {c["external_id"] for c in p.data["cnpj_candidates"]} == ids
+        ]
+    with transaction.atomic():
+        return [_decide(p, user, P.Status.RESOLVED, resolution) for p in group]
+
+
+class BulkResult:
+    def __init__(self) -> None:
+        self.done: list[ImportProposal] = []
+        self.failed: list[tuple[ImportProposal, str]] = []
+
+
+def decide_many(
+    proposals: list[ImportProposal], user: AbstractBaseUser, status: str
+) -> BulkResult:
+    """Decide as propostas escolhidas, uma transação por proposta, planos primeiro."""
+    result = BulkResult()
+    for proposal in sorted(proposals, key=lambda p: _APPLY_ORDER[p.entity_type]):
+        try:
+            result.done.append(_decide(proposal, user, status))
+        except InvalidDecision as exc:
+            result.failed.append((proposal, str(exc)))
+    return result

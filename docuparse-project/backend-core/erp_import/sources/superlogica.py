@@ -230,3 +230,7 @@ class SuperlogicaSource:
     def list_accounts(self, chart_external_id: str) -> list[SourceAccount]:
         rows = self._client.get("planocontas", {"id": chart_external_id})
         return _normalize_accounts(rows)
+
+    def check_connection(self) -> None:
+        """Uma leitura mínima, para validar as credenciais."""
+        self._client.get("condominios/get", {"itensPorPagina": 1, "pagina": 1})

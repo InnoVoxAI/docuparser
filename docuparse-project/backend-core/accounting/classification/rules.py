@@ -61,8 +61,12 @@ class NatureRule:
     ) -> Classification | None:
         if not self.matches(facts):
             return None
-        account = condominium.ledger_accounts.filter(
-            nature=self.nature, is_active=True
+        if condominium.chart_of_accounts_id is None:
+            return None
+        account = LedgerAccount.objects.filter(
+            chart_id=condominium.chart_of_accounts_id,
+            nature=self.nature,
+            is_active=True,
         ).first()
         if account is None:
             return None

@@ -6,7 +6,12 @@ from condominiums.models import Condominium
 from condominiums.tax_ids import is_valid_tax_id, normalize_tax_id
 from rest_framework import serializers
 
-from accounting.models import DocumentClassification, LedgerAccount, SupplierRule
+from accounting.models import (
+    ChartOfAccounts,
+    DocumentClassification,
+    LedgerAccount,
+    SupplierRule,
+)
 
 
 def _is_self_or_descendant(candidate: LedgerAccount, account: LedgerAccount) -> bool:
@@ -18,10 +23,46 @@ def _is_self_or_descendant(candidate: LedgerAccount, account: LedgerAccount) -> 
     return False
 
 
-class LedgerAccountSerializer(serializers.ModelSerializer):
-    """Espera `context["condominium"]` ao validar escrita."""
+class ChartOfAccountsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChartOfAccounts
+        fields = [
+            "id",
+            "name",
+            "external_source",
+            "external_id",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
-    condominium_id = serializers.UUIDField(read_only=True)
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        source = attrs.get(
+            "external_source", getattr(self.instance, "external_source", "")
+        )
+        external_id = attrs.get(
+            "external_id", getattr(self.instance, "external_id", "")
+        )
+        if external_id:
+            clash = ChartOfAccounts.objects.filter(
+                external_source=source, external_id=external_id
+            )
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {
+                        "external_id": "Já existe um plano de contas com este id nesta origem."
+                    }
+                )
+        return attrs
+
+
+class LedgerAccountSerializer(serializers.ModelSerializer):
+    """Espera `context["chart"]` ao validar escrita."""
+
+    chart_id = serializers.UUIDField(read_only=True)
     parent_id = serializers.PrimaryKeyRelatedField(
         queryset=LedgerAccount.objects.all(),
         source="parent",
@@ -33,7 +74,7 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
         model = LedgerAccount
         fields = [
             "id",
-            "condominium_id",
+            "chart_id",
             "parent_id",
             "code",
             "name",
@@ -45,33 +86,33 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        condominium = self.context["condominium"]
+        chart = self.context["chart"]
 
         code = attrs.get("code")
         if code is not None:
-            clash = LedgerAccount.objects.filter(condominium=condominium, code=code)
+            clash = LedgerAccount.objects.filter(chart=chart, code=code)
             if self.instance is not None:
                 clash = clash.exclude(pk=self.instance.pk)
             if clash.exists():
                 raise serializers.ValidationError(
-                    {"code": "Já existe uma conta com este código neste condomínio."}
+                    {"code": "Já existe uma conta com este código neste plano."}
                 )
 
         nature = attrs.get("nature")
         if nature:
-            clash = LedgerAccount.objects.filter(condominium=condominium, nature=nature)
+            clash = LedgerAccount.objects.filter(chart=chart, nature=nature)
             if self.instance is not None:
                 clash = clash.exclude(pk=self.instance.pk)
             if clash.exists():
                 raise serializers.ValidationError(
-                    {"nature": "Outra conta deste condomínio já recebe esta natureza."}
+                    {"nature": "Outra conta deste plano já recebe esta natureza."}
                 )
 
         parent = attrs.get("parent")
         if parent is not None:
-            if parent.condominium_id != condominium.id:
+            if parent.chart_id != chart.id:
                 raise serializers.ValidationError(
-                    {"parent_id": "A conta pai precisa ser do mesmo condomínio."}
+                    {"parent_id": "A conta pai precisa ser do mesmo plano."}
                 )
             if self.instance is not None and _is_self_or_descendant(
                 parent, self.instance
@@ -116,9 +157,11 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
         condominium = self.context["condominium"]
 
         account = attrs.get("ledger_account")
-        if account is not None and account.condominium_id != condominium.id:
+        if account is not None and account.chart_id != condominium.chart_of_accounts_id:
             raise serializers.ValidationError(
-                {"ledger_account_id": "A conta precisa ser do mesmo condomínio."}
+                {
+                    "ledger_account_id": "A conta precisa ser do plano de contas do condomínio."
+                }
             )
 
         tax_id = attrs.get(
@@ -167,7 +210,7 @@ class DocumentClassificationSerializer(serializers.ModelSerializer):
 
 
 class ManualClassificationSerializer(serializers.Serializer):
-    """Espera `context["document"]`: a conta precisa ser do condomínio dele."""
+    """Espera `context["document"]`: a conta precisa ser do plano do condomínio dele."""
 
     ledger_account_id = serializers.PrimaryKeyRelatedField(
         queryset=LedgerAccount.objects.filter(is_active=True),
@@ -183,9 +226,18 @@ class ManualClassificationSerializer(serializers.Serializer):
                     "ledger_account_id": "Defina o condomínio do documento antes de escolher a conta."
                 }
             )
-        if attrs["ledger_account"].condominium_id != document.condominium_id:
+        chart_id = document.condominium.chart_of_accounts_id
+        if chart_id is None:
             raise serializers.ValidationError(
-                {"ledger_account_id": "A conta precisa ser do condomínio do documento."}
+                {
+                    "ledger_account_id": "O condomínio do documento não tem plano de contas."
+                }
+            )
+        if attrs["ledger_account"].chart_id != chart_id:
+            raise serializers.ValidationError(
+                {
+                    "ledger_account_id": "A conta precisa ser do plano de contas do condomínio do documento."
+                }
             )
         return attrs
 

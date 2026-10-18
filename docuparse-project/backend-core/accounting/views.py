@@ -18,8 +18,9 @@ from rest_framework.response import Response
 from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
 
-from accounting.models import LedgerAccount, SupplierRule
+from accounting.models import ChartOfAccounts, LedgerAccount, SupplierRule
 from accounting.serializers import (
+    ChartOfAccountsSerializer,
     DocumentClassificationSerializer,
     LedgerAccountSerializer,
     ManualClassificationSerializer,
@@ -36,17 +37,55 @@ from accounting.services import (
 @api_view(["GET", "POST"])
 @authentication_classes([DocuparseAuthentication])
 @permission_classes([CondominiumPermission])
-def ledger_accounts_view(request: Request, condominium_id: UUID) -> Response:
-    condominium = get_object_or_404(Condominium, id=condominium_id)
+def charts_of_accounts_view(request: Request) -> Response:
     if request.method == "GET":
-        queryset = condominium.ledger_accounts.order_by("code")
+        queryset = ChartOfAccounts.objects.order_by("name")
+        return Response(ChartOfAccountsSerializer(queryset, many=True).data)
+
+    serializer = ChartOfAccountsSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    chart = serializer.save()
+    return Response(
+        ChartOfAccountsSerializer(chart).data, status=status.HTTP_201_CREATED
+    )
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([CondominiumPermission])
+def chart_of_accounts_detail_view(request: Request, chart_id: UUID) -> Response:
+    chart = get_object_or_404(ChartOfAccounts, id=chart_id)
+    if request.method == "GET":
+        return Response(ChartOfAccountsSerializer(chart).data)
+    if request.method == "DELETE":
+        try:
+            chart.delete()
+        except ProtectedError:
+            return Response(
+                {
+                    "detail": "Este plano possui contas ou condomínios e não pode ser excluído."
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = ChartOfAccountsSerializer(chart, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    return Response(ChartOfAccountsSerializer(serializer.save()).data)
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([CondominiumPermission])
+def ledger_accounts_view(request: Request, chart_id: UUID) -> Response:
+    chart = get_object_or_404(ChartOfAccounts, id=chart_id)
+    if request.method == "GET":
+        queryset = chart.accounts.order_by("code")
         return Response(LedgerAccountSerializer(queryset, many=True).data)
 
-    serializer = LedgerAccountSerializer(
-        data=request.data, context={"condominium": condominium}
-    )
+    serializer = LedgerAccountSerializer(data=request.data, context={"chart": chart})
     serializer.is_valid(raise_exception=True)
-    account = serializer.save(condominium=condominium)
+    account = serializer.save(chart=chart)
     return Response(
         LedgerAccountSerializer(account).data, status=status.HTTP_201_CREATED
     )
@@ -56,12 +95,12 @@ def ledger_accounts_view(request: Request, condominium_id: UUID) -> Response:
 @authentication_classes([DocuparseAuthentication])
 @permission_classes([CondominiumPermission])
 def ledger_account_detail_view(
-    request: Request, condominium_id: UUID, ledger_account_id: UUID
+    request: Request, chart_id: UUID, ledger_account_id: UUID
 ) -> Response:
     account = get_object_or_404(
-        LedgerAccount.objects.select_related("condominium"),
+        LedgerAccount.objects.select_related("chart"),
         id=ledger_account_id,
-        condominium_id=condominium_id,
+        chart_id=chart_id,
     )
     if request.method == "GET":
         return Response(LedgerAccountSerializer(account).data)
@@ -81,10 +120,24 @@ def ledger_account_detail_view(
         account,
         data=request.data,
         partial=True,
-        context={"condominium": account.condominium},
+        context={"chart": account.chart},
     )
     serializer.is_valid(raise_exception=True)
     return Response(LedgerAccountSerializer(serializer.save()).data)
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([CondominiumPermission])
+def condominium_ledger_accounts_view(
+    request: Request, condominium_id: UUID
+) -> Response:
+    """Contas do plano do condomínio (lista vazia se ele ainda não tem plano)."""
+    condominium = get_object_or_404(Condominium, id=condominium_id)
+    queryset = LedgerAccount.objects.filter(
+        chart_id=condominium.chart_of_accounts_id
+    ).order_by("code")
+    return Response(LedgerAccountSerializer(queryset, many=True).data)
 
 
 @api_view(["GET", "POST"])
@@ -160,7 +213,9 @@ def _locked_response(document: Document) -> Response | None:
 @permission_classes([require_permission("documents.validate")])
 def document_ledger_account_view(request: Request, document_id: UUID) -> Response:
     """Operador define ou corrige a conta do documento (classificação manual)."""
-    document = get_object_or_404(Document, id=document_id)
+    document = get_object_or_404(
+        Document.objects.select_related("condominium"), id=document_id
+    )
     if not request.user.is_authenticated:
         return Response(
             {"detail": "A classificação manual exige um usuário autenticado."},

@@ -48,7 +48,7 @@ def condominium_detail_view(request: Request, condominium_id: UUID) -> Response:
         except ProtectedError:
             return Response(
                 {
-                    "detail": "Este condomínio possui contas ou documentos e não pode ser excluído."
+                    "detail": "Este condomínio possui documentos ou regras de fornecedor e não pode ser excluído."
                 },
                 status=status.HTTP_409_CONFLICT,
             )

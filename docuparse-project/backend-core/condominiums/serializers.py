@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Any
+
+from accounting.models import ChartOfAccounts
 from rest_framework import serializers
 
 from condominiums.models import Condominium
@@ -14,6 +17,12 @@ class CondominiumSerializer(serializers.ModelSerializer):
         child=serializers.CharField(max_length=255, allow_blank=True),
         required=False,
     )
+    chart_of_accounts_id = serializers.PrimaryKeyRelatedField(
+        queryset=ChartOfAccounts.objects.all(),
+        source="chart_of_accounts",
+        allow_null=True,
+        required=False,
+    )
 
     class Meta:
         model = Condominium
@@ -21,7 +30,9 @@ class CondominiumSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "cnpj",
+            "external_source",
             "external_id",
+            "chart_of_accounts_id",
             "aliases",
             "is_active",
             "created_at",
@@ -59,3 +70,35 @@ class CondominiumSerializer(serializers.ModelSerializer):
                     f"'{aliases[key]}' já identifica o condomínio '{taken[key]}'."
                 )
         return list(aliases.values())
+
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        source = attrs.get(
+            "external_source", getattr(self.instance, "external_source", "")
+        )
+        external_id = attrs.get(
+            "external_id", getattr(self.instance, "external_id", "")
+        )
+        if external_id:
+            clash = Condominium.objects.filter(
+                external_source=source, external_id=external_id
+            )
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {"external_id": "Já existe um condomínio com este id nesta origem."}
+                )
+
+        # As regras de fornecedor apontam para contas do plano atual.
+        if (
+            self.instance is not None
+            and "chart_of_accounts" in attrs
+            and attrs["chart_of_accounts"] != self.instance.chart_of_accounts
+            and self.instance.supplier_rules.exists()
+        ):
+            raise serializers.ValidationError(
+                {
+                    "chart_of_accounts_id": "Remova as regras de fornecedor antes de trocar o plano de contas."
+                }
+            )
+        return attrs

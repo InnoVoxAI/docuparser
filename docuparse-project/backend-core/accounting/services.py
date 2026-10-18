@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 EVENT_SOURCE = "backend-core"
 NO_RULE_REASON = "nenhuma regra encontrou conta"
-STALE_ACCOUNT_REASON = "conta anterior removida: pertence a outro condomínio"
+STALE_ACCOUNT_REASON = "conta anterior removida: pertence a outro plano de contas"
 NO_CONDOMINIUM_REASON = "nenhum condomínio reconhecido no documento"
 
 
@@ -192,7 +192,7 @@ def classify_document(
     A escolha manual do operador nunca é trocada: a sugestão do motor só vira
     evento (`applied=False`). Sem regra aplicável, o estado também não muda,
     exceto quando a conta vigente é de outro condomínio (o documento trocou de
-    condomínio): essa conta não vale mais e é removida.
+    condomínio com outro plano): essa conta não vale mais e é removida.
     """
     result = classify(facts or facts_for_document(document), condominium)
 
@@ -200,7 +200,10 @@ def classify_document(
         Document.objects.select_for_update().get(pk=document.pk)
         current = _current_classification(document)
         previous = current.ledger_account if current else None
-        stale = previous is not None and previous.condominium_id != condominium.id
+        stale = (
+            previous is not None
+            and previous.chart_id != condominium.chart_of_accounts_id
+        )
         manual_wins = (
             current is not None
             and not stale

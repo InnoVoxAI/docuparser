@@ -7,9 +7,29 @@ from django.db import models
 from documents.models import TimeStampedModel
 
 
+class ChartOfAccounts(TimeStampedModel):
+    """Plano de contas compartilhado: vários condomínios podem apontar para o mesmo."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    # Origem do plano (ex. "superlogica") e id dele nela.
+    external_source = models.CharField(max_length=32, blank=True, default="")
+    external_id = models.CharField(max_length=64, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["external_source", "external_id"],
+                condition=~models.Q(external_id=""),
+                name="unique_chart_of_accounts_external_id_per_source",
+            ),
+        ]
+
+
 class LedgerAccount(TimeStampedModel):
-    """Conta do plano de contas de um condomínio. Hierárquica via `parent`;
-    uma conta sem filhas é analítica."""
+    """Conta de um plano de contas. Hierárquica via `parent`; uma conta sem filhas
+    é analítica."""
 
     class Nature(models.TextChoices):
         INSS = "inss", "INSS"
@@ -17,10 +37,10 @@ class LedgerAccount(TimeStampedModel):
         SERVICO_PESSOA_FISICA = "servico_pessoa_fisica", "Serviço de pessoa física"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    condominium = models.ForeignKey(
-        "condominiums.Condominium",
+    chart = models.ForeignKey(
+        ChartOfAccounts,
         on_delete=models.PROTECT,
-        related_name="ledger_accounts",
+        related_name="accounts",
     )
     parent = models.ForeignKey(
         "self",
@@ -33,7 +53,7 @@ class LedgerAccount(TimeStampedModel):
     code = models.CharField(max_length=32)
     name = models.CharField(max_length=255)
     # Documentos que as regras de conteúdo reconhecem (ex. DARF previdenciário)
-    # caem na conta do condomínio marcada com a natureza correspondente.
+    # caem na conta do plano marcada com a natureza correspondente.
     nature = models.CharField(
         max_length=32, choices=Nature.choices, blank=True, default=""
     )
@@ -42,13 +62,13 @@ class LedgerAccount(TimeStampedModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["condominium", "code"],
-                name="unique_ledger_account_code_per_condominium",
+                fields=["chart", "code"],
+                name="unique_ledger_account_code_per_chart",
             ),
             models.UniqueConstraint(
-                fields=["condominium", "nature"],
+                fields=["chart", "nature"],
                 condition=~models.Q(nature=""),
-                name="unique_ledger_account_nature_per_condominium",
+                name="unique_ledger_account_nature_per_chart",
             ),
         ]
 

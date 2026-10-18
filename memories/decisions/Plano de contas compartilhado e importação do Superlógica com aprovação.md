@@ -52,19 +52,34 @@ no Superlógica o plano é compartilhado entre condomínios.
   por conta. Re-sincronizar sem mudanças não cria propostas; proposta pendente que mudou
   ou deixou de valer vira `superseded`.
 
+## Aplicação, API e telas (2026-10-18)
+
+- Decidir aplica a mudança na mesma transação (`erp_import/apply.py`); repetir a decisão é
+  um no-op. Status finais: aprovada, conflito resolvido, rejeitada, substituída. Plano antes de
+  conta e de condomínio; o lote ordena, a aprovação isolada recusa com mensagem.
+- Rejeição lembrada pela assinatura da proposta (ação, dados, diferenças, avisos): volta só se
+  a fonte mudar. "Nenhum fica com o CNPJ" é lembrado por CNPJ e conjunto de registros; sem
+  isso o mesmo conflito voltava a cada sincronização (achado na rodada com dados reais).
+- A escolha de CNPJ resolve o grupo todo. Ligar a um cadastro local reaponta o `external_id`
+  do cadastro local; "é outro condomínio" importa sem CNPJ.
+- Sincronização em segundo plano (`ThreadPoolExecutor` de 1 worker, como o processamento de
+  documentos), um lote por vez; lote parado há mais de 15 minutos é encerrado como erro.
+- Tokens: Fernet com `DOCUPARSE_SECRETS_KEY` (obrigatória para salvar tokens), por tenant, na
+  `IntegrationSettings`. Nunca saem pela API. Sem fallback para tokens de ambiente: um token
+  do ambiente serviria a todos os tenants.
+- Frontend: módulo `registry` (listagem, sincronizar, cadastro manual, confirmação) e campos de
+  credenciais em Configurações > Integrações. Edição de nomes alternativos, naturezas e
+  fornecedores, e as listas de documentos com condomínio e conta, ficaram adiadas.
+
 ## Pendências
 
-- Story 1.4 aplica as decisões (hoje só são registradas, com autor e data) e cria a API
-  e a execução em segundo plano. Ao aplicar: um plano novo precisa existir antes do
-  condomínio que aponta para ele; desativar um duplicado que guarda o CNPJ esbarra na
-  unicidade do CNPJ.
-- Testes das stories 1.1 a 1.3 não foram escritos. Os 24 pontos de teste que criam
-  `LedgerAccount(condominium=...)` precisam ser adaptados.
-- Verificado em Postgres em 2026-10-18: a migração de dados sobre dados no formato antigo
-  (contas, hierarquia, naturezas e regras de fornecedor preservadas, restrições novas
-  valendo) e o serviço de sincronização (idempotência, nada gravado antes da aprovação,
-  lote em erro sem propostas, decisões com autor e data). Por script avulso, não por teste.
-- Na área tocada, 75 de 106 testes existentes falham até serem adaptados (story 1.9).
+- Identificação de documentos ignorar o CNPJ da administradora (resto da story 1.8).
+- Desativar um duplicado que guarda o CNPJ: o registro desativado mantém o CNPJ.
+- Adaptar os testes antigos de `accounting`, `condominiums` e do pipeline ao plano
+  compartilhado (75 de 106 falham) e fixar testes do planejador e do cliente do Superlógica.
+- Ver as telas num navegador com a stack rodando.
+- Verificado em Postgres: migração de dados sobre dados no formato antigo, serviço de
+  sincronização, API e uma rodada completa contra o Superlógica real (somente leitura).
 
 ## Relations
 

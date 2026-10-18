@@ -11,6 +11,10 @@ tags:
 
 ## Decisão
 
+> Atualização (2026-10-18): o plano passou a ser **compartilhado** entre condomínios, como no
+> Superlógica. Ver [[docuparser/decisions/plano-de-contas-compartilhado-e-importacao-do-superlogica-com-aprovacao]].
+> O texto abaixo descreve o modelo original.
+
 O plano de contas é **por condomínio**, com as tabelas no schema de cada tenant.
 Story "Modelar Plano de Contas" do épico DOC-CLASSIFICATION-PDC, decidida em
 2026-09-30 (branch `022-chart-of-accounts`).

@@ -60,9 +60,11 @@ no Superlógica o plano é compartilhado entre condomínios.
   unicidade do CNPJ.
 - Testes das stories 1.1 a 1.3 não foram escritos. Os 24 pontos de teste que criam
   `LedgerAccount(condominium=...)` precisam ser adaptados.
-- A migração de dados e a suíte nunca rodaram em Postgres (sem Docker no ambiente de
-  desenvolvimento); só foram verificados o `manage.py check` e a ausência de divergência
-  entre migrations e modelos.
+- Verificado em Postgres em 2026-10-18: a migração de dados sobre dados no formato antigo
+  (contas, hierarquia, naturezas e regras de fornecedor preservadas, restrições novas
+  valendo) e o serviço de sincronização (idempotência, nada gravado antes da aprovação,
+  lote em erro sem propostas, decisões com autor e data). Por script avulso, não por teste.
+- Na área tocada, 75 de 106 testes existentes falham até serem adaptados (story 1.9).
 
 ## Relations
 

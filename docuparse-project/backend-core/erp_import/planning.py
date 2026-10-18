@@ -53,6 +53,9 @@ class LocalState:
     charts: dict[str, LocalChart] = field(default_factory=dict)
     # (id externo do plano, código da conta) -> conta.
     accounts: dict[tuple[str, str], LocalAccount] = field(default_factory=dict)
+    # Conflitos de CNPJ que o operador resolveu com "nenhum fica com o CNPJ":
+    # (CNPJ, ids externos dos registros). Não voltam a ser propostos.
+    cnpj_left_unassigned: frozenset[tuple[str, frozenset[str]]] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -151,7 +154,14 @@ def plan_condominiums(
         # Nomes ou endereços diferentes: o CNPJ não é confiável. Se um deles já o
         # tem no cadastro, o operador já decidiu e os outros entram sem CNPJ.
         owner = local.cnpj_owners.get(cnpj, "")
-        decided = any(r.external_id == owner for r in representatives)
+        decided = (
+            any(r.external_id == owner for r in representatives)
+            or (
+                cnpj,
+                frozenset(r.external_id for r in representatives),
+            )
+            in local.cnpj_left_unassigned
+        )
         for record in representatives:
             kept[record.external_id] = replace(record, cnpj="")
             warn(record.external_id, "cnpj_conflict")

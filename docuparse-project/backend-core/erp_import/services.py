@@ -64,7 +64,26 @@ def load_local_state(source_name: str) -> LocalState:
             chart__external_source=source_name
         ).select_related("chart")
     }
-    return LocalState(condominiums, cnpj_owners, charts, accounts)
+    return LocalState(
+        condominiums, cnpj_owners, charts, accounts, _cnpj_left_unassigned()
+    )
+
+
+def _cnpj_left_unassigned() -> frozenset[tuple[str, frozenset[str]]]:
+    resolved = ImportProposal.objects.filter(
+        status=ImportProposal.Status.RESOLVED,
+        action=ImportProposal.Action.CONFLICT,
+        entity_type=ImportProposal.EntityType.CONDOMINIUM,
+    )
+    return frozenset(
+        (
+            p.data["source_cnpj"],
+            frozenset(c["external_id"] for c in p.data["cnpj_candidates"]),
+        )
+        for p in resolved
+        if p.data.get("conflict_kind") == planning.CNPJ_DUPLICATED
+        and p.resolution.get("cnpj_owner") is None
+    )
 
 
 def _signature(action: str, data: dict, diff: dict, warnings: list) -> tuple:

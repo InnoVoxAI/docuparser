@@ -260,6 +260,27 @@ class ImportApiTests(TenantAPITestCase):
         assert Condominium.objects.get(external_id="1").cnpj == ""
         assert self.pending(entity_type="condominium") == []
 
+    def test_leaving_the_cnpj_unassigned_is_remembered(self):
+        self.source.condos = [
+            condo(1, name="Edificio A", address="Rua 1"),
+            condo(2, name="Edificio B", address="Rua 2"),
+        ]
+        self.sync()
+        self.decide(self.proposal("chart", "7"), "approve")
+        first = self.proposal("condominium", "1")
+        self.decide(first, "resolve", {"resolution": {"cnpj_owner": None}})
+        assert Condominium.objects.filter(cnpj=CNPJ).count() == 0
+
+        self.sync()
+        assert self.pending(entity_type="condominium") == []
+
+        # A new record joining the group is a different situation and is asked again.
+        self.source.condos.append(condo(3, name="Edificio C", address="Rua 3"))
+        self.sync()
+        assert {p["action"] for p in self.pending(entity_type="condominium")} == {
+            "conflict"
+        }
+
     def test_cnpj_held_by_a_local_record_can_be_linked(self):
         local = Condominium.objects.create(name="Cadastro local", cnpj=CNPJ)
         self.sync()

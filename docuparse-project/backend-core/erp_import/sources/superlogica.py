@@ -30,8 +30,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "https://api.superlogica.net/v2/condor"
 PAGE_SIZE = 50
 MAX_PAGES = 200
-# Nome do plano: campo ainda não verificado na API, cai para o id.
-_CHART_NAME_FIELDS = ("st_descricao_plc", "st_nome_plc")
 
 
 class ReadOnlyViolation(RuntimeError):
@@ -151,7 +149,14 @@ def _normalize_condominium(row: dict[str, Any]) -> SourceCondominium:
         cnpj_invalid=bool(cnpj) and not valid,
         is_active=_text(row, "fl_ativo_cond") == "1",
         chart_external_id=_text(row, "id_planoconta_plc"),
-        address=_text(row, "st_endereco_cond"),
+        address=", ".join(
+            part
+            for part in (
+                _text(row, "st_endereco_cond"),
+                _text(row, "st_numeroendereco_cond"),
+            )
+            if part
+        ),
         zip_code=_text(row, "st_cep_cond"),
         city=_text(row, "st_cidade_cond"),
     )
@@ -218,7 +223,7 @@ class SuperlogicaSource:
         for row in rows:
             external_id = _text(row, "id_planoconta_plc")
             if external_id in used:
-                name = next((n for f in _CHART_NAME_FIELDS if (n := _text(row, f))), "")
+                name = _text(row, "st_nome_plc")
                 charts.append(SourceChart(external_id, name or f"Plano {external_id}"))
         return charts
 

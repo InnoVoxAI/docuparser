@@ -42,6 +42,8 @@ TENANT_APPS = [
     # Condomínios e plano de contas: dado fiscal de cada cliente, por schema.
     "condominiums",
     "accounting",
+    # Importação de condomínios e planos de contas, com aprovação do operador.
+    "erp_import",
 ]
 
 INSTALLED_APPS = list(SHARED_APPS) + list(TENANT_APPS)

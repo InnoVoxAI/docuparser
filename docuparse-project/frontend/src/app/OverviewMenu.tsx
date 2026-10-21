@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router'
 import { Building2, Menu as MenuIcon, X } from 'lucide-react'
+import { useAuth } from '../modules/auth'
+import { NAV_ITEMS, navPath } from './navigation'
 
 const SECTION_TABS = [
     { to: '/', label: 'Processos' },
@@ -8,8 +10,9 @@ const SECTION_TABS = [
 ]
 
 /** As telas de processos (`/` e `/stats`) não têm cabeçalho nem sidebar — só o
- * conteúdo. Este botão flutuante no canto guarda a troca de seção e o logout,
- * fora do caminho visual. Mostra também o usuário logado. */
+ * conteúdo. Este botão flutuante no canto guarda a troca de seção, o acesso às
+ * demais áreas (as mesmas da sidebar, conforme a permissão) e o logout, fora do
+ * caminho visual. Mostra também o usuário logado. */
 export function OverviewMenu({
     userName,
     currentTenant,
@@ -20,6 +23,8 @@ export function OverviewMenu({
     onLogout: () => void
 }) {
     const [open, setOpen] = useState(false)
+    const { hasPermission } = useAuth()
+    const areas = NAV_ITEMS.filter((item) => hasPermission(item.permission))
 
     return (
         <div className="fixed right-3 top-3 z-30 md:right-5 md:top-5">
@@ -76,6 +81,25 @@ export function OverviewMenu({
                         </NavLink>
                     ))}
                 </nav>
+
+                {areas.length > 0 ? (
+                    <>
+                        <div className="my-1 border-t border-zinc-100" />
+                        <nav aria-label="Outras áreas" className="flex flex-col">
+                            {areas.map((item) => (
+                                <NavLink
+                                    key={item.id}
+                                    to={navPath(item.id)}
+                                    onClick={() => setOpen(false)}
+                                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+                                >
+                                    <item.icon size={14} aria-hidden="true" />
+                                    {item.label}
+                                </NavLink>
+                            ))}
+                        </nav>
+                    </>
+                ) : null}
 
                 <div className="my-1 border-t border-zinc-100" />
 

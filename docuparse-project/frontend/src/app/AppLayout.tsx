@@ -12,16 +12,18 @@ import { MobileNav } from './MobileNav'
 import { AppHeader } from './AppHeader'
 import { OverviewMenu } from './OverviewMenu'
 
+// Layout novo, sem sidebar: Visão Geral, Estatísticas e as telas de cadastros.
+const OVERVIEW_PATHS = ['/', '/stats', '/registry', '/registry-import']
+
 export function AppLayout() {
     const { user, logout, hasPermission, currentTenant } = useAuth()
     const { reprocessDocument, deleteDocument } = useDocumentMutations()
     const location = useLocation()
     const navigate = useNavigate()
     const activeView = activeViewForPath(location.pathname)
-    // A Visão Geral de Processos ("/") e a tela de Estatísticas ("/stats")
-    // rodam sem a sidebar — só um cabeçalho enxuto — pra diminuir a carga
-    // visual das telas mais usadas.
-    const isOverview = location.pathname === '/' || location.pathname === '/stats'
+    // Essas telas rodam sem a sidebar — só um botão flutuante — pra diminuir a
+    // carga visual das telas mais usadas.
+    const isOverview = OVERVIEW_PATHS.includes(location.pathname)
     // A Visão Geral ("/") é travada na altura da viewport: cabeçalho/filtros e
     // paginação fixos, só a tabela rola. `/stats` continua rolando a página
     // inteira (é uma pilha de cards, não uma tabela).

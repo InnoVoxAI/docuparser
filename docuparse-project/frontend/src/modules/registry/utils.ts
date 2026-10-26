@@ -53,28 +53,87 @@ function text(value: unknown): string {
     return typeof value === 'string' ? value : ''
 }
 
-/** Título e detalhe de uma linha de proposta, sem expor o payload cru. */
-export function describeProposal(proposal: Proposal): { title: string; detail: string } {
+export interface ProposalFact {
+    label: string
+    value: string
+}
+
+function externalLabel(proposal: Proposal): string {
+    return `Superlógica #${proposal.external_id}`
+}
+
+function list(value: unknown): string[] {
+    return Array.isArray(value) ? value.map(String) : []
+}
+
+function conflictFacts(data: Proposal['data']): ProposalFact[] {
+    if (data.conflict_kind === 'cnpj_taken_locally') {
+        return [{ label: 'Conflito', value: 'Já existe um cadastro local com este CNPJ.' }]
+    }
+    const candidates = Array.isArray(data.cnpj_candidates) ? (data.cnpj_candidates as Record<string, unknown>[]) : []
+    return [
+        {
+            label: 'Disputam o CNPJ',
+            value: candidates
+                .map((c) => `${text(c.name)} (${text(c.address) || 'sem endereço'}, #${text(c.external_id)})`)
+                .join(' · '),
+        },
+    ]
+}
+
+/** Título e fatos de uma linha de proposta, sem expor o payload cru. */
+export function describeProposal(proposal: Proposal): { title: string; facts: ProposalFact[] } {
     const { data } = proposal
     if (proposal.entity_type === 'account') {
         return {
             title: `${text(data.code)} ${text(data.name)}`.trim(),
-            detail: `Plano ${text(data.chart_external_id)}`,
+            facts: [{ label: 'Plano', value: `Superlógica #${text(data.chart_external_id)}` }],
         }
     }
     if (proposal.entity_type === 'chart') {
         const accounts = Array.isArray(data.accounts) ? data.accounts.length : null
         return {
             title: text(data.name) || `Plano ${proposal.external_id}`,
-            detail: accounts === null ? '' : `${accounts} contas`,
+            facts: [
+                { label: 'Origem', value: externalLabel(proposal) },
+                ...(accounts === null ? [] : [{ label: 'Contas', value: String(accounts) }]),
+            ],
         }
     }
-    const parts = [
-        text(data.cnpj) ? formatCnpj(text(data.cnpj)) : 'Sem CNPJ',
-        text(data.address),
-        text(data.chart_external_id) ? `Plano ${text(data.chart_external_id)}` : '',
+    const place = [text(data.address), text(data.city), text(data.zip_code) && `CEP ${text(data.zip_code)}`]
+    const duplicates = list(data.duplicate_external_ids)
+    const chartName =
+        text(data.chart_name) || (text(data.chart_external_id) ? `Plano ${text(data.chart_external_id)}` : '')
+    const facts: (ProposalFact | null)[] = [
+        { label: 'Origem', value: externalLabel(proposal) },
+        { label: 'CNPJ', value: text(data.cnpj) ? formatCnpj(text(data.cnpj)) : 'Sem CNPJ' },
+        place.some(Boolean) ? { label: 'Endereço', value: place.filter(Boolean).join(', ') } : null,
+        { label: 'Plano de contas', value: chartName || 'Sem plano' },
+        { label: 'Situação', value: data.is_active === false ? 'Inativo' : 'Ativo' },
+        duplicates.length
+            ? {
+                  label: 'Duplicados',
+                  value: `${duplicates.map((id) => `#${id}`).join(', ')} (mesmo nome e endereço; não são importados)`,
+              }
+            : null,
+        ...(proposal.action === 'conflict' ? conflictFacts(data) : []),
     ]
-    return { title: text(data.name) || proposal.external_id, detail: parts.filter(Boolean).join(' · ') }
+    return { title: text(data.name) || proposal.external_id, facts: facts.filter((f): f is ProposalFact => f !== null) }
+}
+
+/** Contas de uma proposta de plano novo, no formato da árvore (pai só se existir no plano). */
+export function proposalAccounts(data: Proposal['data']): { accounts: Account[]; orphans: Set<string> } {
+    const raw = Array.isArray(data.accounts) ? (data.accounts as Record<string, unknown>[]) : []
+    const codes = new Set(raw.map((a) => text(a.code)))
+    const orphans = new Set(raw.filter((a) => a.orphan === true).map((a) => text(a.code)))
+    const accounts = raw.map((a) => ({
+        id: text(a.code),
+        parent_id: text(a.parent_code) && codes.has(text(a.parent_code)) ? text(a.parent_code) : null,
+        code: text(a.code),
+        name: text(a.name),
+        is_active: true,
+    }))
+    return { accounts, orphans }
 }
 
 export function groupByAction(proposals: Proposal[]): { action: ProposalAction; items: Proposal[] }[] {

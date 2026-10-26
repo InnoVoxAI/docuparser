@@ -164,8 +164,9 @@ def execute_batch(
         accounts = {c.external_id: source.list_accounts(c.external_id) for c in charts}
         with transaction.atomic():
             local = load_local_state(source.source_name)
+            chart_names = {c.external_id: c.name for c in charts}
             drafts = planning.plan_condominiums(
-                condominiums, local, administrator_cnpj
+                condominiums, local, administrator_cnpj, chart_names
             ) + planning.plan_charts(charts, accounts, local)
             _persist(batch, drafts)
     except SourceError as exc:

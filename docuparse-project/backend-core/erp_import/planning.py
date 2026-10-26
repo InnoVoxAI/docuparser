@@ -76,13 +76,18 @@ def _identity(condominium: SourceCondominium) -> tuple[str, str]:
     return (normalize_text(condominium.name), normalize_text(condominium.address))
 
 
-def _condominium_data(condominium: SourceCondominium) -> dict[str, Any]:
+def _condominium_data(
+    condominium: SourceCondominium, chart_names: dict[str, str]
+) -> dict[str, Any]:
     return {
         "name": condominium.name,
         "cnpj": condominium.cnpj,
         "is_active": condominium.is_active,
         "chart_external_id": condominium.chart_external_id,
+        "chart_name": chart_names.get(condominium.chart_external_id, ""),
         "address": condominium.address,
+        "city": condominium.city,
+        "zip_code": condominium.zip_code,
     }
 
 
@@ -99,7 +104,9 @@ def plan_condominiums(
     source: list[SourceCondominium],
     local: LocalState,
     administrator_cnpj: str = "",
+    chart_names: dict[str, str] | None = None,
 ) -> list[ProposalDraft]:
+    chart_names = chart_names or {}
     known = set(local.condominiums)
     warnings: dict[str, list[str]] = {}
 
@@ -171,7 +178,7 @@ def plan_condominiums(
     drafts: list[ProposalDraft] = []
     for external_id, record in kept.items():
         extra = tuple(warnings.get(external_id, ()))
-        data = _condominium_data(record)
+        data = _condominium_data(record, chart_names)
         if external_id in duplicates:
             data["duplicate_external_ids"] = sorted(duplicates[external_id])
         current = local.condominiums.get(external_id)

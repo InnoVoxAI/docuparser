@@ -40,7 +40,6 @@ export const SETTINGS_AREAS = [
     { id: 'whatsapp', label: 'WhatsApp' },
     { id: 'ocr-routing', label: 'OCR' },
     { id: 'extraction', label: 'Extracao' },
-    { id: 'integrations', label: 'Integracoes' },
 ]
 
 export const SETTINGS_TAB_HELP: Record<string, { title: string; text: string }> = {

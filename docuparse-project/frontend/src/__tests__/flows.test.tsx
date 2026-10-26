@@ -149,22 +149,17 @@ describe('Configurações', () => {
 })
 
 describe('Configurações — áreas e salvamento', () => {
-    it('navega entre OCR/Email/Integrações e dispara os respectivos saves', async () => {
+    it('navega entre OCR/Email e dispara os respectivos saves', async () => {
         const patched: string[] = []
         server.use(
             http.get('/api/ocr/settings/ocr', () => HttpResponse.json({})),
             http.get('/api/ocr/settings/email', () => HttpResponse.json({})),
-            http.get('/api/ocr/settings/integrations', () => HttpResponse.json({})),
             http.patch('/api/ocr/settings/ocr', () => {
                 patched.push('ocr')
                 return HttpResponse.json({})
             }),
             http.patch('/api/ocr/settings/email', () => {
                 patched.push('email')
-                return HttpResponse.json({})
-            }),
-            http.patch('/api/ocr/settings/integrations', () => {
-                patched.push('integrations')
                 return HttpResponse.json({})
             }),
         )
@@ -178,10 +173,6 @@ describe('Configurações — áreas e salvamento', () => {
         await user.click((await screen.findAllByText('Email'))[0])
         await user.click(await screen.findByRole('button', { name: /Salvar email/i }))
         await waitFor(() => expect(patched).toContain('email'))
-
-        await user.click((await screen.findAllByText('Integracoes'))[0])
-        await user.click(await screen.findByRole('button', { name: /Salvar integracoes/i }))
-        await waitFor(() => expect(patched).toContain('integrations'))
     })
 })
 

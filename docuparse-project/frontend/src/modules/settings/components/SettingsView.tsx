@@ -5,7 +5,6 @@ import { useWhatsAppPoll } from '../hooks/useWhatsAppPoll'
 import { SETTINGS_AREAS } from '../types'
 import { EmailSettingsPanel } from './EmailSettingsPanel'
 import { ExtractionPanel } from './ExtractionPanel'
-import { IntegrationSettingsPanel } from './IntegrationSettingsPanel'
 import { OcrSettingsPanel } from './OcrSettingsPanel'
 import { WhatsAppSettingsPanel } from './WhatsAppSettingsPanel'
 
@@ -42,7 +41,6 @@ export function SettingsView() {
                 {activeSettingsArea === 'whatsapp' ? (
                     <WhatsAppSettingsPanel onPoll={pollWhatsApp} message={whatsappMessage} />
                 ) : null}
-                {activeSettingsArea === 'integrations' ? <IntegrationSettingsPanel /> : null}
             </section>
         </div>
     )

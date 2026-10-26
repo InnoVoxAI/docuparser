@@ -12,8 +12,8 @@ import { MobileNav } from './MobileNav'
 import { AppHeader } from './AppHeader'
 import { OverviewMenu } from './OverviewMenu'
 
-// Layout novo, sem sidebar: Visão Geral, Estatísticas e as telas de cadastros.
-const OVERVIEW_PATHS = ['/', '/stats', '/registry', '/registry-import']
+// Layout novo, sem sidebar: Visão Geral, Estatísticas, cadastros e integrações.
+const OVERVIEW_PATHS = ['/', '/stats', '/registry', '/registry-import', '/integrations']
 
 export function AppLayout() {
     const { user, logout, hasPermission, currentTenant } = useAuth()

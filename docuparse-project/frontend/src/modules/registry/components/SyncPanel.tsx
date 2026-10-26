@@ -21,7 +21,7 @@ export function SyncPanel() {
     const blocked = !canEdit
         ? 'Você não tem permissão para sincronizar.'
         : data && !data.credentials_configured
-          ? 'Configure as credenciais do Superlógica em Configurações > Integrações.'
+          ? 'Configure as credenciais do Superlógica em Integrações (menu no canto superior direito).'
           : ''
 
     return (

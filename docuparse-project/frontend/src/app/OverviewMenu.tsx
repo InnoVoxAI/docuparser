@@ -8,12 +8,12 @@ const SECTION_TABS = [
     { to: '/stats', label: 'Estatísticas', permission: undefined },
     { to: '/registry', label: 'Cadastros', permission: 'inbox.view' },
     { to: '/registry-import', label: 'Confirmar importação', permission: 'inbox.view' },
-    { to: '/settings', label: 'Configurações', permission: 'models.edit' },
+    { to: '/integrations', label: 'Integrações', permission: 'models.edit' },
 ]
 
 /** As telas de processos e de cadastros (`/`, `/stats`, `/registry`,
- * `/registry-import`) não têm cabeçalho nem sidebar — só o conteúdo. Este botão
- * flutuante no canto guarda a troca de seção, o acesso às Configurações e o
+ * `/registry-import`, `/integrations`) não têm cabeçalho nem sidebar — só o conteúdo. Este botão
+ * flutuante no canto guarda a troca de seção, o acesso às Integrações e o
  * logout, fora do caminho visual. Mostra também o usuário logado. */
 export function OverviewMenu({
     userName,

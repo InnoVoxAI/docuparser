@@ -2,6 +2,9 @@ import type { Proposal } from '../schemas/registry'
 import { describeProposal, fieldLabel, formatValue, proposalAccounts, warningLabel } from '../utils'
 import { AccountTree } from './AccountTree'
 
+// Fatos de texto longo ocupam a linha toda; os curtos ficam em duas colunas.
+const WIDE_FACTS = new Set(['Endereço', 'Duplicados', 'Disputam o CNPJ', 'Conflito'])
+
 function ChartAccounts({ proposal }: { proposal: Proposal }) {
     const { accounts, orphans } = proposalAccounts(proposal.data)
     if (accounts.length === 0) return null
@@ -25,10 +28,10 @@ export function ProposalDetails({ proposal }: { proposal: Proposal }) {
     return (
         <div className="space-y-1">
             <div className="font-medium text-zinc-900">{title}</div>
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-xs">
+            <dl className="grid gap-x-6 gap-y-0.5 text-xs sm:grid-cols-2">
                 {facts.map((fact) => (
-                    <div key={fact.label} className="contents">
-                        <dt className="font-semibold text-zinc-500">{fact.label}</dt>
+                    <div key={fact.label} className={`flex gap-2 ${WIDE_FACTS.has(fact.label) ? 'sm:col-span-2' : ''}`}>
+                        <dt className="shrink-0 font-semibold text-zinc-500">{fact.label}</dt>
                         <dd className="text-zinc-700">{fact.value}</dd>
                     </div>
                 ))}

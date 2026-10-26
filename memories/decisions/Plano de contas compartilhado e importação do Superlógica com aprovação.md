@@ -71,6 +71,25 @@ no Superlógica o plano é compartilhado entre condomínios.
   credenciais em Configurações > Integrações. Edição de nomes alternativos, naturezas e
   fornecedores, e as listas de documentos com condomínio e conta, ficaram adiadas.
 
+## UX para o analista (2026-10-26)
+
+- **Fluxo guiado**: ao terminar uma sincronização iniciada na própria tela, redireciona sozinho
+  para a confirmação (só se houver propostas; quem abre a tela depois não é redirecionado). A
+  confirmação chega com um aviso do que veio e abre na primeira aba com pendências, na ordem
+  plano, contas, condomínios. Confirmar o último plano avança sozinho para os condomínios.
+- **Orientação**: resumo da última sincronização e do pendente por ação; aviso na aba de
+  condomínios quando há plano pendente (sem o plano a confirmação é recusada); ponto e contagem
+  no menu flutuante; guia de primeiros passos em Cadastros quando não há dados; Integrações
+  aponta para Cadastros depois de salvar.
+- **Volume (dezenas de condomínios)**: busca, "Confirmar todos (N)" por seção com diálogo de
+  confirmação (o rótulo diz o escopo: todos, os filtrados, os desta página), cabeçalho fixo ao
+  rolar, avisos do que foi confirmado, e estado final "Tudo confirmado" com atalho para Cadastros.
+- **Armadilha corrigida**: logo depois de salvar as credenciais, Cadastros confiava no cache de
+  5 s do overview e mantinha o botão de sincronizar bloqueado. O overview agora é relido toda
+  vez que a tela abre, e a mensagem de credenciais não aparece enquanto ele carrega.
+- Verificado no Chrome com uma fonte sintética (47 condomínios) num tenant temporário, removido
+  depois; sem dados de cliente.
+
 ## Pendências
 
 - Identificação de documentos ignorar o CNPJ da administradora (resto da story 1.8).

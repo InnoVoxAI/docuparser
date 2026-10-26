@@ -15,6 +15,10 @@ interface Props {
     onApprove: (proposal: Proposal) => void
     onReject: (proposal: Proposal) => void
     onResolve: (proposal: Proposal) => void
+    /** Confirma todas as linhas listadas na seção (pede confirmação antes). Conflitos não têm. */
+    onApproveAll: (ids: string[]) => void
+    /** Rótulo do que "todas" significa agora: "todos", "os filtrados" ou "desta página". */
+    scopeLabel: string
 }
 
 export function ProposalSection({
@@ -28,6 +32,8 @@ export function ProposalSection({
     onApprove,
     onReject,
     onResolve,
+    onApproveAll,
+    scopeLabel,
 }: Props) {
     const isConflict = action === 'conflict'
     const ids = items.map((item) => item.id)
@@ -35,8 +41,20 @@ export function ProposalSection({
 
     return (
         <section aria-label={ACTION_LABELS[action]} className="rounded-md border border-zinc-200">
-            <div className="border-b border-zinc-200 px-3 py-2 text-sm font-semibold">
-                {ACTION_LABELS[action]} ({items.length})
+            <div className="flex items-center justify-between gap-2 border-b border-zinc-200 px-3 py-2">
+                <div className="text-sm font-semibold">
+                    {ACTION_LABELS[action]} ({items.length})
+                </div>
+                {isConflict || !canDecide ? null : (
+                    <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onApproveAll(ids)}
+                        className="h-8 rounded-md border border-zinc-300 px-3 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                    >
+                        Confirmar {scopeLabel} ({items.length})
+                    </button>
+                )}
             </div>
             <table className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-zinc-500">

@@ -8,6 +8,7 @@ import { readError } from '../../../shared/utils'
 import { useAuth } from '../../auth'
 import { INTEGRATION_SETTINGS_DEFAULTS, integrationSettingsSchema } from '../schemas/integrationSettingsSchema'
 import { ConfigIntro } from './ConfigIntro'
+import { NextStepHint } from './NextStepHint'
 
 export function IntegrationSettingsPanel() {
     const { currentTenant } = useAuth()
@@ -82,6 +83,7 @@ export function IntegrationSettingsPanel() {
                 title="Integracoes"
                 text="Configure o destino dos dados aprovados. Por enquanto o caminho intermediario e exportacao JSON; Superlogica fica preparado para quando houver acesso ao ambiente."
             />
+            {credentialsConfigured ? <NextStepHint /> : null}
             <div className="flex justify-end">
                 <button
                     type="button"

@@ -163,7 +163,7 @@ Fatos verificados na API real (somente leitura, em 2026-10-17; detalhes em `memo
 
 ### Story 1.6c: Tela de confirmação do analista
 
-**Status: concluída em 2026-10-18** (rota `/registry-import`, menu "Confirmar importação"). Verificada em jsdom com MSW e no build; ainda não foi vista em navegador com a stack rodando.
+**Status: concluída em 2026-10-18** (rota `/registry-import`, menu "Confirmar importação"). Verificada no Chrome com a stack rodando (fonte sintética). Melhorias de UX de 2026-10-26: redirecionamento após a sincronização, busca, "Confirmar todos", aviso de ordem (plano antes de condomínio), cabeçalho fixo e contagem no menu.
 
 **O que deve ser feito:**
 - Resumo do lote e tabela de propostas agrupadas por ação (novo, atualizar, desativar, conflito), com a diferença de cada campo e os avisos da proposta.

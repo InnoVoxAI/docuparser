@@ -173,6 +173,16 @@ export const handlers = [
     http.get(`${OCR}/condominiums`, () => HttpResponse.json([])),
     http.get(`${OCR}/condominiums/:id/ledger-accounts`, () => HttpResponse.json([])),
 
+    // --- Importação do Superlógica: por padrão nada pendente ---
+    http.get(`${OCR}/import/overview`, () =>
+        HttpResponse.json({
+            credentials_configured: false,
+            latest_batch: null,
+            pending_by_action: { new: 0, update: 0, deactivate: 0, conflict: 0 },
+            pending_by_entity: { condominium: 0, chart: 0, account: 0 },
+        }),
+    ),
+
     // --- Validação / classificação ---
     http.post(`${OCR}/classify-text`, () => HttpResponse.json({ schema_id: null })),
     http.post(`${OCR}/documents/:id/validate`, () =>

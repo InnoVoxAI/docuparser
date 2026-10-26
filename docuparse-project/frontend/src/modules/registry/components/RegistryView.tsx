@@ -3,10 +3,11 @@ import { Plus } from 'lucide-react'
 import { Alert } from '../../../shared/components'
 import { readError } from '../../../shared/utils'
 import { useAuth } from '../../auth'
-import { useCharts, useCondominiums } from '../hooks'
+import { useCharts, useCondominiums, useImportOverview } from '../hooks'
 import { ChartsPanel } from './ChartsPanel'
 import { CondominiumsTable } from './CondominiumsTable'
 import { CreateCondominiumDialog } from './CreateCondominiumDialog'
+import { FirstSteps } from './FirstSteps'
 import { SyncPanel } from './SyncPanel'
 
 /** Cadastros: condomínios e planos de contas, com sincronização e cadastro manual. */
@@ -15,6 +16,7 @@ export function RegistryView() {
     const [creating, setCreating] = useState(false)
     const condominiums = useCondominiums()
     const charts = useCharts()
+    const overview = useImportOverview()
 
     const error = condominiums.error ?? charts.error
     const loading = condominiums.isLoading || charts.isLoading
@@ -36,6 +38,9 @@ export function RegistryView() {
             </div>
             {error ? <Alert tone="error">{readError(error, 'Nao foi possivel carregar os cadastros.')}</Alert> : null}
             {loading ? <p className="text-sm text-zinc-500">Carregando cadastros...</p> : null}
+            {condominiums.data?.length === 0 && charts.data?.length === 0 ? (
+                <FirstSteps credentialsConfigured={overview.data?.credentials_configured} />
+            ) : null}
             {condominiums.data && charts.data ? (
                 <>
                     <CondominiumsTable condominiums={condominiums.data} charts={charts.data} />

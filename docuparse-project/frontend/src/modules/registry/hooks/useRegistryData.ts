@@ -31,11 +31,14 @@ export function useChartAccounts(chartId: string | null) {
 }
 
 /** Estado da importação; consulta de 2 em 2 s enquanto uma sincronização está em andamento. */
-export function useImportOverview() {
+export function useImportOverview({ enabled = true }: { enabled?: boolean } = {}) {
     return useQuery({
         queryKey: registryKeys.overview(),
         queryFn: fetchOverview,
+        enabled,
         staleTime: 5_000,
+        // Telas que abrem logo depois de salvar as credenciais não podem confiar no cache anterior.
+        refetchOnMount: 'always',
         refetchInterval: (query) => (query.state.data?.latest_batch?.status === 'running' ? SYNC_POLL_MS : false),
     })
 }

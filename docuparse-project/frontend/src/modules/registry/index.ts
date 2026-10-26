@@ -1,4 +1,5 @@
 export { RegistryRoutes } from './routes'
-export { registryKeys } from './hooks'
+export { registryKeys, useImportOverview } from './hooks'
+export { pendingTotal } from './utils'
 export { RegistryView } from './components/RegistryView'
 export { ImportReviewView } from './components/ImportReviewView'

@@ -1,5 +1,5 @@
 import { asApiError, readError } from '../../shared/utils'
-import type { Account, EntityType, Proposal, ProposalAction } from './schemas/registry'
+import type { Account, EntityType, ImportOverview, Proposal, ProposalAction } from './schemas/registry'
 
 export const ENTITY_LABELS: Record<EntityType, string> = {
     condominium: 'Condomínios',
@@ -189,4 +189,40 @@ export function readFieldError(error: unknown, fallback: string): string {
         if (messages.length) return messages.join(' ')
     }
     return readError(error, fallback)
+}
+
+/** Ordem em que o analista deve confirmar: o plano antes das contas e dos condomínios que o usam. */
+export const REVIEW_TAB_ORDER: EntityType[] = ['chart', 'account', 'condominium']
+
+export function pendingTotal(overview: ImportOverview | undefined): number {
+    return overview ? Object.values(overview.pending_by_action).reduce((total, n) => total + n, 0) : 0
+}
+
+const SUMMARY_LABELS: [ProposalAction, string, string][] = [
+    ['conflict', 'conflito', 'conflitos'],
+    ['new', 'novo', 'novos'],
+    ['update', 'atualização', 'atualizações'],
+    ['deactivate', 'desativação', 'desativações'],
+]
+
+/** "2 conflitos · 96 novos": o que está pendente, por ação. */
+export function summarizePending(byAction: Record<string, number>): string {
+    return SUMMARY_LABELS.filter(([action]) => (byAction[action] ?? 0) > 0)
+        .map(([action, one, many]) => `${byAction[action]} ${byAction[action] === 1 ? one : many}`)
+        .join(' · ')
+}
+
+export function firstTabWithPending(counts: Record<string, number>): EntityType {
+    return REVIEW_TAB_ORDER.find((type) => (counts[type] ?? 0) > 0) ?? 'condominium'
+}
+
+/** Busca pelo que o analista enxerga na linha: nome, ids, CNPJ (com ou sem pontuação), endereço, plano. */
+export function matchesSearch(proposal: Proposal, term: string): boolean {
+    const query = term.trim().toLowerCase()
+    if (!query) return true
+    const { title, facts } = describeProposal(proposal)
+    const haystack = [title, proposal.external_id, text(proposal.data.cnpj), ...facts.map((fact) => fact.value)]
+        .join(' ')
+        .toLowerCase()
+    return haystack.includes(query)
 }

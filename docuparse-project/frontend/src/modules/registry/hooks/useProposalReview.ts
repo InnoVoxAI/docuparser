@@ -17,7 +17,7 @@ import { registryKeys } from './queryKeys'
  * analista. Decidir pode mudar o cadastro (condomínios, planos, contas), então
  * invalida tudo do módulo.
  */
-export function useProposalReview(entityType: EntityType, batchKey: string) {
+export function useProposalReview(entityType: EntityType, batchKey: string, enabled = true) {
     const queryClient = useQueryClient()
     const [offset, setOffset] = useState(0)
     const [bulkResult, setBulkResult] = useState<BulkResult | null>(null)
@@ -26,6 +26,7 @@ export function useProposalReview(entityType: EntityType, batchKey: string) {
     const query = useQuery({
         queryKey: registryKeys.proposals(filters, batchKey),
         queryFn: () => fetchProposals(filters),
+        enabled,
         placeholderData: keepPreviousData,
         staleTime: 5_000,
     })

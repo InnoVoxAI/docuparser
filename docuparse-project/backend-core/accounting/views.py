@@ -5,7 +5,7 @@ from uuid import UUID
 
 from condominiums.models import Condominium
 from condominiums.permissions import CondominiumPermission
-from django.db.models import ProtectedError
+from django.db.models import ExpressionWrapper, F, FloatField, ProtectedError, Q
 from django.shortcuts import get_object_or_404
 from documents.models import Document
 from rest_framework import status
@@ -152,6 +152,54 @@ def _no_chart_response() -> Response:
     )
 
 
+def _paginated_chart_rules(request: Request, chart: ChartOfAccounts) -> Response:
+    """Regras do plano com busca e filtros: `search`, `origin`, `prefills`, `is_active`, `limit`, `offset`."""
+    params = request.query_params
+    queryset = chart.supplier_rules.filter(condominium__isnull=True).select_related(
+        "ledger_account"
+    )
+    if search := params.get("search", "").strip():
+        digits = "".join(c for c in search if c.isdigit())
+        match = (
+            Q(keyword__icontains=search)
+            | Q(ledger_account__name__icontains=search)
+            | Q(ledger_account__code__startswith=search)
+        )
+        queryset = queryset.filter(
+            match | Q(supplier_tax_id__contains=digits) if digits else match
+        )
+    if origin := params.get("origin"):
+        queryset = queryset.filter(origin=origin)
+    if params.get("is_active") in ("true", "false"):
+        queryset = queryset.filter(is_active=params["is_active"] == "true")
+    if params.get("prefills") in ("true", "false"):
+        clear = Q(origin=SupplierRule.Origin.MANUAL) | Q(
+            evidence_total__gte=SupplierRule.MIN_HISTORY_EVIDENCE,
+            evidence_count__gte=ExpressionWrapper(
+                F("evidence_total") * SupplierRule.MIN_HISTORY_AGREEMENT,
+                output_field=FloatField(),
+            ),
+        )
+        applies = clear & Q(is_active=True, ledger_account__is_active=True)
+        queryset = queryset.filter(
+            applies if params["prefills"] == "true" else ~applies
+        )
+    queryset = queryset.order_by("-evidence_total", "supplier_tax_id", "keyword", "id")
+    try:
+        limit = min(max(int(params.get("limit", 50)), 1), 200)
+        offset = max(int(params.get("offset", 0)), 0)
+    except ValueError:
+        limit, offset = 50, 0
+    return Response(
+        {
+            "count": queryset.count(),
+            "results": SupplierRuleSerializer(
+                queryset[offset : offset + limit], many=True
+            ).data,
+        }
+    )
+
+
 @api_view(["GET", "POST"])
 @authentication_classes([DocuparseAuthentication])
 @permission_classes([CondominiumPermission])
@@ -159,10 +207,7 @@ def chart_supplier_rules_view(request: Request, chart_id: UUID) -> Response:
     """Regras de fornecedor que valem para todos os condomínios do plano."""
     chart = get_object_or_404(ChartOfAccounts, id=chart_id)
     if request.method == "GET":
-        queryset = chart.supplier_rules.filter(condominium__isnull=True).order_by(
-            "supplier_tax_id", "keyword"
-        )
-        return Response(SupplierRuleSerializer(queryset, many=True).data)
+        return _paginated_chart_rules(request, chart)
 
     serializer = SupplierRuleSerializer(data=request.data, context={"chart": chart})
     serializer.is_valid(raise_exception=True)

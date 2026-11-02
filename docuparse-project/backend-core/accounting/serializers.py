@@ -4,6 +4,7 @@ from typing import Any
 
 from condominiums.models import Condominium
 from condominiums.tax_ids import is_valid_tax_id, normalize_tax_id
+from condominiums.text import normalize_text
 from rest_framework import serializers
 
 from accounting.models import (
@@ -128,11 +129,17 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
 
     chart_id = serializers.UUIDField(read_only=True)
     condominium_id = serializers.UUIDField(read_only=True)
-    # Aceita CNPJ ou CPF formatado; é gravado sem pontuação.
-    supplier_tax_id = serializers.CharField(max_length=18)
+    # Aceita CNPJ ou CPF formatado; é gravado sem pontuação. Vazio: regra por nome
+    # (o nome do fornecedor vai em `keyword`).
+    supplier_tax_id = serializers.CharField(
+        max_length=18, required=False, allow_blank=True
+    )
     ledger_account_id = serializers.PrimaryKeyRelatedField(
         queryset=LedgerAccount.objects.all(), source="ledger_account"
     )
+    ledger_account = serializers.SerializerMethodField()
+    # A regra pré-preenche a conta dos documentos novos neste momento.
+    prefills = serializers.SerializerMethodField()
 
     class Meta:
         model = SupplierRule
@@ -143,7 +150,9 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
             "supplier_tax_id",
             "keyword",
             "ledger_account_id",
+            "ledger_account",
             "is_active",
+            "prefills",
             "origin",
             "evidence_count",
             "evidence_total",
@@ -159,11 +168,25 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    def get_ledger_account(self, obj: SupplierRule) -> dict[str, str]:
+        account = obj.ledger_account
+        return {"id": str(account.id), "code": account.code, "name": account.name}
+
+    def get_prefills(self, obj: SupplierRule) -> bool:
+        return obj.is_active and obj.ledger_account.is_active and obj.is_confident
+
     def validate_supplier_tax_id(self, value: str) -> str:
         tax_id = normalize_tax_id(value)
-        if not is_valid_tax_id(tax_id):
+        if tax_id and not is_valid_tax_id(tax_id):
             raise serializers.ValidationError("CNPJ ou CPF inválido.")
         return tax_id
+
+    def update(
+        self, instance: SupplierRule, validated_data: dict[str, Any]
+    ) -> SupplierRule:
+        # Mexer na regra é decisão do analista: a atualização do histórico não a desfaz.
+        validated_data["origin"] = SupplierRule.Origin.MANUAL
+        return super().update(instance, validated_data)
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         chart = self.context["chart"]
@@ -181,6 +204,18 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
             "supplier_tax_id", getattr(self.instance, "supplier_tax_id", "")
         )
         keyword = attrs.get("keyword", getattr(self.instance, "keyword", ""))
+        if not tax_id:
+            name = normalize_text(keyword)
+            if (
+                not SupplierRule.MIN_NAME_LENGTH
+                <= len(name)
+                <= SupplierRule.MAX_NAME_LENGTH
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "keyword": f"Sem CNPJ ou CPF, informe o nome do fornecedor ({SupplierRule.MIN_NAME_LENGTH} a {SupplierRule.MAX_NAME_LENGTH} caracteres)."
+                    }
+                )
         clash = SupplierRule.objects.filter(
             chart=chart,
             condominium=condominium,

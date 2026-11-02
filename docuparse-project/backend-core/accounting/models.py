@@ -89,6 +89,9 @@ class SupplierRule(TimeStampedModel):
     # acertam 94% (cobrem 15%); 2 lançamentos acertam 84% (cobrem 22%).
     MIN_HISTORY_EVIDENCE = 3
     MIN_HISTORY_AGREEMENT = 0.9
+    # Regra por nome: nome curto demais ("pix", "tarifa") casaria com qualquer documento.
+    MIN_NAME_LENGTH = 8
+    MAX_NAME_LENGTH = 64
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     chart = models.ForeignKey(

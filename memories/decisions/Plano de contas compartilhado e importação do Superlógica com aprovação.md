@@ -149,6 +149,22 @@ no Superlógica o plano é compartilhado entre condomínios.
 - **Anexos das despesas**: a API devolve só metadados (nome, hash, tamanho); os endpoints
   testados não entregam o arquivo, então não há conjunto de teste maior por aí.
 
+### Tela de regras de fornecedor (2026-11-02)
+
+- Página `/rules` no menu flutuante ("Regras de fornecedor"): por plano (o com mais condomínios vem
+  escolhido), com busca (CNPJ, nome, código ou nome da conta), filtro de origem e de "pré-preenche",
+  paginada de 50 em 50. Cada linha mostra fornecedor, conta, origem, evidência ("49 de 68, 72%") e
+  se pré-preenche, com o motivo quando não pré-preenche. Ações (só `models.edit`): criar por CNPJ/CPF
+  ou pelo nome no documento, trocar a conta, ativar ou desativar, excluir.
+- API: `GET /charts-of-accounts/<id>/supplier-rules` agora devolve `{count, results}` com `search`,
+  `origin`, `prefills`, `is_active`, `limit` e `offset`; cada regra traz a conta (`ledger_account`) e
+  `prefills`. **Qualquer edição pela API torna a regra manual**, para a atualização do histórico não
+  desfazer a decisão do analista. Excluir regra do histórico não adianta: ela volta na próxima
+  atualização; para impedir, desativar.
+- Armadilhas encontradas no navegador: no formulário de edição o fornecedor oculto ainda era
+  validado e o botão Salvar não fazia nada (agora só valida ao criar); o aviso "Regra salva"
+  continuava na tela depois de uma nova ação (agora some quando começa outra).
+
 ## Pendências
 
 - Identificação de documentos ignorar o CNPJ da administradora (resto da story 1.8).

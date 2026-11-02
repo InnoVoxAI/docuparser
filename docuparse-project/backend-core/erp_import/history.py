@@ -13,10 +13,6 @@ from django.db import transaction
 
 from erp_import.sources.base import RegistrySource, SourceExpense
 
-# Nome curto demais ("pix", "tarifa") casaria com qualquer documento.
-MIN_NAME_LENGTH = 8
-MAX_KEYWORD_LENGTH = 64
-
 
 @dataclass
 class HistorySummary:
@@ -33,7 +29,7 @@ def _rule_key(expense: SourceExpense) -> tuple[str, str] | None:
     if expense.supplier_tax_id:
         return expense.supplier_tax_id, ""
     name = normalize_text(expense.supplier_name)
-    if MIN_NAME_LENGTH <= len(name) <= MAX_KEYWORD_LENGTH:
+    if SupplierRule.MIN_NAME_LENGTH <= len(name) <= SupplierRule.MAX_NAME_LENGTH:
         return "", name
     return None
 

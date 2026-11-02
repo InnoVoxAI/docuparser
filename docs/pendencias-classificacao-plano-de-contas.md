@@ -334,7 +334,7 @@ Problemas encontrados na rodada com 9 documentos reais da cliente.
 
 **Em aberto:**
 - Contar a aprovação do documento como evidência (hoje só a escolha do analista conta).
-- Tela para ver e editar as regras (hoje só pela API) e botão para atualizar o histórico sob demanda.
+- Botão para atualizar o histórico sob demanda (a tela de regras em `/rules` já existe, desde 2026-11-02; hoje a atualização roda após cada sincronização e pelo comando).
 - Cobertura ainda baixa: cerca de metade das despesas tem fornecedor sem histórico suficiente; regras de palavra-chave de conteúdo para o que sobra.
 - Medir a taxa de automação em produção com `classification_report`, quando houver documentos reais suficientes.
 

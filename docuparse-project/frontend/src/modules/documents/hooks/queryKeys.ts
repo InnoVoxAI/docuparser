@@ -11,5 +11,6 @@ export const documentKeys = {
 export const classificationKeys = {
     all: ['classification'] as const,
     condominiums: () => [...classificationKeys.all, 'condominiums'] as const,
+    suggestions: (documentId: string) => [...classificationKeys.all, 'suggestions', documentId] as const,
     accounts: (condominiumId: string) => [...classificationKeys.all, 'accounts', condominiumId] as const,
 }

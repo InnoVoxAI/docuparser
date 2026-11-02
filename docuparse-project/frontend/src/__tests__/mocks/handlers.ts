@@ -173,6 +173,8 @@ export const handlers = [
     http.get(`${OCR}/condominiums`, () => HttpResponse.json([])),
     http.get(`${OCR}/condominiums/:id/ledger-accounts`, () => HttpResponse.json([])),
 
+    http.get(`${OCR}/documents/:id/account-suggestions`, () => HttpResponse.json({ supplier_known: false, items: [] })),
+
     // --- Importação do Superlógica: por padrão nada pendente ---
     http.get(`${OCR}/import/overview`, () =>
         HttpResponse.json({

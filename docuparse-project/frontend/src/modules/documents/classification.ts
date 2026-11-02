@@ -1,6 +1,6 @@
 import { asApiError, readError } from '../../shared/utils'
 import type { DocumentClassification, DocumentStatus } from './types'
-import type { LedgerAccount } from './schemas/classification'
+import type { AccountSuggestion, LedgerAccount } from './schemas/classification'
 
 /** Depois da decisão o documento segue para o ERP e a classificação não muda (espelha o backend). */
 const LOCKED_STATUSES: readonly DocumentStatus[] = [
@@ -25,6 +25,14 @@ export function selectableAccounts(accounts: LedgerAccount[]): LedgerAccount[] {
 
 export function accountLabel(account: { code: string; name: string }): string {
     return `${account.code} · ${account.name}`
+}
+
+/** De onde vem a sugestão e quantas vezes o fornecedor foi para esta conta. */
+export function describeEvidence(suggestion: AccountSuggestion): string {
+    if (suggestion.origin === 'manual' && suggestion.count === 0) return 'Regra cadastrada para este fornecedor'
+    const base = `Usada em ${suggestion.count} de ${suggestion.total} lançamentos`
+    if (suggestion.origin === 'manual') return `Regra cadastrada. ${base} do ERP`
+    return suggestion.origin === 'learned' ? `${base}, com escolhas de analistas` : `${base} do ERP`
 }
 
 export function describeOrigin(classification: DocumentClassification): string {

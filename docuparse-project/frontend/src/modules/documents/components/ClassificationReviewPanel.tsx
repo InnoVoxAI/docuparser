@@ -4,6 +4,7 @@ import { accountLabel, describeOrigin, isClassificationLocked } from '../classif
 import { useClassificationReview } from '../hooks/useClassificationReview'
 import type { Document } from '../types'
 import { OptionPickerForm } from './OptionPickerForm'
+import { SuggestedAccounts } from './SuggestedAccounts'
 
 /**
  * Revisão da conta classificada: mostra a conta sugerida pelo motor (e por quê)
@@ -97,6 +98,14 @@ export function ClassificationReviewPanel({
                             )}
                         </div>
                         {review.accounts.loadError ? <Alert tone="error">{review.accounts.loadError}</Alert> : null}
+                        {locked ? null : (
+                            <SuggestedAccounts
+                                suggestions={review.accounts.suggestions}
+                                currentAccountId={classification?.ledger_account.id}
+                                saving={review.accounts.saving}
+                                onChoose={review.accounts.choose}
+                            />
+                        )}
                         {locked ? (
                             <p className="text-xs text-zinc-500">
                                 O documento já foi decidido; a conta não pode mais ser alterada.

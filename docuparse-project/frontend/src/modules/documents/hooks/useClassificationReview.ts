@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { readError } from '../../../shared/utils'
 import { readClassificationError, selectableAccounts } from '../classification'
 import {
+    fetchAccountSuggestions,
     fetchCondominiums,
     fetchLedgerAccounts,
     setDocumentCondominium,
@@ -27,6 +28,7 @@ export function useClassificationReview({
     editingCondominium: boolean
     onChanged: () => void | Promise<unknown>
 }) {
+    const queryClient = useQueryClient()
     const condominiumId = document.condominium?.id ?? ''
 
     const accountsQuery = useQuery({
@@ -42,9 +44,18 @@ export function useClassificationReview({
         staleTime: STALE_MS,
     })
 
+    const suggestionsQuery = useQuery({
+        queryKey: classificationKeys.suggestions(document.id),
+        queryFn: () => fetchAccountSuggestions(document.id),
+        enabled: Boolean(condominiumId),
+        staleTime: STALE_MS,
+    })
+
     const accountMutation = useMutation({
-        mutationFn: (ledgerAccountId: string) => setDocumentLedgerAccount(document.id, ledgerAccountId),
+        mutationFn: ({ id, remember }: { id: string; remember: boolean }) =>
+            setDocumentLedgerAccount(document.id, id, remember),
         onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: classificationKeys.suggestions(document.id) })
             await onChanged()
         },
     })
@@ -68,7 +79,10 @@ export function useClassificationReview({
             loadError: accountsQuery.error
                 ? readError(accountsQuery.error, 'Nao foi possivel carregar o plano de contas.')
                 : '',
-            save: accountMutation.mutateAsync,
+            save: (id: string) => accountMutation.mutateAsync({ id, remember: false }),
+            /** Escolhe uma conta sugerida; com `remember`, vira regra do fornecedor ("usar sempre"). */
+            choose: (id: string, remember: boolean) => accountMutation.mutateAsync({ id, remember }),
+            suggestions: suggestionsQuery.data?.items ?? [],
             saving: accountMutation.isPending,
             saveError: accountMutation.error
                 ? readClassificationError(accountMutation.error, 'Nao foi possivel alterar a conta.')

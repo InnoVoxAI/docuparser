@@ -330,14 +330,13 @@ Problemas encontrados na rodada com 9 documentos reais da cliente.
 
 ### Story 6.1: Regras de fornecedor por plano, semeadas pelo histórico do ERP
 
-**Status: fases 1 e 2 concluídas em 2026-11-02.** Regras de fornecedor passam a valer para o plano (com override por condomínio) e são semeadas pelas despesas já lançadas no Superlógica (`seed_supplier_rules`). Ver `memories/decisions/`.
+**Status: concluída em 2026-11-02 (fases 1 a 6).** Regras de fornecedor valem para o plano (com override por condomínio), são semeadas pelas despesas lançadas no Superlógica (`seed_supplier_rules`, também após cada sincronização) e passam a ter regras por nome, sugestões na tela de validação, aprendizado com a escolha do analista e "Usar sempre". Limiar medido em teste temporal: 3 lançamentos e 90% (94% de acerto, 15% de cobertura). Ver `memories/decisions/`.
 
-**Falta:**
-- Fase 3: mostrar na tela de validação as sugestões fracas (candidatas com a evidência de cada uma), além da conta pré-preenchida com evidência clara.
-- Fase 4: laço de aprendizado (story 4.3): a escolha do analista vira evidência, com "usar sempre para este fornecedor".
-- Fase 5: relatório de taxa de automação e avaliação contra a planilha da Mariana (conjunto independente); verificar se os anexos das despesas podem ser baixados para ampliar o conjunto de teste.
-- Fase 6: despesas sem CNPJ/CPF utilizável (cerca de 30%): regras de conteúdo e palavras-chave só onde o fornecedor não decide.
-- Atualizar a semeadura periodicamente (agendar o comando) e expor um botão ou endpoint.
+**Em aberto:**
+- Contar a aprovação do documento como evidência (hoje só a escolha do analista conta).
+- Tela para ver e editar as regras (hoje só pela API) e botão para atualizar o histórico sob demanda.
+- Cobertura ainda baixa: cerca de metade das despesas tem fornecedor sem histórico suficiente; regras de palavra-chave de conteúdo para o que sobra.
+- Medir a taxa de automação em produção com `classification_report`, quando houver documentos reais suficientes.
 
 ---
 

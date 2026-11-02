@@ -119,6 +119,36 @@ no Superlógica o plano é compartilhado entre condomínios.
   160 confiáveis), idempotência, override, não sobrescrever manual, e cinco quebras propositais
   das regras novas, todas detectadas. Sem dados de cliente neste documento.
 
+### Fases 3 a 6 (2026-11-02)
+
+- **Limiar ajustado com dados**: teste temporal (aprende com o passado, testa nos últimos meses,
+  `evaluate_history_rules`). Com 2 lançamentos e 90%: sugere em 22% das despesas e acerta 84%;
+  com 3 lançamentos e 90%: 15% e 94%; com 4 e 100%: 12% e 97%. O leave-one-out anterior era
+  otimista (95% com 2). Ficou em 3 lançamentos e 90% (`MIN_HISTORY_EVIDENCE = 3`): pré-preencher
+  conta errada custa mais que não sugerir.
+- **Regras por nome** (fase 6): despesa sem CNPJ/CPF utilizável mas com o nome de quem recebeu vira
+  regra com `supplier_tax_id` vazio e o nome normalizado em `keyword` (8 a 64 caracteres; nome
+  curto casaria com tudo). Casa por palavra inteira no texto do documento (`SupplierNameLookup`),
+  logo depois da regra por CNPJ e antes das regras de conteúdo. No teste temporal: sugere em 32 a
+  38% dessas despesas e acerta 94 a 95%. Despesas com nome usado uma vez só (a maioria) não aprendem.
+- **Sugestões na tela** (fase 3): `GET /documents/<id>/account-suggestions` lista as contas que o
+  fornecedor já usou, com `count` e `total`; o painel de classificação mostra "Usada em 49 de 68
+  lançamentos" e deixa escolher. A mesma conta em várias regras fica com a maior evidência.
+- **Aprendizado** (fase 4): `PUT .../ledger-account` aceita `remember`. Escolha avulsa soma
+  evidência de peso 2 na regra do plano (origem `learned`, sujeita ao mesmo limiar); "Usar sempre"
+  cria ou troca por regra `manual`, que vale sempre. Regra manual nunca é reescrita por escolha
+  avulsa; a semeadura nunca sobrescreve regra manual nem aprendida. Aprovar o documento ainda não
+  conta como evidência (possível melhoria).
+- **Medição** (fase 5): `evaluate_history_rules --tenant <slug>` (teste temporal, só leitura) e
+  `classification_report --tenant <slug>` (conta sugerida e mantida, trocada, escolhida sem
+  sugestão, sem conta). Contra a planilha da Mariana: das 52 linhas com CNPJ/CPF, 45 têm regra, 8
+  são claras o bastante para pré-preencher; as 4 com rótulo comparável concordam. 35 rótulos são
+  grupos ou apelidos de pasta e não se comparam.
+- **Atualização automática**: o fim de cada sincronização de cadastro bem-sucedida refaz as regras
+  em segundo plano (falha só vai para o log). O comando também serve para agendar.
+- **Anexos das despesas**: a API devolve só metadados (nome, hash, tamanho); os endpoints
+  testados não entregam o arquivo, então não há conjunto de teste maior por aí.
+
 ## Pendências
 
 - Identificação de documentos ignorar o CNPJ da administradora (resto da story 1.8).

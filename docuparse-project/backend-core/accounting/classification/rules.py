@@ -53,10 +53,48 @@ class SupplierRuleLookup:
             reason = f"fornecedor {tax_id}"
             if rule.keyword:
                 reason += f" com o trecho '{rule.keyword}'"
-            if rule.origin == SupplierRule.Origin.HISTORY:
+            if rule.origin != SupplierRule.Origin.MANUAL:
                 reason += f" (histórico: {rule.evidence_count} de {rule.evidence_total} lançamentos)"
             return Classification(rule.ledger_account, self.rule_id, reason)
         return None
+
+
+class SupplierNameLookup:
+    """Fornecedor sem CNPJ ou CPF no ERP: casa pelo nome dele no texto do documento."""
+
+    rule_id = "supplier_name"
+
+    def apply(
+        self, facts: DocumentFacts, condominium: Condominium
+    ) -> Classification | None:
+        if condominium.chart_of_accounts_id is None:
+            return None
+        rules = SupplierRule.objects.filter(
+            Q(condominium=condominium) | Q(condominium__isnull=True),
+            chart_id=condominium.chart_of_accounts_id,
+            supplier_tax_id="",
+            is_active=True,
+            ledger_account__is_active=True,
+        ).select_related("ledger_account")
+        best: SupplierRule | None = None
+        for rule in rules:
+            keyword = normalize_text(rule.keyword)
+            if not keyword or not rule.is_confident:
+                continue
+            if not re.search(rf"\b{re.escape(keyword)}\b", facts.text):
+                continue
+            # O nome mais longo é o mais específico; a regra só do condomínio vence.
+            if best is None or (rule.condominium_id is not None, len(keyword)) > (
+                best.condominium_id is not None,
+                len(normalize_text(best.keyword)),
+            ):
+                best = rule
+        if best is None:
+            return None
+        reason = f"fornecedor '{best.keyword}' no documento"
+        if best.origin != SupplierRule.Origin.MANUAL:
+            reason += f" (histórico: {best.evidence_count} de {best.evidence_total} lançamentos)"
+        return Classification(best.ledger_account, self.rule_id, reason)
 
 
 class NatureRule:
@@ -139,6 +177,7 @@ class IndividualReceiptRule(NatureRule):
 # Ordem de avaliação: o cadastro explícito do operador vence as regras de conteúdo.
 RULES: tuple[Rule, ...] = (
     SupplierRuleLookup(),
+    SupplierNameLookup(),
     SocialSecurityRule(),
     FgtsRule(),
     IndividualReceiptRule(),

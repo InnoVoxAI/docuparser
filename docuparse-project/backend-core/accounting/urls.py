@@ -6,6 +6,7 @@ from .views import (
     chart_supplier_rules_view,
     charts_of_accounts_view,
     condominium_ledger_accounts_view,
+    document_account_suggestions_view,
     document_condominium_view,
     document_ledger_account_view,
     ledger_account_detail_view,
@@ -62,6 +63,11 @@ urlpatterns = [
         "documents/<uuid:document_id>/ledger-account",
         document_ledger_account_view,
         name="document-ledger-account",
+    ),
+    path(
+        "documents/<uuid:document_id>/account-suggestions",
+        document_account_suggestions_view,
+        name="document-account-suggestions",
     ),
     path(
         "documents/<uuid:document_id>/condominium",

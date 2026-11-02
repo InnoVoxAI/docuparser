@@ -233,6 +233,8 @@ class ManualClassificationSerializer(serializers.Serializer):
         source="ledger_account",
         error_messages={"does_not_exist": "Conta não encontrada ou inativa."},
     )
+    # "Usar sempre esta conta para este fornecedor": cria uma regra que vale sempre.
+    remember = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         document = self.context["document"]

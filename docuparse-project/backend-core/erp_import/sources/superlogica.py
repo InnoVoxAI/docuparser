@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import requests
@@ -186,6 +186,16 @@ def _normalize_accounts(rows: list[dict[str, Any]]) -> list[SourceAccount]:
     return accounts
 
 
+def _parse_date(value: str) -> date | None:
+    """A API devolve `dd/mm/aaaa hh:mm:ss`; aceita também ISO."""
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _normalize_expense(row: dict[str, Any]) -> SourceExpense | None:
     """Só o necessário para aprender fornecedor para conta; o resto do payload é descartado."""
     expense_id = _text(row, "id_despesa_des")
@@ -197,7 +207,14 @@ def _normalize_expense(row: dict[str, Any]) -> SourceExpense | None:
         for a in (row.get("apropriacao") or [])
         if isinstance(a, dict) and _text(a, "st_conta_cont")
     ]
-    if not expense_id or not is_valid_tax_id(tax_id) or not allocations:
+    name = (
+        _text(row, "st_nomerecebedor_con")
+        or _text(row, "st_nomerecebedor_fav")
+        or _text(row, "fornecedor_formatado")
+    )
+    if not is_valid_tax_id(tax_id):
+        tax_id = ""
+    if not expense_id or not (tax_id or name) or not allocations:
         return None
 
     def value(allocation: dict[str, Any]) -> float:
@@ -210,8 +227,24 @@ def _normalize_expense(row: dict[str, Any]) -> SourceExpense | None:
     return SourceExpense(
         expense_id=expense_id,
         supplier_tax_id=tax_id,
+        supplier_name=name,
         chart_external_id=_text(row, "id_planoconta_plc"),
         account_code=_text(top, "st_conta_cont"),
+        posted_on=next(
+            (
+                d
+                for d in (
+                    _parse_date(_text(row, field))
+                    for field in (
+                        "dt_despesa_des",
+                        "dt_vencimento_pdes",
+                        "dt_geracao_des",
+                    )
+                )
+                if d
+            ),
+            None,
+        ),
     )
 
 

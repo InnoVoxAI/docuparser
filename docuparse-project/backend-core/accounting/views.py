@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from condominiums.models import Condominium
@@ -18,6 +19,7 @@ from rest_framework.response import Response
 from users.authentication import DocuparseAuthentication
 from users.permissions import require_permission
 
+from accounting.learning import learn_from_choice
 from accounting.models import ChartOfAccounts, LedgerAccount, SupplierRule
 from accounting.serializers import (
     ChartOfAccountsSerializer,
@@ -32,6 +34,9 @@ from accounting.services import (
     set_document_condominium,
     set_manual_classification,
 )
+from accounting.suggestions import suggest_accounts
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["GET", "POST"])
@@ -277,7 +282,29 @@ def document_ledger_account_view(request: Request, document_id: UUID) -> Respons
     classification = set_manual_classification(
         document, serializer.validated_data["ledger_account"], request.user
     )
+    # Aprender com a escolha nunca pode impedir a classificação.
+    try:
+        learn_from_choice(
+            document,
+            serializer.validated_data["ledger_account"],
+            serializer.validated_data["remember"],
+        )
+    except Exception:
+        logger.error(
+            "learning_failed", exc_info=True, extra={"document_id": str(document.id)}
+        )
     return Response(DocumentClassificationSerializer(classification).data)
+
+
+@api_view(["GET"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([require_permission("inbox.view")])
+def document_account_suggestions_view(request: Request, document_id: UUID) -> Response:
+    """Contas que o fornecedor do documento já usou, com a evidência de cada uma."""
+    document = get_object_or_404(
+        Document.objects.select_related("condominium"), id=document_id
+    )
+    return Response(suggest_accounts(document))
 
 
 @api_view(["PUT"])

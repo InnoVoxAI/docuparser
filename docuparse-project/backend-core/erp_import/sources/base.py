@@ -53,11 +53,14 @@ class SourceExpense:
     """Uma despesa já lançada no ERP: quem recebeu e em que conta foi apropriada."""
 
     expense_id: str
-    # CNPJ ou CPF de quem recebeu, só dígitos e já validado.
+    # CNPJ ou CPF de quem recebeu, só dígitos e já validado; vazio quando o ERP não tem.
     supplier_tax_id: str
+    # Nome de quem recebeu, como o ERP guarda (usado quando não há CNPJ ou CPF).
+    supplier_name: str
     chart_external_id: str
     # Conta de maior valor entre as apropriações da despesa.
     account_code: str
+    posted_on: date | None
 
 
 class RegistrySource(Protocol):

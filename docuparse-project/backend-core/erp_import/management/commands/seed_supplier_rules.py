@@ -36,6 +36,7 @@ class Command(BaseCommand):
                 raise CommandError(str(exc)) from None
         self.stdout.write(
             f"Despesas lidas: {summary.expenses}. Regras criadas: {summary.rules_created}, "
-            f"atualizadas: {summary.rules_updated}, manuais preservadas: {summary.skipped_manual}, "
-            f"despesas sem plano ou conta importados: {summary.skipped_unmapped}."
+            f"atualizadas: {summary.rules_updated} (por nome: {summary.name_rules}), "
+            f"manuais ou aprendidas preservadas: {summary.skipped_manual}, "
+            f"despesas ignoradas (sem plano, conta ou fornecedor utilizável): {summary.skipped_unmapped}."
         )

@@ -84,8 +84,10 @@ class SupplierRule(TimeStampedModel):
         HISTORY = "history", "Histórico do ERP"
         LEARNED = "learned", "Aprendida com o analista"
 
-    # Regra vinda do histórico só pré-preenche a conta com evidência clara.
-    MIN_HISTORY_EVIDENCE = 2
+    # Regra vinda do histórico ou do analista só pré-preenche a conta com evidência clara.
+    # Medido em teste temporal (aprende com o passado, testa nos últimos meses): 3 lançamentos
+    # acertam 94% (cobrem 15%); 2 lançamentos acertam 84% (cobrem 22%).
+    MIN_HISTORY_EVIDENCE = 3
     MIN_HISTORY_AGREEMENT = 0.9
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -99,6 +101,7 @@ class SupplierRule(TimeStampedModel):
         on_delete=models.PROTECT,
         related_name="supplier_rules",
     )
+    # Vazio na regra por nome: ela casa pelo nome do fornecedor no texto (`keyword`).
     supplier_tax_id = models.CharField(max_length=14)
     # Trecho que precisa aparecer no documento: separa cobranças diferentes do
     # mesmo fornecedor (ex. mensalidade vs. contribuição assistencial).
@@ -110,7 +113,7 @@ class SupplierRule(TimeStampedModel):
     origin = models.CharField(
         max_length=16, choices=Origin.choices, default=Origin.MANUAL
     )
-    # Quantas vezes o fornecedor foi para esta conta, de quantas no total (histórico).
+    # Quantas vezes o fornecedor foi para esta conta, de quantas no total (histórico ou analista).
     evidence_count = models.PositiveIntegerField(default=0)
     evidence_total = models.PositiveIntegerField(default=0)
     # Outras contas já usadas pelo fornecedor: [{"ledger_account_id", "count"}].
@@ -136,8 +139,8 @@ class SupplierRule(TimeStampedModel):
 
     @property
     def is_confident(self) -> bool:
-        """Regra do histórico precisa de evidência; as demais valem sempre."""
-        if self.origin != self.Origin.HISTORY:
+        """Só a regra cadastrada à mão vale sempre; histórico e aprendizado precisam de evidência."""
+        if self.origin == self.Origin.MANUAL:
             return True
         return (
             self.evidence_total >= self.MIN_HISTORY_EVIDENCE

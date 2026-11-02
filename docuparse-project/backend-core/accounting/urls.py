@@ -2,6 +2,8 @@ from django.urls import path
 
 from .views import (
     chart_of_accounts_detail_view,
+    chart_supplier_rule_detail_view,
+    chart_supplier_rules_view,
     charts_of_accounts_view,
     condominium_ledger_accounts_view,
     document_condominium_view,
@@ -29,6 +31,16 @@ urlpatterns = [
         "charts-of-accounts/<uuid:chart_id>/ledger-accounts/<uuid:ledger_account_id>",
         ledger_account_detail_view,
         name="ledger-account-detail",
+    ),
+    path(
+        "charts-of-accounts/<uuid:chart_id>/supplier-rules",
+        chart_supplier_rules_view,
+        name="chart-supplier-rules",
+    ),
+    path(
+        "charts-of-accounts/<uuid:chart_id>/supplier-rules/<uuid:supplier_rule_id>",
+        chart_supplier_rule_detail_view,
+        name="chart-supplier-rule-detail",
     ),
     # Leitura das contas do plano do condomínio (usada pelo painel de revisão).
     path(

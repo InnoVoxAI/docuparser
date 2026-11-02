@@ -328,6 +328,19 @@ Problemas encontrados na rodada com 9 documentos reais da cliente.
 
 ---
 
+### Story 6.1: Regras de fornecedor por plano, semeadas pelo histórico do ERP
+
+**Status: fases 1 e 2 concluídas em 2026-11-02.** Regras de fornecedor passam a valer para o plano (com override por condomínio) e são semeadas pelas despesas já lançadas no Superlógica (`seed_supplier_rules`). Ver `memories/decisions/`.
+
+**Falta:**
+- Fase 3: mostrar na tela de validação as sugestões fracas (candidatas com a evidência de cada uma), além da conta pré-preenchida com evidência clara.
+- Fase 4: laço de aprendizado (story 4.3): a escolha do analista vira evidência, com "usar sempre para este fornecedor".
+- Fase 5: relatório de taxa de automação e avaliação contra a planilha da Mariana (conjunto independente); verificar se os anexos das despesas podem ser baixados para ampliar o conjunto de teste.
+- Fase 6: despesas sem CNPJ/CPF utilizável (cerca de 30%): regras de conteúdo e palavras-chave só onde o fornecedor não decide.
+- Atualizar a semeadura periodicamente (agendar o comando) e expor um botão ou endpoint.
+
+---
+
 ## Adiado (fora do escopo atual das telas)
 
 Mantido como estava, para retomar depois das telas 1.6a a 1.6c.

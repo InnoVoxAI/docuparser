@@ -124,8 +124,9 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
 
 
 class SupplierRuleSerializer(serializers.ModelSerializer):
-    """Espera `context["condominium"]` ao validar escrita."""
+    """Espera `context["chart"]` e, para regra só de um condomínio, `context["condominium"]`."""
 
+    chart_id = serializers.UUIDField(read_only=True)
     condominium_id = serializers.UUIDField(read_only=True)
     # Aceita CNPJ ou CPF formatado; é gravado sem pontuação.
     supplier_tax_id = serializers.CharField(max_length=18)
@@ -137,15 +138,26 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
         model = SupplierRule
         fields = [
             "id",
+            "chart_id",
             "condominium_id",
             "supplier_tax_id",
             "keyword",
             "ledger_account_id",
             "is_active",
+            "origin",
+            "evidence_count",
+            "evidence_total",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "origin",
+            "evidence_count",
+            "evidence_total",
+            "created_at",
+            "updated_at",
+        ]
 
     def validate_supplier_tax_id(self, value: str) -> str:
         tax_id = normalize_tax_id(value)
@@ -154,13 +166,14 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
         return tax_id
 
     def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        condominium = self.context["condominium"]
+        chart = self.context["chart"]
+        condominium = self.context.get("condominium")
 
         account = attrs.get("ledger_account")
-        if account is not None and account.chart_id != condominium.chart_of_accounts_id:
+        if account is not None and account.chart_id != chart.id:
             raise serializers.ValidationError(
                 {
-                    "ledger_account_id": "A conta precisa ser do plano de contas do condomínio."
+                    "ledger_account_id": "A conta precisa ser do plano de contas da regra."
                 }
             )
 
@@ -169,7 +182,10 @@ class SupplierRuleSerializer(serializers.ModelSerializer):
         )
         keyword = attrs.get("keyword", getattr(self.instance, "keyword", ""))
         clash = SupplierRule.objects.filter(
-            condominium=condominium, supplier_tax_id=tax_id, keyword=keyword
+            chart=chart,
+            condominium=condominium,
+            supplier_tax_id=tax_id,
+            keyword=keyword,
         )
         if self.instance is not None:
             clash = clash.exclude(pk=self.instance.pk)

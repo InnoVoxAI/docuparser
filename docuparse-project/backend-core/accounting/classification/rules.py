@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING, Protocol
 
 from condominiums.tax_ids import is_valid_cpf
 from condominiums.text import normalize_text
+from django.db.models import Q
 
 from accounting.classification.facts import Classification, DocumentFacts
-from accounting.models import LedgerAccount
+from accounting.models import LedgerAccount, SupplierRule
 
 if TYPE_CHECKING:
     from condominiums.models import Condominium
@@ -22,7 +23,7 @@ class Rule(Protocol):
 
 
 class SupplierRuleLookup:
-    """Cadastro de fornecedores do condomínio (`SupplierRule`)."""
+    """Cadastro de fornecedores: regras do plano do condomínio, e as só dele (`SupplierRule`)."""
 
     rule_id = "supplier"
 
@@ -30,18 +31,30 @@ class SupplierRuleLookup:
         self, facts: DocumentFacts, condominium: Condominium
     ) -> Classification | None:
         tax_id = facts.supplier_tax_id(condominium.cnpj)
-        if tax_id is None:
+        if tax_id is None or condominium.chart_of_accounts_id is None:
             return None
-        rules = condominium.supplier_rules.filter(
-            supplier_tax_id=tax_id, is_active=True, ledger_account__is_active=True
+        rules = SupplierRule.objects.filter(
+            Q(condominium=condominium) | Q(condominium__isnull=True),
+            chart_id=condominium.chart_of_accounts_id,
+            supplier_tax_id=tax_id,
+            is_active=True,
+            ledger_account__is_active=True,
         ).select_related("ledger_account")
-        # Regra com trecho é mais específica que a regra sem trecho.
-        for rule in sorted(rules, key=lambda r: len(r.keyword), reverse=True):
+        # A regra só do condomínio vence a do plano; com trecho, vence a sem trecho.
+        for rule in sorted(
+            rules,
+            key=lambda r: (r.condominium_id is not None, len(r.keyword)),
+            reverse=True,
+        ):
             if rule.keyword and normalize_text(rule.keyword) not in facts.text:
+                continue
+            if not rule.is_confident:
                 continue
             reason = f"fornecedor {tax_id}"
             if rule.keyword:
                 reason += f" com o trecho '{rule.keyword}'"
+            if rule.origin == SupplierRule.Origin.HISTORY:
+                reason += f" (histórico: {rule.evidence_count} de {rule.evidence_total} lançamentos)"
             return Classification(rule.ledger_account, self.rule_id, reason)
         return None
 

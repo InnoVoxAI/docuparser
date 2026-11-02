@@ -5,6 +5,7 @@ from erp_import.sources.base import (
     SourceChart,
     SourceCondominium,
     SourceError,
+    SourceExpense,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "SourceChart",
     "SourceCondominium",
     "SourceError",
+    "SourceExpense",
 ]

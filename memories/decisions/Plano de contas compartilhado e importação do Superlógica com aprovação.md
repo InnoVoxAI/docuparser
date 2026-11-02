@@ -90,6 +90,35 @@ no Superlógica o plano é compartilhado entre condomínios.
 - Verificado no Chrome com uma fonte sintética (47 condomínios) num tenant temporário, removido
   depois; sem dados de cliente.
 
+## Regras de fornecedor por plano e histórico do ERP (2026-11-02)
+
+- **Contexto**: o plano é compartilhado por ~97 condomínios, então a regra de fornecedor por
+  condomínio exigiria ~97 cópias. A API do Superlógica expõe despesas já lançadas
+  (`despesas` com `idCondominio=-1`, `dtInicio` e `dtFim` ISO, paginada): cada uma traz o CNPJ/CPF
+  de quem recebeu e a(s) conta(s) em `apropriacao`. Sem `idCondominio=-1` vem só um condomínio.
+- **Modelo**: `SupplierRule` ganhou `chart`; `condominium` virou opcional e, quando preenchido,
+  a regra vale só para ele e vence a do plano. Campos novos: `origin` (manual, history,
+  learned), `evidence_count`, `evidence_total`, `alternatives`. As regras antigas ficaram como
+  override por condomínio (o plano vem da conta). Migrations `accounting` 0007 a 0009.
+- **Classificação**: busca regras do plano do condomínio e as só dele; override vence; com trecho
+  vence sem trecho. Regra do histórico só pré-preenche com evidência: ao menos 2 lançamentos e
+  90% de concordância (`SupplierRule.MIN_HISTORY_EVIDENCE` e `MIN_HISTORY_AGREEMENT`); as demais
+  origens valem sempre. A razão registrada cita a evidência.
+- **Semeadura**: `erp_import/history.py` e o comando `seed_supplier_rules --tenant <slug>
+  [--months 24]` (somente leitura na fonte) criam ou atualizam uma regra por fornecedor e plano,
+  com a conta mais usada. Idempotente, nunca sobrescreve regra manual ou aprendida, ignora conta
+  não analítica ou de plano não importado. Aplicada direto, sem aprovação (decisão do usuário:
+  regra só gera sugestão; o analista ainda confirma cada documento).
+- **API**: `/charts-of-accounts/<id>/supplier-rules[/<id>]` para regras do plano; as rotas por
+  condomínio continuam, para overrides.
+- **Medido** (histórico de jan/2025 a out/2026, leave-one-out): sugerir sempre que o fornecedor
+  é conhecido cobre 80% das despesas com 71% de acerto; com evidência clara (2 lançamentos e 90%)
+  cobre 27% com 95% de acerto. 30% das despesas não têm CNPJ/CPF de fornecedor utilizável (folha,
+  tributos): ficam para as regras de conteúdo.
+- **Verificado**: importação real em tenant temporário, semeadura (754 regras de 2.408 despesas,
+  160 confiáveis), idempotência, override, não sobrescrever manual, e cinco quebras propositais
+  das regras novas, todas detectadas. Sem dados de cliente neste documento.
+
 ## Pendências
 
 - Identificação de documentos ignorar o CNPJ da administradora (resto da story 1.8).

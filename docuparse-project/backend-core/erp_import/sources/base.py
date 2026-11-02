@@ -6,6 +6,7 @@ O restante do sistema só enxerga estes objetos, nunca o payload bruto da fonte.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol
 
 
@@ -47,6 +48,18 @@ class SourceAccount:
     orphan: bool
 
 
+@dataclass(frozen=True)
+class SourceExpense:
+    """Uma despesa já lançada no ERP: quem recebeu e em que conta foi apropriada."""
+
+    expense_id: str
+    # CNPJ ou CPF de quem recebeu, só dígitos e já validado.
+    supplier_tax_id: str
+    chart_external_id: str
+    # Conta de maior valor entre as apropriações da despesa.
+    account_code: str
+
+
 class RegistrySource(Protocol):
     source_name: str
 
@@ -55,3 +68,5 @@ class RegistrySource(Protocol):
     def list_charts(self) -> list[SourceChart]: ...
 
     def list_accounts(self, chart_external_id: str) -> list[SourceAccount]: ...
+
+    def list_expenses(self, date_from: date, date_to: date) -> list[SourceExpense]: ...

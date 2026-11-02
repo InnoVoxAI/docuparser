@@ -10,10 +10,11 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from datetime import date
 from typing import Any
 
 import requests
-from condominiums.tax_ids import is_valid_cnpj, normalize_tax_id
+from condominiums.tax_ids import is_valid_cnpj, is_valid_tax_id, normalize_tax_id
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -23,6 +24,7 @@ from erp_import.sources.base import (
     SourceChart,
     SourceCondominium,
     SourceError,
+    SourceExpense,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "https://api.superlogica.net/v2/condor"
 PAGE_SIZE = 50
 MAX_PAGES = 200
+MAX_EXPENSE_PAGES = 400
 
 
 class ReadOnlyViolation(RuntimeError):
@@ -183,6 +186,35 @@ def _normalize_accounts(rows: list[dict[str, Any]]) -> list[SourceAccount]:
     return accounts
 
 
+def _normalize_expense(row: dict[str, Any]) -> SourceExpense | None:
+    """Só o necessário para aprender fornecedor para conta; o resto do payload é descartado."""
+    expense_id = _text(row, "id_despesa_des")
+    tax_id = normalize_tax_id(
+        _text(row, "st_cpfcnpjrecebedor_con") or _text(row, "st_cpf_con")
+    )
+    allocations = [
+        a
+        for a in (row.get("apropriacao") or [])
+        if isinstance(a, dict) and _text(a, "st_conta_cont")
+    ]
+    if not expense_id or not is_valid_tax_id(tax_id) or not allocations:
+        return None
+
+    def value(allocation: dict[str, Any]) -> float:
+        try:
+            return float(_text(allocation, "vl_valor_apro") or 0)
+        except ValueError:
+            return 0.0
+
+    top = max(allocations, key=value)
+    return SourceExpense(
+        expense_id=expense_id,
+        supplier_tax_id=tax_id,
+        chart_external_id=_text(row, "id_planoconta_plc"),
+        account_code=_text(top, "st_conta_cont"),
+    )
+
+
 class SuperlogicaSource:
     source_name = "superlogica"
 
@@ -234,3 +266,31 @@ class SuperlogicaSource:
     def check_connection(self) -> None:
         """Uma leitura mínima, para validar as credenciais."""
         self._client.get("condominios/get", {"itensPorPagina": 1, "pagina": 1})
+
+    def list_expenses(self, date_from: date, date_to: date) -> list[SourceExpense]:
+        """Despesas lançadas no período, de todos os condomínios (`idCondominio=-1`)."""
+        found: dict[str, SourceExpense] = {}
+        seen: set[str] = set()
+        for page in range(1, MAX_EXPENSE_PAGES + 1):
+            rows = self._client.get(
+                "despesas",
+                {
+                    "idCondominio": -1,
+                    "dtInicio": date_from.isoformat(),
+                    "dtFim": date_to.isoformat(),
+                    "itensPorPagina": PAGE_SIZE,
+                    "pagina": page,
+                },
+            )
+            ids = {_text(row, "id_despesa_des") for row in rows}
+            # Página vazia é o fim; página sem nenhum id novo indica que a API ignorou `pagina`.
+            if not ids - seen:
+                break
+            seen |= ids
+            for row in rows:
+                expense = _normalize_expense(row)
+                if expense is not None:
+                    found[expense.expense_id] = expense
+        else:
+            raise SourceError("O Superlógica excedeu o limite de páginas de despesas.")
+        return list(found.values())

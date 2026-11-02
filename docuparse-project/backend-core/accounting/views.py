@@ -140,20 +140,64 @@ def condominium_ledger_accounts_view(
     return Response(LedgerAccountSerializer(queryset, many=True).data)
 
 
+def _no_chart_response() -> Response:
+    return Response(
+        {"detail": "O condomínio não tem plano de contas."},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+@api_view(["GET", "POST"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([CondominiumPermission])
+def chart_supplier_rules_view(request: Request, chart_id: UUID) -> Response:
+    """Regras de fornecedor que valem para todos os condomínios do plano."""
+    chart = get_object_or_404(ChartOfAccounts, id=chart_id)
+    if request.method == "GET":
+        queryset = chart.supplier_rules.filter(condominium__isnull=True).order_by(
+            "supplier_tax_id", "keyword"
+        )
+        return Response(SupplierRuleSerializer(queryset, many=True).data)
+
+    serializer = SupplierRuleSerializer(data=request.data, context={"chart": chart})
+    serializer.is_valid(raise_exception=True)
+    rule = serializer.save(chart=chart, condominium=None)
+    return Response(SupplierRuleSerializer(rule).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@authentication_classes([DocuparseAuthentication])
+@permission_classes([CondominiumPermission])
+def chart_supplier_rule_detail_view(
+    request: Request, chart_id: UUID, supplier_rule_id: UUID
+) -> Response:
+    rule = get_object_or_404(
+        SupplierRule.objects.select_related("chart"),
+        id=supplier_rule_id,
+        chart_id=chart_id,
+        condominium__isnull=True,
+    )
+    return _rule_detail(request, rule, {"chart": rule.chart})
+
+
 @api_view(["GET", "POST"])
 @authentication_classes([DocuparseAuthentication])
 @permission_classes([CondominiumPermission])
 def supplier_rules_view(request: Request, condominium_id: UUID) -> Response:
+    """Regras só deste condomínio: valem no lugar das do plano."""
     condominium = get_object_or_404(Condominium, id=condominium_id)
     if request.method == "GET":
         queryset = condominium.supplier_rules.order_by("supplier_tax_id", "keyword")
         return Response(SupplierRuleSerializer(queryset, many=True).data)
+    if condominium.chart_of_accounts is None:
+        return _no_chart_response()
 
     serializer = SupplierRuleSerializer(
-        data=request.data, context={"condominium": condominium}
+        data=request.data,
+        context={"chart": condominium.chart_of_accounts, "condominium": condominium},
     )
     serializer.is_valid(raise_exception=True)
-    rule = serializer.save(condominium=condominium)
+    rule = serializer.save(chart=condominium.chart_of_accounts, condominium=condominium)
     return Response(SupplierRuleSerializer(rule).data, status=status.HTTP_201_CREATED)
 
 
@@ -164,10 +208,16 @@ def supplier_rule_detail_view(
     request: Request, condominium_id: UUID, supplier_rule_id: UUID
 ) -> Response:
     rule = get_object_or_404(
-        SupplierRule.objects.select_related("condominium"),
+        SupplierRule.objects.select_related("chart", "condominium"),
         id=supplier_rule_id,
         condominium_id=condominium_id,
     )
+    return _rule_detail(
+        request, rule, {"chart": rule.chart, "condominium": rule.condominium}
+    )
+
+
+def _rule_detail(request: Request, rule: SupplierRule, context: dict) -> Response:
     if request.method == "GET":
         return Response(SupplierRuleSerializer(rule).data)
     if request.method == "DELETE":
@@ -175,10 +225,7 @@ def supplier_rule_detail_view(
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     serializer = SupplierRuleSerializer(
-        rule,
-        data=request.data,
-        partial=True,
-        context={"condominium": rule.condominium},
+        rule, data=request.data, partial=True, context=context
     )
     serializer.is_valid(raise_exception=True)
     return Response(SupplierRuleSerializer(serializer.save()).data)

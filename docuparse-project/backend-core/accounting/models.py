@@ -74,11 +74,28 @@ class LedgerAccount(TimeStampedModel):
 
 
 class SupplierRule(TimeStampedModel):
-    """Manda os documentos de um fornecedor (CNPJ ou CPF) para uma conta do condomínio."""
+    """Manda os documentos de um fornecedor (CNPJ ou CPF) para uma conta do plano.
+
+    Vale para todos os condomínios do plano; com `condominium` preenchido, só para
+    aquele (e vence a regra do plano)."""
+
+    class Origin(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        HISTORY = "history", "Histórico do ERP"
+        LEARNED = "learned", "Aprendida com o analista"
+
+    # Regra vinda do histórico só pré-preenche a conta com evidência clara.
+    MIN_HISTORY_EVIDENCE = 2
+    MIN_HISTORY_AGREEMENT = 0.9
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    chart = models.ForeignKey(
+        ChartOfAccounts, on_delete=models.PROTECT, related_name="supplier_rules"
+    )
     condominium = models.ForeignKey(
         "condominiums.Condominium",
+        null=True,
+        blank=True,
         on_delete=models.PROTECT,
         related_name="supplier_rules",
     )
@@ -90,14 +107,42 @@ class SupplierRule(TimeStampedModel):
         LedgerAccount, on_delete=models.PROTECT, related_name="supplier_rules"
     )
     is_active = models.BooleanField(default=True)
+    origin = models.CharField(
+        max_length=16, choices=Origin.choices, default=Origin.MANUAL
+    )
+    # Quantas vezes o fornecedor foi para esta conta, de quantas no total (histórico).
+    evidence_count = models.PositiveIntegerField(default=0)
+    evidence_total = models.PositiveIntegerField(default=0)
+    # Outras contas já usadas pelo fornecedor: [{"ledger_account_id", "count"}].
+    alternatives = models.JSONField(default=list, blank=True)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
                 fields=["condominium", "supplier_tax_id", "keyword"],
+                condition=models.Q(condominium__isnull=False),
                 name="unique_supplier_rule_per_condominium",
             ),
+            models.UniqueConstraint(
+                fields=["chart", "supplier_tax_id", "keyword"],
+                condition=models.Q(condominium__isnull=True),
+                name="unique_supplier_rule_per_chart",
+            ),
         ]
+
+    @property
+    def agreement(self) -> float:
+        return self.evidence_count / self.evidence_total if self.evidence_total else 0.0
+
+    @property
+    def is_confident(self) -> bool:
+        """Regra do histórico precisa de evidência; as demais valem sempre."""
+        if self.origin != self.Origin.HISTORY:
+            return True
+        return (
+            self.evidence_total >= self.MIN_HISTORY_EVIDENCE
+            and self.agreement >= self.MIN_HISTORY_AGREEMENT
+        )
 
 
 class DocumentClassification(TimeStampedModel):

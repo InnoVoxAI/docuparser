@@ -9,6 +9,7 @@ const SECTION_TABS = [
     { to: '/stats', label: 'Estatísticas', permission: undefined },
     { to: '/registry', label: 'Cadastros', permission: 'inbox.view' },
     { to: '/registry-import', label: 'Confirmar importação', permission: 'inbox.view' },
+    { to: '/rules', label: 'Regras de fornecedor', permission: 'inbox.view' },
     { to: '/integrations', label: 'Integrações', permission: 'models.edit' },
 ]
 

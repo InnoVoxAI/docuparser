@@ -293,6 +293,7 @@ export type ActiveView =
     | 'processes'
     | 'registry'
     | 'registry-import'
+    | 'rules'
     | 'integrations'
     | 'settings'
     | 'users'

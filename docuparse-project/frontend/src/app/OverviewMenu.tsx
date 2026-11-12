@@ -2,16 +2,24 @@ import { useState } from 'react'
 import { NavLink } from 'react-router'
 import { Building2, Menu as MenuIcon, X } from 'lucide-react'
 import { useAuth } from '../modules/auth'
+import { usePendingPaymentCount } from '../modules/payments'
 import { pendingTotal, useImportOverview } from '../modules/registry'
 
 const SECTION_TABS = [
     { to: '/', label: 'Processos', permission: undefined },
     { to: '/stats', label: 'Estatísticas', permission: undefined },
+    { to: '/payments', label: 'Pagamentos', permission: 'inbox.view' },
     { to: '/registry', label: 'Cadastros', permission: 'inbox.view' },
     { to: '/registry-import', label: 'Confirmar importação', permission: 'inbox.view' },
     { to: '/rules', label: 'Regras de fornecedor', permission: 'inbox.view' },
     { to: '/integrations', label: 'Integrações', permission: 'models.edit' },
 ]
+
+/** Selo de pendências no item do menu: importação aguardando o analista ou pagamentos para revisar. */
+function badgeFor(to: string, importPending: number, paymentsPending: number): number {
+    if (to === '/registry-import') return importPending
+    return to === '/payments' ? paymentsPending : 0
+}
 
 /** As telas de processos e de cadastros (`/`, `/stats`, `/registry`,
  * `/registry-import`, `/integrations`) não têm cabeçalho nem sidebar — só o conteúdo. Este botão
@@ -32,6 +40,7 @@ export function OverviewMenu({
     // Propostas aguardando o analista: um ponto no botão e o número no item de confirmação.
     const overview = useImportOverview({ enabled: hasPermission('inbox.view') })
     const pending = pendingTotal(overview.data)
+    const pendingPayments = usePendingPaymentCount({ enabled: hasPermission('inbox.view') })
 
     return (
         <div className="fixed right-3 top-3 z-30 md:right-5 md:top-5">
@@ -43,7 +52,7 @@ export function OverviewMenu({
                 className="relative flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 shadow-sm hover:bg-zinc-100"
             >
                 <MenuIcon size={18} aria-hidden="true" />
-                {pending > 0 && !open ? (
+                {(pending > 0 || pendingPayments > 0) && !open ? (
                     <span
                         aria-hidden="true"
                         className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white"
@@ -91,9 +100,9 @@ export function OverviewMenu({
                             }
                         >
                             {tab.label}
-                            {tab.to === '/registry-import' && pending > 0 ? (
+                            {badgeFor(tab.to, pending, pendingPayments) > 0 ? (
                                 <span className="ml-2 rounded-full bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">
-                                    {pending}
+                                    {badgeFor(tab.to, pending, pendingPayments)}
                                 </span>
                             ) : null}
                         </NavLink>

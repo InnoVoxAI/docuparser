@@ -12,6 +12,8 @@ from .schemas import (
     LayoutClassifiedEvent,
     OCRCompletedEvent,
     OCRFailedEvent,
+    PaymentProcessConfirmedEvent,
+    PaymentProcessRejectedEvent,
     validate_event,
 )
 
@@ -29,5 +31,7 @@ __all__ = [
     "LayoutClassifiedEvent",
     "OCRCompletedEvent",
     "OCRFailedEvent",
+    "PaymentProcessConfirmedEvent",
+    "PaymentProcessRejectedEvent",
     "validate_event",
 ]

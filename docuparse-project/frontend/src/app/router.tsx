@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from 'react-router'
 import { useAuth } from '../modules/auth'
 import { DocumentsRoutes } from '../modules/documents'
 import { OperationsRoutes } from '../modules/operations'
+import { PaymentsRoutes } from '../modules/payments'
 import { ProcessesRoutes, ProcessOverviewView } from '../modules/processes'
 import { RegistryRoutes } from '../modules/registry'
 import { SettingsRoutes } from '../modules/settings'
@@ -45,6 +46,7 @@ export function createAppRouter() {
                 ...OperationsRoutes,
                 ...ProcessesRoutes,
                 ...RegistryRoutes,
+                ...PaymentsRoutes,
                 ...SettingsRoutes,
                 ...AdminRoutes,
                 { path: '*', element: <Navigate to="/" replace /> },

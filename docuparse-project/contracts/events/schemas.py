@@ -169,6 +169,28 @@ class CondominiumIdentifiedEvent(BaseEvent):
     data: CondominiumIdentifiedData
 
 
+class PaymentProcessDecisionData(EventModel):
+    """Decisão do operador sobre um processo de pagamento (nota e boletos)."""
+
+    process_id: UUID
+    origin: Literal["automatic", "manual"]
+    invoice_id: UUID
+    boleto_ids: list[UUID] = Field(default_factory=list)
+    decided_by: str = Field(min_length=1)
+
+
+class PaymentProcessConfirmedEvent(BaseEvent):
+    # `document_id` é o documento onde o evento foi gravado; há um por documento
+    # do processo, todos com o mesmo `data`.
+    event_type: Literal["payment_process.confirmed"] = "payment_process.confirmed"
+    data: PaymentProcessDecisionData
+
+
+class PaymentProcessRejectedEvent(BaseEvent):
+    event_type: Literal["payment_process.rejected"] = "payment_process.rejected"
+    data: PaymentProcessDecisionData
+
+
 class ERPIntegrationRequestedData(EventModel):
     connector: str = Field(min_length=1)
     payload: dict[str, Any]
@@ -214,6 +236,8 @@ EVENT_MODELS = {
     "extraction.completed": ExtractionCompletedEvent,
     "document.classified": DocumentClassifiedEvent,
     "document.condominium_identified": CondominiumIdentifiedEvent,
+    "payment_process.confirmed": PaymentProcessConfirmedEvent,
+    "payment_process.rejected": PaymentProcessRejectedEvent,
     "erp.integration.requested": ERPIntegrationRequestedEvent,
     "erp.sent": ERPSentEvent,
     "erp.failed": ERPFailedEvent,

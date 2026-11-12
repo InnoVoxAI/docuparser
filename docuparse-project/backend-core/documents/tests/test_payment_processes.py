@@ -10,8 +10,9 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
+from events import validate_event
 
-from documents.models import Document, ExtractionResult, PaymentProcess
+from documents.models import Document, DocumentEvent, ExtractionResult, PaymentProcess
 from documents.services.payment_matching import run_payment_matching
 from documents.services.payment_processes import suggest_boletos
 
@@ -234,3 +235,160 @@ class PaymentProcessApiTests(PaymentProcessTestCase):
 
         assert item["decided_by"] == "reviewer@condos.test"
         assert item["decided_at"]
+
+
+class PaymentProcessDecisionTests(PaymentProcessTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.invoice_doc = self.invoice("900.00", hours_ago=2)
+        self.parcels = [self.boleto("300.00", hours_ago=h) for h in (1, 0)]
+        self.process = suggest_boletos(
+            self.invoice_doc.id, [p.id for p in self.parcels]
+        )
+        self.user = get_user_model().objects.get(username="reviewer@condos.test")
+
+    def _post(self, name: str, process=None, role: str = "reviewer"):
+        self.authenticate(role)
+        return self.client.post(
+            reverse(name, args=[(process or self.process).id]), format="json"
+        )
+
+    def _events(self, event_type: str):
+        return DocumentEvent.objects.filter(event_type=event_type)
+
+    def test_automatic_match_stays_pending_until_someone_decides(self) -> None:
+        self.process.refresh_from_db()
+
+        assert self.process.status == PaymentProcess.Status.PENDING
+        assert self.process.decided_by is None and self.process.decided_at is None
+        assert not self._events("payment_process.confirmed").exists()
+
+    def test_confirm_records_who_and_when_on_every_document(self) -> None:
+        response = self._post("payment-process-confirm")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "CONFIRMED"
+        assert body["decided_by"] == "reviewer@condos.test"
+        events = self._events("payment_process.confirmed")
+        assert events.count() == 3  # nota + dois boletos
+        assert {e.document_id for e in events} == {
+            self.invoice_doc.id,
+            *(p.id for p in self.parcels),
+        }
+        payload = events.first().payload
+        validate_event(payload)
+        assert payload["data"]["decided_by"] == "reviewer@condos.test"
+        assert payload["data"]["origin"] == "automatic"
+        assert payload["data"]["process_id"] == str(self.process.id)
+        assert sorted(payload["data"]["boleto_ids"]) == sorted(
+            str(p.id) for p in self.parcels
+        )
+        self.process.refresh_from_db()
+        assert self.process.decided_by == self.user
+        assert events.first().occurred_at == self.process.decided_at
+
+    def test_reject_returns_documents_to_the_pool_and_records_the_event(self) -> None:
+        response = self._post("payment-process-reject")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "REJECTED"
+        assert body["decided_by"] == "reviewer@condos.test"
+        assert body["decided_at"]
+        events = self._events("payment_process.rejected")
+        assert events.count() == 3
+        payload = events.first().payload
+        validate_event(payload)
+        assert payload["data"]["decided_by"] == "reviewer@condos.test"
+        detail = self.client.get(
+            reverse("document-detail", args=[self.parcels[0].id])
+        ).json()
+        assert detail["payment_processes"] == []
+        # a rejeição não volta sozinha no próximo matching
+        run_payment_matching(self.parcels[0])
+        assert not PaymentProcess.objects.filter(status="PENDING").exists()
+
+    def test_a_decided_process_cannot_be_decided_again(self) -> None:
+        self._post("payment-process-confirm")
+
+        for name in ("payment-process-confirm", "payment-process-reject"):
+            response = self._post(name)
+            assert response.status_code == 409
+            assert response.json()["code"] == "not_pending"
+        assert self._events("payment_process.confirmed").count() == 3
+
+    def test_decision_requires_the_validate_permission(self) -> None:
+        response = self._post("payment-process-confirm", role="operator")
+
+        assert response.status_code == 403
+        self.process.refresh_from_db()
+        assert self.process.status == PaymentProcess.Status.PENDING
+
+    def test_unknown_process_is_404(self) -> None:
+        self.authenticate("reviewer")
+        url = reverse("payment-process-confirm", args=[uuid4()])
+
+        assert self.client.post(url).status_code == 404
+
+    def test_confirming_takes_the_boleto_out_of_other_pending_processes(self) -> None:
+        other_invoice = self.invoice("900.00", hours_ago=2)
+        shared = self.parcels[0]
+        other = suggest_boletos(other_invoice.id, [shared.id])
+        assert other is not None
+
+        self._post("payment-process-confirm")
+
+        assert not PaymentProcess.objects.filter(pk=other.pk).exists()
+
+    def test_other_pending_process_keeps_its_remaining_boletos(self) -> None:
+        other_invoice = self.invoice("900.00", hours_ago=2)
+        extra = self.boleto("100.00")
+        other = suggest_boletos(other_invoice.id, [self.parcels[0].id, extra.id])
+
+        self._post("payment-process-confirm")
+
+        assert list(other.boletos.all()) == [extra]
+
+    def test_boleto_confirmed_elsewhere_blocks_the_confirmation(self) -> None:
+        other_invoice = self.invoice("900.00", hours_ago=2)
+        other = suggest_boletos(other_invoice.id, [self.parcels[0].id])
+        other.status = PaymentProcess.Status.CONFIRMED
+        other.save()
+        # monta o pendente à força, como uma corrida entre dois operadores
+        self.process.boletos.add(self.parcels[0])
+
+        response = self._post("payment-process-confirm")
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "boleto_taken"
+        self.process.refresh_from_db()
+        assert self.process.status == PaymentProcess.Status.PENDING
+
+    def test_late_boleto_is_merged_into_the_confirmed_process(self) -> None:
+        self._post("payment-process-confirm")
+        late = self.boleto("300.00")
+        pending = suggest_boletos(self.invoice_doc.id, [late.id])
+        assert pending.id != self.process.id
+
+        response = self._post("payment-process-confirm", process=pending)
+
+        assert response.status_code == 200
+        assert response.json()["id"] == str(self.process.id)
+        assert not PaymentProcess.objects.filter(pk=pending.pk).exists()
+        self.process.refresh_from_db()
+        assert self.process.boletos.count() == 3
+        assert (
+            PaymentProcess.objects.filter(
+                invoice=self.invoice_doc, status="CONFIRMED"
+            ).count()
+            == 1
+        )
+
+    def test_empty_process_cannot_be_confirmed(self) -> None:
+        empty = PaymentProcess.objects.create(invoice=self.invoice())
+
+        response = self._post("payment-process-confirm", process=empty)
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "no_boletos"

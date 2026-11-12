@@ -18,6 +18,8 @@ def test_known_event_models_cover_required_contracts() -> None:
         "extraction.completed",
         "document.classified",
         "document.condominium_identified",
+        "payment_process.confirmed",
+        "payment_process.rejected",
         "erp.integration.requested",
         "erp.sent",
         "erp.failed",

@@ -1,0 +1,82 @@
+import { describe, expect, it } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { server } from '../../../__tests__/mocks/server'
+import { decidePaymentProcess, fetchPaymentProcesses } from '../services/payments.service'
+import { describeCoverage, describeOrigin, formatCnpj, formatMoney } from '../utils'
+import type { PaymentDocument } from '../schemas/payments'
+import { process } from './fixtures'
+
+const OCR = '/api/ocr'
+
+describe('payments.service', () => {
+    it('pede uma página de processos de um status e valida o formato', async () => {
+        let query = ''
+        server.use(
+            http.get(`${OCR}/payment-processes`, ({ request }) => {
+                query = new URL(request.url).search
+                return HttpResponse.json({
+                    results: [{ ...process(), campo_extra: 1 }],
+                    count: 1,
+                    page: 2,
+                    page_size: 10,
+                    total_pages: 3,
+                })
+            }),
+        )
+
+        const page = await fetchPaymentProcesses('PENDING', 2)
+
+        expect(query).toContain('status=PENDING')
+        expect(query).toContain('page=2')
+        expect(page.count).toBe(1)
+        expect(page.results[0]).not.toHaveProperty('campo_extra')
+    })
+
+    it('recusa um formato inesperado', async () => {
+        server.use(
+            http.get(`${OCR}/payment-processes`, () =>
+                HttpResponse.json({ results: [{ id: 'x', status: 'OUTRO' }], count: 1 }),
+            ),
+        )
+
+        await expect(fetchPaymentProcesses('PENDING', 1)).rejects.toThrow()
+    })
+
+    it.each(['confirm', 'reject'] as const)('envia a decisão %s para o processo', async (decision) => {
+        let url = ''
+        server.use(
+            http.post(`${OCR}/payment-processes/:id/:decision`, ({ request }) => {
+                url = new URL(request.url).pathname
+                return HttpResponse.json(process({ status: decision === 'confirm' ? 'CONFIRMED' : 'REJECTED' }))
+            }),
+        )
+
+        const result = await decidePaymentProcess('p1', decision)
+
+        expect(url).toBe(`${OCR}/payment-processes/p1/${decision}`)
+        expect(result.status).toBe(decision === 'confirm' ? 'CONFIRMED' : 'REJECTED')
+    })
+})
+
+describe('utils de pagamentos', () => {
+    it('formata CNPJ e valor, e avisa quando a leitura falhou', () => {
+        expect(formatCnpj('09769035000164')).toBe('09.769.035/0001-64')
+        expect(formatCnpj(null)).toBe('CNPJ não lido')
+        expect(formatMoney('1280.00').replace(/\s/g, ' ')).toBe('R$ 1.280,00')
+        expect(formatMoney(null)).toBe('valor não lido')
+    })
+
+    it('mostra a origem pelo canal', () => {
+        const doc = (overrides: Partial<PaymentDocument>) => ({ ...process().invoice, ...overrides })
+        expect(describeOrigin(doc({ source_thread_id: 'whatsapp:+5511999999999' }))).toBe('WhatsApp +5511999999999')
+        expect(describeOrigin(doc({ source_thread_id: 'email:<a@b>' }))).toBe('E-mail')
+        expect(describeOrigin(doc({ source_thread_id: '', channel: 'manual' }))).toBe('Envio manual')
+    })
+
+    it('diz quanto da nota os boletos cobrem', () => {
+        expect(describeCoverage('900.00', '900.00')).toMatch(/cobrem a nota inteira/)
+        expect(describeCoverage('900.00', '600.00')).toMatch(/Faltam/)
+        expect(describeCoverage('900.00', '1000.00')).toMatch(/passam da nota/)
+        expect(describeCoverage(null, '1.00')).toBe('')
+    })
+})

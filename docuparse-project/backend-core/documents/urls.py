@@ -1,6 +1,11 @@
 from django.urls import path
 
-from .payment_views import payment_process_detail_view, payment_processes_view
+from .payment_views import (
+    payment_process_confirm_view,
+    payment_process_detail_view,
+    payment_process_reject_view,
+    payment_processes_view,
+)
 from .views import (
     classify_text_view,
     diagnostics_view,
@@ -92,6 +97,16 @@ urlpatterns = [
         "payment-processes/<uuid:process_id>",
         payment_process_detail_view,
         name="payment-process-detail",
+    ),
+    path(
+        "payment-processes/<uuid:process_id>/confirm",
+        payment_process_confirm_view,
+        name="payment-process-confirm",
+    ),
+    path(
+        "payment-processes/<uuid:process_id>/reject",
+        payment_process_reject_view,
+        name="payment-process-reject",
     ),
     path("processes", processes_dashboard_view, name="processes-dashboard"),
     path("processes/stats", process_stats_view, name="processes-stats"),

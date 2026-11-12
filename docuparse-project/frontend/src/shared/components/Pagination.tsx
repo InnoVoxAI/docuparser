@@ -6,12 +6,15 @@ export function Pagination({
     totalPages,
     count,
     pageSize,
+    unit = ['documento', 'documentos'],
     onPageChange,
 }: {
     page: number
     totalPages: number
     count: number
     pageSize: number
+    /** [singular, plural] do que está sendo listado; o padrão é "documento(s)". */
+    unit?: readonly [string, string]
     onPageChange: (page: number) => void
 }) {
     if (count === 0) return null
@@ -20,11 +23,11 @@ export function Pagination({
     const to = Math.min(page * pageSize, count)
     return (
         <nav
-            aria-label="Paginação de documentos"
+            aria-label={`Paginação de ${unit[1]}`}
             className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 px-4 py-3 text-sm"
         >
             <span className="text-zinc-500">
-                Mostrando {from}–{to} de {count} {count === 1 ? 'documento' : 'documentos'}
+                Mostrando {from}–{to} de {count} {count === 1 ? unit[0] : unit[1]}
             </span>
             <div className="flex items-center gap-2">
                 <button

@@ -145,6 +145,10 @@ por conversa); (2) modelo `PaymentProcess` (ou similar) agrupando N
 Documents; (3) algoritmo de matching CNPJ+valor; (4) fluxo de confirmação
 obrigatória; (5) tela de match manual (fallback sem match automático).
 
+**Status (2026-11-08)**: story (3) implementada de ponta a ponta com janela por
+`received_at` (as stories 1 e 2 ainda não existem). Ver
+[[docuparser/decisions/casamento-nf-e-boleto-por-cnpj-e-valor]].
+
 ## Process Creation
 
 Marcado pelo usuário como "Para Futuro" — não detalhado. Depende do modelo

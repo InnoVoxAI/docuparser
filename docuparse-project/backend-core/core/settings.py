@@ -224,6 +224,9 @@ BACKEND_OCR_URL = os.environ.get("BACKEND_OCR_URL", "http://127.0.0.1:8080")
 LANGEXTRACT_SERVICE_URL = os.environ.get(
     "LANGEXTRACT_SERVICE_URL", "http://127.0.0.1:8091"
 )
+# Janela, em horas, em que uma nota fiscal e um boleto recebidos são candidatos a
+# formar o mesmo pagamento (ver documents/services/payment_matching.py).
+PAYMENT_MATCH_WINDOW_HOURS = int(os.environ.get("PAYMENT_MATCH_WINDOW_HOURS", "72"))
 DOCUPARSE_LOCAL_EVENT_DIR = os.environ.get(
     "DOCUPARSE_LOCAL_EVENT_DIR", str(BASE_DIR / ".docuparse-events")
 )

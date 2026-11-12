@@ -81,6 +81,39 @@ class Document(TimeStampedModel):
         self.save(update_fields=["status", "updated_at"])
 
 
+class PaymentMatch(TimeStampedModel):
+    """Sugestão de que uma nota fiscal e um boleto pertencem ao mesmo pagamento.
+
+    Uma nota pode ter vários boletos (parcelamento) e um boleto, uma nota por vez. A
+    confirmação humana ainda não existe: toda linha nasce como sugestão.
+    """
+
+    class Status(models.TextChoices):
+        SUGGESTED = "SUGGESTED", "Suggested"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    invoice = models.ForeignKey(
+        "Document", on_delete=models.CASCADE, related_name="boleto_matches"
+    )
+    boleto = models.ForeignKey(
+        "Document", on_delete=models.CASCADE, related_name="invoice_matches"
+    )
+    supplier_tax_id = models.CharField(max_length=14)
+    # Valores usados na comparação, para auditar a sugestão mesmo se o campo mudar.
+    invoice_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    boleto_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.SUGGESTED
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["invoice", "boleto"], name="unique_payment_match_pair"
+            ),
+        ]
+
+
 class DocumentEvent(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event_id = models.UUIDField(unique=True)

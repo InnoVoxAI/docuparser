@@ -19,6 +19,7 @@ from opentelemetry import trace
 from documents.models import Document, ExtractionResult
 from documents.services.langextract_client import LangExtractClient
 from documents.services.ocr_client import OCRClient
+from documents.services.payment_matching import run_payment_matching_safely
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +287,7 @@ def auto_extract_after_ocr(document: Document) -> None:
         raise
 
     run_classification_safely(document)
+    run_payment_matching_safely(document)
 
 
 def _extraction_task_body(document_id) -> dict:
@@ -368,6 +370,7 @@ def run_langextract_for_document(document_id, schema_config_id) -> dict:
             trigger="manual",
         )
         run_classification_safely(document)
+        run_payment_matching_safely(document)
         return result
     except Exception as exc:
         logger.error(

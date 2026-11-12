@@ -25,6 +25,7 @@ from documents.models import (
     ERPIntegrationAttempt,
     ExtractionResult,
 )
+from documents.services.payment_matching import run_payment_matching_safely
 
 logger = logging.getLogger(__name__)
 _tracer = trace.get_tracer(__name__)
@@ -133,6 +134,7 @@ def consume_extraction_completed(payload: dict[str, Any]) -> Document:
         )
     # Fora da transação do evento: a classificação nunca desfaz o consumo.
     run_classification_safely(document)
+    run_payment_matching_safely(document)
     return document
 
 

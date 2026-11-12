@@ -31,3 +31,15 @@ export function process(overrides: Partial<PaymentProcess> = {}): PaymentProcess
         ...overrides,
     }
 }
+
+export const invoiceDoc = (overrides: Partial<PaymentDocument> = {}): PaymentDocument =>
+    doc({ id: 'nf1', original_filename: 'nota-avulsa.pdf', ...overrides })
+
+export const boletoDoc = (overrides: Partial<PaymentDocument> = {}): PaymentDocument =>
+    doc({
+        id: 'bol1',
+        original_filename: 'boleto-avulso.pdf',
+        document_type: 'boleto',
+        amount: '300.00',
+        ...overrides,
+    })

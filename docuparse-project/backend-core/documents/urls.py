@@ -1,9 +1,12 @@
 from django.urls import path
 
 from .payment_views import (
+    payment_candidates_view,
     payment_process_confirm_view,
+    payment_process_create_view,
     payment_process_detail_view,
     payment_process_reject_view,
+    payment_process_undo_view,
     payment_processes_view,
 )
 from .views import (
@@ -94,9 +97,20 @@ urlpatterns = [
     path("settings/email", email_settings_view, name="email-settings"),
     path("payment-processes", payment_processes_view, name="payment-processes"),
     path(
+        "payment-processes/manual",
+        payment_process_create_view,
+        name="payment-process-create",
+    ),
+    path("payment-candidates", payment_candidates_view, name="payment-candidates"),
+    path(
         "payment-processes/<uuid:process_id>",
         payment_process_detail_view,
         name="payment-process-detail",
+    ),
+    path(
+        "payment-processes/<uuid:process_id>/undo",
+        payment_process_undo_view,
+        name="payment-process-undo",
     ),
     path(
         "payment-processes/<uuid:process_id>/confirm",

@@ -109,6 +109,24 @@ def candidate_for(document: Document) -> PaymentCandidate | None:
     return build_candidate(document.id, _plain_fields(document))
 
 
+INVOICE_KEYS = (INVOICE_TAX_ID_FIELD, *INVOICE_AMOUNT_FIELDS)
+BOLETO_KEYS = (BOLETO_TAX_ID_FIELD, *BOLETO_AMOUNT_FIELDS)
+
+
+def document_kind(document: Document) -> Kind | None:
+    """Nota fiscal ou boleto, pelos campos que o schema extrai (mesmo sem valor lido).
+
+    Serve ao pareamento manual: um boleto cujo CNPJ o OCR leu pela metade ainda é um
+    boleto, só não casa sozinho.
+    """
+    fields = _plain_fields(document)
+    if any(key in fields for key in INVOICE_KEYS):
+        return "invoice"
+    if any(key in fields for key in BOLETO_KEYS):
+        return "boleto"
+    return None
+
+
 def run_payment_matching(document: Document) -> list[PaymentProcess]:
     """Procura, na janela de tempo, os documentos do papel oposto que casam com este.
 

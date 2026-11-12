@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react'
+import { Check, Undo2, X } from 'lucide-react'
 import { formatDate } from '../../../shared/utils'
 import type { Decision, PaymentProcess } from '../schemas/payments'
 import { describeCoverage, formatMoney, ORIGIN_LABELS } from '../utils'
@@ -9,10 +9,11 @@ interface Props {
     canDecide: boolean
     busy: boolean
     onDecide: (process: PaymentProcess, decision: Decision) => void
+    onUndo: (process: PaymentProcess) => void
 }
 
 /** Um agrupamento: a nota, os boletos e, se ainda pendente, as ações de aprovar ou rejeitar. */
-export function ProcessCard({ process, canDecide, busy, onDecide }: Props) {
+export function ProcessCard({ process, canDecide, busy, onDecide, onUndo }: Props) {
     const coverage = describeCoverage(process.invoice_amount, process.boletos_total)
     return (
         <article className="rounded-lg border border-zinc-200 bg-white" aria-label="Processo de pagamento">
@@ -43,14 +44,25 @@ export function ProcessCard({ process, canDecide, busy, onDecide }: Props) {
                 </p>
                 {process.status === 'PENDING' && canDecide ? (
                     <div className="flex gap-2">
-                        <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => onDecide(process, 'reject')}
-                            className="inline-flex h-9 items-center gap-1 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
-                        >
-                            <X size={16} aria-hidden="true" /> Rejeitar
-                        </button>
+                        {process.origin === 'MANUAL' ? (
+                            <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => onUndo(process)}
+                                className="inline-flex h-9 items-center gap-1 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                            >
+                                <Undo2 size={16} aria-hidden="true" /> Desfazer seleção
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => onDecide(process, 'reject')}
+                                className="inline-flex h-9 items-center gap-1 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                            >
+                                <X size={16} aria-hidden="true" /> Rejeitar
+                            </button>
+                        )}
                         <button
                             type="button"
                             disabled={busy}

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../__tests__/mocks/server'
 import { renderApp } from '../../../__tests__/utils'
-import { process } from './fixtures'
+import { boletoDoc, invoiceDoc, process } from './fixtures'
 
 const OCR = '/api/ocr'
 
@@ -149,5 +149,172 @@ describe('Pagamentos (revisão dos agrupamentos de nota e boletos)', () => {
 
         const link = await screen.findByRole('link', { name: /Pagamentos/ })
         expect(within(link).getByText('2')).toBeInTheDocument()
+    })
+})
+
+describe('Pagamentos (sem match e pareamento manual)', () => {
+    beforeEach(() => localStorage.setItem('access_token', 'tok'))
+
+    function mockPool(boletos = [boletoDoc()], invoices = [invoiceDoc()]) {
+        server.use(
+            http.get(`${OCR}/payment-candidates`, ({ request }) => {
+                const results = new URL(request.url).searchParams.get('kind') === 'invoice' ? invoices : boletos
+                return HttpResponse.json({ results, count: results.length, page: 1, page_size: 10, total_pages: 1 })
+            }),
+        )
+    }
+
+    async function openUnmatched() {
+        renderApp('/payments')
+        await userEvent.click(await screen.findByRole('tab', { name: 'Sem match' }))
+    }
+
+    it('lista as notas e os boletos sem match, cada um na sua coluna', async () => {
+        mockMe(['inbox.view', 'documents.validate'])
+        mockPool()
+
+        await openUnmatched()
+
+        const invoices = await screen.findByRole('region', { name: 'Notas fiscais' })
+        const boletos = screen.getByRole('region', { name: 'Boletos' })
+        expect(within(invoices).getByText('nota-avulsa.pdf')).toBeInTheDocument()
+        expect(within(boletos).getByText('boleto-avulso.pdf')).toBeInTheDocument()
+    })
+
+    it('filtra a lista pela busca', async () => {
+        mockMe(['inbox.view'])
+        const searches: string[] = []
+        server.use(
+            http.get(`${OCR}/payment-candidates`, ({ request }) => {
+                searches.push(new URL(request.url).searchParams.get('search') ?? '')
+                return HttpResponse.json({ results: [], count: 0, page: 1, page_size: 10, total_pages: 0 })
+            }),
+        )
+
+        await openUnmatched()
+        const invoices = await screen.findByRole('region', { name: 'Notas fiscais' })
+        await userEvent.type(within(invoices).getByRole('searchbox'), 'cora')
+
+        await waitFor(() => expect(searches).toContain('cora'))
+    })
+
+    it('monta o par escolhido, cria o agrupamento pendente e leva à revisão', async () => {
+        mockMe(['inbox.view', 'documents.validate'])
+        mockPool()
+        let body: unknown = null
+        server.use(
+            http.post(`${OCR}/payment-processes/manual`, async ({ request }) => {
+                body = await request.json()
+                return HttpResponse.json(process({ origin: 'MANUAL' }), { status: 201 })
+            }),
+        )
+
+        await openUnmatched()
+        await userEvent.click(await screen.findByLabelText('Selecionar nota-avulsa.pdf'))
+        await userEvent.click(screen.getByLabelText('Selecionar boleto-avulso.pdf'))
+        await userEvent.click(screen.getByRole('button', { name: /Montar agrupamento/ }))
+
+        expect(await screen.findByText(/Agrupamento montado/)).toBeInTheDocument()
+        expect(body).toEqual({ invoice_id: 'nf1', boleto_ids: ['bol1'] })
+        expect(screen.getByRole('tab', { name: 'Para revisar', selected: true })).toBeInTheDocument()
+    })
+
+    it('desfaz a seleção antes de montar, sem chamar o backend', async () => {
+        mockMe(['inbox.view', 'documents.validate'])
+        mockPool()
+        let calls = 0
+        server.use(
+            http.post(`${OCR}/payment-processes/manual`, () => {
+                calls += 1
+                return HttpResponse.json(process(), { status: 201 })
+            }),
+        )
+
+        await openUnmatched()
+        const invoiceBox = await screen.findByLabelText('Selecionar nota-avulsa.pdf')
+        await userEvent.click(invoiceBox)
+        await userEvent.click(screen.getByLabelText('Selecionar boleto-avulso.pdf'))
+        expect(invoiceBox).toBeChecked()
+        await userEvent.click(screen.getByRole('button', { name: /Desfazer seleção/ }))
+
+        expect(invoiceBox).not.toBeChecked()
+        expect(screen.getByLabelText('Selecionar boleto-avulso.pdf')).not.toBeChecked()
+        expect(screen.getByRole('button', { name: /Montar agrupamento/ })).toBeDisabled()
+        expect(calls).toBe(0)
+    })
+
+    it('avisa quando o par escolhido não bate e deixa o operador decidir', async () => {
+        mockMe(['inbox.view', 'documents.validate'])
+        mockPool([boletoDoc({ tax_id: '11222333000181' })])
+
+        await openUnmatched()
+        await userEvent.click(await screen.findByLabelText('Selecionar nota-avulsa.pdf'))
+        await userEvent.click(screen.getByLabelText('Selecionar boleto-avulso.pdf'))
+
+        expect(screen.getByText(/CNPJ de algum boleto é diferente/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Montar agrupamento/ })).toBeEnabled()
+    })
+
+    it('mostra o motivo quando o backend recusa o par', async () => {
+        mockMe(['inbox.view', 'documents.validate'])
+        mockPool()
+        server.use(
+            http.post(`${OCR}/payment-processes/manual`, () =>
+                HttpResponse.json(
+                    {
+                        detail: 'A nota já tem um agrupamento aguardando decisão. Decida-o primeiro.',
+                        code: 'invoice_busy',
+                    },
+                    { status: 409 },
+                ),
+            ),
+        )
+
+        await openUnmatched()
+        await userEvent.click(await screen.findByLabelText('Selecionar nota-avulsa.pdf'))
+        await userEvent.click(screen.getByLabelText('Selecionar boleto-avulso.pdf'))
+        await userEvent.click(screen.getByRole('button', { name: /Montar agrupamento/ }))
+
+        expect(await screen.findByText(/já tem um agrupamento aguardando decisão/)).toBeInTheDocument()
+    })
+
+    it('sem a permissão de validar, só consulta: não há barra de seleção', async () => {
+        mockMe(['inbox.view'])
+        mockPool()
+
+        await openUnmatched()
+
+        await screen.findByText('nota-avulsa.pdf')
+        expect(screen.queryByRole('button', { name: /Montar agrupamento/ })).not.toBeInTheDocument()
+    })
+
+    it('desfaz um agrupamento manual ainda pendente e devolve os documentos ao pool', async () => {
+        mockMe(['inbox.view', 'documents.validate'])
+        let undone = 0
+        server.use(
+            http.get(`${OCR}/payment-processes`, () => HttpResponse.json(page([process({ origin: 'MANUAL' })]))),
+            http.post(`${OCR}/payment-processes/p1/undo`, () => {
+                undone += 1
+                return new HttpResponse(null, { status: 204 })
+            }),
+        )
+
+        renderApp('/payments')
+        expect(await screen.findByText('Montado à mão', { exact: false })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Rejeitar' })).not.toBeInTheDocument()
+        await userEvent.click(screen.getByRole('button', { name: /Desfazer seleção/ }))
+
+        expect(await screen.findByText(/Seleção desfeita/)).toBeInTheDocument()
+        expect(undone).toBe(1)
+    })
+
+    it('o agrupamento automático continua com Rejeitar, sem Desfazer', async () => {
+        mockMe(['inbox.view', 'documents.validate'])
+        server.use(http.get(`${OCR}/payment-processes`, () => HttpResponse.json(page([process()]))))
+
+        renderApp('/payments')
+
+        expect(await screen.findByRole('button', { name: /Rejeitar/ })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Desfazer seleção/ })).not.toBeInTheDocument()
     })
 })

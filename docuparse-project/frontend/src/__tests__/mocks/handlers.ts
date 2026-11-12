@@ -190,6 +190,10 @@ export const handlers = [
         HttpResponse.json({ results: [], count: 0, page: 1, page_size: 10, total_pages: 0 }),
     ),
 
+    http.get(`${OCR}/payment-candidates`, () =>
+        HttpResponse.json({ results: [], count: 0, page: 1, page_size: 10, total_pages: 0 }),
+    ),
+
     // --- Validação / classificação ---
     http.post(`${OCR}/classify-text`, () => HttpResponse.json({ schema_id: null })),
     http.post(`${OCR}/documents/:id/validate`, () =>

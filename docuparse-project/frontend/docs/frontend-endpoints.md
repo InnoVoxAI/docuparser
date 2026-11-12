@@ -90,6 +90,8 @@ O token (`access_token` do `localStorage`) é anexado como `Authorization: Beare
 | POST | `/import/proposals/approve` · `/reject` (em lote, `{ids}`) | [`registry.service.ts`](../src/modules/registry/services/registry.service.ts) |
 | GET | `/payment-processes` (`status`, `page`, `page_size`) | [`payments.service.ts`](../src/modules/payments/services/payments.service.ts) (`fetchPaymentProcesses`) |
 | POST | `/payment-processes/{id}/confirm` · `/reject` | [`payments.service.ts`](../src/modules/payments/services/payments.service.ts) (`decidePaymentProcess`) |
+| GET | `/payment-candidates` (`kind`, `search`, `page`, `page_size`) | [`payments.service.ts`](../src/modules/payments/services/payments.service.ts) (`fetchCandidates`) |
+| POST | `/payment-processes/manual` (`{invoice_id, boleto_ids}`) · `/payment-processes/{id}/undo` | [`payments.service.ts`](../src/modules/payments/services/payments.service.ts) (`createManualProcess`, `undoManualProcess`) |
 
 ### Admin (users / roles / permissions) — via `/api/ocr`
 

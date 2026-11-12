@@ -392,3 +392,168 @@ class PaymentProcessDecisionTests(PaymentProcessTestCase):
 
         assert response.status_code == 422
         assert response.json()["code"] == "no_boletos"
+
+
+class ManualMatchTests(PaymentProcessTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.invoice_doc = self.invoice("900.00", hours_ago=60)
+        self.boleto_doc = self.boleto("300.00")
+
+    def _candidates(self, kind: str, **params):
+        self.authenticate("operator")
+        return self.client.get(reverse("payment-candidates"), {"kind": kind, **params})
+
+    def _create(self, invoice=None, boletos=None, role: str = "reviewer"):
+        self.authenticate(role)
+        chosen = [self.boleto_doc] if boletos is None else boletos
+        return self.client.post(
+            reverse("payment-process-create"),
+            {
+                "invoice_id": str((invoice or self.invoice_doc).id),
+                "boleto_ids": [str(b.id) for b in chosen],
+            },
+            format="json",
+        )
+
+    def test_pool_lists_documents_without_a_match_by_kind(self) -> None:
+        other_kind = self._doc({"cnpj_emissor": SUPPLIER, "valor_total": "10"})
+
+        invoices = self._candidates("invoice").json()
+        boletos = self._candidates("boleto").json()
+
+        assert [d["id"] for d in invoices["results"]] == [str(self.invoice_doc.id)]
+        assert [d["id"] for d in boletos["results"]] == [str(self.boleto_doc.id)]
+        assert str(other_kind.id) not in {d["id"] for d in invoices["results"]}
+        row = boletos["results"][0]
+        assert row["amount"] == "300.00" and row["tax_id"] == "09769035000164"
+
+    def test_pool_keeps_documents_whose_values_could_not_be_read(self) -> None:
+        truncated = self._doc(
+            {"cnpj_cpf_beneficiario": "32.435.490/0001-", "valor_boleto": "1100,00"}
+        )
+
+        rows = self._candidates("boleto").json()["results"]
+
+        listed = next(r for r in rows if r["id"] == str(truncated.id))
+        assert listed["tax_id"] is None  # sem CNPJ válido: o operador pareia à mão
+
+    def test_pool_drops_documents_in_pending_or_confirmed_processes(self) -> None:
+        suggest_boletos(self.invoice_doc.id, [self.boleto_doc.id])
+
+        assert self._candidates("invoice").json()["count"] == 0
+        assert self._candidates("boleto").json()["count"] == 0
+
+    def test_documents_return_to_the_pool_after_a_rejection(self) -> None:
+        process = suggest_boletos(self.invoice_doc.id, [self.boleto_doc.id])
+        process.status = PaymentProcess.Status.REJECTED
+        process.save()
+
+        assert self._candidates("invoice").json()["count"] == 1
+        assert self._candidates("boleto").json()["count"] == 1
+
+    def test_pool_search_and_kind_validation(self) -> None:
+        self.invoice_doc.original_filename = "nota-especial.pdf"
+        self.invoice_doc.save()
+
+        assert self._candidates("invoice", search="especial").json()["count"] == 1
+        assert self._candidates("invoice", search="nada-aqui").json()["count"] == 0
+        assert self._candidates("outro").status_code == 400
+
+    def test_manual_selection_creates_a_pending_manual_process(self) -> None:
+        response = self._create()
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["status"] == "PENDING" and body["origin"] == "MANUAL"
+        assert body["invoice"]["id"] == str(self.invoice_doc.id)
+        assert [b["id"] for b in body["boletos"]] == [str(self.boleto_doc.id)]
+        assert body["decided_by"] is None
+
+    def test_manual_selection_goes_through_the_same_confirmation(self) -> None:
+        process_id = self._create().json()["id"]
+
+        self.authenticate("reviewer")
+        confirm = self.client.post(
+            reverse("payment-process-confirm", args=[process_id])
+        )
+
+        assert confirm.status_code == 200
+        assert confirm.json()["status"] == "CONFIRMED"
+        event = DocumentEvent.objects.filter(
+            event_type="payment_process.confirmed"
+        ).first()
+        assert event.payload["data"]["origin"] == "manual"
+        assert event.payload["data"]["decided_by"] == "reviewer@condos.test"
+
+    def test_manual_selection_accepts_values_the_automatic_rule_would_refuse(
+        self,
+    ) -> None:
+        bigger = self.boleto("5000.00")  # maior que a nota: o automático não casaria
+
+        assert self._create(boletos=[bigger]).status_code == 201
+
+    def test_undo_before_confirming_returns_documents_to_the_pool(self) -> None:
+        process_id = self._create().json()["id"]
+        assert self._candidates("invoice").json()["count"] == 0
+
+        self.authenticate("reviewer")
+        undo = self.client.post(reverse("payment-process-undo", args=[process_id]))
+
+        assert undo.status_code == 204
+        assert not PaymentProcess.objects.filter(pk=process_id).exists()
+        assert self._candidates("invoice").json()["count"] == 1
+        assert self._candidates("boleto").json()["count"] == 1
+
+    def test_undo_refuses_confirmed_and_automatic_processes(self) -> None:
+        automatic = suggest_boletos(self.invoice_doc.id, [self.boleto_doc.id])
+        self.authenticate("reviewer")
+        assert (
+            self.client.post(
+                reverse("payment-process-undo", args=[automatic.id])
+            ).json()["code"]
+            == "not_manual"
+        )
+
+        manual_invoice, manual_boleto = self.invoice(), self.boleto()
+        manual_id = self._create(manual_invoice, [manual_boleto]).json()["id"]
+        self.authenticate("reviewer")
+        self.client.post(reverse("payment-process-confirm", args=[manual_id]))
+        response = self.client.post(reverse("payment-process-undo", args=[manual_id]))
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "not_pending"
+
+    def test_rejects_wrong_kinds_and_empty_selection(self) -> None:
+        assert self._create(boletos=[self.invoice()]).status_code == 400
+        assert self._create(invoice=self.boleto_doc).status_code == 400
+        assert self._create(boletos=[]).status_code == 422
+
+    def test_rejects_unavailable_documents(self) -> None:
+        self._create()
+
+        again = self._create()  # a nota já tem um agrupamento pendente
+        assert again.status_code == 409 and again.json()["code"] == "invoice_busy"
+
+        other_invoice = self.invoice()
+        taken = self._create(other_invoice)  # o boleto já está no pendente
+        assert taken.status_code == 409
+        assert taken.json()["code"] == "boleto_unavailable"
+
+    def test_unknown_document_and_bad_payload(self) -> None:
+        ghost = Document(id=uuid4())
+        assert self._create(invoice=ghost).status_code == 404
+        self.authenticate("reviewer")
+        url = reverse("payment-process-create")
+        assert self.client.post(url, {}, format="json").status_code == 400
+        bad = {"invoice_id": "not-a-uuid", "boleto_ids": ["x"]}
+        assert self.client.post(url, bad, format="json").status_code == 400
+
+    def test_requires_the_validate_permission_but_the_pool_only_inbox_view(
+        self,
+    ) -> None:
+        assert self._create(role="operator").status_code == 403
+        self.authenticate("operator")
+        undo = self.client.post(reverse("payment-process-undo", args=[uuid4()]))
+        assert undo.status_code == 403
+        assert self._candidates("invoice").status_code == 200

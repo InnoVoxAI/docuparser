@@ -35,3 +35,23 @@ export function describeCoverage(invoiceAmount: string | null, boletosTotal: str
         ? `Faltam ${formatMoney(diff.toFixed(2))} para cobrir a nota.`
         : `Os boletos passam da nota em ${formatMoney((-diff).toFixed(2))}.`
 }
+
+/** O que o operador deve conferir antes de montar o par à mão (o automático não casou). */
+export function selectionWarnings(invoice: PaymentDocument | null, boletos: PaymentDocument[]): string[] {
+    if (!invoice || boletos.length === 0) return []
+    const warnings: string[] = []
+    if (boletos.some((b) => !b.tax_id) || !invoice.tax_id) {
+        warnings.push('Algum CNPJ não foi lido com segurança; confira nos documentos.')
+    } else if (boletos.some((b) => b.tax_id !== invoice.tax_id)) {
+        warnings.push('O CNPJ de algum boleto é diferente do CNPJ da nota.')
+    }
+    const total = boletos.reduce((sum, b) => sum + Number(b.amount ?? 0), 0)
+    if (boletos.some((b) => b.amount === null) || invoice.amount === null) {
+        warnings.push('Algum valor não foi lido; confira nos documentos.')
+    } else if (boletos.some((b) => Number(b.amount) > Number(invoice.amount))) {
+        warnings.push('Há boleto com valor maior que o da nota.')
+    } else if (total > Number(invoice.amount) + 0.005) {
+        warnings.push('Os boletos somam mais que a nota.')
+    }
+    return warnings
+}

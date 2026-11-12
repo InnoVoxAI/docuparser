@@ -37,6 +37,16 @@ export const paymentProcessPageSchema = z.object({
     total_pages: z.number(),
 })
 
+export const candidatePageSchema = z.object({
+    results: z.array(paymentDocumentSchema),
+    count: z.number(),
+    page: z.number(),
+    page_size: z.number(),
+    total_pages: z.number(),
+})
+
+export type CandidatePage = z.infer<typeof candidatePageSchema>
+export type CandidateKind = 'invoice' | 'boleto'
 export type PaymentDocument = z.infer<typeof paymentDocumentSchema>
 export type PaymentProcess = z.infer<typeof paymentProcessSchema>
 export type PaymentProcessPage = z.infer<typeof paymentProcessPageSchema>

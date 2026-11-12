@@ -23,9 +23,10 @@ implementada de ponta a ponta, sem esperar as stories 1 (rastreio de origem) e 2
   com N notas.
 - **Só CNPJ válido casa** (CPF, CNPJ inválido ou valor ausente/zero não geram candidato).
   Papel do documento (nota ou boleto) vem dos campos extraídos, não do `schema_id`, que varia.
-- **Resultado é sugestão**: `documents.PaymentMatch` (migration `0018`), único por par
-  nota+boleto, com CNPJ e valores usados. Nasce `SUGGESTED`; a confirmação obrigatória
-  (story 4) ainda não existe. Rodar de novo não duplica nem mexe em linhas existentes.
+- **Resultado é sugestão**: o matching cria ou completa um `PaymentProcess` pendente da nota
+  (ver [[docuparser/decisions/processo-de-pagamento-agrupando-nf-e-boletos-paymentprocess]]).
+  A tabela `PaymentMatch` da primeira versão foi substituída (migration `0020` converte as
+  linhas). Rodar de novo não duplica nem recria par rejeitado.
 - **Janela de tempo**: como o rastreio de origem não existe, o candidato é qualquer documento
   recebido a até `PAYMENT_MATCH_WINDOW_HOURS` (padrão 72, variável de ambiente) antes ou
   depois de `received_at`. O valor de 72h é suposição e deve ser revisto. Quando o
@@ -39,12 +40,11 @@ implementada de ponta a ponta, sem esperar as stories 1 (rastreio de origem) e 2
 ## Não feito
 
 - Refazer o casamento quando o operador edita CNPJ ou valor na validação.
-- API e tela para ver as sugestões; evento de auditoria (`DocumentEvent`).
 - Exigir o mesmo condomínio no par (a regra do ticket é só CNPJ e valor).
 
 ## Testes
 
-`documents/tests/test_payment_matching.py`: os quatro casos, parcelamento nos dois sentidos,
+`documents/tests/test_payment_matching.py` (e `test_payment_processes.py` para o agrupamento): os quatro casos, parcelamento nos dois sentidos,
 janela, idempotência, edição do operador e os três gatilhos do pipeline. Mutação verificada:
 remover cada chamada do pipeline ou trocar `<=` por `<` quebra testes.
 

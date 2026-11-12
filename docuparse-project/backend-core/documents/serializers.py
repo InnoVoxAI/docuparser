@@ -72,6 +72,7 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
     current_stage = serializers.SerializerMethodField()
     status_label = serializers.SerializerMethodField()
     last_status_change_at = serializers.SerializerMethodField()
+    payment_processes = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -85,7 +86,12 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
             "has_error",
             "current_stage",
             "last_status_change_at",
+            "payment_processes",
         ]
+
+    def get_payment_processes(self, obj: Document) -> list[dict]:
+        # Documento fora de qualquer processo de pagamento segue avulso: lista vazia.
+        return (self.context.get("payment_process_refs") or {}).get(obj.id, [])
 
     def get_has_error(self, obj: Document) -> bool:
         document_ids_with_error = self.context.get("document_ids_with_error") or set()
@@ -194,6 +200,12 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
     active_field_version_number = serializers.SerializerMethodField()
     condominium = serializers.SerializerMethodField()
     classification = serializers.SerializerMethodField()
+    payment_processes = serializers.SerializerMethodField()
+
+    def get_payment_processes(self, obj: Document) -> list[dict]:
+        from documents.payment_serializers import payment_process_refs
+
+        return payment_process_refs([obj.pk]).get(obj.pk, [])
 
     def get_active_field_version_number(self, obj: Document) -> int | None:
         active = obj.field_versions.filter(is_active=True).first()
@@ -231,6 +243,7 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             "extraction_result",
             "condominium",
             "classification",
+            "payment_processes",
             "full_transcription",
             "full_transcription_formatted",
             "ocr_metadata",

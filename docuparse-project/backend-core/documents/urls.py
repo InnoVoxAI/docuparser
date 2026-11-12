@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .payment_views import payment_process_detail_view, payment_processes_view
 from .views import (
     classify_text_view,
     diagnostics_view,
@@ -86,6 +87,12 @@ urlpatterns = [
     ),
     path("settings/ocr", ocr_settings_view, name="ocr-settings"),
     path("settings/email", email_settings_view, name="email-settings"),
+    path("payment-processes", payment_processes_view, name="payment-processes"),
+    path(
+        "payment-processes/<uuid:process_id>",
+        payment_process_detail_view,
+        name="payment-process-detail",
+    ),
     path("processes", processes_dashboard_view, name="processes-dashboard"),
     path("processes/stats", process_stats_view, name="processes-stats"),
     path(

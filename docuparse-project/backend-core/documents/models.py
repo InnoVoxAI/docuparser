@@ -86,35 +86,63 @@ class Document(TimeStampedModel):
         self.save(update_fields=["status", "updated_at"])
 
 
-class PaymentMatch(TimeStampedModel):
-    """Sugestão de que uma nota fiscal e um boleto pertencem ao mesmo pagamento.
+class PaymentProcess(TimeStampedModel):
+    """Processo de pagamento: uma nota fiscal e os boletos que a pagam.
 
-    Uma nota pode ter vários boletos (parcelamento) e um boleto, uma nota por vez. A
-    confirmação humana ainda não existe: toda linha nasce como sugestão.
+    Nasce `PENDING` (sugerido pelo matching ou montado à mão) e só vira processo de
+    pagamento depois que um operador o confirma. Uma nota tem no máximo um processo
+    pendente e um confirmado; os boletos que chegam depois entram no pendente e são
+    incorporados ao confirmado quando o operador os aprova. Um documento sem processo
+    segue como documento avulso.
     """
 
     class Status(models.TextChoices):
-        SUGGESTED = "SUGGESTED", "Suggested"
+        PENDING = "PENDING", "Pending"
+        CONFIRMED = "CONFIRMED", "Confirmed"
+        REJECTED = "REJECTED", "Rejected"
+
+    class Origin(models.TextChoices):
+        AUTOMATIC = "AUTOMATIC", "Automatic"
+        MANUAL = "MANUAL", "Manual"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     invoice = models.ForeignKey(
-        "Document", on_delete=models.CASCADE, related_name="boleto_matches"
+        "Document",
+        on_delete=models.CASCADE,
+        related_name="payment_processes_as_invoice",
     )
-    boleto = models.ForeignKey(
-        "Document", on_delete=models.CASCADE, related_name="invoice_matches"
+    boletos = models.ManyToManyField(
+        "Document", related_name="payment_processes_as_boleto", blank=True
     )
-    supplier_tax_id = models.CharField(max_length=14)
-    # Valores usados na comparação, para auditar a sugestão mesmo se o campo mudar.
-    invoice_amount = models.DecimalField(max_digits=14, decimal_places=2)
-    boleto_amount = models.DecimalField(max_digits=14, decimal_places=2)
     status = models.CharField(
-        max_length=16, choices=Status.choices, default=Status.SUGGESTED
+        max_length=16, choices=Status.choices, default=Status.PENDING
     )
+    origin = models.CharField(
+        max_length=16, choices=Origin.choices, default=Origin.AUTOMATIC
+    )
+    # Quem aprovou ou rejeitou e quando; vazios enquanto pendente.
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="payment_process_decisions",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status"])]
         constraints = [
             models.UniqueConstraint(
-                fields=["invoice", "boleto"], name="unique_payment_match_pair"
+                fields=["invoice"],
+                condition=models.Q(status="PENDING"),
+                name="unique_pending_payment_process_per_invoice",
+            ),
+            models.UniqueConstraint(
+                fields=["invoice"],
+                condition=models.Q(status="CONFIRMED"),
+                name="unique_confirmed_payment_process_per_invoice",
             ),
         ]
 

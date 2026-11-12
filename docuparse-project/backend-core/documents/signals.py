@@ -7,7 +7,7 @@ from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from docuparse_storage import get_storage
 
-from documents.models import Document
+from documents.models import Document, PaymentProcess
 
 logger = logging.getLogger(__name__)
 
@@ -46,3 +46,15 @@ def delete_document_storage_objects(sender, instance: Document, **kwargs) -> Non
                 )
 
     transaction.on_commit(_cleanup)
+
+
+@receiver(
+    post_delete,
+    sender=Document,
+    dispatch_uid="documents.drop_empty_pending_payment_processes",
+)
+def drop_empty_pending_payment_processes(sender, instance: Document, **kwargs) -> None:
+    """Apagar o último boleto de um processo pendente deixaria uma sugestão vazia."""
+    PaymentProcess.objects.filter(
+        status=PaymentProcess.Status.PENDING, boletos__isnull=True
+    ).delete()

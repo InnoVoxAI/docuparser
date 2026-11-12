@@ -12,7 +12,7 @@ from condominiums.tests.base import TenantAPITestCase
 from django.test import override_settings
 from django.utils import timezone as dj_timezone
 
-from documents.models import Document, ExtractionResult, PaymentMatch
+from documents.models import Document, ExtractionResult, PaymentProcess
 from documents.services.event_consumers import consume_extraction_completed
 from documents.services.ocr_processor import (
     auto_extract_after_ocr,
@@ -119,20 +119,22 @@ class PaymentMatchingTests(TenantAPITestCase):
         )
 
     def _pairs(self) -> set[tuple]:
-        return set(PaymentMatch.objects.values_list("invoice_id", "boleto_id"))
+        return {
+            (process.invoice_id, boleto.id)
+            for process in PaymentProcess.objects.prefetch_related("boletos")
+            for boleto in process.boletos.all()
+        }
 
     def test_boleto_arriving_after_the_invoice_matches(self) -> None:
         invoice = self._invoice(hours_ago=2)
         boleto = self._boleto()
-        created = run_payment_matching(boleto)
-        assert [(m.invoice_id, m.boleto_id) for m in created] == [
-            (invoice.id, boleto.id)
-        ]
-        match = created[0]
-        assert match.status == PaymentMatch.Status.SUGGESTED
-        assert match.supplier_tax_id == SUPPLIER
-        assert match.invoice_amount == Decimal("1000.00")
-        assert match.boleto_amount == Decimal("1000.00")
+        touched = run_payment_matching(boleto)
+        assert [p.invoice_id for p in touched] == [invoice.id]
+        process = touched[0]
+        assert process.status == PaymentProcess.Status.PENDING
+        assert process.origin == PaymentProcess.Origin.AUTOMATIC
+        assert list(process.boletos.all()) == [boleto]
+        assert process.decided_by is None and process.decided_at is None
 
     def test_invoice_arriving_after_the_boleto_matches(self) -> None:
         boleto = self._boleto(hours_ago=2)
@@ -149,12 +151,19 @@ class PaymentMatchingTests(TenantAPITestCase):
     def test_larger_boleto_does_not_match(self) -> None:
         self._invoice("1000.00", hours_ago=1)
         run_payment_matching(self._boleto("1000.01"))
-        assert not PaymentMatch.objects.exists()
+        assert not PaymentProcess.objects.exists()
 
     def test_different_cnpj_does_not_match(self) -> None:
         self._invoice(tax_id=OTHER_SUPPLIER, hours_ago=1)
         run_payment_matching(self._boleto())
-        assert not PaymentMatch.objects.exists()
+        assert not PaymentProcess.objects.exists()
+
+    def test_installments_share_one_pending_process(self) -> None:
+        invoice = self._invoice("900.00", hours_ago=5)
+        for hours in (3, 2, 1):
+            run_payment_matching(self._boleto("300.00", hours_ago=hours))
+        process = PaymentProcess.objects.get(invoice=invoice)
+        assert process.boletos.count() == 3
 
     def test_installments_one_invoice_many_boletos(self) -> None:
         invoice = self._invoice("900.00", hours_ago=5)
@@ -167,10 +176,11 @@ class PaymentMatchingTests(TenantAPITestCase):
         parcels = [self._boleto("300.00", hours_ago=h) for h in (5, 4, 3)]
         for parcel in parcels:
             run_payment_matching(parcel)
-        assert not PaymentMatch.objects.exists()
+        assert not PaymentProcess.objects.exists()
         invoice = self._invoice("900.00")
-        created = run_payment_matching(invoice)
-        assert len(created) == 3
+        touched = run_payment_matching(invoice)
+        assert len(touched) == 1  # um só processo com as três parcelas
+        assert touched[0].boletos.count() == 3
         assert self._pairs() == {(invoice.id, p.id) for p in parcels}
 
     def test_one_boleto_with_many_invoices(self) -> None:
@@ -189,17 +199,17 @@ class PaymentMatchingTests(TenantAPITestCase):
     def test_two_invoices_never_match_each_other(self) -> None:
         self._invoice(hours_ago=1)
         run_payment_matching(self._invoice())
-        assert not PaymentMatch.objects.exists()
+        assert not PaymentProcess.objects.exists()
 
     def test_two_boletos_never_match_each_other(self) -> None:
         self._boleto(hours_ago=1)
         run_payment_matching(self._boleto())
-        assert not PaymentMatch.objects.exists()
+        assert not PaymentProcess.objects.exists()
 
     def test_candidate_outside_the_window_is_ignored(self) -> None:
         self._invoice(hours_ago=73)
         run_payment_matching(self._boleto())
-        assert not PaymentMatch.objects.exists()
+        assert not PaymentProcess.objects.exists()
 
     def test_candidate_inside_the_window_is_found(self) -> None:
         invoice = self._invoice(hours_ago=71)
@@ -218,14 +228,14 @@ class PaymentMatchingTests(TenantAPITestCase):
     def test_rejected_documents_are_not_candidates(self) -> None:
         self._invoice(hours_ago=1, status=Document.Status.REJECTED)
         run_payment_matching(self._boleto())
-        assert not PaymentMatch.objects.exists()
+        assert not PaymentProcess.objects.exists()
 
     def test_running_twice_does_not_duplicate(self) -> None:
         self._invoice(hours_ago=1)
         boleto = self._boleto()
         assert len(run_payment_matching(boleto)) == 1
         assert run_payment_matching(boleto) == []
-        assert PaymentMatch.objects.count() == 1
+        assert PaymentProcess.objects.count() == 1
 
     def test_operator_edited_value_wins_over_the_original_extraction(self) -> None:
         from documents.models import ExtractionFieldVersion
@@ -242,7 +252,7 @@ class PaymentMatchingTests(TenantAPITestCase):
             is_active=True,
         )
         run_payment_matching(self._boleto("500.00"))
-        assert not PaymentMatch.objects.exists()
+        assert not PaymentProcess.objects.exists()
 
     def test_unrelated_document_is_a_noop(self) -> None:
         self._invoice(hours_ago=1)
@@ -252,7 +262,7 @@ class PaymentMatchingTests(TenantAPITestCase):
     def test_safe_version_swallows_errors(self) -> None:
         boleto = self._boleto()
         with patch(
-            "documents.services.payment_matching._candidate_for",
+            "documents.services.payment_matching.candidate_for",
             side_effect=RuntimeError("boom"),
         ):
             assert run_payment_matching_safely(boleto) == []
@@ -289,8 +299,9 @@ class PipelineTriggerTests(TenantAPITestCase):
         }
 
     def _assert_matched(self) -> None:
-        match = PaymentMatch.objects.get()
-        assert (match.invoice_id, match.boleto_id) == (self.invoice.id, self.boleto.id)
+        process = PaymentProcess.objects.get()
+        assert process.invoice_id == self.invoice.id
+        assert list(process.boletos.all()) == [self.boleto]
 
     def _langextract(self) -> None:
         client = patch("documents.services.ocr_processor.LangExtractClient")
@@ -359,7 +370,7 @@ class PipelineTriggerTests(TenantAPITestCase):
                 return_value=self.schema,
             ),
             patch(
-                "documents.services.payment_matching._candidate_for",
+                "documents.services.payment_matching.candidate_for",
                 side_effect=RuntimeError("boom"),
             ),
         ):
@@ -368,4 +379,4 @@ class PipelineTriggerTests(TenantAPITestCase):
         self.boleto.refresh_from_db()
         assert self.boleto.status == Document.Status.VALIDATION_PENDING
         assert ExtractionResult.objects.filter(document=self.boleto).exists()
-        assert not PaymentMatch.objects.exists()
+        assert not PaymentProcess.objects.exists()

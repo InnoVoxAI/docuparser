@@ -7,7 +7,7 @@ Regras (CNPJ do fornecedor na nota igual ao do beneficiário no boleto):
 - CNPJ diferente: não casa.
 
 Cada boleto é avaliado sozinho contra a nota; a soma das parcelas não é limitada.
-O resultado é só uma sugestão (`PaymentMatch`): a confirmação humana vem depois.
+O resultado é só uma sugestão (`PaymentProcess` pendente): a confirmação humana vem depois.
 """
 
 from __future__ import annotations
@@ -22,8 +22,9 @@ from condominiums.tax_ids import is_valid_cnpj, normalize_tax_id
 from django.conf import settings
 from django.db.models import Q
 
-from documents.models import Document, ExtractionResult, PaymentMatch
+from documents.models import Document, ExtractionResult, PaymentProcess
 from documents.services.field_versioning import get_active_version
+from documents.services.payment_processes import suggest_boletos
 
 logger = logging.getLogger(__name__)
 
@@ -104,16 +105,17 @@ def _plain_fields(document: Document) -> dict[str, Any]:
     }
 
 
-def _candidate_for(document: Document) -> PaymentCandidate | None:
+def candidate_for(document: Document) -> PaymentCandidate | None:
     return build_candidate(document.id, _plain_fields(document))
 
 
-def run_payment_matching(document: Document) -> list[PaymentMatch]:
+def run_payment_matching(document: Document) -> list[PaymentProcess]:
     """Procura, na janela de tempo, os documentos do papel oposto que casam com este.
 
-    Devolve as sugestões novas; pares já sugeridos não são duplicados.
+    Devolve os processos pendentes que ganharam boletos; pares já sugeridos, rejeitados
+    ou confirmados não voltam.
     """
-    candidate = _candidate_for(document)
+    candidate = candidate_for(document)
     if candidate is None:
         return []
 
@@ -140,9 +142,9 @@ def run_payment_matching(document: Document) -> list[PaymentMatch]:
         .distinct()
     )
 
-    created: list[PaymentMatch] = []
+    boletos_by_invoice: dict[Any, set[Any]] = {}
     for other in others:
-        other_candidate = _candidate_for(other)
+        other_candidate = candidate_for(other)
         if other_candidate is None or other_candidate.kind == candidate.kind:
             continue
         invoice, boleto = (
@@ -150,23 +152,19 @@ def run_payment_matching(document: Document) -> list[PaymentMatch]:
             if candidate.kind == "invoice"
             else (other_candidate, candidate)
         )
-        if not is_match(invoice, boleto):
-            continue
-        match, was_created = PaymentMatch.objects.get_or_create(
-            invoice_id=invoice.document_id,
-            boleto_id=boleto.document_id,
-            defaults={
-                "supplier_tax_id": invoice.tax_id,
-                "invoice_amount": invoice.amount,
-                "boleto_amount": boleto.amount,
-            },
-        )
-        if was_created:
-            created.append(match)
-    return created
+        if is_match(invoice, boleto):
+            boletos_by_invoice.setdefault(invoice.document_id, set()).add(
+                boleto.document_id
+            )
+
+    touched = (
+        suggest_boletos(invoice_id, boleto_ids)
+        for invoice_id, boleto_ids in boletos_by_invoice.items()
+    )
+    return [process for process in touched if process is not None]
 
 
-def run_payment_matching_safely(document: Document) -> list[PaymentMatch]:
+def run_payment_matching_safely(document: Document) -> list[PaymentProcess]:
     """Versão para o pipeline: o casamento nunca derruba o processamento."""
     try:
         return run_payment_matching(document)

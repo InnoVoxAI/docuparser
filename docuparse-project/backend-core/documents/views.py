@@ -37,6 +37,7 @@ from .models import (
     ValidationDecision,
 )
 from .pagination import paginate_queryset
+from .payment_serializers import payment_process_refs
 from .serializers import (
     DocumentDetailSerializer,
     DocumentListSerializer,
@@ -928,6 +929,7 @@ def processes_dashboard_view(request):
     error_ids = document_ids_with_error(document_ids)
     stage_by_document = current_stage_by_document(document_ids)
     last_status_change = last_status_change_by_document(page.items)
+    payment_refs = payment_process_refs(document_ids)
     serialized = ProcessSummarySerializer(
         page.items,
         many=True,
@@ -935,6 +937,7 @@ def processes_dashboard_view(request):
             "document_ids_with_error": error_ids,
             "stage_by_document": stage_by_document,
             "last_status_change_by_document": last_status_change,
+            "payment_process_refs": payment_refs,
         },
     ).data
     return Response(page.envelope(serialized))

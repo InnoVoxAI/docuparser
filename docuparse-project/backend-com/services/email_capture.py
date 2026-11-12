@@ -3,6 +3,12 @@ from __future__ import annotations
 from services.document_ingest import DuplicateDocumentError, ingest_document
 
 
+def email_thread_id(message_id: str | None) -> str:
+    """Anexos do mesmo e-mail compartilham o Message-ID."""
+    message_id = (message_id or "").strip()
+    return f"email:{message_id}" if message_id else ""
+
+
 def process_email_attachments(
     *,
     tenant_id: str,
@@ -34,6 +40,7 @@ def process_email_attachments(
                     content=attachment["content"],
                     sender=sender,
                     metadata=metadata,
+                    source_thread_id=email_thread_id(message_id),
                 )
             )
         except DuplicateDocumentError:

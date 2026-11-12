@@ -79,6 +79,7 @@ def consume_document_received(payload: dict[str, Any]) -> Document:
                 "size_bytes": event.data.file.size_bytes,
                 "sha256": sha256,
                 "correlation_id": event.correlation_id,
+                "source_thread_id": event.data.source_thread_id,
                 "received_at": event.data.received_at,
                 "metadata": event.data.metadata,
             },

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.db import connection
 from django.test import TestCase
@@ -71,6 +71,23 @@ class CoreEventConsumerTests(TestCase):
         assert DocumentEvent.objects.count() == 1
         assert first.status == Document.Status.RECEIVED
         assert first.file_uri == payload["data"]["file"]["uri"]
+
+    def test_consume_document_received_keeps_the_source_thread_id(self) -> None:
+        payload = self._document_received_payload()
+        payload["data"]["source_thread_id"] = "email:<msg-1@example.test>"
+
+        document = consume_document_received(payload)
+
+        document.refresh_from_db()
+        assert document.source_thread_id == "email:<msg-1@example.test>"
+        assert document.correlation_id == UUID(payload["correlation_id"])
+
+    def test_consume_document_received_without_source_thread_id_leaves_it_empty(
+        self,
+    ) -> None:
+        document = consume_document_received(self._document_received_payload())
+
+        assert document.source_thread_id == ""
 
     def test_consume_extraction_completed_updates_document_and_is_idempotent(
         self,

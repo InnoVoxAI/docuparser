@@ -5,6 +5,12 @@ import base64
 from services.document_ingest import ingest_document
 
 
+def whatsapp_thread_id(sender: str | None) -> str:
+    """A conversa é o número que escreve; a janela de tempo separa as conversas."""
+    sender = (sender or "").strip()
+    return f"whatsapp:{sender}" if sender else ""
+
+
 def process_whatsapp_media(
     *,
     tenant_id: str,
@@ -48,6 +54,7 @@ def process_whatsapp_media(
                 content=content,
                 sender=sender,
                 metadata=metadata,
+                source_thread_id=whatsapp_thread_id(sender),
             )
         )
     return results

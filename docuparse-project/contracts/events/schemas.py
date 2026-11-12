@@ -45,6 +45,9 @@ class DocumentReceivedData(EventModel):
     file: FileRef
     received_at: datetime
     sender: str | None = None
+    # Mesma origem = mesmo e-mail ou mesma conversa de WhatsApp; vazio quando o
+    # canal não identifica origem (upload manual).
+    source_thread_id: str = Field(default="", max_length=255)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

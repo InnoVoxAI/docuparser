@@ -58,6 +58,11 @@ class Document(TimeStampedModel):
     document_type = models.CharField(max_length=64, blank=True)
     layout = models.CharField(max_length=128, blank=True)
     correlation_id = models.UUIDField(default=uuid.uuid4, db_index=True)
+    # Documentos do mesmo e-mail ou da mesma conversa de WhatsApp compartilham o
+    # valor; vazio quando o canal não identifica origem (upload manual).
+    source_thread_id = models.CharField(
+        max_length=255, blank=True, default="", db_index=True
+    )
     received_at = models.DateTimeField(default=timezone.now)
     metadata = models.JSONField(default=dict, blank=True)
     # Condomínio ao qual o documento pertence; define o plano de contas usado

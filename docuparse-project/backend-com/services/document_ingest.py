@@ -39,6 +39,7 @@ def ingest_document(
     content: bytes,
     sender: str | None = None,
     metadata: dict | None = None,
+    source_thread_id: str = "",
     skip_auto_process: bool = False,
 ) -> dict:
     if tenant_slug:
@@ -71,6 +72,7 @@ def ingest_document(
             "channel": channel,
             "received_at": datetime.now(timezone.utc),
             "sender": sender,
+            "source_thread_id": source_thread_id,
             "file": {
                 "uri": stored.uri,
                 "content_type": content_type,

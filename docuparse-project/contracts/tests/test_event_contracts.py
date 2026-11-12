@@ -32,6 +32,15 @@ def test_event_examples_validate(example_path: Path) -> None:
     assert event.event_type == payload["event_type"]
 
 
+def test_document_received_without_source_thread_id_still_validates() -> None:
+    """Eventos publicados antes do campo existir continuam válidos."""
+    payload = json.loads((EXAMPLES_DIR / "document.received.json").read_text())
+    assert payload["data"]["source_thread_id"]
+    del payload["data"]["source_thread_id"]
+
+    assert validate_event(payload).data.source_thread_id == ""
+
+
 def test_rejects_unknown_event_type() -> None:
     with pytest.raises(ValueError, match="Unsupported event_type"):
         validate_event({"event_type": "unknown"})

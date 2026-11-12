@@ -967,6 +967,7 @@ Arquivo: `docuparse-project/.env`
 | `DOCUPARSE_AUTO_PROCESS_OCR` | `true` | Disparar OCR automaticamente ao receber documento |
 | `DOCUPARSE_AUTO_PROCESS_EXTRACTION` | `true` | Disparar extração automaticamente após OCR |
 | `DOCUPARSE_OCR_WORKER_ENABLED` | `false` | Usar worker assíncrono para OCR |
+| `PAYMENT_MATCH_WINDOW_HOURS` | `72` | Janela, em horas antes e depois do recebimento, em que NF e boleto são candidatos a match |
 | `DOCUPARSE_EXTRACTION_WORKER_ENABLED` | `false` | Usar worker assíncrono para extração |
 | `DOCUPARSE_LAYOUT_WORKER_ENABLED` | `false` | Usar worker assíncrono para layout |
 

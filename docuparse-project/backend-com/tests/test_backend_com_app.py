@@ -442,6 +442,96 @@ def test_whatsapp_webhook_with_multiple_inline_media_generates_events(
     }
 
 
+def test_attachments_of_the_same_email_share_the_source_thread_id(
+    monkeypatch, tmp_path
+) -> None:
+    _point_backend_com_to_tmp(monkeypatch, tmp_path)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/email/webhook",
+        data={"tenant_id": "tenant-demo", "message_id": "<msg-1@example.test>"},
+        files=[
+            ("attachments", ("nf.pdf", b"%PDF nf", "application/pdf")),
+            ("attachments", ("boleto.pdf", b"%PDF boleto", "application/pdf")),
+        ],
+    )
+    other = client.post(
+        "/api/v1/email/webhook",
+        data={"tenant_id": "tenant-demo", "message_id": "<msg-2@example.test>"},
+        files=[("attachments", ("outro.pdf", b"%PDF outro", "application/pdf"))],
+    )
+
+    assert response.status_code == other.status_code == 200
+    events = LocalJsonlEventBus(tmp_path / "events").consume("document.received")
+    threads = {
+        e["data"]["file"]["filename"]: e["data"]["source_thread_id"] for e in events
+    }
+    assert threads["nf.pdf"] == threads["boleto.pdf"] == "email:<msg-1@example.test>"
+    assert threads["outro.pdf"] == "email:<msg-2@example.test>"
+    assert all(validate_event(e).data.source_thread_id for e in events)
+
+
+def test_email_without_message_id_has_no_source_thread_id(
+    monkeypatch, tmp_path
+) -> None:
+    _point_backend_com_to_tmp(monkeypatch, tmp_path)
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/email/webhook",
+        data={"tenant_id": "tenant-demo"},
+        files=[("attachments", ("a.pdf", b"%PDF a", "application/pdf"))],
+    )
+
+    events = LocalJsonlEventBus(tmp_path / "events").consume("document.received")
+    assert events[0]["data"]["source_thread_id"] == ""
+
+
+def test_whatsapp_media_from_the_same_number_share_the_source_thread_id(
+    monkeypatch, tmp_path
+) -> None:
+    _point_backend_com_to_tmp(monkeypatch, tmp_path)
+    client = TestClient(app)
+
+    for sid, number in (
+        ("SM1", "+5511999999999"),
+        ("SM2", "+5511999999999"),
+        ("SM3", "+5521888888888"),
+    ):
+        client.post(
+            "/api/v1/whatsapp/webhook",
+            data={
+                "MessageSid": sid,
+                "From": f"whatsapp:{number}",
+                "NumMedia": "1",
+                "MediaContentType0": "application/pdf",
+                "MediaFilename0": f"{sid}.pdf",
+                "MediaContent0": base64.b64encode(sid.encode()).decode("ascii"),
+            },
+        )
+
+    events = LocalJsonlEventBus(tmp_path / "events").consume("document.received")
+    threads = {
+        e["data"]["file"]["filename"]: e["data"]["source_thread_id"] for e in events
+    }
+    assert threads["SM1.pdf"] == threads["SM2.pdf"] == "whatsapp:+5511999999999"
+    assert threads["SM3.pdf"] == "whatsapp:+5521888888888"
+
+
+def test_manual_upload_has_no_source_thread_id(monkeypatch, tmp_path) -> None:
+    _point_backend_com_to_tmp(monkeypatch, tmp_path)
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/documents/manual",
+        files={"file": ("m.pdf", b"%PDF m", "application/pdf")},
+    )
+
+    events = LocalJsonlEventBus(tmp_path / "events").consume("document.received")
+    assert events[0]["data"]["source_thread_id"] == ""
+
+
 def test_whatsapp_webhook_rejects_invalid_mime(monkeypatch, tmp_path) -> None:
     _point_backend_com_to_tmp(monkeypatch, tmp_path)
     client = TestClient(app)

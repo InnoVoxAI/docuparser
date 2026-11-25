@@ -70,7 +70,17 @@ class SeedPermissionsTest(TestCase):
         seed()
         seed()
 
-        self.assertEqual(Permission.objects.count(), 9)
+        self.assertEqual(Permission.objects.count(), 10)
+
+    def test_only_admins_can_send_expenses_to_the_erp_by_default(self) -> None:
+        """`erp.send` escreve num sistema financeiro: o operador não a recebe por padrão."""
+        from users.management.commands.seed_data import PERMISSIONS, ROLE_SPECS
+
+        assert "erp.send" in {code for code, _ in PERMISSIONS}
+        holders = {
+            spec["name"] for spec in ROLE_SPECS if "erp.send" in spec["permissions"]
+        }
+        self.assertEqual(holders, {"admin", "tenantAdmin"})
 
 
 class LastAdminGuardTest(TestCase):
@@ -142,3 +152,52 @@ class PermissionEnforcementTest(TestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.op_token}")
         r = self.client.get("/api/ocr/users")
         self.assertEqual(r.status_code, 403)
+
+
+class ErpSendPermissionMigrationTest(TestCase):
+    """O `seed_data` não roda em banco existente; a migration leva `erp.send` até lá."""
+
+    def migration(self):
+        import importlib
+
+        return importlib.import_module("users.migrations.0003_erp_send_permission")
+
+    def test_existing_admin_roles_receive_it_and_the_operator_does_not(self) -> None:
+        from django.apps import apps
+
+        from users.models import Permission, Role
+
+        Permission.objects.filter(
+            code="erp.send"
+        ).delete()  # ambiente antigo, sem a permissão
+        for name in ("admin", "tenantAdmin", "operator"):
+            Role.objects.get_or_create(name=name)
+
+        self.migration().add_permission(apps, None)
+
+        holders = set(
+            Role.objects.filter(permissions__code="erp.send").values_list(
+                "name", flat=True
+            )
+        )
+        self.assertEqual(holders, {"admin", "tenantAdmin"})
+
+    def test_running_it_twice_changes_nothing(self) -> None:
+        from django.apps import apps
+
+        from users.models import Permission, Role
+
+        Role.objects.get_or_create(name="admin")
+        self.migration().add_permission(apps, None)
+        self.migration().add_permission(apps, None)
+
+        self.assertEqual(Permission.objects.filter(code="erp.send").count(), 1)
+        self.assertEqual(
+            Role.objects.get(name="admin").permissions.filter(code="erp.send").count(),
+            1,
+        )
+
+    def test_a_fresh_database_already_has_the_permission_after_migrating(self) -> None:
+        from users.models import Permission
+
+        self.assertTrue(Permission.objects.filter(code="erp.send").exists())

@@ -91,3 +91,31 @@ def _run_langextract_safely(
                 exc,
                 exc_info=True,
             )
+
+
+def submit_erp_dispatch(event_payload: dict) -> None:
+    """Roda o conector do ERP fora da requisição: ele faz chamadas de rede ao Superlógica."""
+    tenant = _tenant_from_connection()
+    link = capture_current_span_link()
+    _executor.submit(_run_erp_dispatch, event_payload, tenant, link)
+
+
+def _run_erp_dispatch(
+    event_payload: dict, tenant: object, link: trace.Link | None
+) -> None:
+    connection.set_tenant(tenant)
+    with _tracer.start_as_current_span("erp.dispatch", links=[link] if link else []):
+        try:
+            from documents.services.event_consumers import (
+                consume_erp_integration_requested,
+            )
+
+            consume_erp_integration_requested(event_payload)
+        except Exception as exc:
+            # Só o tipo do erro: nada do pedido nem da resposta do ERP vai ao log.
+            logger.error(
+                "erp_dispatch_failed | document_id=%s | tenant=%s | error=%s",
+                event_payload.get("document_id"),
+                getattr(tenant, "slug", "?"),
+                type(exc).__name__,
+            )

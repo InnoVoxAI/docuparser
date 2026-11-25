@@ -54,7 +54,7 @@ from .services.dlq_inspector import (
     inspect_dlq_streams,
     requeue_dlq_entry,
 )
-from .services.erp_publisher import publish_erp_integration_requested
+from .services.erp_flow import erp_states_for, prepare_after_approval
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.langextract_client import LangExtractClient
 from .services.ocr_client import OCRClient
@@ -452,7 +452,7 @@ def _validation_decision_body(
 
     if decision == ValidationDecision.Decision.APPROVED:
         document.transition_to(Document.Status.APPROVED)
-        publish_erp_integration_requested(document)
+        prepare_after_approval(document)
     elif decision == ValidationDecision.Decision.REJECTED:
         document.transition_to(Document.Status.REJECTED)
     else:
@@ -742,12 +742,22 @@ def integration_settings_view(request):
 
     serializer = IntegrationSettingsSerializer(config, data=request.data, partial=True)
     serializer.is_valid(raise_exception=True)
+    if (
+        serializer.validated_data.get("superlogica_mode")
+        == IntegrationSettings.SuperlogicaMode.LIVE
+        and not config.superlogica_live_enabled
+    ):
+        return Response(
+            {"detail": "O envio real não está habilitado para este cliente."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     for field in (
         "approved_export_enabled",
         "approved_export_dir",
         "approved_export_format",
         "superlogica_base_url",
         "superlogica_mode",
+        "superlogica_dry_run",
         "administrator_cnpj",
     ):
         if field in serializer.validated_data:
@@ -767,6 +777,7 @@ def integration_settings_view(request):
             "approved_export_format",
             "superlogica_base_url",
             "superlogica_mode",
+            "superlogica_dry_run",
             "administrator_cnpj",
             "superlogica_app_token_enc",
             "superlogica_access_token_enc",
@@ -930,6 +941,7 @@ def processes_dashboard_view(request):
     stage_by_document = current_stage_by_document(document_ids)
     last_status_change = last_status_change_by_document(page.items)
     payment_refs = payment_process_refs(document_ids)
+    erp_states = erp_states_for(document_ids)
     serialized = ProcessSummarySerializer(
         page.items,
         many=True,
@@ -938,6 +950,7 @@ def processes_dashboard_view(request):
             "stage_by_document": stage_by_document,
             "last_status_change_by_document": last_status_change,
             "payment_process_refs": payment_refs,
+            "erp_state_by_document": erp_states,
         },
     ).data
     return Response(page.envelope(serialized))

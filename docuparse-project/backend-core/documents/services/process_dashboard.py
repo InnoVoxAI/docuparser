@@ -47,9 +47,10 @@ PENDING_DOCUMENT_STATUSES = [
     Document.Status.VALIDATION_PENDING,
 ]
 # "Completed" = a revisão humana terminou (aprovada ou rejeitada) — inclui os
-# status pós-aprovação (aprovar já dispara a integração ERP, então o
-# documento raramente fica parado em APPROVED por muito tempo; ver
-# publish_erp_integration_requested). Um documento rejeitado não está mais
+# status pós-aprovação (nos modos `mock` e `disabled` aprovar já dispara a
+# integração ERP; em `sandbox` e `live` o documento fica em APPROVED até o
+# analista confirmar o envio; ver documents.services.erp_flow). Um documento
+# rejeitado não está mais
 # "em andamento", mesmo sem nenhuma falha de execução (por isso "completed"
 # e "fail" não são mutuamente exclusivos: um retry que falhou num doc já
 # aprovado ainda conta pra "fail").

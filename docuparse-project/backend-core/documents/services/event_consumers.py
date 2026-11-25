@@ -25,6 +25,8 @@ from documents.models import (
     ERPIntegrationAttempt,
     ExtractionResult,
 )
+from documents.services import erp_retry
+from documents.services.erp_retry import FINGERPRINT_KEY, STARTED_KEY
 from documents.services.payment_matching import run_payment_matching_safely
 
 logger = logging.getLogger(__name__)
@@ -223,6 +225,103 @@ def consume_ocr_failed(payload: dict[str, Any]) -> Document:
         return document
 
 
+@_traced_consumer("erp.integration.requested process")
+def consume_erp_integration_requested(payload: dict[str, Any]) -> Any:
+    """Executa o conector do tenant e publica `erp.sent` ou `erp.failed`.
+
+    O conector roda fora de qualquer transação: não há chamada de rede com lock de
+    banco aberto. A idempotência do evento fica no registro único em `DocumentEvent`.
+    """
+    from django.conf import settings
+    from docuparse_events import event_bus_from_env
+    from erp_export.connector import execute
+    from erp_export.outcome import publish_outcome
+    from events import ERPIntegrationRequestedEvent
+
+    from documents.services.erp_mock import handle_erp_integration_requested_event
+
+    event = ERPIntegrationRequestedEvent.model_validate(payload)
+    with transaction.atomic():
+        existing_event, created = _record_event_once(event)
+    if not created:
+        return None
+
+    try:
+        result = execute(event.document_id, event.data.idempotency_key)
+    except Exception as exc:
+        # Erro inesperado: o documento não pode ficar preso em "ERP solicitado".
+        # Retentável e com resultado incerto, para a próxima tentativa reconciliar.
+        from erp_export.connector import ConnectorResult
+        from erp_export.errors import ExportError
+
+        logger.error(
+            "erp_connector_unexpected_error | document_id=%s | error=%s",
+            event.document_id,
+            type(exc).__name__,
+        )
+        result = ConnectorResult(
+            "failed",
+            error=ExportError(
+                "internal_error",
+                "Erro interno ao enviar ao ERP. Tente de novo.",
+                retryable=True,
+                outcome_unknown=True,
+            ),
+        )
+    log_event(
+        logger,
+        "erp.integration.requested processed",
+        tenant_id=event.tenant_id,
+        document_id=str(event.document_id),
+        correlation_id=str(event.correlation_id),
+        event_type=event.event_type,
+        result=result.kind,
+        error_code=result.error.code if result.error else "",
+    )
+
+    if result.kind == "mock":
+        bus = event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR)
+        sent_event = handle_erp_integration_requested_event(payload, bus)
+        consume_erp_sent(sent_event)
+    elif result.kind == "dry_run":
+        _record_dry_run(event, result.detail.get("preview", {}))
+    else:
+        publish_outcome(event, result)
+    return result
+
+
+def _record_dry_run(event: Any, preview: dict[str, Any]) -> None:
+    """Simulação concluída: nada foi enviado, então o documento volta a "aprovado"."""
+    from datetime import datetime, timezone
+
+    from events import ERPDryRunEvent
+
+    document = Document.objects.get(id=event.document_id)
+    dry_run = ERPDryRunEvent(
+        tenant_id=event.tenant_id,
+        document_id=document.id,
+        correlation_id=document.correlation_id,
+        source="erp-superlogica",
+        occurred_at=datetime.now(timezone.utc),
+        data={
+            "idempotency_key": event.data.idempotency_key,
+            "connector": event.data.connector,
+            "preview": preview,
+        },
+    )
+    DocumentEvent.objects.create(
+        event_id=dry_run.event_id,
+        document=document,
+        event_type=dry_run.event_type,
+        event_version=dry_run.event_version,
+        correlation_id=dry_run.correlation_id,
+        source=dry_run.source,
+        occurred_at=dry_run.occurred_at,
+        payload=dry_run.model_dump(mode="json"),
+    )
+    document.transition_to(Document.Status.APPROVED)
+
+
 @_traced_consumer("erp.sent process")
 def consume_erp_sent(payload: dict[str, Any]) -> Document:
     event = ERPSentEvent.model_validate(payload)
@@ -240,6 +339,7 @@ def consume_erp_sent(payload: dict[str, Any]) -> Document:
                 "status": ERPIntegrationAttempt.Status.SENT,
                 "external_id": event.data.external_id or "",
                 "response_payload": event.data.response_metadata,
+                "next_retry_at": None,
             },
         )
         document.status = Document.Status.ERP_SENT
@@ -258,7 +358,10 @@ def consume_erp_failed(payload: dict[str, Any]) -> Document:
         if not created and existing_event.document_id:
             return document
 
-        ERPIntegrationAttempt.objects.update_or_create(
+        previous = ERPIntegrationAttempt.objects.filter(
+            idempotency_key=event.data.idempotency_key
+        ).first()
+        attempt, _ = ERPIntegrationAttempt.objects.update_or_create(
             idempotency_key=event.data.idempotency_key,
             defaults={
                 "document": document,
@@ -268,9 +371,22 @@ def consume_erp_failed(payload: dict[str, Any]) -> Document:
                     **event.data.response_metadata,
                     "reason": event.data.reason,
                     "retryable": event.data.retryable,
+                    # O marcador de "envio iniciado" sobrevive à falha: é ele que
+                    # faz a próxima tentativa reconciliar em vez de reenviar às cegas.
+                    **{
+                        key: previous.response_payload[key]
+                        for key in (STARTED_KEY, FINGERPRINT_KEY)
+                        if previous and key in (previous.response_payload or {})
+                    },
                 },
             },
         )
+        if event.data.retryable:
+            attempt.retry_count += 1
+            attempt.next_retry_at = erp_retry.next_retry_at(attempt.retry_count)
+        else:
+            attempt.next_retry_at = None
+        attempt.save(update_fields=["retry_count", "next_retry_at", "updated_at"])
         document.status = Document.Status.ERP_FAILED
         document.save(update_fields=["status", "updated_at"])
         existing_event.document = document

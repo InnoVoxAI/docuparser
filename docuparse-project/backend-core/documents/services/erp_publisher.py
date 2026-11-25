@@ -12,6 +12,7 @@ from events import ERPIntegrationRequestedEvent
 
 from documents.models import Document, ERPIntegrationAttempt, IntegrationSettings
 from documents.services.approved_exporter import export_approved_document_json
+from documents.services.processing_queue import submit_erp_dispatch
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,13 @@ def publish_erp_integration_requested(
     document: Document, connector: str = "mock"
 ) -> dict:
     tenant_slug = _current_tenant_slug()
+    integration_settings = _integration_settings(document)
+    mode = integration_settings.superlogica_mode
+    if mode in (
+        IntegrationSettings.SuperlogicaMode.SANDBOX,
+        IntegrationSettings.SuperlogicaMode.LIVE,
+    ):
+        connector = "superlogica"
     idempotency_key = f"{tenant_slug}:{document.id}:erp:v1"
     attempt, _ = ERPIntegrationAttempt.objects.get_or_create(
         idempotency_key=idempotency_key,
@@ -42,7 +50,6 @@ def publish_erp_integration_requested(
         attempt.status = ERPIntegrationAttempt.Status.REQUESTED
         attempt.save(update_fields=["status", "updated_at"])
 
-    integration_settings = _integration_settings(document)
     export_path = None
     if integration_settings.approved_export_enabled:
         export_path = export_approved_document_json(
@@ -77,6 +84,9 @@ def publish_erp_integration_requested(
         "erp.integration.requested", event
     )
     document.transition_to(Document.Status.ERP_INTEGRATION_REQUESTED)
+    if mode != IntegrationSettings.SuperlogicaMode.DISABLED:
+        # Sem worker de eventos no deploy: o conector roda em processo, com tenant.
+        submit_erp_dispatch(event)
     log_event(
         logger,
         "erp.integration.requested published",
@@ -118,3 +128,36 @@ def _integration_settings(document: Document) -> IntegrationSettings:
         },
     )
     return settings_obj
+
+
+def current_integration_settings() -> IntegrationSettings:
+    """Configurações de integração do tenant atual (cria o registro se não existir)."""
+    return _integration_settings(None)
+
+
+def idempotency_key_for(document: Document) -> str:
+    return f"{_current_tenant_slug()}:{document.id}:erp:v1"
+
+
+def ensure_pending_confirmation(document: Document) -> ERPIntegrationAttempt:
+    """Tentativa aguardando o analista. Não publica nada nem fala com o ERP.
+
+    Uma tentativa já enviada ou em andamento não é mexida; uma falha ou simulação
+    anterior volta a aguardar a confirmação.
+    """
+    attempt, created = ERPIntegrationAttempt.objects.get_or_create(
+        idempotency_key=idempotency_key_for(document),
+        defaults={
+            "document": document,
+            "connector": "superlogica",
+            "status": ERPIntegrationAttempt.Status.PENDING_CONFIRMATION,
+            "request_payload": _canonical_payload(document, _current_tenant_slug()),
+        },
+    )
+    if not created and attempt.status in (
+        ERPIntegrationAttempt.Status.FAILED,
+        ERPIntegrationAttempt.Status.DRY_RUN,
+    ):
+        attempt.status = ERPIntegrationAttempt.Status.PENDING_CONFIRMATION
+        attempt.save(update_fields=["status", "updated_at"])
+    return attempt

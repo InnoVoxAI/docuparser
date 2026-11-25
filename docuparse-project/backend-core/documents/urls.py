@@ -1,5 +1,10 @@
 from django.urls import path
 
+from .erp_views import (
+    document_erp_confirm_view,
+    document_erp_retry_view,
+    document_erp_view,
+)
 from .payment_views import (
     payment_candidates_view,
     payment_process_confirm_view,
@@ -73,6 +78,17 @@ urlpatterns = [
         "documents/<uuid:document_id>/validate",
         document_validation_view,
         name="document-validate",
+    ),
+    path("documents/<uuid:document_id>/erp", document_erp_view, name="document-erp"),
+    path(
+        "documents/<uuid:document_id>/erp/confirm",
+        document_erp_confirm_view,
+        name="document-erp-confirm",
+    ),
+    path(
+        "documents/<uuid:document_id>/erp/retry",
+        document_erp_retry_view,
+        name="document-erp-retry",
     ),
     path(
         "documents/<uuid:document_id>/langextract",

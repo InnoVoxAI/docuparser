@@ -73,6 +73,7 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
     status_label = serializers.SerializerMethodField()
     last_status_change_at = serializers.SerializerMethodField()
     payment_processes = serializers.SerializerMethodField()
+    erp_state = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -87,7 +88,12 @@ class ProcessSummarySerializer(serializers.ModelSerializer):
             "current_stage",
             "last_status_change_at",
             "payment_processes",
+            "erp_state",
         ]
+
+    def get_erp_state(self, obj: Document) -> str:
+        # Estado barato do lançamento no ERP; o detalhe vem de /documents/<id>/erp.
+        return (self.context.get("erp_state_by_document") or {}).get(obj.id, "none")
 
     def get_payment_processes(self, obj: Document) -> list[dict]:
         # Documento fora de qualquer processo de pagamento segue avulso: lista vazia.
@@ -201,11 +207,17 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
     condominium = serializers.SerializerMethodField()
     classification = serializers.SerializerMethodField()
     payment_processes = serializers.SerializerMethodField()
+    erp = serializers.SerializerMethodField()
 
     def get_payment_processes(self, obj: Document) -> list[dict]:
         from documents.payment_serializers import payment_process_refs
 
         return payment_process_refs([obj.pk]).get(obj.pk, [])
+
+    def get_erp(self, obj: Document) -> dict:
+        from documents.services.erp_flow import erp_detail
+
+        return erp_detail(obj)
 
     def get_active_field_version_number(self, obj: Document) -> int | None:
         active = obj.field_versions.filter(is_active=True).first()
@@ -244,6 +256,7 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             "condominium",
             "classification",
             "payment_processes",
+            "erp",
             "full_transcription",
             "full_transcription_formatted",
             "ocr_metadata",
@@ -324,6 +337,8 @@ class IntegrationSettingsSerializer(serializers.ModelSerializer):
             "approved_export_format",
             "superlogica_base_url",
             "superlogica_mode",
+            "superlogica_dry_run",
+            "superlogica_live_enabled",
             "administrator_cnpj",
             "superlogica_app_token",
             "superlogica_access_token",
@@ -331,7 +346,14 @@ class IntegrationSettingsSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        # `superlogica_live_enabled` só muda pelo comando `erp_live_writes`: o envio
+        # real a um ERP de produção nunca é ligado por uma tela.
+        read_only_fields = [
+            "id",
+            "superlogica_live_enabled",
+            "created_at",
+            "updated_at",
+        ]
 
     def get_superlogica_credentials_configured(self, obj: IntegrationSettings) -> bool:
         return bool(obj.superlogica_app_token_enc and obj.superlogica_access_token_enc)

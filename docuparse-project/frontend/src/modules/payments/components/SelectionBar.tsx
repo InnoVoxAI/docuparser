@@ -1,4 +1,4 @@
-import { Link2, Undo2 } from 'lucide-react'
+import { Columns2, Link2, Undo2 } from 'lucide-react'
 import { Alert } from '../../../shared/components'
 import type { PaymentDocument } from '../schemas/payments'
 import { formatMoney, selectionWarnings } from '../utils'
@@ -10,10 +10,12 @@ interface Props {
     error: string
     onClear: () => void
     onCreate: () => void
+    /** Abre a nota e os boletos escolhidos lado a lado, antes de montar o agrupamento. */
+    onCompare: () => void
 }
 
 /** O par escolhido, o que conferir nele e as ações de desfazer ou montar o agrupamento. */
-export function SelectionBar({ invoice, boletos, busy, error, onClear, onCreate }: Props) {
+export function SelectionBar({ invoice, boletos, busy, error, onClear, onCreate, onCompare }: Props) {
     const warnings = selectionWarnings(invoice, boletos)
     const total = boletos.reduce((sum, b) => sum + Number(b.amount ?? 0), 0)
     const empty = !invoice && boletos.length === 0
@@ -44,6 +46,14 @@ export function SelectionBar({ invoice, boletos, busy, error, onClear, onCreate 
                         className="inline-flex h-9 items-center gap-1 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
                     >
                         <Undo2 size={16} aria-hidden="true" /> Desfazer seleção
+                    </button>
+                    <button
+                        type="button"
+                        disabled={!invoice || boletos.length === 0}
+                        onClick={onCompare}
+                        className="inline-flex h-9 items-center gap-1 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                    >
+                        <Columns2 size={16} aria-hidden="true" /> Comparar lado a lado
                     </button>
                     <button
                         type="button"

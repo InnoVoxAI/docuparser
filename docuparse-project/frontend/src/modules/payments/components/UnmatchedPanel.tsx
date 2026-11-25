@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { Link2 } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { useManualMatch } from '../hooks'
 import type { PaymentDocument } from '../schemas/payments'
 import { CandidateList } from './CandidateList'
+import { DocumentCompareDialog } from './DocumentCompareDialog'
 import { SelectionBar } from './SelectionBar'
 
 /** Documentos sem match: o operador escolhe a nota e os boletos e monta o agrupamento à mão. */
@@ -12,6 +14,8 @@ export function UnmatchedPanel({ onCreated }: { onCreated: () => void }) {
     const [invoice, setInvoice] = useState<PaymentDocument | null>(null)
     const [boletos, setBoletos] = useState<PaymentDocument[]>([])
     const { create, busy, error, reset } = useManualMatch()
+    // O que o popup mostra: a seleção inteira, ou um documento só (botão "ver" da lista).
+    const [viewing, setViewing] = useState<{ invoice: PaymentDocument | null; boletos: PaymentDocument[] } | null>(null)
 
     const toggleBoleto = (doc: PaymentDocument) =>
         setBoletos((current) =>
@@ -45,8 +49,15 @@ export function UnmatchedPanel({ onCreated }: { onCreated: () => void }) {
                     title="Notas fiscais"
                     selected={invoice ? [invoice] : []}
                     onToggle={setInvoice}
+                    onView={(doc) => setViewing({ invoice: doc, boletos: [] })}
                 />
-                <CandidateList kind="boleto" title="Boletos" selected={boletos} onToggle={toggleBoleto} />
+                <CandidateList
+                    kind="boleto"
+                    title="Boletos"
+                    selected={boletos}
+                    onToggle={toggleBoleto}
+                    onView={(doc) => setViewing({ invoice: null, boletos: [doc] })}
+                />
             </div>
             {canDecide ? (
                 <SelectionBar
@@ -56,6 +67,29 @@ export function UnmatchedPanel({ onCreated }: { onCreated: () => void }) {
                     error={error}
                     onClear={clear}
                     onCreate={() => void submit()}
+                    onCompare={() => setViewing({ invoice, boletos })}
+                />
+            ) : null}
+            {viewing ? (
+                <DocumentCompareDialog
+                    invoice={viewing.invoice}
+                    boletos={viewing.boletos}
+                    onClose={() => setViewing(null)}
+                    footer={
+                        canDecide && viewing.invoice && viewing.boletos.length > 0 ? (
+                            <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => {
+                                    setViewing(null)
+                                    void submit()
+                                }}
+                                className="inline-flex h-9 items-center gap-1 rounded-md bg-zinc-900 px-3 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
+                            >
+                                <Link2 size={16} aria-hidden="true" /> Montar agrupamento
+                            </button>
+                        ) : null
+                    }
                 />
             ) : null}
         </div>

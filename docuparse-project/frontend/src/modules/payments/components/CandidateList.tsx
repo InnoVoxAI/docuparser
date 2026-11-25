@@ -5,7 +5,7 @@ import { useCandidates } from '../hooks'
 import type { CandidateKind, PaymentDocument } from '../schemas/payments'
 import { PAGE_SIZE } from '../services/payments.service'
 import { describeOrigin, formatCnpj, formatMoney } from '../utils'
-import { FileX } from 'lucide-react'
+import { Eye, FileX } from 'lucide-react'
 
 const SEARCH_DELAY_MS = 300
 
@@ -14,10 +14,12 @@ interface Props {
     title: string
     selected: PaymentDocument[]
     onToggle: (doc: PaymentDocument) => void
+    /** Abre o documento num popup, para o analista conferir antes de escolher. */
+    onView: (doc: PaymentDocument) => void
 }
 
 /** Documentos de um tipo que ainda não estão em nenhum agrupamento, com busca e seleção. */
-export function CandidateList({ kind, title, selected, onToggle }: Props) {
+export function CandidateList({ kind, title, selected, onToggle, onView }: Props) {
     const [text, setText] = useState('')
     const [search, setSearch] = useState('')
     const [page, setPage] = useState(1)
@@ -47,8 +49,8 @@ export function CandidateList({ kind, title, selected, onToggle }: Props) {
             ) : null}
             <ul className="divide-y divide-zinc-100">
                 {results.map((doc) => (
-                    <li key={doc.id}>
-                        <label className="flex cursor-pointer items-start gap-3 px-4 py-2 text-sm hover:bg-zinc-50">
+                    <li key={doc.id} className="flex items-start hover:bg-zinc-50">
+                        <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 py-2 pl-4 text-sm">
                             <input
                                 type={single ? 'radio' : 'checkbox'}
                                 name={`select-${kind}`}
@@ -67,6 +69,15 @@ export function CandidateList({ kind, title, selected, onToggle }: Props) {
                             </span>
                             <span className="font-semibold tabular-nums text-zinc-900">{formatMoney(doc.amount)}</span>
                         </label>
+                        <button
+                            type="button"
+                            aria-label={`Ver ${doc.original_filename}`}
+                            title="Ver o documento"
+                            onClick={() => onView(doc)}
+                            className="m-2 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800"
+                        >
+                            <Eye size={16} aria-hidden="true" />
+                        </button>
                     </li>
                 ))}
             </ul>

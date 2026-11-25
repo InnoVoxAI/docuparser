@@ -1,11 +1,13 @@
 import { api } from '../../../shared/lib/http'
 import {
     candidatePageSchema,
+    paymentDocumentDetailSchema,
     paymentProcessPageSchema,
     paymentProcessSchema,
     type CandidateKind,
     type CandidatePage,
     type Decision,
+    type PaymentDocumentDetail,
     type PaymentProcess,
     type PaymentProcessPage,
     type ProcessStatus,
@@ -46,4 +48,10 @@ export async function createManualProcess(invoiceId: string, boletoIds: string[]
 /** Desfaz a seleção manual ainda pendente: os documentos voltam à lista de sem match. */
 export async function undoManualProcess(processId: string): Promise<void> {
     await api.post(`/payment-processes/${processId}/undo`)
+}
+
+/** Dados completos de um documento do agrupamento, para o popup de comparação. */
+export async function fetchPaymentDocument(documentId: string): Promise<PaymentDocumentDetail> {
+    const response = await api.get<unknown>(`/documents/${documentId}`)
+    return paymentDocumentDetailSchema.parse(response.data)
 }

@@ -45,6 +45,29 @@ export const candidatePageSchema = z.object({
     total_pages: z.number(),
 })
 
+// Detalhe de um documento (`/documents/{id}`), só com o que o popup de comparação mostra.
+// Os campos extraídos chegam como `{value, confidence}` ou como valor simples.
+export const paymentDocumentDetailSchema = z.object({
+    id: z.string(),
+    original_filename: z.string().default(''),
+    content_type: z.string().default(''),
+    status: z.string().default(''),
+    channel: z.string().default(''),
+    received_at: z.string().default(''),
+    source_thread_id: z.string().default(''),
+    extraction_result: z
+        .object({ fields: z.record(z.string(), z.unknown()) })
+        .nullable()
+        .default(null),
+    condominium: z.object({ id: z.string(), name: z.string() }).nullable().default(null),
+    classification: z
+        .object({ ledger_account: z.object({ code: z.string(), name: z.string() }) })
+        .nullable()
+        .default(null),
+    metadata: z.record(z.string(), z.unknown()).nullable().default(null),
+})
+
+export type PaymentDocumentDetail = z.infer<typeof paymentDocumentDetailSchema>
 export type CandidatePage = z.infer<typeof candidatePageSchema>
 export type CandidateKind = 'invoice' | 'boleto'
 export type PaymentDocument = z.infer<typeof paymentDocumentSchema>

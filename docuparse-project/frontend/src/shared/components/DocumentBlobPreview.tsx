@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { FileText } from 'lucide-react'
 import { api } from '../lib/http'
 import { readError } from '../utils'
@@ -15,11 +15,17 @@ export function DocumentBlobPreview({
     contentType,
     filename,
     frameClassName = 'h-[420px] w-full rounded border border-zinc-200',
+    pageFit = false,
+    frameStyle,
 }: {
     documentId: string
     contentType?: string
     filename?: string
     frameClassName?: string
+    /** PDF abre ajustado à largura do quadro (o padrão do visualizador corta a página). */
+    pageFit?: boolean
+    /** Estilo do quadro do PDF, para dimensioná-lo pela largura (página inteira, sem rolar dentro). */
+    frameStyle?: CSSProperties
 }) {
     const [blobUrl, setBlobUrl] = useState('')
     const [loading, setLoading] = useState(true)
@@ -69,7 +75,14 @@ export function DocumentBlobPreview({
     const isPdf = contentType === 'application/pdf' || (filename ?? '').toLowerCase().endsWith('.pdf')
     const isImage = (contentType ?? '').startsWith('image/')
     if (isPdf) {
-        return <iframe title={`Documento ${filename ?? documentId}`} src={blobUrl} className={frameClassName} />
+        return (
+            <iframe
+                title={`Documento ${filename ?? documentId}`}
+                src={pageFit ? `${blobUrl}#view=FitH&navpanes=0` : blobUrl}
+                className={frameClassName}
+                style={frameStyle}
+            />
+        )
     }
     if (isImage) {
         return (

@@ -143,6 +143,14 @@ export const handlers = [
             manual_retries: 0,
         }),
     ),
+    // Arquivo original (pré-visualização): um PDF mínimo, para as telas que o mostram.
+    http.get(
+        `${OCR}/documents/:id/file`,
+        () =>
+            new HttpResponse(new Uint8Array([0x25, 0x50, 0x44, 0x46]), {
+                headers: { 'Content-Type': 'application/pdf' },
+            }),
+    ),
     http.get(`${OCR}/documents/:id/pipeline`, ({ params }) =>
         HttpResponse.json({
             document_id: params.id,

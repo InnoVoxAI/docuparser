@@ -95,6 +95,7 @@ O token (`access_token` do `localStorage`) é anexado como `Authorization: Beare
 | POST | `/payment-processes/{id}/confirm` · `/reject` | [`payments.service.ts`](../src/modules/payments/services/payments.service.ts) (`decidePaymentProcess`) |
 | GET | `/payment-candidates` (`kind`, `search`, `page`, `page_size`) | [`payments.service.ts`](../src/modules/payments/services/payments.service.ts) (`fetchCandidates`) |
 | POST | `/payment-processes/manual` (`{invoice_id, boleto_ids}`) · `/payment-processes/{id}/undo` | [`payments.service.ts`](../src/modules/payments/services/payments.service.ts) (`createManualProcess`, `undoManualProcess`) |
+| GET | `/documents/{id}` · `/documents/{id}/file` (blob) | [`payments.service.ts`](../src/modules/payments/services/payments.service.ts) (`fetchPaymentDocument`) e [`DocumentBlobPreview.tsx`](../src/shared/components/DocumentBlobPreview.tsx): dados completos e arquivo original de cada documento no popup "Ver documentos" (nota e boletos lado a lado) |
 
 ### Admin (users / roles / permissions) — via `/api/ocr`
 

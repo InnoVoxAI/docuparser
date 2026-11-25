@@ -1,3 +1,5 @@
 export { paymentKeys } from './queryKeys'
 export { useCandidates, useManualMatch } from './useManualMatch'
 export { usePaymentDecision, usePaymentProcesses, usePendingPaymentCount } from './usePaymentProcesses'
+export { usePaymentDocuments } from './usePaymentDocuments'
+export type { DocumentDetailState } from './usePaymentDocuments'

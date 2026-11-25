@@ -43,6 +43,25 @@ fallback quando o matching automático não casa. Reaproveita o fluxo de
   sugestão antes de pareá-lo de outro jeito.
 - Não há evento de auditoria para "montou" ou "desfez"; só a decisão final é gravada.
 
+## Popup de documentos lado a lado (2026-11-25)
+
+O analista não via nada além de nome, CNPJ e valor. O botão "Ver documentos" de cada
+agrupamento, o nome de cada documento e o botão de olho da lista de "Sem match" abrem um
+popup em `modules/payments/components/DocumentCompareDialog.tsx`:
+
+- **Conferência no topo** (`compareChecks.ts`): CNPJ do fornecedor, valor coberto ou faltando,
+  **pagador do boleto = tomador da nota** (pega boleto de outro condomínio, que a regra de
+  casamento não checa), vencimentos em ordem, origem comum e condomínio com a conta.
+- **Nota à esquerda, boleto à direita** (abas quando há vários boletos), cada um com os campos
+  que decidem e o arquivo original (`DocumentBlobPreview`). Campos opcionais não lidos ficam
+  recolhidos para o PDF ter espaço.
+- **Decisão sem sair do popup:** confirmar e rejeitar no rodapé, ou "Montar agrupamento" na
+  seleção manual. Se montar falha, o popup fecha para o erro aparecer na barra.
+- Os dados vêm de `GET /documents/{id}` (`extraction_result` já reflete a versão ativa dos campos)
+  e `/documents/{id}/file`, sem endpoint novo no backend.
+- Verificado no navegador real (Chrome, core local) com PDFs reais: layout, abas, Escape, seleção
+  manual e documento único.
+
 ## Relations
 
 - relates_to [[docuparser/decisions/processo-de-pagamento-agrupando-nf-e-boletos-paymentprocess]]

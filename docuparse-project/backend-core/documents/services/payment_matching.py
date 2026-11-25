@@ -105,6 +105,11 @@ def _plain_fields(document: Document) -> dict[str, Any]:
     }
 
 
+def document_fields(document: Document) -> dict[str, Any]:
+    """Campos vigentes (versão ativa, se houver) como valores simples."""
+    return _plain_fields(document)
+
+
 def candidate_for(document: Document) -> PaymentCandidate | None:
     return build_candidate(document.id, _plain_fields(document))
 

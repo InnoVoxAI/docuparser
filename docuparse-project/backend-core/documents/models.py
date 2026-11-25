@@ -260,9 +260,13 @@ class ValidationDecision(TimeStampedModel):
 
 class ERPIntegrationAttempt(TimeStampedModel):
     class Status(models.TextChoices):
+        # Aprovado, mas o analista ainda não confirmou o envio (modos sandbox e live).
+        PENDING_CONFIRMATION = "pending_confirmation", "Pending confirmation"
         REQUESTED = "requested", "Requested"
         SENT = "sent", "Sent"
         FAILED = "failed", "Failed"
+        # Dry-run: o payload foi montado e validado, nada foi enviado.
+        DRY_RUN = "dry_run", "Dry run"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     document = models.ForeignKey(
@@ -277,6 +281,8 @@ class ERPIntegrationAttempt(TimeStampedModel):
     response_payload = models.JSONField(default=dict, blank=True)
     external_id = models.CharField(max_length=255, blank=True)
     retry_count = models.PositiveIntegerField(default=0)
+    # Antes disso o reenvio manual é recusado (espera crescente entre tentativas).
+    next_retry_at = models.DateTimeField(null=True, blank=True)
 
 
 class IntegrationSettings(TimeStampedModel):
@@ -288,6 +294,7 @@ class IntegrationSettings(TimeStampedModel):
         DISABLED = "disabled", "Disabled"
         MOCK = "mock", "Mock"
         SANDBOX = "sandbox", "Sandbox"
+        LIVE = "live", "Live"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     approved_export_enabled = models.BooleanField(default=True)
@@ -304,6 +311,11 @@ class IntegrationSettings(TimeStampedModel):
     superlogica_access_token_enc = models.TextField(blank=True, default="")
     # CNPJ da administradora, sem pontuação: nunca identifica um condomínio.
     administrator_cnpj = models.CharField(max_length=14, blank=True, default="")
+    # Escrita no ERP. O padrão é o mais seguro: monta e valida, mas não envia.
+    superlogica_dry_run = models.BooleanField(default=True)
+    # Habilitação do envio real, por tenant. Só muda pelo comando `erp_live_writes`,
+    # nunca pela API de configurações.
+    superlogica_live_enabled = models.BooleanField(default=False)
 
 
 class OCRSettings(TimeStampedModel):

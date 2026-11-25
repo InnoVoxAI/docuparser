@@ -15,7 +15,8 @@ export function usePaymentDocuments(ids: string[]): Record<string, DocumentDetai
         queries: ids.map((id) => ({
             queryKey: paymentKeys.document(id),
             queryFn: () => fetchPaymentDocument(id),
-            staleTime: 60_000,
+            // O analista pode corrigir o documento na validação e voltar: sempre busca de novo.
+            refetchOnMount: 'always' as const,
         })),
     })
     return Object.fromEntries(

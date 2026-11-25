@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { useBodyScrollLock } from '../../../shared/hooks'
+import { useAuth } from '../../auth'
 import { buildChecks } from '../compareChecks'
-import { usePaymentDocuments } from '../hooks'
+import { useOpenValidation, usePaymentDocuments } from '../hooks'
 import type { PaymentDocument } from '../schemas/payments'
 import { formatMoney } from '../utils'
 import { ComparisonStrip } from './ComparisonStrip'
@@ -21,6 +22,16 @@ interface Props {
 /** Popup com a nota e os boletos lado a lado, como na validação, e a conferência no topo. */
 export function DocumentCompareDialog({ invoice, boletos, initialBoletoId, footer, onClose }: Props) {
     useBodyScrollLock()
+    const { hasPermission } = useAuth()
+    const openValidation = useOpenValidation()
+    // Só quem pode validar documentos vê o atalho para corrigi-los.
+    const fixer = (id: string) =>
+        hasPermission('documents.validate')
+            ? () => {
+                  onClose()
+                  openValidation(id)
+              }
+            : undefined
     const [boletoId, setBoletoId] = useState(initialBoletoId ?? boletos[0]?.id ?? '')
     const ids = [...(invoice ? [invoice.id] : []), ...boletos.map((b) => b.id)]
     const states = usePaymentDocuments(ids)
@@ -78,8 +89,17 @@ export function DocumentCompareDialog({ invoice, boletos, initialBoletoId, foote
                     </div>
                 ) : null}
                 <div className={`grid min-h-0 flex-1 gap-3 p-3 ${invoice && boleto ? 'lg:grid-cols-2' : ''}`}>
-                    {invoice ? <DocumentPane kind="Nota fiscal" doc={invoice} state={states[invoice.id]} /> : null}
-                    {boleto ? <DocumentPane kind="Boleto" doc={boleto} state={states[boleto.id]} /> : null}
+                    {invoice ? (
+                        <DocumentPane
+                            kind="Nota fiscal"
+                            doc={invoice}
+                            state={states[invoice.id]}
+                            onFix={fixer(invoice.id)}
+                        />
+                    ) : null}
+                    {boleto ? (
+                        <DocumentPane kind="Boleto" doc={boleto} state={states[boleto.id]} onFix={fixer(boleto.id)} />
+                    ) : null}
                 </div>
                 {footer ? (
                     <footer className="flex justify-end border-t border-zinc-200 px-4 py-3">{footer}</footer>

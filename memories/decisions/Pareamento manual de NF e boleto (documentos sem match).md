@@ -57,6 +57,13 @@ popup em `modules/payments/components/DocumentCompareDialog.tsx`:
   recolhidos para o PDF ter espaço.
 - **Decisão sem sair do popup:** confirmar e rejeitar no rodapé, ou "Montar agrupamento" na
   seleção manual. Se montar falha, o popup fecha para o erro aparecer na barra.
+- **"Corrigir dados" em cada painel** (só com `documents.validate`): fecha o popup e abre a
+  Visão Geral de Processos com o drawer de validação daquele documento, pela URL
+  `/?validar=<id>` (`validationDrawerPath` em `shared/utils/navPath.ts`, lida por
+  `ProcessOverviewView`). Não usa a tela antiga `/validation`. O link leva `state.from =
+  '/payments'`: fechar ou validar o drawer volta para Pagamentos (sem origem, só tira o
+  parâmetro, substituindo a entrada do histórico). O popup busca os dados de novo ao reabrir,
+  para mostrar o que foi corrigido.
 - Os dados vêm de `GET /documents/{id}` (`extraction_result` já reflete a versão ativa dos campos)
   e `/documents/{id}/file`, sem endpoint novo no backend.
 - Verificado no navegador real (Chrome, core local) com PDFs reais: layout, abas, Escape, seleção

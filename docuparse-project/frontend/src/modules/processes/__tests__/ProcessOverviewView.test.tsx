@@ -1,14 +1,40 @@
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation, useNavigationType } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { server } from '../../../__tests__/mocks/server'
 import { ProcessOverviewView } from '../components/ProcessOverviewView'
 import type { ProcessSummary } from '../types'
 
 const OCR = '/api/ocr'
+
+// O drawer de verdade depende do layout (contexto do Outlet) e da tela de validação; aqui
+// importa só quando ele abre, com qual documento, e o que acontece ao fechar ou validar.
+vi.mock('../components/ValidationDrawer', () => ({
+    ValidationDrawer: ({
+        documentId,
+        onClose,
+        onValidated,
+    }: {
+        documentId: string
+        onClose: () => void
+        onValidated: () => void
+    }) => (
+        <div role="dialog" aria-label="Validação do documento">
+            <span>{`drawer:${documentId}`}</span>
+            <button onClick={onClose}>Fechar drawer</button>
+            <button onClick={onValidated}>Validar drawer</button>
+        </div>
+    ),
+}))
+
+function Where() {
+    const location = useLocation()
+    const type = useNavigationType()
+    return <output aria-label="rota" data-type={type}>{`${location.pathname}${location.search}`}</output>
+}
 
 const ALL: ProcessSummary[] = [
     {
@@ -35,12 +61,13 @@ const ALL: ProcessSummary[] = [
     },
 ]
 
-function renderView(initialEntry = '/') {
+function renderView(initialEntry: string | { pathname: string; search?: string; state?: unknown } = '/') {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     return render(
         <QueryClientProvider client={client}>
             <MemoryRouter initialEntries={[initialEntry]}>
                 <ProcessOverviewView />
+                <Where />
             </MemoryRouter>
         </QueryClientProvider>,
     )
@@ -112,5 +139,50 @@ describe('ProcessOverviewView', () => {
         expect(await screen.findByText('nota-fiscal.pdf')).toBeInTheDocument()
         expect(seen.every((g) => g === null)).toBe(true)
         expect(screen.getByRole('combobox')).toHaveValue('')
+    })
+
+    describe('drawer de validação aberto por `?validar=<id>`', () => {
+        it('não abre o drawer sem o parâmetro', async () => {
+            renderView()
+            expect(await screen.findByText(/Nenhum processo encontrado/)).toBeInTheDocument()
+            expect(screen.queryByRole('dialog', { name: 'Validação do documento' })).not.toBeInTheDocument()
+        })
+
+        it('abre o drawer do documento do parâmetro', async () => {
+            renderView('/?validar=doc-42')
+            const dialog = await screen.findByRole('dialog', { name: 'Validação do documento' })
+            expect(dialog).toHaveTextContent('drawer:doc-42')
+        })
+
+        it('fechar volta para a tela de origem, quando veio de outra', async () => {
+            renderView({ pathname: '/', search: '?validar=doc-42', state: { from: '/payments' } })
+            await userEvent.click(await screen.findByRole('button', { name: 'Fechar drawer' }))
+            expect(screen.getByLabelText('rota')).toHaveTextContent('/payments')
+        })
+
+        it('fechar sem origem só tira o parâmetro e fica na Visão Geral', async () => {
+            renderView('/?validar=doc-42')
+            await userEvent.click(await screen.findByRole('button', { name: 'Fechar drawer' }))
+            expect(screen.getByLabelText('rota')).toHaveTextContent(/^\/$/)
+            // Substitui a entrada do histórico: "voltar" não reabre o drawer.
+            expect(screen.getByLabelText('rota')).toHaveAttribute('data-type', 'REPLACE')
+            expect(screen.queryByRole('dialog', { name: 'Validação do documento' })).not.toBeInTheDocument()
+        })
+
+        it('ao validar, atualiza a lista e volta para a origem', async () => {
+            let calls = 0
+            server.use(
+                http.get(`${OCR}/processes`, () => {
+                    calls += 1
+                    return HttpResponse.json({ results: ALL, count: 2, page: 1, page_size: 25, total_pages: 1 })
+                }),
+            )
+            renderView({ pathname: '/', search: '?validar=doc-42', state: { from: '/payments' } })
+            await screen.findByText('nota-fiscal.pdf')
+            const before = calls
+            await userEvent.click(screen.getByRole('button', { name: 'Validar drawer' }))
+            await waitFor(() => expect(screen.getByLabelText('rota')).toHaveTextContent('/payments'))
+            expect(calls).toBeGreaterThan(before)
+        })
     })
 })

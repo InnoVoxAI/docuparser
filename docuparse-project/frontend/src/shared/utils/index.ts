@@ -1,6 +1,6 @@
 export { asApiError, readError } from './errorMessages'
 export type { ApiError } from './errorMessages'
 export { formatDate } from './formatDate'
-export { navPath } from './navPath'
+export { navPath, validationDrawerPath, VALIDATION_DRAWER_PARAM } from './navPath'
 export { ERP_STATES, ERP_STATE_LABELS, erpStateTone } from './erpState'
 export type { ErpState } from './erpState'

@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { render } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { RouterProvider, createMemoryRouter } from 'react-router'
+import { AuthProvider } from '../../auth'
+import { PaymentsView } from '../components/PaymentsView'
 import { server } from '../../../__tests__/mocks/server'
 import { renderApp } from '../../../__tests__/utils'
 import { boletoDoc, invoiceDoc, process } from './fixtures'
@@ -90,6 +95,38 @@ function mockDetails(overrides: Record<string, unknown> = {}) {
     )
 }
 
+/**
+ * O jsdom não consegue navegar de verdade com o React Router (o `Request` do Node recusa o
+ * AbortSignal dele). Nos testes de "Corrigir dados" a navegação é capturada: o que importa é
+ * para onde o atalho aponta. A Visão Geral de verdade é quem lê o parâmetro (testada à parte).
+ */
+const navigation = vi.hoisted(() => ({ spy: null as null | ((...args: unknown[]) => void) }))
+vi.mock('react-router', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('react-router')>()
+    return {
+        ...actual,
+        useNavigate: () => {
+            const real = actual.useNavigate()
+            return (...args: unknown[]) =>
+                navigation.spy ? navigation.spy(...args) : (real as (...a: unknown[]) => void)(...args)
+        },
+    }
+})
+
+function renderPaymentsCapturingNavigation() {
+    const navigate = vi.fn()
+    navigation.spy = navigate
+    const router = createMemoryRouter([{ path: '/', element: <PaymentsView /> }], { initialEntries: ['/'] })
+    render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+            <AuthProvider>
+                <RouterProvider router={router} />
+            </AuthProvider>
+        </QueryClientProvider>,
+    )
+    return navigate
+}
+
 async function openCardDialog(buttonName: string | RegExp = 'Ver documentos') {
     renderApp('/payments')
     const card = await screen.findByRole('article', { name: 'Processo de pagamento' })
@@ -99,6 +136,7 @@ async function openCardDialog(buttonName: string | RegExp = 'Ver documentos') {
 
 describe('Pagamentos: documentos lado a lado', () => {
     beforeEach(() => {
+        navigation.spy = null
         localStorage.setItem('access_token', 'tok')
         URL.createObjectURL = vi.fn(() => 'blob:preview')
         URL.revokeObjectURL = vi.fn()
@@ -188,6 +226,50 @@ describe('Pagamentos: documentos lado a lado', () => {
         expect(await within(boleto).findByText('20/08/2026')).toBeInTheDocument()
     })
 
+    it('cada painel tem "Corrigir dados", que abre a validação daquele documento', async () => {
+        const navigate = renderPaymentsCapturingNavigation()
+        const card = await screen.findByRole('article', { name: 'Processo de pagamento' })
+        await userEvent.click(within(card).getByRole('button', { name: 'Ver documentos' }))
+        const dialog = await screen.findByRole('dialog', { name: 'Documentos do processo' })
+        const invoice = await within(dialog).findByRole('region', { name: 'Nota fiscal: nota.pdf' })
+        const boleto = within(dialog).getByRole('region', { name: 'Boleto: boleto-1.pdf' })
+        expect(within(invoice).getByRole('button', { name: /Corrigir dados/ })).toBeInTheDocument()
+
+        await userEvent.click(within(boleto).getByRole('button', { name: /Corrigir dados/ }))
+
+        // Vai para a Visão Geral (tela nova, não a /validation antiga) com o drawer do boleto
+        // (não o da nota) e lembra de onde veio; o popup fecha.
+        expect(navigate).toHaveBeenCalledTimes(1)
+        expect(navigate).toHaveBeenCalledWith('/?validar=b1', { state: { from: '/payments' } })
+        expect(screen.queryByRole('dialog', { name: 'Documentos do processo' })).not.toBeInTheDocument()
+    })
+
+    it('quem não pode validar documentos não vê "Corrigir dados"', async () => {
+        mockMe(['inbox.view'])
+        const dialog = await openCardDialog()
+        await within(dialog).findByRole('region', { name: 'Nota fiscal: nota.pdf' })
+        expect(within(dialog).queryByRole('button', { name: /Corrigir dados/ })).not.toBeInTheDocument()
+    })
+
+    it('busca os dados de novo ao reabrir, para mostrar o que foi corrigido na validação', async () => {
+        const withValue = (value: string) => ({
+            ...boletoDetail('b1', 'boleto-1.pdf', '2026-08-20'),
+            extraction_result: { fields: { valor_boleto: field(value), data_vencimento: field('2026-08-20') } },
+        })
+        mockDetails({ b1: withValue('300,00') })
+        const dialog = await openCardDialog()
+        const boleto = await within(dialog).findByRole('region', { name: 'Boleto: boleto-1.pdf' })
+        expect(await within(boleto).findByText(/R\$\s?300,00/)).toBeInTheDocument()
+        await userEvent.click(screen.getByRole('button', { name: 'Fechar' }))
+
+        mockDetails({ b1: withValue('310,00') }) // o analista corrigiu o valor
+        await userEvent.click(within(screen.getByRole('article')).getByRole('button', { name: 'Ver documentos' }))
+
+        const reopened = await screen.findByRole('dialog', { name: 'Documentos do processo' })
+        const again = await within(reopened).findByRole('region', { name: 'Boleto: boleto-1.pdf' })
+        expect(await within(again).findByText(/R\$\s?310,00/)).toBeInTheDocument()
+    })
+
     it('abre o PDF ajustado à largura, para a página aparecer inteira', async () => {
         const dialog = await openCardDialog()
         const frame = await within(dialog).findByTitle('Documento nota.pdf')
@@ -263,6 +345,7 @@ describe('Pagamentos: documentos lado a lado', () => {
 
 describe('Sem match: ver os documentos antes de montar o par', () => {
     beforeEach(() => {
+        navigation.spy = null
         localStorage.setItem('access_token', 'tok')
         URL.createObjectURL = vi.fn(() => 'blob:preview')
         URL.revokeObjectURL = vi.fn()
@@ -294,6 +377,17 @@ describe('Sem match: ver os documentos antes de montar o par', () => {
         expect(within(dialog).queryByRole('region', { name: /Boleto:/ })).not.toBeInTheDocument()
         expect(within(dialog).queryByRole('list', { name: 'Conferência' })).not.toBeInTheDocument()
         expect(within(dialog).queryByRole('button', { name: /Montar agrupamento/ })).not.toBeInTheDocument()
+    })
+
+    it('o popup de um documento só também tem "Corrigir dados"', async () => {
+        const navigate = renderPaymentsCapturingNavigation()
+        await userEvent.click(await screen.findByRole('tab', { name: 'Sem match' }))
+        await userEvent.click(await screen.findByRole('button', { name: 'Ver boleto-avulso.pdf' }))
+        const dialog = await screen.findByRole('dialog', { name: 'Documentos do processo' })
+
+        await userEvent.click(await within(dialog).findByRole('button', { name: /Corrigir dados/ }))
+
+        expect(navigate).toHaveBeenCalledWith('/?validar=bol1', { state: { from: '/payments' } })
     })
 
     it('ver um documento não o seleciona', async () => {

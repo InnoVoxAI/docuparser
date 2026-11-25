@@ -1,3 +1,4 @@
+import { Pencil } from 'lucide-react'
 import { DocumentBlobPreview } from '../../../shared/components'
 import { formatDate } from '../../../shared/utils'
 import type { DocumentDetailState } from '../hooks'
@@ -16,24 +17,38 @@ interface Props {
     kind: 'Nota fiscal' | 'Boleto'
     doc: PaymentDocument
     state: DocumentDetailState | undefined
+    /** Leva à tela de validação deste documento, para corrigir o que não foi lido. */
+    onFix?: () => void
 }
 
 /** Um documento do popup: de onde veio, os campos importantes e o arquivo original. */
-export function DocumentPane({ kind, doc, state }: Props) {
+export function DocumentPane({ kind, doc, state, onFix }: Props) {
     const detail = state?.detail
     return (
         <section
             aria-label={`${kind}: ${doc.original_filename}`}
             className="flex min-h-0 flex-col gap-3 overflow-y-auto rounded-md border border-zinc-200 bg-white p-3"
         >
-            <header>
-                <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{kind}</span>
-                <h3 className="truncate text-sm font-semibold text-zinc-900" title={doc.original_filename}>
-                    {doc.original_filename || 'Sem nome'}
-                </h3>
-                <p className="text-xs text-zinc-500">
-                    {describeOrigin(doc)} · recebido em {formatDate(doc.received_at)}
-                </p>
+            <header className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{kind}</span>
+                    <h3 className="truncate text-sm font-semibold text-zinc-900" title={doc.original_filename}>
+                        {doc.original_filename || 'Sem nome'}
+                    </h3>
+                    <p className="text-xs text-zinc-500">
+                        {describeOrigin(doc)} · recebido em {formatDate(doc.received_at)}
+                    </p>
+                </div>
+                {onFix ? (
+                    <button
+                        type="button"
+                        onClick={onFix}
+                        title="Abre a tela de validação deste documento"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100"
+                    >
+                        <Pencil size={13} aria-hidden="true" /> Corrigir dados
+                    </button>
+                ) : null}
             </header>
             {state?.loading ? <p className="text-sm text-zinc-500">Carregando os dados…</p> : null}
             {state?.error ? (

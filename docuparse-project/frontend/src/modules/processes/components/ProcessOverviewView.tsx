@@ -1,20 +1,51 @@
 import { useRef, useState, type ChangeEvent } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { Plus, Workflow } from 'lucide-react'
 import { Alert, EmptyState, Pagination, SearchInput } from '../../../shared/components'
 import { uploadManualDocument } from '../../../shared/lib/upload'
-import { readError } from '../../../shared/utils'
+import { readError, VALIDATION_DRAWER_PARAM } from '../../../shared/utils'
+import { processKeys } from '../hooks/queryKeys'
 import { useProcessesQuery } from '../hooks/useProcessesQuery'
 import { ProcessFilters } from './ProcessFilters'
 import { ProcessTable } from './ProcessTable'
+import { ValidationDrawer } from './ValidationDrawer'
 
 /** Página inicial do app: tabela de processos, busca e filtro por status e
  * acesso ao envio de um novo documento. Sem cabeçalho/sidebar — só o conteúdo. */
 export function ProcessOverviewView() {
-    const { data, loading, error, statusGroup, setStatusGroup, search, setSearch, sort, toggleSort, goToPage, refresh } =
-        useProcessesQuery()
+    const {
+        data,
+        loading,
+        error,
+        statusGroup,
+        setStatusGroup,
+        search,
+        setSearch,
+        sort,
+        toggleSort,
+        goToPage,
+        refresh,
+    } = useProcessesQuery()
     const fileInputRef = useRef<HTMLInputElement>(null)
     const [uploading, setUploading] = useState(false)
     const [uploadError, setUploadError] = useState('')
+
+    // `?validar=<id>` abre o drawer de validação daquele documento (atalho vindo de outras telas).
+    const [params] = useSearchParams()
+    const location = useLocation()
+    const navigate = useNavigate()
+    const queryClient = useQueryClient()
+    const validateId = params.get(VALIDATION_DRAWER_PARAM)
+    // Quem veio de outra tela (`state.from`) volta para ela; senão só limpa o parâmetro.
+    const closeDrawer = () => {
+        const from = (location.state as { from?: string } | null)?.from
+        navigate(from ?? '/', { replace: !from })
+    }
+    const handleValidated = async () => {
+        await queryClient.invalidateQueries({ queryKey: processKeys.all })
+        closeDrawer()
+    }
 
     const handleFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0]
@@ -82,6 +113,9 @@ export function ProcessOverviewView() {
                     />
                 </div>
             )}
+            {validateId ? (
+                <ValidationDrawer documentId={validateId} onClose={closeDrawer} onValidated={handleValidated} />
+            ) : null}
         </div>
     )
 }

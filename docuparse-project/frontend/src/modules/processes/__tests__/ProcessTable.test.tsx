@@ -40,6 +40,31 @@ describe('ProcessTable', () => {
         expect(screen.queryByText('-')).not.toBeInTheDocument()
     })
 
+    it('mostra o estado do lançamento no ERP ao lado do status quando há algo a lançar', () => {
+        renderWithQueryClient(
+            <ProcessTable
+                processes={[process({ erp_state: 'awaiting_confirmation' })]}
+                sort={null}
+                onToggleSort={vi.fn()}
+            />,
+        )
+        expect(screen.getByTitle('Lançamento no ERP')).toHaveTextContent('ERP: Aguardando confirmação')
+    })
+
+    it('não mostra o selo de ERP quando não há lançamento ou o backend não informa', () => {
+        renderWithQueryClient(
+            <ProcessTable
+                processes={[
+                    process({ id: 'a', original_filename: 'sem-erp.pdf', erp_state: 'none' }),
+                    process({ id: 'b', original_filename: 'antigo.pdf' }),
+                ]}
+                sort={null}
+                onToggleSort={vi.fn()}
+            />,
+        )
+        expect(screen.queryByTitle('Lançamento no ERP')).not.toBeInTheDocument()
+    })
+
     it('exibe "-" quando o processo não tem última atualização', () => {
         renderWithQueryClient(
             <ProcessTable processes={[process({ last_status_change_at: null })]} sort={null} onToggleSort={vi.fn()} />,

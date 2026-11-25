@@ -1,4 +1,5 @@
 import type { Paginated } from '../../types'
+import type { ErpState } from '../../shared/utils'
 
 export type { Paginated }
 
@@ -42,6 +43,8 @@ export interface ProcessSummary {
     /** Quando o processo entrou na fase atual (última transição de status
      * detectada pelo backend) — `received_at` enquanto ainda "em fila". */
     last_status_change_at: string | null
+    /** Estado do lançamento da despesa no ERP ('none' quando não há nada a lançar). */
+    erp_state?: ErpState
 }
 
 /** Colunas pelas quais a tabela pode ser ordenada — espelha `ORDERING_FIELDS`

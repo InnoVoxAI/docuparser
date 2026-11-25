@@ -14,3 +14,8 @@ export const classificationKeys = {
     suggestions: (documentId: string) => [...classificationKeys.all, 'suggestions', documentId] as const,
     accounts: (condominiumId: string) => [...classificationKeys.all, 'accounts', condominiumId] as const,
 }
+
+export const erpKeys = {
+    all: ['erp'] as const,
+    detail: (documentId: string) => [...erpKeys.all, 'detail', documentId] as const,
+}

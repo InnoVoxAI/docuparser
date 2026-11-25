@@ -4,6 +4,7 @@ import { Alert, EmptyState } from '../../../shared/components'
 import type { Document, FieldRow, FieldVersionsResponse, SaveMessage, SchemaConfig } from '../types'
 import { ClassificationReviewPanel } from './ClassificationReviewPanel'
 import { DocumentMetadataPanel } from './DocumentMetadataPanel'
+import { ErpSendPanel } from './ErpSendPanel'
 import { LangExtractPanel } from './LangExtractPanel'
 import { RejectReasonDialog } from './RejectReasonDialog'
 import { ValidationActionsBar } from './ValidationActionsBar'
@@ -119,6 +120,7 @@ export function ValidationDecisionPanel({
 
                     <DocumentMetadataPanel document={selectedDocument} />
                     <ClassificationReviewPanel document={selectedDocument} onChanged={onClassificationChanged} />
+                    <ErpSendPanel documentId={selectedDocument.id} onChanged={onClassificationChanged} />
                     {!selectedDocument.extraction_result ? (
                         <Alert>
                             {selectedDocument.status === 'OCR_COMPLETED'

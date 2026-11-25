@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight } from 'lucide-react'
-import { formatDate } from '../../../shared/utils'
+import { ERP_STATE_LABELS, erpStateTone, formatDate } from '../../../shared/utils'
 import type { ProcessOrderingField, ProcessSummary, SortDirection } from '../types'
 import { ProcessStatusBadge } from './ProcessStatusBadge'
 import { ProcessRowDetail } from './ProcessRowDetail'
@@ -73,7 +73,17 @@ function ProcessRow({ process }: { process: ProcessSummary }) {
                     </button>
                 </td>
                 <td className="px-4 py-3">
-                    <ProcessStatusBadge label={process.status_label} />
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <ProcessStatusBadge label={process.status_label} />
+                        {process.erp_state && process.erp_state !== 'none' ? (
+                            <span
+                                className={`rounded px-2 py-1 text-xs font-medium ${erpStateTone(process.erp_state)}`}
+                                title="Lançamento no ERP"
+                            >
+                                ERP: {ERP_STATE_LABELS[process.erp_state]}
+                            </span>
+                        ) : null}
+                    </div>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-zinc-500">
                     {formatDate(process.last_status_change_at)}

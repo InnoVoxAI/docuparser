@@ -175,6 +175,29 @@ export const handlers = [
 
     http.get(`${OCR}/documents/:id/account-suggestions`, () => HttpResponse.json({ supplier_known: false, items: [] })),
 
+    // --- Lançamento no ERP: por padrão o documento não tem nada a lançar ---
+    http.get(`${OCR}/documents/:id/erp`, () =>
+        HttpResponse.json({
+            state: 'none',
+            mode: 'disabled',
+            dry_run: true,
+            confirmation_required: false,
+            summary: null,
+            errors: [],
+            reason: '',
+            code: '',
+            attempts: 0,
+            max_attempts: 5,
+            retryable: false,
+            exhausted: false,
+            can_retry: false,
+            next_retry_at: null,
+            external_id: '',
+            can_confirm: false,
+            can_send: false,
+        }),
+    ),
+
     // --- Importação do Superlógica: por padrão nada pendente ---
     http.get(`${OCR}/import/overview`, () =>
         HttpResponse.json({

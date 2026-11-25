@@ -11,3 +11,5 @@ export { RejectedDocumentModal } from './components/RejectedDocumentModal'
 // diretamente — `validation.test.tsx` renderiza o componente isolado (mesmo
 // padrão de teste já usado antes da extração).
 export { ValidationView } from './components/ValidationView'
+// Painel do lançamento da despesa no ERP (estado, confirmação e reenvio).
+export { ErpSendPanel } from './components/ErpSendPanel'

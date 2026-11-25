@@ -54,6 +54,9 @@ O token (`access_token` do `localStorage`) é anexado como `Authorization: Beare
 | POST | `/documents/{id}/reprocess-ocr` | [`useDocumentMutations.ts:25`](../src/modules/documents/hooks/useDocumentMutations.ts#L25) |
 | POST | `/documents/{id}/validate` | [`useDocumentMutations.ts:36`](../src/modules/documents/hooks/useDocumentMutations.ts#L36) |
 | DELETE | `/documents/{id}/delete` | [`useDocumentMutations.ts:30`](../src/modules/documents/hooks/useDocumentMutations.ts#L30) |
+| GET | `/documents/{id}/erp` | [`erp.service.ts`](../src/modules/documents/services/erp.service.ts) (`fetchErpDetail`): estado do lançamento da despesa no ERP, resumo e pendências; o painel consulta de novo a cada 3 s enquanto o estado é `sending` |
+| POST | `/documents/{id}/erp/confirm` | [`erp.service.ts`](../src/modules/documents/services/erp.service.ts) (`confirmErpSend`): o analista confirma o envio (permissão `erp.send`; 422 com `errors` se o documento tem pendências, 409 se já enviado ou em andamento) |
+| POST | `/documents/{id}/erp/retry` | [`erp.service.ts`](../src/modules/documents/services/erp.service.ts) (`retryErpSend`): reenvio de falha retentável (permissão `erp.send`; 409 `wait` dentro da espera, `exhausted` sem tentativas, `not_retryable` se a falha pede correção) |
 
 ### Processos / estatísticas
 

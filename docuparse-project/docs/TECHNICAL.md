@@ -291,6 +291,9 @@ O backend-core é organizado em dois apps Django:
 | `POST` | `/api/ocr/documents/<uuid>/reprocess-ocr` | Reprocessar OCR |
 | `POST` | `/api/ocr/documents/<uuid>/langextract` | Disparar extração manualmente |
 | `POST` | `/api/ocr/documents/<uuid>/validate` | Validar / aprovar / rejeitar |
+| `GET` | `/api/ocr/documents/<uuid>/erp` | Estado do lançamento da despesa no ERP, resumo do que será enviado e pendências |
+| `POST` | `/api/ocr/documents/<uuid>/erp/confirm` | O analista confirma o envio ao ERP (permissão `erp.send`) |
+| `POST` | `/api/ocr/documents/<uuid>/erp/retry` | Reenvio de uma falha retentável, com espera crescente (permissão `erp.send`) |
 | `POST` | `/api/ocr/classify-text` | Classificar texto (heurística) |
 | `POST` | `/api/ocr/process` | Processar documento (legado) |
 
@@ -348,6 +351,7 @@ python manage.py migrate              # Aplicar migrations
 python manage.py seed_permissions     # Criar permissões padrão
 python manage.py seed_admin           # Criar usuário admin
 python manage.py consume_events       # Worker de consumo de eventos
+python manage.py erp_live_writes --tenant <slug> --enable --confirm <slug>  # Habilitar o envio real ao Superlógica (por tenant)
 python manage.py inspect_dlq          # Inspecionar fila de erros
 python manage.py requeue_dlq          # Reenviar eventos com falha
 python manage.py import_legacy_sqlite # Importar dados legados
@@ -814,8 +818,12 @@ O sistema usa **Redis Streams** como barramento de eventos entre os serviços. E
 | `ocr.failed` | backend-ocr | backend-core |
 | `layout.classified` | layout-service | backend-core |
 | `extraction.completed` | langextract-service | backend-core |
+| `erp.integration.requested` | backend-core | backend-core (conector do ERP, em processo, com o tenant) |
 | `erp.sent` | backend-core | backend-core |
 | `erp.failed` | backend-core | backend-core |
+| `erp.send.confirmed` | backend-core | histórico do documento (quem confirmou o envio e quando) |
+| `erp.send.retried` | backend-core | histórico do documento (quem repetiu o envio e quando) |
+| `erp.dry_run` | backend-core | histórico do documento (simulação: nada foi enviado ao ERP) |
 
 ### Dead Letter Queue (DLQ)
 
@@ -959,6 +967,36 @@ Arquivo: `docuparse-project/.env`
 | `DOCUPARSE_ADMIN_EMAIL` | `admin@docuparse.com` | E-mail do admin inicial |
 | `DOCUPARSE_ADMIN_PASSWORD` | `admin123` | Senha do admin inicial |
 | `DOCUPARSE_ADMIN_USERNAME` | `admin` | Username do admin inicial |
+
+### Escrita no Superlógica
+
+A despesa de um documento aprovado é lançada no Superlógica pelo pacote `erp_export`
+(separado de `erp_import`, que só lê). Os tokens do tenant são de um ambiente real, então
+**todo padrão é o mais seguro**: nada é enviado sem que as travas abaixo permitam.
+
+| Modo (`superlogica_mode`) | O que faz |
+|---|---|
+| `disabled` (padrão) | Não integra. A aprovação só registra o pedido, como sempre. |
+| `mock` | Responde com um `external_id` falso, sem rede. A aprovação integra sozinha. |
+| `sandbox` | Envia a um ambiente de teste. O analista confirma antes do primeiro envio. |
+| `live` | Envia ao Superlógica de produção. Mesma confirmação do analista. |
+
+Travas, todas obrigatórias para um envio real:
+
+- **`superlogica_dry_run`** (ligado por padrão): monta e valida a despesa e não envia. Fica na tela de integrações.
+- **Sandbox:** só envia a um host listado em `SUPERLOGICA_SANDBOX_HOSTS` (vazio por padrão) e nunca ao host de produção.
+- **Live:** exige a habilitação do tenant (`erp_live_writes`, nunca pela API), `SUPERLOGICA_LIVE_WRITES=1` no servidor e o contrato de escrita verificado em ambiente de teste (`erp_export/payload.py: CONTRACT_VERIFIED`, hoje `False`).
+- O escritor só conhece um endpoint de escrita (`POST despesas`), nunca repete um POST sozinho e nunca registra token nem corpo.
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `SUPERLOGICA_SANDBOX_HOSTS` | vazio | Hosts autorizados para o modo `sandbox`, separados por vírgula |
+| `SUPERLOGICA_LIVE_WRITES` | desligado | `1` libera o envio real no servidor (ainda exige a habilitação do tenant) |
+
+O conector roda em processo (fila de segundo plano do core, como OCR e extração), sem depender
+de um worker de eventos. Antes de enviar ele consulta o ERP (só leitura): o fornecedor precisa
+existir e não pode haver despesa com o mesmo fornecedor, valor e vencimento. Se a resposta de um
+envio se perder, a próxima tentativa acha a despesa no ERP e marca como enviada, sem reenviar.
 
 ### Processamento automático
 

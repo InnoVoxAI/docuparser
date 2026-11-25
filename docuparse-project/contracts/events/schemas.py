@@ -228,6 +228,37 @@ class ERPFailedEvent(BaseEvent):
     data: ERPFailedData
 
 
+class ERPSendDecisionData(EventModel):
+    """O analista confirmou (ou reenviou) o lançamento da despesa no ERP."""
+
+    idempotency_key: str = Field(min_length=1)
+    connector: str = Field(min_length=1)
+    confirmed_by: str = Field(min_length=1)
+
+
+class ERPSendConfirmedEvent(BaseEvent):
+    event_type: Literal["erp.send.confirmed"] = "erp.send.confirmed"
+    data: ERPSendDecisionData
+
+
+class ERPSendRetriedEvent(BaseEvent):
+    event_type: Literal["erp.send.retried"] = "erp.send.retried"
+    data: ERPSendDecisionData
+
+
+class ERPDryRunData(EventModel):
+    """Simulação: o payload foi montado e validado, mas nada foi enviado ao ERP."""
+
+    idempotency_key: str = Field(min_length=1)
+    connector: str = Field(min_length=1)
+    preview: dict[str, Any] = Field(default_factory=dict)
+
+
+class ERPDryRunEvent(BaseEvent):
+    event_type: Literal["erp.dry_run"] = "erp.dry_run"
+    data: ERPDryRunData
+
+
 EVENT_MODELS = {
     "document.received": DocumentReceivedEvent,
     "ocr.completed": OCRCompletedEvent,
@@ -241,6 +272,9 @@ EVENT_MODELS = {
     "erp.integration.requested": ERPIntegrationRequestedEvent,
     "erp.sent": ERPSentEvent,
     "erp.failed": ERPFailedEvent,
+    "erp.send.confirmed": ERPSendConfirmedEvent,
+    "erp.send.retried": ERPSendRetriedEvent,
+    "erp.dry_run": ERPDryRunEvent,
 }
 
 

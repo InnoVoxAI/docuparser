@@ -23,6 +23,9 @@ def test_known_event_models_cover_required_contracts() -> None:
         "erp.integration.requested",
         "erp.sent",
         "erp.failed",
+        "erp.send.confirmed",
+        "erp.send.retried",
+        "erp.dry_run",
     }
 
 

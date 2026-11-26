@@ -11,7 +11,6 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
-from docuparse_events import event_bus_from_env
 from docuparse_orchestrator.context import orchestration_run
 from docuparse_orchestrator.decorators import task
 from docuparse_storage import get_storage
@@ -49,11 +48,6 @@ from .serializers import (
     ValidationDecisionSerializer,
 )
 from .services import field_versioning
-from .services.dlq_inspector import (
-    DEFAULT_DLQ_STREAMS,
-    inspect_dlq_streams,
-    requeue_dlq_entry,
-)
 from .services.erp_flow import erp_states_for, prepare_after_approval
 from .services.event_consumers import DuplicateDocumentError, consume_document_received
 from .services.langextract_client import LangExtractClient
@@ -992,83 +986,3 @@ def document_retry_step_view(request, document_id, step):
             ),
         }
     )
-
-
-@api_view(["GET"])
-@authentication_classes([DocuparseAuthentication])
-@permission_classes([require_permission("operations.access")])
-def dlq_summary_view(request):
-    limit = _positive_int(request.query_params.get("limit"), default=50, maximum=500)
-    report = inspect_dlq_streams(
-        event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
-        streams=DEFAULT_DLQ_STREAMS,
-        limit=limit,
-    )
-    return Response(
-        {
-            "total": sum(item["count"] for item in report),
-            "streams": [
-                {
-                    "stream": item["stream"],
-                    "count": item["count"],
-                    "latest": item["entries"][-1] if item["entries"] else None,
-                }
-                for item in report
-            ],
-        }
-    )
-
-
-@api_view(["GET"])
-@authentication_classes([DocuparseAuthentication])
-@permission_classes([require_permission("operations.access")])
-def dlq_events_view(request):
-    stream = request.query_params.get("stream") or "ocr.completed.dlq"
-    if stream not in DEFAULT_DLQ_STREAMS:
-        return Response(
-            {"detail": "Invalid DLQ stream"}, status=status.HTTP_400_BAD_REQUEST
-        )
-    limit = _positive_int(request.query_params.get("limit"), default=50, maximum=500)
-    report = inspect_dlq_streams(
-        event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
-        streams=[stream],
-        limit=limit,
-    )[0]
-    return Response(report)
-
-
-@api_view(["POST"])
-@authentication_classes([DocuparseAuthentication])
-@permission_classes([require_permission("operations.access")])
-def dlq_requeue_view(request):
-    stream = request.data.get("stream")
-    entry_id = request.data.get("id") or request.data.get("entry_id")
-    if not stream or not entry_id:
-        return Response(
-            {"detail": "Fields 'stream' and 'id' are required"},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-    try:
-        result = requeue_dlq_entry(
-            event_bus_from_env(settings.DOCUPARSE_LOCAL_EVENT_DIR),
-            stream=stream,
-            entry_id=str(entry_id),
-            target_stream=request.data.get("target_stream") or None,
-            note=request.data.get("note") or "",
-            requested_by=request.data.get("requested_by") or "api",
-            execute=bool(request.data.get("execute")),
-        )
-    except ValueError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-    return Response(
-        result,
-        status=status.HTTP_202_ACCEPTED if result["execute"] else status.HTTP_200_OK,
-    )
-
-
-def _positive_int(value, *, default: int, maximum: int) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return default
-    return min(max(parsed, 1), maximum)

@@ -45,15 +45,24 @@ Removidos (branch `chore/remove-event-pipeline-and-camunda`):
   do ERP usa os eventos como mensagens **em processo** (`submit_erp_dispatch`,
   `erp_export.outcome.apply_outcome`) e também os publica no barramento.
 - O backend-com ainda publica `document.received` no Redis; ninguém consome.
-- Comandos e tela de DLQ (`inspect_dlq`, `requeue_dlq`, tela Operações): ninguém escreve
-  mais nas DLQs. Remover essa parte (inclusive no frontend) ainda está pendente.
-- O layout-service não é chamado por ninguém e não tem deployment. Removê-lo ainda está
-  pendente.
+
+## Segunda etapa (mesma branch)
+
+- Removidas as DLQs: `dlq_inspector`, os comandos `inspect_dlq` e `requeue_dlq`, os endpoints
+  `/api/ocr/operations/dlq/*`, `publish_dead_letter` e `sleep_interval` de
+  `shared/docuparse_events`, e a tela **Operações** do frontend (`modules/operations`).
+  A permissão `operations.access` **continua**: ela libera o dashboard de processos e o retry
+  de etapas (`document-retry-step`). Os testes de RBAC passaram a usar esse endpoint.
+- Removido o `layout-service` inteiro. A classificação usada é `backend-core/models/classifier.py`.
+- Removidos os docs da biblioteca "atoms" (`docs/backend-com/`). O `backend-com/README.md`
+  foi reescrito, porque o `pyproject.toml` exige o arquivo (`readme = "README.md"`).
 
 ## Pontos de atenção
 
 - Com `SuperlogicaMode.DISABLED`, `publish_erp_integration_requested` só publica no
-  barramento e não chama `submit_erp_dispatch`. Sem worker, o documento fica em
-  ERP_INTEGRATION_REQUESTED. Isso já acontecia em produção, que nunca teve o worker.
+  barramento e não chama `submit_erp_dispatch`, então o documento fica em
+  ERP_INTEGRATION_REQUESTED. **É intencional** (decisão do usuário em 2026-11-26): a
+  integração com o Superlógica está em desenvolvimento e já existe uma chave de produção.
+  Nada pode disparar um envio por engano. Não "consertar" isso.
 
 Relacionado: [[Bug conhecido: threads de fundo perdem a conexão quando o Postgres reinicia]].

@@ -43,7 +43,7 @@ describe('Permissões e navegação', () => {
     it('oculta "Configurações" para operador (sem models.edit)', async () => {
         mockMe(['inbox.view', 'documents.validate', 'operations.access'])
         renderApp('/dashboard')
-        expect((await screen.findAllByText('Operações')).length).toBeGreaterThan(0)
+        expect((await screen.findAllByText('Inbox')).length).toBeGreaterThan(0)
         expect(screen.queryAllByText('Configurações')).toHaveLength(0)
     })
 

@@ -10,19 +10,18 @@
 6. [Serviço de Captura de Documentos](#serviço-de-captura-backend-com)
 7. [Serviço de OCR](#serviço-de-ocr-backend-ocr)
 8. [Serviço de Extração de Campos](#serviço-de-extração-langextract-service)
-9. [Serviço de Classificação de Layout](#serviço-de-layout-layout-service)
-10. [Banco de Dados](#banco-de-dados)
-11. [Estrutura do Banco de Dados](#estrutura-do-banco-de-dados)
-12. [Eventos e Mensageria](#eventos-e-mensageria)
-13. [Observabilidade e Rastreamento Distribuído](#observabilidade-e-rastreamento-distribuído)
-14. [Autenticação e Permissões](#autenticação-e-permissões)
-15. [Variáveis de Ambiente](#variáveis-de-ambiente)
+9. [Banco de Dados](#banco-de-dados)
+10. [Estrutura do Banco de Dados](#estrutura-do-banco-de-dados)
+11. [Eventos e Mensageria](#eventos-e-mensageria)
+12. [Observabilidade e Rastreamento Distribuído](#observabilidade-e-rastreamento-distribuído)
+13. [Autenticação e Permissões](#autenticação-e-permissões)
+14. [Variáveis de Ambiente](#variáveis-de-ambiente)
 
 ---
 
 ## Visão Geral da Arquitetura
 
-O DocuParse é um sistema de processamento de documentos baseado em microsserviços. Cada serviço tem uma responsabilidade bem definida e se comunica via eventos (Redis Streams) ou HTTP.
+O DocuParse é um sistema de processamento de documentos baseado em microsserviços. Cada serviço tem uma responsabilidade bem definida; o processamento de documentos usa chamadas HTTP do backend-core para o OCR e a extração.
 
 | Componente | Tecnologia | Porta | Responsabilidade |
 |---|---|---|---|
@@ -30,7 +29,6 @@ O DocuParse é um sistema de processamento de documentos baseado em microsservi�
 | backend-core | Django + DRF | 8000 | Orquestração, API principal, autenticação |
 | backend-com | FastAPI | 8070 | Captura de documentos (upload, email, WhatsApp) |
 | backend-ocr | FastAPI | 8080 | Processamento OCR (extração de texto) |
-| layout-service | FastAPI | 8090 | Classificação de layout do documento |
 | langextract-service | FastAPI | 8091 | Extração de campos com LLM |
 | PostgreSQL | postgres:16 | 5432 | Banco de dados relacional |
 | Redis | redis:7 | 6380 | Barramento de eventos + cache |
@@ -141,8 +139,7 @@ docuparse-project/
 │   │   │   ├── ocr_client.py          # Client HTTP para backend-ocr
 │   │   │   └── langextract_client.py  # Client HTTP para langextract-service
 │   │   └── management/commands/
-│   │       ├── inspect_dlq.py
-│   │       └── requeue_dlq.py
+│   │       └── sweep_stuck_documents.py
 │   ├── users/                 # App de usuários
 │   │   ├── models.py          # Permission, Role
 │   │   ├── auth_views.py      # Login, logout, refresh
@@ -167,7 +164,6 @@ docuparse-project/
 ├── langextract-service/       # FastAPI — extração LLM
 │   └── api/app.py             # Endpoint /api/v1/extract
 │
-├── layout-service/            # FastAPI — classificação de layout
 │   └── api/app.py             # Endpoint /api/v1/classify-layout
 │
 ├── contracts/                 # Schemas de eventos compartilhados
@@ -240,7 +236,6 @@ Os modelos definem os campos esperados por tipo de documento e são usados na te
 | inbox | Inbox | `inbox.view` |
 | dashboard | Dashboard | `inbox.view` |
 | validation | Validacao | `documents.validate` |
-| operations | Operacoes | `operations.access` |
 | settings | Configuracoes | `roles.manage` |
 | users | Usuários | `users.manage` |
 | roles | Roles | `roles.manage` |
@@ -298,13 +293,10 @@ O backend-core é organizado em dois apps Django:
 | `GET/PATCH` | `/api/ocr/schema-configs/<uuid>` | Detalhe do schema |
 | `GET/POST` | `/api/ocr/layout-configs` | Configurações de layout |
 
-#### Operações / DLQ
+#### Operações
 
 | Método | Endpoint | Descrição |
 |---|---|---|
-| `GET` | `/api/ocr/operations/dlq/summary` | Resumo da fila de erros |
-| `GET` | `/api/ocr/operations/dlq/events` | Eventos na DLQ |
-| `POST` | `/api/ocr/operations/dlq/requeue` | Reenviar evento com falha |
 | `GET` | `/api/ocr/engines` | Engines de OCR disponíveis |
 
 #### Autenticação
@@ -341,8 +333,6 @@ python manage.py migrate              # Aplicar migrations
 python manage.py seed_permissions     # Criar permissões padrão
 python manage.py seed_admin           # Criar usuário admin
 python manage.py erp_live_writes --tenant <slug> --enable --confirm <slug>  # Habilitar o envio real ao Superlógica (por tenant)
-python manage.py inspect_dlq          # Inspecionar fila de erros
-python manage.py requeue_dlq          # Reenviar eventos com falha
 python manage.py import_legacy_sqlite # Importar dados legados
 python manage.py sweep_stuck_documents [--older-than-minutes 30] [--tenant <slug>] [--dry-run]
                                       # Marca como falhos documentos parados no processamento
@@ -479,28 +469,6 @@ A função `_resolve_schema_for_extraction()` em `ocr_processor.py` segue a hier
 1. `LayoutConfig` pelo `document.layout` explícito (configuração do admin)
 2. Classificador de texto (`_classify_raw_text`) — detecta nota fiscal, boleto, conta de água
 3. `LayoutConfig` pelo `document_type` (fallback)
-
----
-
-## Serviço de Layout (`layout-service`)
-
-> Hoje nenhum serviço chama o layout-service, e ele não tem deployment no k3s. Ele era usado pelo
-> worker de eventos e pelo Camunda, ambos removidos. A classificação usada pelo core está em
-> `backend-core/models/classifier.py`.
-
-### Tecnologia
-
-| Item | Valor |
-|---|---|
-| Framework | FastAPI 0.115.0 |
-| Porta | 8090 |
-
-### Endpoints
-
-| Método | Endpoint | Descrição |
-|---|---|---|
-| `POST` | `/api/v1/classify-layout` | Classificar layout do documento |
-| `GET` | `/health` | Health check |
 
 ---
 
@@ -809,7 +777,7 @@ Permissão granular do sistema.
 | `documents.validate` | Validar Documentos |
 | `models.create` | Criar Modelos |
 | `models.edit` | Editar Modelos |
-| `operations.access` | Acessar Operações |
+| `operations.access` | Dashboard de processos e retry de etapas |
 | `users.manage` | Gerenciar Usuários |
 | `roles.manage` | Gerenciar Roles |
 
@@ -866,23 +834,11 @@ os eventos abaixo. Os eventos de ERP também são usados como mensagens dentro d
 | `erp.send.retried` | backend-core | histórico do documento (quem repetiu o envio e quando) |
 | `erp.dry_run` | backend-core | histórico do documento (simulação: nada foi enviado ao ERP) |
 
-### Dead Letter Queue (DLQ)
-
-Os workers removidos moviam para `<stream>.dlq` os eventos que falhavam. Nada mais escreve nas DLQs;
-os comandos e a tela continuam disponíveis para consultar o histórico:
-
-```bash
-docker compose exec backend-core python manage.py inspect_dlq
-docker compose exec backend-core python manage.py requeue_dlq
-```
-
-Também acessível pela tela **Operações** no front-end (requer permissão `operations.access`).
-
 ---
 
 ## Observabilidade e Rastreamento Distribuído
 
-O sistema usa **OpenTelemetry** para rastreamento distribuído (tracing) entre todos os processos de runtime: `backend-com`, `backend-core`, `backend-ocr`, `langextract-service`, `layout-service` e `frontend`. O objetivo é reconstruir, por um único `trace_id`, o caminho completo — síncrono e assíncrono — que uma requisição percorre entre serviços.
+O sistema usa **OpenTelemetry** para rastreamento distribuído (tracing) entre todos os processos de runtime: `backend-com`, `backend-core`, `backend-ocr`, `langextract-service` e `frontend`. O objetivo é reconstruir, por um único `trace_id`, o caminho completo — síncrono e assíncrono — que uma requisição percorre entre serviços.
 
 ### Componentes
 

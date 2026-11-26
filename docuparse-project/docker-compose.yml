@@ -301,48 +301,6 @@ services:
       minio:
         condition: service_healthy
 
-  layout-service:
-    build: ./layout-service
-    command: uvicorn api.app:app --host 0.0.0.0 --port 8090 --reload
-    volumes:
-      - ./layout-service:/app
-      - ./contracts:/contracts:ro
-      - ./shared:/shared:ro
-      - docuparse-storage:/data/storage
-      - docuparse-events:/data/events
-    ports:
-      - "8090:8090"
-    environment:
-      USE_TELEMETRY: ${USE_TELEMETRY:-true}
-      OTEL_SERVICE_NAME: layout-service
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
-      DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
-      PYTHONPATH: /app:/contracts:/shared
-      DOCUPARSE_EVENT_BUS: redis
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
-      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
-      # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
-      # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
-      DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
-      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
-      S3_BUCKET: ${S3_BUCKET:-docuparse}
-      S3_REGION: ${S3_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?defina MINIO_ROOT_USER no .env (copie de .env.example)}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?defina MINIO_ROOT_PASSWORD no .env (copie de .env.example)}
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=2)"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      - docuparse-network
-    depends_on:
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-
   langextract-service:
     build:
       context: .

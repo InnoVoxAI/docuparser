@@ -8,9 +8,7 @@ divergir da fonte de verdade dos nomes/permissões reais de produção.
 
 from __future__ import annotations
 
-import os
-import tempfile
-from unittest.mock import patch
+from uuid import uuid4
 
 # Catálogo global (spec 018): a LEITURA de schema-configs/layout-configs aceita
 # `models.edit` OU `tenants.manage`; a ESCRITA exige `tenants.manage`. Estes
@@ -20,7 +18,6 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
-from docuparse_events import EventMessage, LocalJsonlEventBus, publish_dead_letter
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 from tenants.models import Tenant, UserProfile
@@ -123,8 +120,8 @@ class ModelsEditEndpointsRBACTest(TestCase):
 
 
 class OperationsAccessEndpointsRBACTest(TestCase):
-    """dlq-summary/dlq-events/dlq-requeue exigem operations.access: os três
-    papéis de seed_data (operator, tenantAdmin, admin) possuem essa permissão."""
+    """document-retry-step exige operations.access: os três papéis de seed_data
+    (operator, tenantAdmin, admin) possuem essa permissão."""
 
     def setUp(self) -> None:
         self.client = APIClient()
@@ -147,43 +144,13 @@ class OperationsAccessEndpointsRBACTest(TestCase):
     def _auth(self, role_name: str) -> None:
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.tokens[role_name]}")
 
-    def test_all_three_roles_can_read_dlq_summary_and_events(self) -> None:
+    def test_all_three_roles_pass_the_retry_permission_check(self) -> None:
+        # Documento inexistente: 404 prova que a permissão passou (sem ela, 403).
+        url = reverse("document-retry-step", args=[uuid4(), "ocr"])
         for role_name in ("operator", "tenantAdmin", "admin"):
             with self.subTest(role=role_name):
                 self._auth(role_name)
-                summary = self.client.get(reverse("dlq-summary"))
-                events = self.client.get(
-                    reverse("dlq-events"), {"stream": "ocr.completed.dlq"}
-                )
-                self.assertEqual(summary.status_code, 200)
-                self.assertEqual(events.status_code, 200)
-
-    def test_all_three_roles_can_dry_run_requeue(self) -> None:
-        with (
-            tempfile.TemporaryDirectory() as event_dir,
-            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
-            self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir),
-        ):
-            bus = LocalJsonlEventBus(event_dir)
-            publish_dead_letter(
-                bus,
-                stream="ocr.completed",
-                entry=EventMessage(
-                    id=1, payload={"event_type": "ocr.completed", "event_id": "event-1"}
-                ),
-                error=ValueError("invalid event"),
-                source="layout-service",
-            )
-
-            for role_name in ("operator", "tenantAdmin", "admin"):
-                with self.subTest(role=role_name):
-                    self._auth(role_name)
-                    dry_run = self.client.post(
-                        reverse("dlq-requeue"),
-                        {"stream": "ocr.completed.dlq", "id": "1", "execute": False},
-                        format="json",
-                    )
-                    self.assertEqual(dry_run.status_code, 200)
+                self.assertEqual(self.client.post(url).status_code, 404)
 
 
 class PrivilegeEscalationRBACTest(TestCase):
@@ -270,9 +237,10 @@ class ServiceTokenBypassRBACTest(TestCase):
 
     def test_service_token_bypasses_operations_access_check(self) -> None:
         with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
-            r = self.client.get(
-                reverse("dlq-summary"),
+            r = self.client.post(
+                reverse("document-retry-step", args=[uuid4(), "ocr"]),
                 HTTP_AUTHORIZATION=f"Bearer {self.TOKEN}",
                 HTTP_X_TENANT=self.tenant.slug,
             )
-        self.assertEqual(r.status_code, 200)
+        # 404 (documento inexistente) e não 401/403: o token passou pela permissão.
+        self.assertEqual(r.status_code, 404)

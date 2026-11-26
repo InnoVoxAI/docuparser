@@ -2,8 +2,7 @@
 
 Referência única dos recursos de infraestrutura e serviços externos que o projeto
 precisa para rodar (dev e produção): banco de dados, storage (S3/MinIO), Redis,
-banco vetorial, serviços externos (LLM, WhatsApp, e-mail) e a orquestração
-opcional (Camunda 8).
+banco vetorial e serviços externos (LLM, WhatsApp, e-mail).
 
 > Fonte da verdade da configuração: [`docuparse-project/docker-compose.yml`](docuparse-project/docker-compose.yml),
 > [`docuparse-project/backend-core/core/settings.py`](docuparse-project/backend-core/core/settings.py)
@@ -23,10 +22,7 @@ opcional (Camunda 8).
 | **API principal** (Django/DRF) | `backend-core` | `8000 → 8000` | `docuparse-storage`, `docuparse-events` | ✅ Sim |
 | **Ingestão** (FastAPI) | `backend-com` | `8070 → 8070` | idem | ✅ Sim |
 | **OCR** | `backend-ocr` | `8080 → 8080` | idem | ✅ Sim |
-| **Layout** | `layout-service` | `8090 → 8090` | idem | ✅ Sim |
 | **Extração** (LangExtract) | `langextract-service` | `8091 → 8091` | idem | ✅ Sim |
-| Workers assíncronos | `backend-core-events`, `backend-ocr-worker`, `layout-worker`, `langextract-worker` | — (sem porta) | idem | ⚙️ Profile `async-workers` |
-| Orquestração BPMN (Camunda 8) | `zeebe`, `operate`, `tasklist`, `elasticsearch`, `camunda-workers` | ver §7 | `zeebe-data`, `elasticsearch-data` | ⚙️ Profile `camunda` |
 
 > **Banco vetorial (Qdrant/Milvus): NÃO é usado neste projeto.** Não há Qdrant,
 > Milvus, pgvector ou similar no código nem no compose. (Um container
@@ -35,9 +31,8 @@ opcional (Camunda 8).
 > feature 011.)
 
 ### Perfis do Compose
-- **Base (sem profile):** postgres, redis, minio(+setup), frontend e os 5 serviços de I/O. `docker compose up` sobe só isso.
-- **`async-workers`:** workers de OCR/layout/extração/eventos desacoplados. `docker compose --profile async-workers up`.
-- **`camunda`:** orquestração BPMN (Zeebe/Operate/Tasklist/Elasticsearch). `docker compose --profile camunda up`.
+- Não há profiles: `docker compose up` sobe postgres, redis, minio(+setup), frontend, os 4 serviços de I/O e o tracing (otel-collector, jaeger).
+- Os profiles `async-workers` (workers de eventos) e `camunda` (Zeebe/Operate/Tasklist/Elasticsearch) e o `layout-service` foram removidos em 11/2026: o processamento roda dentro do backend-core, por HTTP.
 
 ---
 
@@ -126,7 +121,7 @@ coleção usada no código, credenciais e volume, e atualizar o `.env.example`.
 | **Twilio** | Ingestão via WhatsApp | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, `TWILIO_FROM_NUMBER`, `NUMERO_WHATSAPP_TESTE` | ⚙️ Só se usar canal WhatsApp |
 | **Servidor IMAP** | Ingestão via e-mail | `imap_reader_host`, `imap_reader_username`, `imap_reader_password`, `imap_reader_port`, `imap_reader_ssl`, `imap_reader_folder`, `DOCUPARSE_IMAP_PASSWORD`, `imap_reader_webhook_url` | ⚙️ Só se usar canal e-mail |
 
-Outras configs de aplicação relevantes: `OCR_LANGUAGE`, flags `DOCUPARSE_*_WORKER_ENABLED`,
+Outras configs de aplicação relevantes: `DOCUPARSE_PROCESSING_WORKERS` (threads do pool do core),
 `DOCUPARSE_AUTO_PROCESS_OCR`, conta admin (`DOCUPARSE_ADMIN_EMAIL/USERNAME/PASSWORD`),
 token interno de serviço (`DOCUPARSE_INTERNAL_SERVICE_TOKEN`).
 
@@ -135,26 +130,16 @@ token interno de serviço (`DOCUPARSE_INTERNAL_SERVICE_TOKEN`).
 curl -fsS http://localhost:8000/api/ocr/health   # backend-core
 curl -fsS http://localhost:8070/health           # backend-com (ingestão)
 curl -fsS http://localhost:8080/health           # backend-ocr
-curl -fsS http://localhost:8090/health           # layout
 curl -fsS http://localhost:8091/health           # langextract
 ```
 
 ---
 
-## 7. Orquestração BPMN — Camunda 8 (profile `camunda`, opcional)
+## 7. Orquestração
 
-Usado apenas quando a orquestração via workflow está habilitada.
-
-| Serviço | Papel | Porta host → container | Volume |
-|---|---|---|---|
-| `zeebe` | Workflow engine (gRPC) | `26500 → 26500`, `8088 → 8080` | `zeebe-data` |
-| `operate` | UI de operação | `8081 → 8080` | — |
-| `tasklist` | UI de tarefas | `8082 → 8080` | — |
-| `elasticsearch` | Índice do Operate/Tasklist | `9200 → 9200` | `elasticsearch-data` |
-| `camunda-workers` | Job workers (chamam os backends) | — | monta `./bpmn` |
-
-- **Variáveis:** `ZEEBE_ADDRESS` (`zeebe:26500`), `DOCUPARSE_INTERNAL_SERVICE_TOKEN`.
-- **Subir:** `docker compose --profile camunda up`.
+Não há motor de workflow externo. O backend-core orquestra o processamento com o
+`docuparse_orchestrator` (registros em `OrchestrationRun`/`TaskExecution`). O Camunda 8 foi
+removido em 11/2026 (ver `docs/orchestrator-poc-vs-camunda.md`).
 
 ---
 
@@ -169,7 +154,7 @@ Usado apenas quando a orquestração via workflow está habilitada.
 ## 9. Volumes (dados persistentes)
 
 `postgres-data`, `redis-data`, `minio-data`, `docuparse-storage` (modo `local`),
-`docuparse-events` (event bus local), `elasticsearch-data`, `zeebe-data`.
+`docuparse-events` (event bus local).
 
 > Em produção, esses dados normalmente moram em serviços gerenciados (RDS, S3,
 > ElastiCache, etc.), não em volumes Docker locais.
@@ -178,10 +163,10 @@ Usado apenas quando a orquestração via workflow está habilitada.
 
 ## 10. Checklist de deploy / validação
 
-1. **Provisionar recursos gerenciados** (prod): Postgres (`docuparse`), bucket S3 (`docuparse`), Redis; e Camunda/Elasticsearch se o profile estiver em uso.
+1. **Provisionar recursos gerenciados** (prod): Postgres (`docuparse`), bucket S3 (`docuparse`), Redis.
 2. **Segredos via Secret** (nunca no código): credenciais Postgres, `AWS_*`/S3, `OPENROUTER_API_KEY`/`OPENAI_API_KEY`, `TWILIO_*`, IMAP, `DOCUPARSE_INTERNAL_SERVICE_TOKEN`, conta admin.
 3. **Migrations aplicadas** (`manage.py migrate`).
 4. **Storage:** bucket existe e `DOCUPARSE_STORAGE_BACKEND=s3`; URIs novas gravam como `s3://docuparse/...` (validar com o `psql` da §3).
-5. **Healthchecks** dos 5 serviços de I/O (§6) retornando 200; Postgres/Redis/MinIO *healthy*.
+5. **Healthchecks** dos 4 serviços de I/O (§6) retornando 200; Postgres/Redis/MinIO *healthy*.
 6. **Event bus:** `DOCUPARSE_EVENT_BUS=redis` e `redis-cli ping` = PONG.
 7. Se o deploy falhar: **nova branch + novo PR** com a correção; em rollback, voltar à versão anterior de forma controlada (ver guia de PR).

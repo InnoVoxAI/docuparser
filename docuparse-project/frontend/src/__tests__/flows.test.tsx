@@ -6,7 +6,7 @@ import { server } from './mocks/server'
 import { paginatedDocuments } from './mocks/handlers'
 import { renderApp } from './utils'
 
-// US1 / T019 — integração de Inbox / Dashboard (rejeitados) / Operações (DLQ) /
+// US1 / T019 — integração de Inbox / Dashboard (rejeitados) /
 // Configurações, dirigida pela árvore real da aplicação com MSW.
 
 const ALL_PERMISSIONS = [
@@ -102,40 +102,6 @@ describe('Dashboard — documento rejeitado', () => {
 
         await user.click(screen.getByRole('button', { name: /Reprocessar/i }))
         await waitFor(() => expect(reprocessCalled).toBe(true))
-    })
-})
-
-describe('Operações (DLQ)', () => {
-    it('mostra streams e detalha um evento ao selecioná-lo', async () => {
-        mockSession([])
-        server.use(
-            http.get('/api/ocr/operations/dlq/summary', () =>
-                HttpResponse.json({ total: 1, streams: [{ stream: 'ocr.completed.dlq', count: 1 }] }),
-            ),
-            http.get('/api/ocr/operations/dlq/events', () =>
-                HttpResponse.json({
-                    entries: [
-                        {
-                            id: 'e1',
-                            source: 'worker-ocr',
-                            event_type: 'ocr.completed',
-                            event_id: 'evt-1',
-                            error_type: 'TimeoutError',
-                            error: 'deadline exceeded',
-                            original_stream: 'ocr.completed',
-                            payload: { foo: 'bar' },
-                        },
-                    ],
-                }),
-            ),
-        )
-        const user = await navigate('Operações')
-
-        expect(await screen.findByText('TimeoutError')).toBeInTheDocument()
-        await user.click(screen.getByText('worker-ocr'))
-        // Painel de detalhe abre com a ação de reenfileiramento.
-        expect(await screen.findByRole('button', { name: /Reenfileirar/i })).toBeInTheDocument()
-        expect((await screen.findAllByText('deadline exceeded')).length).toBeGreaterThan(0)
     })
 })
 

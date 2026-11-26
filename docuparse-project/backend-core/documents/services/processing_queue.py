@@ -4,7 +4,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-from django.db import connection
+from django.db import close_old_connections, connection
 from docuparse_observability.tracing import capture_current_span_link
 from docuparse_orchestrator.context import orchestration_run
 from opentelemetry import trace
@@ -26,13 +26,94 @@ def _tenant_from_connection() -> object:
     return tenant
 
 
+def _with_fresh_connection(fn, *args) -> None:
+    """Roda `fn` numa thread do pool com uma conexão válida com o banco.
+
+    O Django só renova conexões no ciclo de uma requisição HTTP (sinais
+    request_started/request_finished). Nas threads deste pool, a conexão
+    aberta na primeira tarefa ficava para sempre: quando o Postgres
+    reiniciava, toda tarefa seguinte falhava ao gravar o run, sem log, e o
+    documento ficava parado. Por isso cada tarefa descarta a conexão
+    inutilizável antes de começar e fecha a sua ao terminar.
+    """
+    close_old_connections()
+    try:
+        fn(*args)
+    finally:
+        connection.close()
+
+
 def submit_document_processing(document_id: int) -> None:
     tenant = _tenant_from_connection()
     link = capture_current_span_link()
-    _executor.submit(_run_document_processing, document_id, tenant, link)
+    _executor.submit(
+        _with_fresh_connection,
+        _run_document_processing_safely,
+        document_id,
+        tenant,
+        link,
+    )
 
 
-def _run_document_processing(document_id: int, tenant: object, link: trace.Link | None) -> None:
+def _run_document_processing_safely(
+    document_id, tenant: object, link: trace.Link | None
+) -> None:
+    """Registra qualquer exceção da tarefa e marca o documento como falho.
+
+    O ThreadPoolExecutor guarda a exceção num Future que ninguém lê: sem este
+    try/except a falha some e o frontend consulta o status para sempre.
+    """
+    from documents.services.ocr_processor import current_step, reset_step
+
+    reset_step()
+    try:
+        _run_document_processing(document_id, tenant, link)
+    except Exception as exc:
+        logger.exception(
+            "processing_queue_failed | document_id=%s | tenant=%s | last_step=%s | error_type=%s | error=%s",
+            document_id,
+            getattr(tenant, "slug", "?"),
+            current_step(),
+            type(exc).__name__,
+            exc,
+        )
+        _mark_document_failed(document_id, tenant, exc)
+
+
+def _mark_document_failed(document_id, tenant: object, exc: Exception) -> None:
+    """Tira o documento de RECEIVED para OCR_FAILED, para ele sair da fila na
+    tela e poder ser reprocessado. Não mexe em documentos que já avançaram."""
+    from documents.models import Document
+
+    try:
+        # A exceção pode ter vindo de uma conexão morta: troca por uma nova.
+        close_old_connections()
+        connection.set_tenant(tenant)
+        document = Document.objects.filter(
+            id=document_id, status=Document.Status.RECEIVED
+        ).first()
+        if document is None:
+            return
+        document.status = Document.Status.OCR_FAILED
+        document.metadata = {
+            **(document.metadata or {}),
+            "processing_error": {
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            },
+        }
+        document.save(update_fields=["status", "metadata", "updated_at"])
+    except Exception:
+        logger.exception(
+            "processing_queue_mark_failed_error | document_id=%s | tenant=%s",
+            document_id,
+            getattr(tenant, "slug", "?"),
+        )
+
+
+def _run_document_processing(
+    document_id: int, tenant: object, link: trace.Link | None
+) -> None:
     connection.set_tenant(tenant)
     from documents.services.ocr_processor import extraction_task, ocr_task
 
@@ -66,7 +147,14 @@ def _run_document_processing(document_id: int, tenant: object, link: trace.Link 
 def submit_document_langextract(document_id, schema_config_id) -> None:
     tenant = _tenant_from_connection()
     link = capture_current_span_link()
-    _executor.submit(_run_langextract_safely, document_id, schema_config_id, tenant, link)
+    _executor.submit(
+        _with_fresh_connection,
+        _run_langextract_safely,
+        document_id,
+        schema_config_id,
+        tenant,
+        link,
+    )
 
 
 def _run_langextract_safely(

@@ -37,6 +37,12 @@ at docs/specs/018-fix-tenant-schema-seed/plan.md
 
 - Sempre que houver modificações verifique a necessidade de atualizar documentos acima descritos, ou memorias.
 
+## Context hygiene
+- For any exploration touching more than 3 files, delegate to the `code-scout` subagent.
+- For running test suites or long builds, delegate and return only failures + diagnosis.
+- Keep the main context for decisions and edits.
+
+
 ## Documentação com wagent
 Para documentar com wagent considere que este projeto é chamado de `DocuParser`.
 

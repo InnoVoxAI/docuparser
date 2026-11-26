@@ -83,26 +83,15 @@ def _run_document_processing_safely(
 def _mark_document_failed(document_id, tenant: object, exc: Exception) -> None:
     """Tira o documento de RECEIVED para OCR_FAILED, para ele sair da fila na
     tela e poder ser reprocessado. Não mexe em documentos que já avançaram."""
-    from documents.models import Document
+    from documents.services.processing_recovery import mark_received_document_failed
 
     try:
         # A exceção pode ter vindo de uma conexão morta: troca por uma nova.
         close_old_connections()
         connection.set_tenant(tenant)
-        document = Document.objects.filter(
-            id=document_id, status=Document.Status.RECEIVED
-        ).first()
-        if document is None:
-            return
-        document.status = Document.Status.OCR_FAILED
-        document.metadata = {
-            **(document.metadata or {}),
-            "processing_error": {
-                "error_type": type(exc).__name__,
-                "error": str(exc)[:500],
-            },
-        }
-        document.save(update_fields=["status", "metadata", "updated_at"])
+        mark_received_document_failed(
+            document_id, error_type=type(exc).__name__, error=str(exc)
+        )
     except Exception:
         logger.exception(
             "processing_queue_mark_failed_error | document_id=%s | tenant=%s",

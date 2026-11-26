@@ -151,8 +151,9 @@ class RunDocumentProcessingSafelyTests(TestCase):
                 f"{MODULE}._run_document_processing",
                 side_effect=OperationalError("primeira falha"),
             ),
-            patch.object(
-                Document.objects, "filter", side_effect=OperationalError("banco fora")
+            patch(
+                "documents.services.processing_recovery.mark_received_document_failed",
+                side_effect=OperationalError("banco fora"),
             ),
             self.assertLogs(MODULE, level="ERROR") as logs,
         ):

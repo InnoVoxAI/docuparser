@@ -38,6 +38,22 @@ para sempre. As telas continuavam funcionando.
 - `erp_import/background._run` chama `close_old_connections()` no início.
 - Testes: `documents/tests/test_processing_queue.py`.
 
+## Fase 2: varredura (mesma branch)
+
+- `documents/services/processing_recovery.py`:
+  - `mark_received_document_failed`, usada também pela fila;
+  - `sweep_stuck_processing`, que fecha como FAILED os runs RUNNING mais antigos que
+    o limite e marca OCR_FAILED (`error_type=StuckInQueue`) os documentos em
+    RECEIVED com `updated_at` mais antigo que o limite e sem run RUNNING recente.
+- Comando `manage.py sweep_stuck_documents [--older-than-minutes 30] [--tenant]
+  [--dry-run]`. Percorre os tenants ativos e sai com código 1 se algum falhar.
+- Por que fechar os runs: `retry_step` (process_dashboard) recusa o retry
+  se existe um run RUNNING. Um run órfão bloqueava o retry daquele documento para
+  sempre.
+- `CONN_HEALTH_CHECKS = True` em `core/settings.py`. Só vale para o ciclo HTTP.
+- O probe `/ready` não passou a checar o banco: este bug não seria detectado por
+  ele (cada requisição abre uma conexão nova), e o `/diagnostics` já testa o banco.
+
 ## Regra para código novo
 
 Toda thread de fundo que usa o ORM precisa: `close_old_connections()` no início,
@@ -48,8 +64,8 @@ do `Future` do executor.
 
 - Depois do restart, documentos que ficaram em RECEIVED não voltam sozinhos para
   a fila: é preciso reprocessar ou reenviar.
-- Proposta ainda não feita: varredura periódica que marca documentos parados em
-  RECEIVED há mais de N minutos.
+- O CronJob da varredura (ver acima) precisa ser criado no repositório de manifests
+  do k3s. O YAML de exemplo está em `docuparse-project/docs/TECHNICAL.md`.
 - Nenhum deployment roda `manage.py consume_events`, então os eventos
   `ocr.completed` publicados no Redis não são consumidos.
 

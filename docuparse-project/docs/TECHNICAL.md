@@ -351,7 +351,53 @@ python manage.py consume_events       # Worker de consumo de eventos
 python manage.py inspect_dlq          # Inspecionar fila de erros
 python manage.py requeue_dlq          # Reenviar eventos com falha
 python manage.py import_legacy_sqlite # Importar dados legados
+python manage.py sweep_stuck_documents [--older-than-minutes 30] [--tenant <slug>] [--dry-run]
+                                      # Marca como falhos documentos parados no processamento
 ```
+
+### Processamento em segundo plano e conexão com o banco
+
+O upload dispara o OCR e a extração num pool de threads dentro do próprio processo
+(`documents/services/processing_queue.py`, `DOCUPARSE_PROCESSING_WORKERS`, default 2).
+Regras para qualquer thread de fundo que usa o ORM:
+
+- Rodar a tarefa dentro de `_with_fresh_connection`, ou chamar `close_old_connections()`
+  no início e `connection.close()` no fim. O Django só renova conexões no ciclo HTTP;
+  sem isso, depois de um restart do Postgres toda tarefa falha com a conexão morta.
+- Capturar as exceções com `logger.exception`. O `Future` do executor não é lido por
+  ninguém, e uma exceção que fica nele não aparece no log.
+- Se o processamento falhar, um documento em `RECEIVED` vai para `OCR_FAILED`, com o
+  motivo em `metadata.processing_error`, e pode ser reprocessado.
+
+**Varredura de documentos parados.** Se o pod morrer no meio do processamento, o documento
+fica em `RECEIVED` e o run do orquestrador fica `RUNNING`. Um run `RUNNING` faz o retry
+manual do dashboard recusar a operação. O comando `sweep_stuck_documents` corrige os dois:
+fecha como `FAILED` os runs `RUNNING` mais antigos que o limite e marca como `OCR_FAILED`
+os documentos em `RECEIVED` sem alteração nesse período e sem run recente. Agende-o no k3s:
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: docuparser-core-sweep-stuck
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: sweep
+              image: <mesma imagem do docuparser-core>
+              envFrom: [<mesmo env/secrets do docuparser-core>]
+              command: ["python", "manage.py", "sweep_stuck_documents", "--older-than-minutes", "30"]
+```
+
+O limite precisa ser maior que o tempo normal de um documento na fila mais o tempo de
+processamento. Se houver muitos uploads de uma vez e só 2 workers, aumente o limite.
 
 ---
 

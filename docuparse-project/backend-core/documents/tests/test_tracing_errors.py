@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
+import pytest
 from django.db import connection
 from django.test import TestCase
 from opentelemetry import trace
@@ -16,6 +17,7 @@ from tenants.models import Tenant
 from documents.services.event_consumers import consume_document_received
 
 
+@pytest.mark.usefixtures("sdk_tracer_provider")
 class ApplicationErrorTracingTests(TestCase):
     """T054 — um erro de aplicação numa etapa intermediária do fluxo de
     documento (consumo assíncrono do evento document.received) fica
@@ -25,6 +27,7 @@ class ApplicationErrorTracingTests(TestCase):
         self.tenant = Tenant.objects.create(slug="tenant-demo", name="Tenant Demo")
         connection.set_tenant(self.tenant)
         self.exporter = InMemorySpanExporter()
+        # O fixture sdk_tracer_provider garante um provider do SDK.
         trace.get_tracer_provider().add_span_processor(
             SimpleSpanProcessor(self.exporter)
         )

@@ -10,6 +10,16 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
     django.setup()
 
+    # O relógio do dev container (WSL2) chega a voltar alguns segundos quando a
+    # hora é ressincronizada. Um JWT emitido no setUp fica então com `iat` "no
+    # futuro" e o PyJWT o recusa (ImmatureSignatureError), o que aparece como um
+    # 401 aleatório em qualquer teste de API. A tolerância cobre esse salto. O
+    # backend de tokens é montado uma vez na importação, por isso
+    # `override_settings(SIMPLE_JWT=...)` não o alcança.
+    from rest_framework_simplejwt.state import token_backend
+
+    token_backend.leeway = 30
+
 
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]

@@ -4,13 +4,14 @@ import io
 import socket
 
 import pytest
-from documents.services.langextract_client import LangExtractClient
-from documents.services.ocr_client import OCRClient
 from opentelemetry import trace
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
+
+from documents.services.langextract_client import LangExtractClient
+from documents.services.ocr_client import OCRClient
 
 
 @pytest.fixture
@@ -26,10 +27,9 @@ def unreachable_url() -> str:
 
 
 @pytest.fixture
-def memory_span_exporter():
+def memory_span_exporter(sdk_tracer_provider):
     exporter = InMemorySpanExporter()
-    provider = trace.get_tracer_provider()
-    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    sdk_tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
     yield exporter
     exporter.clear()
 

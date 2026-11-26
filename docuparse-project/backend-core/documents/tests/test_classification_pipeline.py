@@ -8,7 +8,12 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-from accounting.models import DocumentClassification, LedgerAccount, SupplierRule
+from accounting.models import (
+    ChartOfAccounts,
+    DocumentClassification,
+    LedgerAccount,
+    SupplierRule,
+)
 from catalog.models import SchemaConfig
 from condominiums.models import Condominium
 from condominiums.tests.base import TenantAPITestCase
@@ -36,20 +41,21 @@ CPF: 529.982.247-25"""
 class PipelineClassificationTests(TenantAPITestCase):
     def setUp(self) -> None:
         super().setUp()
+        self.chart = ChartOfAccounts.objects.create(name="Plano Exemplo")
         self.condominium = Condominium.objects.create(
-            name="Edifício Exemplo", cnpj=EXAMPLE_CNPJ
+            name="Edifício Exemplo", cnpj=EXAMPLE_CNPJ, chart_of_accounts=self.chart
         )
         self.water = LedgerAccount.objects.create(
-            condominium=self.condominium, code="2.1.01", name="Água"
+            chart=self.chart, code="2.1.01", name="Água"
         )
         self.individual_services = LedgerAccount.objects.create(
-            condominium=self.condominium,
+            chart=self.chart,
             code="2.5.01",
             name="Prestação Serviço P-física",
             nature=LedgerAccount.Nature.SERVICO_PESSOA_FISICA,
         )
         SupplierRule.objects.create(
-            condominium=self.condominium,
+            chart=self.chart,
             supplier_tax_id=COMPESA,
             ledger_account=self.water,
         )

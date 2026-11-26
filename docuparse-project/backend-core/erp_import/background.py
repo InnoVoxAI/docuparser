@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 from django.contrib.auth.models import AbstractBaseUser
-from django.db import connection
+from django.db import close_old_connections, connection
 
 from erp_import import services
 from erp_import.factory import administrator_cnpj, build_superlogica_source
@@ -35,8 +35,10 @@ def start_sync(user: AbstractBaseUser | None) -> ImportBatch:
 
 
 def _run(batch_id, tenant: object, source: RegistrySource, admin_cnpj: str) -> None:
-    connection.set_tenant(tenant)
+    # Descarta a conexão morta se o Postgres reiniciou desde a última sincronização.
+    close_old_connections()
     try:
+        connection.set_tenant(tenant)
         batch = services.execute_batch(
             ImportBatch.objects.get(pk=batch_id), source, admin_cnpj
         )

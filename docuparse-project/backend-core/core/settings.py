@@ -194,6 +194,11 @@ else:
         }
     }
 
+# Testa a conexão reaproveitada antes de usá-la numa requisição; descarta se o
+# Postgres reiniciou. Só vale para o ciclo HTTP — threads de fundo renovam a
+# conexão sozinhas (documents/services/processing_queue.py).
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
+
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",

@@ -9,6 +9,7 @@ from io import BytesIO
 from accounting.services import run_classification_safely
 from catalog.models import LayoutConfig, SchemaConfig
 from django.conf import settings
+from django.db import connection
 from django.utils import timezone
 from docuparse_observability.tracing import capture_current_span_link
 from docuparse_orchestrator.decorators import task
@@ -34,6 +35,13 @@ _progress = threading.local()
 def current_step() -> str:
     """Última etapa alcançada por process_document_ocr nesta thread."""
     return getattr(_progress, "step", "not_started")
+
+
+def reset_step() -> None:
+    """Volta a etapa desta thread para "not_started". Chamado no início de cada
+    tarefa do pool, para uma falha antes do OCR (ex.: banco fora do ar ao abrir
+    o run) não herdar a etapa da tarefa anterior desta thread."""
+    _progress.step = "not_started"
 
 
 def _log_step(step: str, document_id, tenant_slug: str, schema: str, **fields) -> None:
@@ -462,3 +470,7 @@ def _run_ocr_safely(document_id, link: trace.Link | None = None) -> None:
                 "automatic_ocr_failed",
                 extra={"document_id": str(document_id), "error": str(exc)},
             )
+        finally:
+            # Thread nova a cada chamada: sem fechar, a conexão dela fica aberta
+            # no Postgres até o processo morrer.
+            connection.close()

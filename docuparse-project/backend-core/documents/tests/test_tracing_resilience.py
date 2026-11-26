@@ -7,10 +7,10 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from documents.services.ocr_client import OCRClient
-from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+from documents.services.ocr_client import OCRClient
 
 # Mesmo timeout de exportação usado por
 # shared/docuparse_observability/tracing.py::configure_tracing(). Se a
@@ -27,8 +27,7 @@ class _FakeOCRHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         self.rfile.read(length)
         body = (
-            b'{"raw_text": "ok", "document_type": "digital_pdf", '
-            b'"engine_used": "mock"}'
+            b'{"raw_text": "ok", "document_type": "digital_pdf", "engine_used": "mock"}'
         )
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -53,7 +52,7 @@ def fake_ocr_server():
 
 
 @pytest.fixture
-def unreachable_collector_span_processor():
+def unreachable_collector_span_processor(sdk_tracer_provider):
     """T064 (FR-008) — simula o Collector fora do ar: registra um segundo
     BatchSpanProcessor no TracerProvider já ativo, exportando para um
     endpoint que recusa conexão (porta ligada e fechada, mesma técnica de
@@ -71,8 +70,7 @@ def unreachable_collector_span_processor():
     processor = BatchSpanProcessor(
         exporter, export_timeout_millis=_EXPORT_TIMEOUT_SECONDS * 1000
     )
-    provider = trace.get_tracer_provider()
-    provider.add_span_processor(processor)
+    sdk_tracer_provider.add_span_processor(processor)
     yield
     processor.shutdown()
 

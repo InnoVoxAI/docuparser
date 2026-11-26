@@ -12,7 +12,12 @@ from django.urls import reverse
 from documents.models import Document, DocumentEvent, ExtractionResult
 from events import validate_event
 
-from accounting.models import DocumentClassification, LedgerAccount, SupplierRule
+from accounting.models import (
+    ChartOfAccounts,
+    DocumentClassification,
+    LedgerAccount,
+    SupplierRule,
+)
 from accounting.services import (
     NO_RULE_REASON,
     classify_document,
@@ -26,10 +31,14 @@ COMPESA_CNPJ = "09769035000164"
 class DocumentClassificationTests(TenantAPITestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.condominium = Condominium.objects.create(name="Edifício Exemplo")
+        self.condominium = Condominium.objects.create(
+            chart_of_accounts=ChartOfAccounts.objects.create(name="Plano"),
+            name="Edifício Exemplo",
+        )
         self.water = self._account("2.1.01", "Água")
         self.maintenance = self._account("2.3.01", "Manutenções")
         self.rule = SupplierRule.objects.create(
+            chart=self.condominium.chart_of_accounts,
             condominium=self.condominium,
             supplier_tax_id=COMPESA_CNPJ,
             ledger_account=self.water,
@@ -49,7 +58,7 @@ class DocumentClassificationTests(TenantAPITestCase):
 
     def _account(self, code: str, name: str) -> LedgerAccount:
         return LedgerAccount.objects.create(
-            condominium=self.condominium, code=code, name=name
+            chart=self.condominium.chart_of_accounts, code=code, name=name
         )
 
     def _events(self) -> list[DocumentEvent]:
@@ -183,9 +192,12 @@ class ManualClassificationAPITests(TenantAPITestCase):
     def setUp(self) -> None:
         super().setUp()
         self.authenticate("reviewer")
-        self.condominium = Condominium.objects.create(name="Edifício Exemplo")
+        self.condominium = Condominium.objects.create(
+            chart_of_accounts=ChartOfAccounts.objects.create(name="Plano"),
+            name="Edifício Exemplo",
+        )
         self.water = LedgerAccount.objects.create(
-            condominium=self.condominium, code="2.1.01", name="Água"
+            chart=self.condominium.chart_of_accounts, code="2.1.01", name="Água"
         )
         self.document = Document.objects.create(
             channel="manual",
@@ -211,7 +223,7 @@ class ManualClassificationAPITests(TenantAPITestCase):
 
     def test_changing_the_account_keeps_both_events(self) -> None:
         other = LedgerAccount.objects.create(
-            condominium=self.condominium, code="2.3.01", name="Manutenções"
+            chart=self.condominium.chart_of_accounts, code="2.3.01", name="Manutenções"
         )
         self._put(self.water.id)
         self._put(other.id)
@@ -266,9 +278,12 @@ class ManualClassificationAPITests(TenantAPITestCase):
         assert not self.document.events.exists()
 
     def test_account_must_belong_to_the_documents_condominium(self) -> None:
-        other = Condominium.objects.create(name="Outro Edifício")
+        other = Condominium.objects.create(
+            chart_of_accounts=ChartOfAccounts.objects.create(name="Plano"),
+            name="Outro Edifício",
+        )
         foreign = LedgerAccount.objects.create(
-            condominium=other, code="2.1.01", name="Água"
+            chart=other.chart_of_accounts, code="2.1.01", name="Água"
         )
         response = self._put(foreign.id)
         assert response.status_code == 400

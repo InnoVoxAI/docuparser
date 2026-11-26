@@ -6,12 +6,13 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from documents.services.ocr_client import OCRClient
 from opentelemetry import trace
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
+
+from documents.services.ocr_client import OCRClient
 
 
 class _FakeOCRHandler(BaseHTTPRequestHandler):
@@ -50,10 +51,9 @@ def fake_ocr_server():
 
 
 @pytest.fixture
-def memory_span_exporter():
+def memory_span_exporter(sdk_tracer_provider):
     exporter = InMemorySpanExporter()
-    provider = trace.get_tracer_provider()
-    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    sdk_tracer_provider.add_span_processor(SimpleSpanProcessor(exporter))
     yield exporter
     exporter.clear()
 
@@ -83,7 +83,9 @@ def test_ocr_client_call_propagates_traceparent_and_creates_child_span(
         for span in memory_span_exporter.get_finished_spans()
         if span.kind == trace.SpanKind.CLIENT
     ]
-    assert client_spans, "expected an outgoing HTTP client span from RequestsInstrumentor"
+    assert client_spans, (
+        "expected an outgoing HTTP client span from RequestsInstrumentor"
+    )
     outgoing_span = client_spans[0]
     assert outgoing_span.context.trace_id == expected_trace_id
     assert outgoing_span.parent is not None

@@ -68,6 +68,11 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
+    # Tolerância de relógio na validação de `iat`/`exp`. Sem ela, um token
+    # validado num processo com o relógio alguns segundos atrás de quem o emitiu
+    # (servidores diferentes, ou ressincronização de hora, comum no WSL2) tem o
+    # `iat` "no futuro" e é recusado com 401.
+    "LEEWAY": timedelta(seconds=30),
 }
 
 CORS_ALLOWED_ORIGINS = [

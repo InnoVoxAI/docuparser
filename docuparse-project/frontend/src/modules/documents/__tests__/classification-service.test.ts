@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { server } from './mocks/server'
+import { server } from '../../../__tests__/mocks/server'
 import {
     fetchCondominiums,
     fetchLedgerAccounts,
     setDocumentCondominium,
     setDocumentLedgerAccount,
-} from '../modules/documents/services/classification.service'
+} from '../services/classification.service'
 
 const OCR = '/api/ocr'
 

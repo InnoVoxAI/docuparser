@@ -99,7 +99,7 @@ MIDDLEWARE = [
 
 # Bootstrap único de tracing (contracts/tracing-conventions.md item 1). Roda
 # aqui (não em wsgi.py) para cobrir também os management commands que não
-# passam pelo WSGIHandler (consume_events, migrate, etc.) — settings.py é
+# passam pelo WSGIHandler (migrate, sweep_stuck_documents, etc.) — settings.py é
 # importado por todo entrypoint Django, WSGI ou CLI.
 from docuparse_observability.tracing import (  # noqa: E402
     configure_tracing,

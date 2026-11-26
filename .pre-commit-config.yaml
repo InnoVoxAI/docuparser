@@ -22,7 +22,7 @@ repos:
       # Run the linter.
       - id: ruff
         args: [ --fix ]
-        files: &py_projects '^docuparse-project/(backend-com|backend-core|backend-ocr|langextract-service|contracts|shared|layout-service)/'
+        files: &py_projects '^docuparse-project/(backend-com|backend-core|backend-ocr|langextract-service|contracts|shared)/'
       # Run the formatter.
       - id: ruff-format
         files: *py_projects

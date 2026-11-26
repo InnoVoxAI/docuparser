@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -174,7 +174,6 @@ version = "0.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
-    { name = "camunda-external-task-client-python3" },
     { name = "fastapi" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-instrumentation-fastapi" },
@@ -193,9 +192,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-camunda8 = [
-    { name = "pyzeebe" },
-]
 debounce = [
     { name = "redis" },
 ]
@@ -214,7 +210,6 @@ whatsapp-twilio = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.34.0" },
-    { name = "camunda-external-task-client-python3", specifier = ">=4.5.0" },
     { name = "fastapi", specifier = ">=0.136.0" },
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.28.1" },
     { name = "httpx", marker = "extra == 'whatsapp-twilio'", specifier = ">=0.28.1" },
@@ -231,14 +226,13 @@ requires-dist = [
     { name = "pyjwt", specifier = ">=2.8.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "python-multipart", specifier = ">=0.0.26" },
-    { name = "pyzeebe", marker = "extra == 'camunda8'", specifier = ">=4.4.0" },
     { name = "redis", marker = "extra == 'debounce'", specifier = ">=7.4.0" },
     { name = "structlog", specifier = ">=25.5.0" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "twilio", marker = "extra == 'whatsapp-twilio'", specifier = ">=9.10.5" },
     { name = "uvicorn", specifier = ">=0.44.0" },
 ]
-provides-extras = ["debounce", "test", "email-reader", "whatsapp-twilio", "camunda8"]
+provides-extras = ["debounce", "test", "email-reader", "whatsapp-twilio"]
 
 [[package]]
 name = "boto3"
@@ -266,18 +260,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5c/eb/a235d69083f5948d3ed7e1e5d75ceb16f5bf943761e33b54cb141c497ed1/botocore-1.43.55.tar.gz", hash = "sha256:46e8d9f457a804948abf45a22add963ebaaa6c2765c2f1c26ff3b534309d7a58", size = 15733294, upload-time = "2026-07-23T19:29:48.755Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/23/0c7172020da4ff6d19e6aefa98abc024955dba2c87194b71ac48990d3e84/botocore-1.43.55-py3-none-any.whl", hash = "sha256:b7ceb3070dffb64cc1cfdda3c32db538eb143c46ad9e9e781b0d8f90c9246f37", size = 15417310, upload-time = "2026-07-23T19:29:45.736Z" },
-]
-
-[[package]]
-name = "camunda-external-task-client-python3"
-version = "4.5.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/bc/89/ab9e741717e8a9892eb2722c7c5a927ffac62310932a730857e21cc99cad/camunda_external_task_client_python3-4.5.0.tar.gz", hash = "sha256:a95d37bfed62c17ce375d22f0294c8bd34ba9f9cd8a4a07315bee62716124132", size = 37255, upload-time = "2025-04-17T14:46:23.212Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/1a/2ffa7c5371e7503e3ffe6599c48dfc050dba66e6c1863b090399cf522b14/camunda_external_task_client_python3-4.5.0-py3-none-any.whl", hash = "sha256:d65bfe0ba8df752430ec24b9d35ccd507c0278c9f77acc689cd6caecfd3ac4d6", size = 61119, upload-time = "2025-04-17T14:46:21.838Z" },
 ]
 
 [[package]]
@@ -641,19 +623,6 @@ wheels = [
 ]
 
 [[package]]
-name = "grpcio-health-checking"
-version = "1.81.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "grpcio" },
-    { name = "protobuf" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/65/46/6b6678b5a922765ae7637205bb6d0618a4da8b35f2ce6116f8bcff262370/grpcio_health_checking-1.81.1.tar.gz", hash = "sha256:ecc61480e25058a4a04e11e4ab6900ad7439b32e60a8ce4ece7d9f219221c85d", size = 17107, upload-time = "2026-06-11T12:58:49.632Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/87/174bbfb5613794862c45b5cdf567fcfb478ad5a3a7b594e11d998656b2f9/grpcio_health_checking-1.81.1-py3-none-any.whl", hash = "sha256:cbc6a4171825ec64389de2f062d296ba129a5c27eefd0dd55fa837909184bdf9", size = 19120, upload-time = "2026-06-11T12:58:38.008Z" },
-]
-
-[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -899,15 +868,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/24/bf/d1bda4f6168e0b2e9e5958945e01910052158313224ada5ce1fb2e1113b8/nodeenv-1.10.0.tar.gz", hash = "sha256:996c191ad80897d076bdfba80a41994c2b47c68e224c542b48feba42ba00f8bb", size = 55611, upload-time = "2025-12-20T14:08:54.006Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/b2/d0896bdcdc8d28a7fc5717c305f1a861c26e18c05047949fb371034d98bd/nodeenv-1.10.0-py2.py3-none-any.whl", hash = "sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827", size = 23438, upload-time = "2025-12-20T14:08:52.782Z" },
-]
-
-[[package]]
-name = "oauthlib"
-version = "3.3.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
 ]
 
 [[package]]
@@ -1429,24 +1389,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyzeebe"
-version = "4.7.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "grpcio" },
-    { name = "grpcio-health-checking" },
-    { name = "oauthlib" },
-    { name = "protobuf" },
-    { name = "requests-oauthlib" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3a/9e/40ea3fcd0839dff1f90387643b2fcd062edaa487dd1cb7ed09bd33d8fa1d/pyzeebe-4.7.0.tar.gz", hash = "sha256:767b94f28fbd2a6a6fba13351d7febab87c8539968355f786c581f4513d4bd93", size = 169481, upload-time = "2025-10-15T10:43:03.921Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/e5/7363f70da113b518e3bda9006405a037256c329eff5b7c037068e7835d1d/pyzeebe-4.7.0-py3-none-any.whl", hash = "sha256:6e814e248da8d266ef78846eb3d57827de95a4df388401eacd791269aa844803", size = 70947, upload-time = "2025-10-15T10:43:02.901Z" },
-]
-
-[[package]]
 name = "redis"
 version = "8.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1468,19 +1410,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed", size = 142856, upload-time = "2026-05-14T19:25:27.735Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl", hash = "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0", size = 73075, upload-time = "2026-05-14T19:25:26.443Z" },
-]
-
-[[package]]
-name = "requests-oauthlib"
-version = "2.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "oauthlib" },
-    { name = "requests" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/42/f2/05f29bc3913aea15eb670be136045bf5c5bbf4b99ecb839da9b422bb2c85/requests-oauthlib-2.0.0.tar.gz", hash = "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9", size = 55650, upload-time = "2024-03-22T20:32:29.939Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/5d/63d4ae3b9daea098d5d6f5da83984853c1bbacd5dc826764b249fe119d24/requests_oauthlib-2.0.0-py2.py3-none-any.whl", hash = "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36", size = 24179, upload-time = "2024-03-22T20:32:28.055Z" },
 ]
 
 [[package]]

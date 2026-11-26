@@ -66,7 +66,7 @@ do `Future` do executor.
   a fila: é preciso reprocessar ou reenviar.
 - O CronJob da varredura (ver acima) precisa ser criado no repositório de manifests
   do k3s. O YAML de exemplo está em `docuparse-project/docs/TECHNICAL.md`.
-- Nenhum deployment roda `manage.py consume_events`, então os eventos
-  `ocr.completed` publicados no Redis não são consumidos.
+- O pipeline por eventos (incluindo o `consume_events`) foi removido. Ver
+  [[Remoção do pipeline por eventos e do Camunda]].
 
 Relacionado: [[Bugs pré-existentes na suíte de testes (encontrados na impl. 018)]].

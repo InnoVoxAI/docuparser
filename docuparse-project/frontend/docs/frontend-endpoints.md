@@ -8,7 +8,7 @@ Definidos em [`src/shared/lib/http.ts`](../src/shared/lib/http.ts):
 
 | Client | baseURL | Backend | Auth |
 |---|---|---|---|
-| `api` | `${VITE_BACKEND_CORE_URL}/api/ocr` | backend-core (OCR / documentos / admin / operations) | JWT via interceptor |
+| `api` | `${VITE_BACKEND_CORE_URL}/api/ocr` | backend-core (OCR / documentos / admin) | JWT via interceptor |
 | `authApi` | `${VITE_BACKEND_CORE_URL}/api/auth` | backend-core (auth) | — |
 | `adminApi` | `${VITE_BACKEND_CORE_URL}/api/admin` | backend-core (tenants) | JWT via interceptor |
 | `comApi` | `${VITE_BACKEND_COM_URL}/api/v1` (dev: `/com/api/v1` via proxy do Vite) | backend-com (upload / poll) | JWT via interceptor |
@@ -110,14 +110,6 @@ O token (`access_token` do `localStorage`) é anexado como `Authorization: Beare
 | PATCH | `/roles/{id}` | [`useRoleMutations.ts:16`](../src/modules/admin/hooks/useRoleMutations.ts#L16) |
 | DELETE | `/roles/{id}` | [`useRoleMutations.ts:20`](../src/modules/admin/hooks/useRoleMutations.ts#L20) |
 | GET | `/permissions` | [`usePermissionsQuery.ts:9`](../src/modules/admin/hooks/usePermissionsQuery.ts#L9) |
-
-### Operations / DLQ — via `/api/ocr`
-
-| Método | Path | Origem |
-|---|---|---|
-| GET | `/operations/dlq/summary` | [`useDlqSummaryQuery.ts:9`](../src/modules/operations/hooks/useDlqSummaryQuery.ts#L9) |
-| GET | `/operations/dlq/events` | [`useDlqEventsQuery.ts:9`](../src/modules/operations/hooks/useDlqEventsQuery.ts#L9) |
-| POST | `/operations/dlq/requeue` | [`useRequeueMutation.ts:16`](../src/modules/operations/hooks/useRequeueMutation.ts#L16) |
 
 ## backend-com — `/api/v1` (`comApi`)
 

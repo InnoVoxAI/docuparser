@@ -55,8 +55,6 @@ processors:
       - net.peer.name
       - messaging.system
       - messaging.destination
-      - zeebe.job.type
-      - zeebe.process.instance.key
       - tenant_id
       - document_id
       - correlation_id

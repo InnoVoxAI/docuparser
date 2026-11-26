@@ -1,7 +1,6 @@
 import { Navigate, createBrowserRouter } from 'react-router'
 import { useAuth } from '../modules/auth'
 import { DocumentsRoutes } from '../modules/documents'
-import { OperationsRoutes } from '../modules/operations'
 import { PaymentsRoutes } from '../modules/payments'
 import { ProcessesRoutes, ProcessOverviewView } from '../modules/processes'
 import { RegistryRoutes } from '../modules/registry'
@@ -43,7 +42,6 @@ export function createAppRouter() {
                 { index: true, element: <IndexRoute /> },
                 ...DocumentsRoutes,
                 ...UploadRoutes,
-                ...OperationsRoutes,
                 ...ProcessesRoutes,
                 ...RegistryRoutes,
                 ...PaymentsRoutes,

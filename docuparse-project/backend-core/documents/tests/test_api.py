@@ -10,7 +10,7 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
-from docuparse_events import EventMessage, LocalJsonlEventBus, publish_dead_letter
+from docuparse_events import LocalJsonlEventBus
 from docuparse_storage import LocalStorage, document_original_key
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -612,66 +612,7 @@ class DocumentsAPITests(TestCase):
     # test_schema_and_layout_config_endpoints → movido para
     # catalog/tests/test_catalog_api.py (catálogo global, escrita = tenants.manage).
 
-    def test_dlq_operation_endpoints(self) -> None:
-        with (
-            tempfile.TemporaryDirectory() as event_dir,
-            patch.dict(os.environ, {"DOCUPARSE_EVENT_BUS": "local"}),
-            self.settings(DOCUPARSE_LOCAL_EVENT_DIR=event_dir),
-        ):
-            bus = LocalJsonlEventBus(event_dir)
-            publish_dead_letter(
-                bus,
-                stream="ocr.completed",
-                entry=EventMessage(
-                    id=1, payload={"event_type": "ocr.completed", "event_id": "event-1"}
-                ),
-                error=ValueError("invalid event"),
-                source="layout-service",
-            )
-
-            summary = self.client.get(reverse("dlq-summary"))
-            events = self.client.get(
-                reverse("dlq-events"), {"stream": "ocr.completed.dlq"}
-            )
-            dry_run = self.client.post(
-                reverse("dlq-requeue"),
-                {"stream": "ocr.completed.dlq", "id": "1", "execute": False},
-                format="json",
-            )
-            requeue = self.client.post(
-                reverse("dlq-requeue"),
-                {
-                    "stream": "ocr.completed.dlq",
-                    "id": "1",
-                    "execute": True,
-                    "note": "reviewed",
-                },
-                format="json",
-            )
-            invalid = self.client.get(
-                reverse("dlq-events"), {"stream": "not.allowed.dlq"}
-            )
-            invalid_requeue = self.client.post(
-                reverse("dlq-requeue"),
-                {"stream": "not.allowed.dlq", "id": "1", "execute": True},
-                format="json",
-            )
-            requeued_events = bus.consume("ocr.completed")
-
-        assert summary.status_code == 200
-        assert summary.json()["total"] == 1
-        assert events.status_code == 200
-        assert events.json()["stream"] == "ocr.completed.dlq"
-        assert events.json()["entries"][0]["error_type"] == "ValueError"
-        assert dry_run.status_code == 200
-        assert dry_run.json()["execute"] is False
-        assert requeue.status_code == 202
-        assert requeue.json()["target_stream"] == "ocr.completed"
-        assert requeued_events[0]["event_id"] == "event-1"
-        assert invalid.status_code == 400
-        assert invalid_requeue.status_code == 400
-
-    def test_dlq_endpoints_require_operations_access(self) -> None:
+    def test_retry_step_requires_operations_access(self) -> None:
         role = Role.objects.create(name="SemOperacoes")
         role.permissions.set([Permission.objects.get(code="inbox.view")])
         user = get_user_model().objects.create_user(username="viewer", password="test")
@@ -680,17 +621,11 @@ class DocumentsAPITests(TestCase):
             HTTP_AUTHORIZATION=f"Bearer {_jwt_for(user, self.tenant)}"
         )
 
-        summary = self.client.get(reverse("dlq-summary"))
-        events = self.client.get(reverse("dlq-events"), {"stream": "ocr.completed.dlq"})
-        requeue = self.client.post(
-            reverse("dlq-requeue"),
-            {"stream": "ocr.completed.dlq", "id": "1", "execute": False},
-            format="json",
+        retry = self.client.post(
+            reverse("document-retry-step", args=[self.document.id, "ocr"])
         )
 
-        assert summary.status_code == 403
-        assert events.status_code == 403
-        assert requeue.status_code == 403
+        assert retry.status_code == 403
 
     def test_rejection_notes_in_document_list(self) -> None:
         ValidationDecision.objects.create(

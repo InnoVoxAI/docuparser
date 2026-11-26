@@ -10,19 +10,18 @@
 6. [Serviço de Captura de Documentos](#serviço-de-captura-backend-com)
 7. [Serviço de OCR](#serviço-de-ocr-backend-ocr)
 8. [Serviço de Extração de Campos](#serviço-de-extração-langextract-service)
-9. [Serviço de Classificação de Layout](#serviço-de-layout-layout-service)
-10. [Banco de Dados](#banco-de-dados)
-11. [Estrutura do Banco de Dados](#estrutura-do-banco-de-dados)
-12. [Eventos e Mensageria](#eventos-e-mensageria)
-13. [Observabilidade e Rastreamento Distribuído](#observabilidade-e-rastreamento-distribuído)
-14. [Autenticação e Permissões](#autenticação-e-permissões)
-15. [Variáveis de Ambiente](#variáveis-de-ambiente)
+9. [Banco de Dados](#banco-de-dados)
+10. [Estrutura do Banco de Dados](#estrutura-do-banco-de-dados)
+11. [Eventos e Mensageria](#eventos-e-mensageria)
+12. [Observabilidade e Rastreamento Distribuído](#observabilidade-e-rastreamento-distribuído)
+13. [Autenticação e Permissões](#autenticação-e-permissões)
+14. [Variáveis de Ambiente](#variáveis-de-ambiente)
 
 ---
 
 ## Visão Geral da Arquitetura
 
-O DocuParse é um sistema de processamento de documentos baseado em microsserviços. Cada serviço tem uma responsabilidade bem definida e se comunica via eventos (Redis Streams) ou HTTP.
+O DocuParse é um sistema de processamento de documentos baseado em microsserviços. Cada serviço tem uma responsabilidade bem definida; o processamento de documentos usa chamadas HTTP do backend-core para o OCR e a extração.
 
 | Componente | Tecnologia | Porta | Responsabilidade |
 |---|---|---|---|
@@ -30,7 +29,6 @@ O DocuParse é um sistema de processamento de documentos baseado em microsservi�
 | backend-core | Django + DRF | 8000 | Orquestração, API principal, autenticação |
 | backend-com | FastAPI | 8070 | Captura de documentos (upload, email, WhatsApp) |
 | backend-ocr | FastAPI | 8080 | Processamento OCR (extração de texto) |
-| layout-service | FastAPI | 8090 | Classificação de layout do documento |
 | langextract-service | FastAPI | 8091 | Extração de campos com LLM |
 | PostgreSQL | postgres:16 | 5432 | Banco de dados relacional |
 | Redis | redis:7 | 6380 | Barramento de eventos + cache |
@@ -101,15 +99,6 @@ DOCUPARSE_ADMIN_PASSWORD=suasenha
 
 Após o startup: `http://localhost:5173`
 
-### Workers assíncronos (opcionais)
-
-Para processar OCR e extração em background separado:
-```bash
-docker compose --profile async-workers up
-```
-
-Isso adiciona os serviços: `backend-core-events`, `backend-ocr-worker`, `layout-worker`, `langextract-worker`.
-
 ### Comandos úteis
 
 ```bash
@@ -150,9 +139,7 @@ docuparse-project/
 │   │   │   ├── ocr_client.py          # Client HTTP para backend-ocr
 │   │   │   └── langextract_client.py  # Client HTTP para langextract-service
 │   │   └── management/commands/
-│   │       ├── consume_events.py
-│   │       ├── inspect_dlq.py
-│   │       └── requeue_dlq.py
+│   │       └── sweep_stuck_documents.py
 │   ├── users/                 # App de usuários
 │   │   ├── models.py          # Permission, Role
 │   │   ├── auth_views.py      # Login, logout, refresh
@@ -177,7 +164,6 @@ docuparse-project/
 ├── langextract-service/       # FastAPI — extração LLM
 │   └── api/app.py             # Endpoint /api/v1/extract
 │
-├── layout-service/            # FastAPI — classificação de layout
 │   └── api/app.py             # Endpoint /api/v1/classify-layout
 │
 ├── contracts/                 # Schemas de eventos compartilhados
@@ -250,7 +236,6 @@ Os modelos definem os campos esperados por tipo de documento e são usados na te
 | inbox | Inbox | `inbox.view` |
 | dashboard | Dashboard | `inbox.view` |
 | validation | Validacao | `documents.validate` |
-| operations | Operacoes | `operations.access` |
 | settings | Configuracoes | `roles.manage` |
 | users | Usuários | `users.manage` |
 | roles | Roles | `roles.manage` |
@@ -308,13 +293,10 @@ O backend-core é organizado em dois apps Django:
 | `GET/PATCH` | `/api/ocr/schema-configs/<uuid>` | Detalhe do schema |
 | `GET/POST` | `/api/ocr/layout-configs` | Configurações de layout |
 
-#### Operações / DLQ
+#### Operações
 
 | Método | Endpoint | Descrição |
 |---|---|---|
-| `GET` | `/api/ocr/operations/dlq/summary` | Resumo da fila de erros |
-| `GET` | `/api/ocr/operations/dlq/events` | Eventos na DLQ |
-| `POST` | `/api/ocr/operations/dlq/requeue` | Reenviar evento com falha |
 | `GET` | `/api/ocr/engines` | Engines de OCR disponíveis |
 
 #### Autenticação
@@ -350,10 +332,7 @@ O backend-core é organizado em dois apps Django:
 python manage.py migrate              # Aplicar migrations
 python manage.py seed_permissions     # Criar permissões padrão
 python manage.py seed_admin           # Criar usuário admin
-python manage.py consume_events       # Worker de consumo de eventos
 python manage.py erp_live_writes --tenant <slug> --enable --confirm <slug>  # Habilitar o envio real ao Superlógica (por tenant)
-python manage.py inspect_dlq          # Inspecionar fila de erros
-python manage.py requeue_dlq          # Reenviar eventos com falha
 python manage.py import_legacy_sqlite # Importar dados legados
 python manage.py sweep_stuck_documents [--older-than-minutes 30] [--tenant <slug>] [--dry-run]
                                       # Marca como falhos documentos parados no processamento
@@ -490,24 +469,6 @@ A função `_resolve_schema_for_extraction()` em `ocr_processor.py` segue a hier
 1. `LayoutConfig` pelo `document.layout` explícito (configuração do admin)
 2. Classificador de texto (`_classify_raw_text`) — detecta nota fiscal, boleto, conta de água
 3. `LayoutConfig` pelo `document_type` (fallback)
-
----
-
-## Serviço de Layout (`layout-service`)
-
-### Tecnologia
-
-| Item | Valor |
-|---|---|
-| Framework | FastAPI 0.115.0 |
-| Porta | 8090 |
-
-### Endpoints
-
-| Método | Endpoint | Descrição |
-|---|---|---|
-| `POST` | `/api/v1/classify-layout` | Classificar layout do documento |
-| `GET` | `/health` | Health check |
 
 ---
 
@@ -816,7 +777,7 @@ Permissão granular do sistema.
 | `documents.validate` | Validar Documentos |
 | `models.create` | Criar Modelos |
 | `models.edit` | Editar Modelos |
-| `operations.access` | Acessar Operações |
+| `operations.access` | Dashboard de processos e retry de etapas |
 | `users.manage` | Gerenciar Usuários |
 | `roles.manage` | Gerenciar Roles |
 
@@ -853,17 +814,19 @@ LEFT JOIN users_role r ON r.id = up.role_ref_id;
 
 ## Eventos e Mensageria
 
-O sistema usa **Redis Streams** como barramento de eventos entre os serviços. Em desenvolvimento, existe um fallback para arquivos locais.
+O processamento de documentos **não** passa pelo barramento: o backend-core chama o backend-ocr e o
+langextract-service por HTTP, em processo (ver "Processamento em segundo plano"). O pipeline antigo por
+Redis Streams (workers de OCR, layout e extração e o `consume_events` do core) e o Camunda foram
+removidos em 11/2026.
+
+O barramento (Redis Streams, com fallback para arquivos locais em desenvolvimento) continua recebendo
+os eventos abaixo. Os eventos de ERP também são usados como mensagens dentro do próprio core.
 
 ### Eventos disponíveis
 
 | Evento | Publicado por | Consumido por |
 |---|---|---|
-| `document.received` | backend-com | backend-core |
-| `ocr.completed` | backend-ocr | backend-core |
-| `ocr.failed` | backend-ocr | backend-core |
-| `layout.classified` | layout-service | backend-core |
-| `extraction.completed` | langextract-service | backend-core |
+| `document.received` | backend-com | ninguém no barramento (o mesmo payload vai ao core por HTTP, `BACKEND_CORE_DOCUMENT_RECEIVED_URL`) |
 | `erp.integration.requested` | backend-core | backend-core (conector do ERP, em processo, com o tenant) |
 | `erp.sent` | backend-core | backend-core |
 | `erp.failed` | backend-core | backend-core |
@@ -871,22 +834,11 @@ O sistema usa **Redis Streams** como barramento de eventos entre os serviços. E
 | `erp.send.retried` | backend-core | histórico do documento (quem repetiu o envio e quando) |
 | `erp.dry_run` | backend-core | histórico do documento (simulação: nada foi enviado ao ERP) |
 
-### Dead Letter Queue (DLQ)
-
-Eventos que falham no processamento são movidos para `<stream>.dlq`. Para inspecionar e reenviar:
-
-```bash
-docker compose exec backend-core python manage.py inspect_dlq
-docker compose exec backend-core python manage.py requeue_dlq
-```
-
-Também acessível pela tela **Operações** no front-end (requer permissão `operations.access`).
-
 ---
 
 ## Observabilidade e Rastreamento Distribuído
 
-O sistema usa **OpenTelemetry** para rastreamento distribuído (tracing) entre todos os processos de runtime: `backend-com`, `backend-core`, `backend-ocr`, `langextract-service`, `layout-service`, `camunda-workers` e `frontend`. O objetivo é reconstruir, por um único `trace_id`, o caminho completo — síncrono e assíncrono — que uma requisição percorre entre serviços.
+O sistema usa **OpenTelemetry** para rastreamento distribuído (tracing) entre todos os processos de runtime: `backend-com`, `backend-core`, `backend-ocr`, `langextract-service` e `frontend`. O objetivo é reconstruir, por um único `trace_id`, o caminho completo — síncrono e assíncrono — que uma requisição percorre entre serviços.
 
 ### Componentes
 
@@ -906,7 +858,7 @@ O frontend usa o equivalente em JS (`frontend/src/shared/lib/tracing.ts`, `@open
 
 - **HTTP síncrono**: cabeçalho `traceparent`/`tracestate` (W3C Trace Context), propagado automaticamente pelas instrumentações de cliente HTTP.
 - **Eventos (Redis Streams)**: campo `trace_context: dict[str, str] | None` no schema base de evento (`contracts/events/schemas.py`), populado na publicação (`EventBus.publish()`) e usado no consumo para criar um `Span Link` (não parent-child, para não inflar a duração aparente do span de origem através da espera na fila).
-- **Workflow BPMN/Zeebe**: o `traceparent` ativo é serializado como variável de processo ao lado de `correlationId` no início da instância; cada worker Zeebe (`camunda-workers/src/workers/*.py`) extrai essa variável (helper `extract_trace_link_from_job`) e inicia seu próprio span com um `Link` para o trace de origem.
+- **Threads de fundo do core**: `capture_current_span_link()` guarda o contexto da requisição e a thread do pool inicia seu span com um `Link` para ele.
 
 ### Redação e segurança de dados sensíveis
 
@@ -1050,10 +1002,7 @@ envio se perder, a próxima tentativa acha a despesa no ERP e marca como enviada
 |---|---|---|
 | `DOCUPARSE_AUTO_PROCESS_OCR` | `true` | Disparar OCR automaticamente ao receber documento |
 | `DOCUPARSE_AUTO_PROCESS_EXTRACTION` | `true` | Disparar extração automaticamente após OCR |
-| `DOCUPARSE_OCR_WORKER_ENABLED` | `false` | Usar worker assíncrono para OCR |
 | `PAYMENT_MATCH_WINDOW_HOURS` | `72` | Janela, em horas antes e depois do recebimento, em que NF e boleto são candidatos a match |
-| `DOCUPARSE_EXTRACTION_WORKER_ENABLED` | `false` | Usar worker assíncrono para extração |
-| `DOCUPARSE_LAYOUT_WORKER_ENABLED` | `false` | Usar worker assíncrono para layout |
 
 ### Segurança
 

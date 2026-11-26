@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -139,30 +137,6 @@ def event_bus_from_env(local_root: str | Path | None = None) -> EventBus:
     return LocalJsonlEventBus(root)
 
 
-def publish_dead_letter(
-    event_bus: EventBus,
-    *,
-    stream: str,
-    entry: EventMessage,
-    error: BaseException,
-    source: str,
-) -> int | str:
-    return event_bus.publish(
-        f"{stream}.dlq",
-        {
-            "occurred_at": datetime.now(timezone.utc).isoformat(),
-            "source": source,
-            "stream": stream,
-            "event_stream_id": str(entry.id),
-            "event_type": entry.payload.get("event_type"),
-            "event_id": entry.payload.get("event_id"),
-            "error_type": type(error).__name__,
-            "error": str(error),
-            "payload": entry.payload,
-        },
-    )
-
-
 def inject_trace_context(event: dict[str, Any]) -> dict[str, Any]:
     """Popula `trace_context` com o contexto de trace ativo (research.md R4).
 
@@ -213,7 +187,3 @@ def _field(fields: dict[Any, Any], name: str) -> str:
     if value is None:
         value = fields.get(name.encode("utf-8"))
     return _decode(value) if value is not None else ""
-
-
-def sleep_interval(seconds: float) -> None:
-    time.sleep(max(seconds, 0.0))

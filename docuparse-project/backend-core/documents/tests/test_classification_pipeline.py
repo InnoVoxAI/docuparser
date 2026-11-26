@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import json
 from contextlib import ExitStack
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
 
 from accounting.models import DocumentClassification, LedgerAccount, SupplierRule
 from catalog.models import SchemaConfig
@@ -14,7 +12,6 @@ from condominiums.models import Condominium
 from condominiums.tests.base import TenantAPITestCase
 
 from documents.models import Document, ExtractionResult
-from documents.services.event_consumers import consume_extraction_completed
 from documents.services.ocr_processor import (
     auto_extract_after_ocr,
     run_langextract_for_document,
@@ -124,36 +121,6 @@ class PipelineClassificationTests(TenantAPITestCase):
         with self._storage("texto do boleto"):
             run_langextract_for_document(self.document.id, self.schema.id)
         self._assert_classified_as_water()
-
-    def test_extraction_completed_event_classifies_the_document(self) -> None:
-        payload = {
-            "event_id": str(uuid4()),
-            "event_type": "extraction.completed",
-            "event_version": "v1",
-            "occurred_at": datetime.now(timezone.utc).isoformat(),
-            "tenant_id": self.tenant.slug,
-            "document_id": str(self.document.id),
-            "correlation_id": str(self.document.correlation_id),
-            "source": "langextract-service",
-            "data": {
-                "schema_id": "boleto",
-                "schema_version": "v1",
-                "fields": BOLETO_FIELDS,
-                "confidence": 0.9,
-                "requires_human_validation": True,
-                "metadata": {},
-            },
-        }
-        self.document.raw_text_uri = ""
-        self.document.save()
-        consume_extraction_completed(payload)
-
-        self.document.refresh_from_db()
-        assert self.document.condominium == self.condominium
-        classification = self._classification()
-        assert classification is not None
-        assert classification.ledger_account == self.water
-        assert "document.classified" in self._event_types()
 
     def test_document_without_schema_is_still_classified_from_the_raw_text(
         self,

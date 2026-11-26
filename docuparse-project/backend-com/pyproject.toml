@@ -10,7 +10,6 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.136.0",
-    "camunda-external-task-client-python3>=4.5.0",
     "pydantic>=2.13.1",
     "pydantic-settings>=2.13.1",
     "python-multipart>=0.0.26",
@@ -45,10 +44,6 @@ email-reader = [
 whatsapp-twilio = [
     "httpx>=0.28.1",
     "twilio>=9.10.5",
-]
-
-camunda8 = [
-    "pyzeebe>=4.4.0",
 ]
 
 # ------------------------------

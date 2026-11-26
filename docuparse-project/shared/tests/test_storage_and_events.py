@@ -7,11 +7,9 @@ from uuid import uuid4
 import boto3
 import pytest
 from docuparse_events import (
-    EventMessage,
     LocalJsonlEventBus,
     RedisStreamEventBus,
     event_bus_from_env,
-    publish_dead_letter,
 )
 from docuparse_observability import log_event
 from docuparse_storage import (
@@ -109,29 +107,6 @@ def test_redis_stream_event_bus_publish_and_consume() -> None:
     assert consumed == [event]
     assert entries[0].id == "1-0"
     assert entries[0].payload == event
-
-
-def test_publish_dead_letter_records_error_context(tmp_path) -> None:
-    bus = LocalJsonlEventBus(tmp_path)
-    entry = EventMessage(
-        id=7, payload={"event_type": "ocr.completed", "event_id": str(uuid4())}
-    )
-
-    bus.publish("ocr.completed", entry.payload)
-    publish_dead_letter(
-        bus,
-        stream="ocr.completed",
-        entry=entry,
-        error=ValueError("invalid raw text"),
-        source="layout-service",
-    )
-
-    dlq = bus.consume("ocr.completed.dlq")
-    assert len(dlq) == 1
-    assert dlq[0]["stream"] == "ocr.completed"
-    assert dlq[0]["event_stream_id"] == "7"
-    assert dlq[0]["error_type"] == "ValueError"
-    assert dlq[0]["payload"] == entry.payload
 
 
 def test_log_event_emits_trace_context(caplog) -> None:

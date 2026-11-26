@@ -289,7 +289,6 @@ export type ActiveView =
     | 'validation'
     | 'approved'
     | 'rejected'
-    | 'operations'
     | 'processes'
     | 'registry'
     | 'registry-import'

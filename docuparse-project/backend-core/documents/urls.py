@@ -17,9 +17,6 @@ from .payment_views import (
 from .views import (
     classify_text_view,
     diagnostics_view,
-    dlq_events_view,
-    dlq_requeue_view,
-    dlq_summary_view,
     document_delete_view,
     document_detail_view,
     document_field_versions_view,
@@ -150,7 +147,4 @@ urlpatterns = [
         document_retry_step_view,
         name="document-retry-step",
     ),
-    path("operations/dlq/summary", dlq_summary_view, name="dlq-summary"),
-    path("operations/dlq/events", dlq_events_view, name="dlq-events"),
-    path("operations/dlq/requeue", dlq_requeue_view, name="dlq-requeue"),
 ]

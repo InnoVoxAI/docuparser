@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-from contextlib import asynccontextmanager
 
-from application.extraction_event_worker import start_worker_thread_from_env
 from docuparse_observability.tracing import configure_tracing, is_telemetry_enabled
 from domain.llm_extractor import extract_with_llm
 from fastapi import FastAPI, Request
@@ -22,22 +20,10 @@ if is_telemetry_enabled():
     RedisInstrumentor().instrument()
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    worker = start_worker_thread_from_env()
-    app.state.extraction_worker = worker
-    try:
-        yield
-    finally:
-        if worker:
-            worker.stop()
-
-
 app = FastAPI(
     title="DocuParse LangExtract Service",
     description="Extrai campos estruturados a partir de texto e layout classificados",
     version="0.1.0",
-    lifespan=lifespan,
 )
 if is_telemetry_enabled():
     FastAPIInstrumentor.instrument_app(app)

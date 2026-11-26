@@ -89,29 +89,9 @@ Copie esse diretorio para armazenamento externo ao servidor, por exemplo outro d
 - `backend-com` e `backend-core` compartilham o volume `docuparse-storage`; isso permite que o core leia arquivos recebidos por email, WhatsApp ou upload manual.
 - `backend-com` publica `document.received` e sincroniza o evento com `backend-core` por `BACKEND_CORE_DOCUMENT_RECEIVED_URL`.
 - O Redis interno usa `redis:6379` entre containers e expõe `6380` no host para evitar conflito com um Redis local já rodando em `6379`.
-- O fluxo atual mantém `DOCUPARSE_AUTO_PROCESS_OCR=true`, portanto o OCR automático ainda é disparado pelo `backend-core` ao receber um documento.
-- O profile `async-workers` prepara a virada para o pipeline por Redis Streams com serviços dedicados:
-
-```bash
-docker compose --profile async-workers up -d backend-core-events backend-ocr-worker layout-worker langextract-worker
-```
-
-- Para smoke isolado, aponte os workers para outro banco Redis sem alterar o fluxo principal:
-
-```bash
-env REDIS_URL=redis://redis:6379/13 DOCUPARSE_AUTO_PROCESS_OCR=false DOCUPARSE_OCR_WORKER_ALLOW_MOCK=true \
-  docker compose --profile async-workers up -d backend-core-events backend-ocr-worker layout-worker langextract-worker
-```
-
-- Para smoke tests controlados, os workers tambem aceitam `--once`:
-
-```bash
-docker compose exec -T layout-service python -m application.run_worker --once
-docker compose exec -T langextract-service python -m application.run_worker --once
-```
-
-- O `backend-ocr-worker` possui um modo de mock operacional para smoke sem API externa. Ele só é aceito quando `DOCUPARSE_OCR_WORKER_ALLOW_MOCK=true` e o evento contém `data.metadata.ocr_mock_raw_text`.
-- Eventos que falham dentro dos workers sao publicados em uma dead-letter queue no padrao `<stream>.dlq`, preservando payload original, erro e origem do worker.
+- O processamento roda dentro do `backend-core`: ao receber um documento (`DOCUPARSE_AUTO_PROCESS_OCR=true`), ele chama o `backend-ocr` e o `langextract-service` por HTTP num pool de threads, com o orquestrador leve (`docuparse_orchestrator`) registrando cada etapa. O pipeline antigo por Redis Streams (workers de OCR, layout e extração e o `consume_events`) e o Camunda foram removidos. O `backend-com` ainda publica `document.received` e o core publica os eventos de ERP, mas nenhum serviço consome esses streams.
+- Documentos que ficam parados no processamento são marcados como falhos pelo comando `sweep_stuck_documents` (ver [docs/TECHNICAL.md](docs/TECHNICAL.md)).
+- As DLQs (`<stream>.dlq`) eram alimentadas pelos workers removidos. Os comandos e a tela `Operacoes` continuam disponíveis para consultar o histórico, mas nenhuma falha nova chega lá.
 - Para inspecionar DLQs pelo backend-core:
 
 ```bash
@@ -143,7 +123,6 @@ docker compose exec -T backend-core python manage.py requeue_dlq --stream ocr.co
   - diretorio e formato do export intermediario (`json` ou `jsonl`);
   - Base URL e modo futuro da Superlogica.
   - credenciais continuam fora da persistencia por enquanto.
-- Antes de usar o profile assíncrono em fluxo real, defina `DOCUPARSE_AUTO_PROCESS_OCR=false` para evitar OCR duplicado pelo caminho HTTP atual.
 - A tela de configuração de WhatsApp ainda é estrutural no frontend; a persistência definitiva depende do modelo/API correspondente.
 
 - DLQ significa Dead Letter Queue.

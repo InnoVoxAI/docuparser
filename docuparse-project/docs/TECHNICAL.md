@@ -101,15 +101,6 @@ DOCUPARSE_ADMIN_PASSWORD=suasenha
 
 Após o startup: `http://localhost:5173`
 
-### Workers assíncronos (opcionais)
-
-Para processar OCR e extração em background separado:
-```bash
-docker compose --profile async-workers up
-```
-
-Isso adiciona os serviços: `backend-core-events`, `backend-ocr-worker`, `layout-worker`, `langextract-worker`.
-
 ### Comandos úteis
 
 ```bash
@@ -150,7 +141,6 @@ docuparse-project/
 │   │   │   ├── ocr_client.py          # Client HTTP para backend-ocr
 │   │   │   └── langextract_client.py  # Client HTTP para langextract-service
 │   │   └── management/commands/
-│   │       ├── consume_events.py
 │   │       ├── inspect_dlq.py
 │   │       └── requeue_dlq.py
 │   ├── users/                 # App de usuários
@@ -350,7 +340,6 @@ O backend-core é organizado em dois apps Django:
 python manage.py migrate              # Aplicar migrations
 python manage.py seed_permissions     # Criar permissões padrão
 python manage.py seed_admin           # Criar usuário admin
-python manage.py consume_events       # Worker de consumo de eventos
 python manage.py erp_live_writes --tenant <slug> --enable --confirm <slug>  # Habilitar o envio real ao Superlógica (por tenant)
 python manage.py inspect_dlq          # Inspecionar fila de erros
 python manage.py requeue_dlq          # Reenviar eventos com falha
@@ -494,6 +483,10 @@ A função `_resolve_schema_for_extraction()` em `ocr_processor.py` segue a hier
 ---
 
 ## Serviço de Layout (`layout-service`)
+
+> Hoje nenhum serviço chama o layout-service, e ele não tem deployment no k3s. Ele era usado pelo
+> worker de eventos e pelo Camunda, ambos removidos. A classificação usada pelo core está em
+> `backend-core/models/classifier.py`.
 
 ### Tecnologia
 
@@ -853,17 +846,19 @@ LEFT JOIN users_role r ON r.id = up.role_ref_id;
 
 ## Eventos e Mensageria
 
-O sistema usa **Redis Streams** como barramento de eventos entre os serviços. Em desenvolvimento, existe um fallback para arquivos locais.
+O processamento de documentos **não** passa pelo barramento: o backend-core chama o backend-ocr e o
+langextract-service por HTTP, em processo (ver "Processamento em segundo plano"). O pipeline antigo por
+Redis Streams (workers de OCR, layout e extração e o `consume_events` do core) e o Camunda foram
+removidos em 11/2026.
+
+O barramento (Redis Streams, com fallback para arquivos locais em desenvolvimento) continua recebendo
+os eventos abaixo. Os eventos de ERP também são usados como mensagens dentro do próprio core.
 
 ### Eventos disponíveis
 
 | Evento | Publicado por | Consumido por |
 |---|---|---|
-| `document.received` | backend-com | backend-core |
-| `ocr.completed` | backend-ocr | backend-core |
-| `ocr.failed` | backend-ocr | backend-core |
-| `layout.classified` | layout-service | backend-core |
-| `extraction.completed` | langextract-service | backend-core |
+| `document.received` | backend-com | ninguém no barramento (o mesmo payload vai ao core por HTTP, `BACKEND_CORE_DOCUMENT_RECEIVED_URL`) |
 | `erp.integration.requested` | backend-core | backend-core (conector do ERP, em processo, com o tenant) |
 | `erp.sent` | backend-core | backend-core |
 | `erp.failed` | backend-core | backend-core |
@@ -873,7 +868,8 @@ O sistema usa **Redis Streams** como barramento de eventos entre os serviços. E
 
 ### Dead Letter Queue (DLQ)
 
-Eventos que falham no processamento são movidos para `<stream>.dlq`. Para inspecionar e reenviar:
+Os workers removidos moviam para `<stream>.dlq` os eventos que falhavam. Nada mais escreve nas DLQs;
+os comandos e a tela continuam disponíveis para consultar o histórico:
 
 ```bash
 docker compose exec backend-core python manage.py inspect_dlq
@@ -886,7 +882,7 @@ Também acessível pela tela **Operações** no front-end (requer permissão `op
 
 ## Observabilidade e Rastreamento Distribuído
 
-O sistema usa **OpenTelemetry** para rastreamento distribuído (tracing) entre todos os processos de runtime: `backend-com`, `backend-core`, `backend-ocr`, `langextract-service`, `layout-service`, `camunda-workers` e `frontend`. O objetivo é reconstruir, por um único `trace_id`, o caminho completo — síncrono e assíncrono — que uma requisição percorre entre serviços.
+O sistema usa **OpenTelemetry** para rastreamento distribuído (tracing) entre todos os processos de runtime: `backend-com`, `backend-core`, `backend-ocr`, `langextract-service`, `layout-service` e `frontend`. O objetivo é reconstruir, por um único `trace_id`, o caminho completo — síncrono e assíncrono — que uma requisição percorre entre serviços.
 
 ### Componentes
 
@@ -906,7 +902,7 @@ O frontend usa o equivalente em JS (`frontend/src/shared/lib/tracing.ts`, `@open
 
 - **HTTP síncrono**: cabeçalho `traceparent`/`tracestate` (W3C Trace Context), propagado automaticamente pelas instrumentações de cliente HTTP.
 - **Eventos (Redis Streams)**: campo `trace_context: dict[str, str] | None` no schema base de evento (`contracts/events/schemas.py`), populado na publicação (`EventBus.publish()`) e usado no consumo para criar um `Span Link` (não parent-child, para não inflar a duração aparente do span de origem através da espera na fila).
-- **Workflow BPMN/Zeebe**: o `traceparent` ativo é serializado como variável de processo ao lado de `correlationId` no início da instância; cada worker Zeebe (`camunda-workers/src/workers/*.py`) extrai essa variável (helper `extract_trace_link_from_job`) e inicia seu próprio span com um `Link` para o trace de origem.
+- **Threads de fundo do core**: `capture_current_span_link()` guarda o contexto da requisição e a thread do pool inicia seu span com um `Link` para ele.
 
 ### Redação e segurança de dados sensíveis
 
@@ -1050,10 +1046,7 @@ envio se perder, a próxima tentativa acha a despesa no ERP e marca como enviada
 |---|---|---|
 | `DOCUPARSE_AUTO_PROCESS_OCR` | `true` | Disparar OCR automaticamente ao receber documento |
 | `DOCUPARSE_AUTO_PROCESS_EXTRACTION` | `true` | Disparar extração automaticamente após OCR |
-| `DOCUPARSE_OCR_WORKER_ENABLED` | `false` | Usar worker assíncrono para OCR |
 | `PAYMENT_MATCH_WINDOW_HOURS` | `72` | Janela, em horas antes e depois do recebimento, em que NF e boleto são candidatos a match |
-| `DOCUPARSE_EXTRACTION_WORKER_ENABLED` | `false` | Usar worker assíncrono para extração |
-| `DOCUPARSE_LAYOUT_WORKER_ENABLED` | `false` | Usar worker assíncrono para layout |
 
 ### Segurança
 

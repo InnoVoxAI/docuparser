@@ -50,7 +50,6 @@ configure_tracing("backend-ocr")
 if is_telemetry_enabled():
     RedisInstrumentor().instrument()
 
-from application.ocr_event_worker import start_worker_thread_from_env  # noqa: E402
 from domain.engine_resolver import ENGINE_DEFAULTS  # noqa: E402
 
 from api.routes.document import router as document_router  # noqa: E402
@@ -71,10 +70,7 @@ def _csv_env(name: str, default: str) -> list[str]:
 async def lifespan(app: FastAPI):
     """Gerenciamento do ciclo de vida da aplicação."""
     logger.info("Iniciando DocuParse OCR Backend...")
-    app.state.ocr_worker = start_worker_thread_from_env()
     yield
-    if getattr(app.state, "ocr_worker", None) is not None:
-        app.state.ocr_worker.stop()
     logger.info("Finalizando DocuParse OCR Backend...")
 
 

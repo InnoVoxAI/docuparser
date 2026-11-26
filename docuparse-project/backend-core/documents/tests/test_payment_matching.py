@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -13,7 +13,6 @@ from django.test import override_settings
 from django.utils import timezone as dj_timezone
 
 from documents.models import Document, ExtractionResult, PaymentProcess
-from documents.services.event_consumers import consume_extraction_completed
 from documents.services.ocr_processor import (
     auto_extract_after_ocr,
     run_langextract_for_document,
@@ -335,30 +334,6 @@ class PipelineTriggerTests(TenantAPITestCase):
         self._langextract()
         with self._storage():
             run_langextract_for_document(self.boleto.id, self.schema.id)
-        self._assert_matched()
-
-    def test_extraction_completed_event_matches(self) -> None:
-        payload = {
-            "event_id": str(uuid4()),
-            "event_type": "extraction.completed",
-            "event_version": "v1",
-            "occurred_at": datetime.now(timezone.utc).isoformat(),
-            "tenant_id": self.tenant.slug,
-            "document_id": str(self.boleto.id),
-            "correlation_id": str(self.boleto.correlation_id),
-            "source": "langextract-service",
-            "data": {
-                "schema_id": "boleto_default",
-                "schema_version": "v1",
-                "fields": self.boleto_fields,
-                "confidence": 0.9,
-                "requires_human_validation": True,
-                "metadata": {},
-            },
-        }
-        self.boleto.raw_text_uri = ""
-        self.boleto.save()
-        consume_extraction_completed(payload)
         self._assert_matched()
 
     def test_matching_failure_does_not_break_the_extraction(self) -> None:

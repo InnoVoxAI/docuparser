@@ -6,17 +6,20 @@ from condominiums.models import Condominium
 from condominiums.tests.base import TenantAPITestCase
 from django.urls import reverse
 
-from accounting.models import LedgerAccount, SupplierRule
+from accounting.models import ChartOfAccounts, LedgerAccount, SupplierRule
 
 
 class SupplierRuleAPITests(TenantAPITestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.condominium = Condominium.objects.create(name="Edifício Exemplo")
-        self.water = LedgerAccount.objects.create(
-            condominium=self.condominium, code="2.1.01", name="Água"
+        self.chart = ChartOfAccounts.objects.create(name="Plano Exemplo")
+        self.condominium = Condominium.objects.create(
+            name="Edifício Exemplo", chart_of_accounts=self.chart
         )
-        self.other = Condominium.objects.create(name="Outro Edifício")
+        self.water = LedgerAccount.objects.create(
+            chart=self.chart, code="2.1.01", name="Água"
+        )
+        self.other_chart = ChartOfAccounts.objects.create(name="Outro Plano")
 
     def _create(self, **payload: object):
         payload.setdefault("ledger_account_id", str(self.water.id))
@@ -36,6 +39,8 @@ class SupplierRuleAPITests(TenantAPITestCase):
         cnpj = self._create(supplier_tax_id="09.769.035/0001-64")
         assert cnpj.status_code == 201
         assert cnpj.json()["supplier_tax_id"] == "09769035000164"
+        assert cnpj.json()["chart_id"] == str(self.chart.id)
+        assert cnpj.json()["condominium_id"] == str(self.condominium.id)
         cpf = self._create(supplier_tax_id="529.982.247-25")
         assert cpf.status_code == 201
         assert cpf.json()["supplier_tax_id"] == "52998224725"
@@ -45,15 +50,28 @@ class SupplierRuleAPITests(TenantAPITestCase):
         assert response.status_code == 400
         assert "supplier_tax_id" in response.json()
 
-    def test_account_must_belong_to_the_condominium(self) -> None:
+    def test_account_must_belong_to_the_condominiums_chart(self) -> None:
         foreign = LedgerAccount.objects.create(
-            condominium=self.other, code="2.1.01", name="Água"
+            chart=self.other_chart, code="2.1.01", name="Água"
         )
         response = self._create(
             supplier_tax_id="09769035000164", ledger_account_id=str(foreign.id)
         )
         assert response.status_code == 400
         assert "ledger_account_id" in response.json()
+
+    def test_condominium_without_chart_cannot_have_rules(self) -> None:
+        without_chart = Condominium.objects.create(name="Sem Plano")
+        response = self.client.post(
+            reverse("supplier-rules", args=[without_chart.id]),
+            {
+                "supplier_tax_id": "09769035000164",
+                "ledger_account_id": str(self.water.id),
+            },
+            format="json",
+        )
+        assert response.status_code == 400
+        assert not SupplierRule.objects.exists()
 
     def test_same_supplier_needs_distinct_keywords(self) -> None:
         assert self._create(supplier_tax_id="08078021000131").status_code == 201
@@ -67,6 +85,7 @@ class SupplierRuleAPITests(TenantAPITestCase):
 
     def test_patch_and_delete(self) -> None:
         rule = SupplierRule.objects.create(
+            chart=self.chart,
             condominium=self.condominium,
             supplier_tax_id="09769035000164",
             ledger_account=self.water,
@@ -79,39 +98,38 @@ class SupplierRuleAPITests(TenantAPITestCase):
 
     def test_account_used_by_a_rule_cannot_be_deleted(self) -> None:
         SupplierRule.objects.create(
+            chart=self.chart,
             condominium=self.condominium,
             supplier_tax_id="09769035000164",
             ledger_account=self.water,
         )
-        url = reverse(
-            "ledger-account-detail", args=[self.condominium.id, self.water.id]
-        )
+        url = reverse("ledger-account-detail", args=[self.chart.id, self.water.id])
         assert self.client.delete(url).status_code == 409
 
 
 class LedgerAccountNatureAPITests(TenantAPITestCase):
     def setUp(self) -> None:
         super().setUp()
-        self.condominium = Condominium.objects.create(name="Edifício Exemplo")
-        self.other = Condominium.objects.create(name="Outro Edifício")
+        self.chart = ChartOfAccounts.objects.create(name="Plano Exemplo")
+        self.other = ChartOfAccounts.objects.create(name="Outro Plano")
 
-    def _create(self, condominium: Condominium, code: str, nature: str):
+    def _create(self, chart: ChartOfAccounts, code: str, nature: str):
         return self.client.post(
-            reverse("ledger-accounts", args=[condominium.id]),
+            reverse("ledger-accounts", args=[chart.id]),
             {"code": code, "name": "Inss", "nature": nature},
             format="json",
         )
 
-    def test_nature_is_unique_per_condominium(self) -> None:
-        first = self._create(self.condominium, "2.4.01", "inss")
+    def test_nature_is_unique_per_chart(self) -> None:
+        first = self._create(self.chart, "2.4.01", "inss")
         assert first.status_code == 201
         assert first.json()["nature"] == "inss"
-        duplicate = self._create(self.condominium, "2.4.02", "inss")
+        duplicate = self._create(self.chart, "2.4.02", "inss")
         assert duplicate.status_code == 400
         assert "nature" in duplicate.json()
         assert self._create(self.other, "2.4.01", "inss").status_code == 201
 
     def test_rejects_unknown_nature(self) -> None:
-        response = self._create(self.condominium, "2.4.01", "energia")
+        response = self._create(self.chart, "2.4.01", "energia")
         assert response.status_code == 400
         assert "nature" in response.json()

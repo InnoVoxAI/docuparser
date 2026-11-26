@@ -8,7 +8,7 @@ from condominiums.tests.base import TenantAPITestCase
 from django.urls import reverse
 from documents.models import Document, ExtractionResult
 
-from accounting.models import LedgerAccount, SupplierRule
+from accounting.models import ChartOfAccounts, LedgerAccount, SupplierRule
 from accounting.services import run_classification
 
 EXAMPLE_CNPJ = "11222333000181"
@@ -20,15 +20,18 @@ class ClassificationReviewAPITests(TenantAPITestCase):
         super().setUp()
         self.authenticate("reviewer")
         self.condominium = Condominium.objects.create(
-            name="Edifício Exemplo", cnpj=EXAMPLE_CNPJ
+            chart_of_accounts=ChartOfAccounts.objects.create(name="Plano"),
+            name="Edifício Exemplo",
+            cnpj=EXAMPLE_CNPJ,
         )
         self.water = LedgerAccount.objects.create(
-            condominium=self.condominium, code="2.1.01", name="Água"
+            chart=self.condominium.chart_of_accounts, code="2.1.01", name="Água"
         )
         self.maintenance = LedgerAccount.objects.create(
-            condominium=self.condominium, code="2.3.01", name="Manutenções"
+            chart=self.condominium.chart_of_accounts, code="2.3.01", name="Manutenções"
         )
         SupplierRule.objects.create(
+            chart=self.condominium.chart_of_accounts,
             condominium=self.condominium,
             supplier_tax_id=COMPESA,
             ledger_account=self.water,

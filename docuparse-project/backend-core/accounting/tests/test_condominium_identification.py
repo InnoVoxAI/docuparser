@@ -11,7 +11,12 @@ from documents.models import Document, ExtractionResult
 
 from accounting.classification import DocumentFacts
 from accounting.classification.identification import identify_condominium
-from accounting.models import DocumentClassification, LedgerAccount, SupplierRule
+from accounting.models import (
+    ChartOfAccounts,
+    DocumentClassification,
+    LedgerAccount,
+    SupplierRule,
+)
 from accounting.services import (
     NO_CONDOMINIUM_REASON,
     STALE_ACCOUNT_REASON,
@@ -185,13 +190,18 @@ class RunClassificationTests(TenantAPITestCase):
     def setUp(self) -> None:
         super().setUp()
         self.example = Condominium.objects.create(
-            name="Edifício Exemplo", cnpj=EXAMPLE_CNPJ
+            chart_of_accounts=ChartOfAccounts.objects.create(name="Plano"),
+            name="Edifício Exemplo",
+            cnpj=EXAMPLE_CNPJ,
         )
         self.water = LedgerAccount.objects.create(
-            condominium=self.example, code="2.1.01", name="Água"
+            chart=self.example.chart_of_accounts, code="2.1.01", name="Água"
         )
         SupplierRule.objects.create(
-            condominium=self.example, supplier_tax_id=COMPESA, ledger_account=self.water
+            chart=self.example.chart_of_accounts,
+            condominium=self.example,
+            supplier_tax_id=COMPESA,
+            ledger_account=self.water,
         )
         self.document = Document.objects.create(
             channel="manual", file_uri="local://documents/condos/doc/original"
@@ -226,7 +236,11 @@ class RunClassificationTests(TenantAPITestCase):
 
     def test_changing_the_condominium_drops_the_stale_account(self) -> None:
         user = get_user_model().objects.get(username="reviewer@condos.test")
-        other = Condominium.objects.create(name="Edifício Outro", cnpj=OTHER_CNPJ)
+        other = Condominium.objects.create(
+            chart_of_accounts=ChartOfAccounts.objects.create(name="Plano"),
+            name="Edifício Outro",
+            cnpj=OTHER_CNPJ,
+        )
         run_classification(self.document)
 
         set_document_condominium(self.document, other, user)
@@ -244,12 +258,19 @@ class RunClassificationTests(TenantAPITestCase):
 
     def test_changing_the_condominium_reclassifies_in_the_new_plan(self) -> None:
         user = get_user_model().objects.get(username="reviewer@condos.test")
-        other = Condominium.objects.create(name="Edifício Outro", cnpj=OTHER_CNPJ)
+        other = Condominium.objects.create(
+            chart_of_accounts=ChartOfAccounts.objects.create(name="Plano"),
+            name="Edifício Outro",
+            cnpj=OTHER_CNPJ,
+        )
         other_water = LedgerAccount.objects.create(
-            condominium=other, code="7.1", name="Água e esgoto"
+            chart=other.chart_of_accounts, code="7.1", name="Água e esgoto"
         )
         SupplierRule.objects.create(
-            condominium=other, supplier_tax_id=COMPESA, ledger_account=other_water
+            chart=other.chart_of_accounts,
+            condominium=other,
+            supplier_tax_id=COMPESA,
+            ledger_account=other_water,
         )
         run_classification(self.document)
 
@@ -265,13 +286,18 @@ class DocumentCondominiumAPITests(TenantAPITestCase):
         super().setUp()
         self.authenticate("reviewer")
         self.example = Condominium.objects.create(
-            name="Edifício Exemplo", cnpj=EXAMPLE_CNPJ
+            chart_of_accounts=ChartOfAccounts.objects.create(name="Plano"),
+            name="Edifício Exemplo",
+            cnpj=EXAMPLE_CNPJ,
         )
         self.water = LedgerAccount.objects.create(
-            condominium=self.example, code="2.1.01", name="Água"
+            chart=self.example.chart_of_accounts, code="2.1.01", name="Água"
         )
         SupplierRule.objects.create(
-            condominium=self.example, supplier_tax_id=COMPESA, ledger_account=self.water
+            chart=self.example.chart_of_accounts,
+            condominium=self.example,
+            supplier_tax_id=COMPESA,
+            ledger_account=self.water,
         )
         self.document = Document.objects.create(
             channel="manual", file_uri="local://documents/condos/doc/original"

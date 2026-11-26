@@ -9,7 +9,7 @@ from django.test import TestCase
 from tenants.models import Tenant
 
 from accounting.classification import DocumentFacts, classify
-from accounting.models import LedgerAccount, SupplierRule
+from accounting.models import ChartOfAccounts, LedgerAccount, SupplierRule
 
 CONDOMINIUM_CNPJ = "11222333000181"
 COMPESA = "09.769.035/0001-64"
@@ -70,8 +70,11 @@ class ClassificationTests(TestCase):
         connection.set_tenant(
             Tenant.objects.create(slug="rules", name="Administradora")
         )
+        self.chart = ChartOfAccounts.objects.create(name="Plano Exemplo")
         self.condominium = Condominium.objects.create(
-            name="Edifício Exemplo", cnpj=CONDOMINIUM_CNPJ
+            name="Edifício Exemplo",
+            cnpj=CONDOMINIUM_CNPJ,
+            chart_of_accounts=self.chart,
         )
         self.water = self._account("2.1.01", "Água")
         self.pest_control = self._account("2.3.04", "Dedetização")
@@ -88,12 +91,13 @@ class ClassificationTests(TestCase):
 
     def _account(self, code: str, name: str, nature: str = "") -> LedgerAccount:
         return LedgerAccount.objects.create(
-            condominium=self.condominium, code=code, name=name, nature=nature
+            chart=self.chart, code=code, name=name, nature=nature
         )
 
     def _supplier(self, tax_id: str, account: LedgerAccount, keyword: str = ""):
         digits = tax_id.replace(".", "").replace("/", "").replace("-", "")
         return SupplierRule.objects.create(
+            chart=self.chart,
             condominium=self.condominium,
             supplier_tax_id=digits,
             keyword=keyword,
@@ -178,17 +182,49 @@ class ClassificationTests(TestCase):
         self.water.save()
         assert classify(WATER_BILL, self.condominium) is None
 
-    def test_rules_from_another_condominium_do_not_apply(self) -> None:
-        other = Condominium.objects.create(name="Outro")
-        other_water = LedgerAccount.objects.create(
-            condominium=other, code="2.1.01", name="Água"
+    def test_rules_from_another_condominium_or_chart_do_not_apply(self) -> None:
+        # Outro condomínio do mesmo plano: a regra só dele não vale aqui.
+        neighbour = Condominium.objects.create(
+            name="Vizinho", chart_of_accounts=self.chart
         )
         SupplierRule.objects.create(
-            condominium=other,
+            chart=self.chart,
+            condominium=neighbour,
+            supplier_tax_id="09769035000164",
+            ledger_account=self.water,
+        )
+        # Outro plano: nem a regra do plano inteiro vale aqui.
+        other_chart = ChartOfAccounts.objects.create(name="Outro Plano")
+        other_water = LedgerAccount.objects.create(
+            chart=other_chart, code="2.1.01", name="Água"
+        )
+        SupplierRule.objects.create(
+            chart=other_chart,
             supplier_tax_id="09769035000164",
             ledger_account=other_water,
         )
         assert classify(WATER_BILL, self.condominium) is None
+
+    def test_chart_rule_applies_to_every_condominium_of_the_chart(self) -> None:
+        SupplierRule.objects.create(
+            chart=self.chart,
+            supplier_tax_id="09769035000164",
+            ledger_account=self.water,
+        )
+        neighbour = Condominium.objects.create(
+            name="Vizinho", chart_of_accounts=self.chart
+        )
+        assert classify(WATER_BILL, self.condominium).ledger_account == self.water
+        assert classify(WATER_BILL, neighbour).ledger_account == self.water
+
+    def test_condominium_rule_wins_over_chart_rule(self) -> None:
+        SupplierRule.objects.create(
+            chart=self.chart,
+            supplier_tax_id="09769035000164",
+            ledger_account=self.maintenance,
+        )
+        self._supplier(COMPESA, self.water)
+        assert classify(WATER_BILL, self.condominium).ledger_account == self.water
 
     def test_unknown_supplier_is_left_unclassified(self) -> None:
         assert classify(WATER_BILL, self.condominium) is None

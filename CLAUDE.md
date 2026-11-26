@@ -16,7 +16,6 @@ langextract-service: docuparse-project/langextract-service
 
 estes dependem de código em outras pastas como:
 docuparse-project/contracts
-docuparse-project/layout-service
 docuparse-project/shared
 
 Existe um frontend na pasta:

@@ -25,6 +25,7 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.65b0",
     "opentelemetry-instrumentation-requests>=0.65b0",
     "opentelemetry-instrumentation-redis>=0.65b0",
+    "requests>=2.32.0",
 ]
 
 [project.optional-dependencies]

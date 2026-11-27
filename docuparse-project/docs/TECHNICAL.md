@@ -76,11 +76,23 @@ cd docuparse-project/
 docker compose up --build
 ```
 
-O startup automático executa, nessa ordem, dentro do `backend-core`:
-1. `python manage.py migrate` — aplica todas as migrations
-2. `python manage.py seed_permissions` — cria as permissões padrão
-3. `python manage.py seed_admin` — cria o usuário admin padrão
-4. `python manage.py runserver 0.0.0.0:8000`
+A imagem do `backend-core` tem dois modos (`backend-core/entrypoint.sh`):
+
+- **`release`**: `migrate_schemas --shared`, `migrate_schemas` (tenants) e `seed_data`,
+  e sai. Roda uma vez por deploy. No compose, é o serviço `backend-core-release`, e o
+  `backend-core` só sobe depois que ele termina com sucesso.
+- **`web`** (padrão): `gunicorn core.wsgi` com **1 worker** e threads. Um worker só,
+  de propósito: o processamento roda num `ThreadPoolExecutor` em memória, e cada worker
+  criaria o próprio pool. Isso vale até existir a fila durável.
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `DOCUPARSE_MIGRATE_ON_BOOT` | `true` | Se `true`, o modo `web` roda o `release` antes de subir (compatível com o CMD antigo). O compose usa `false`. No k8s, passar para `false` quando o release virar initContainer ou Job |
+| `GUNICORN_THREADS` | `4` | Threads do worker do gunicorn |
+| `GUNICORN_TIMEOUT` | `120` | Timeout de requisição do gunicorn, em segundos |
+| `GUNICORN_CMD_ARGS` | — | Flags extras lidas pelo próprio gunicorn. O compose usa `--reload` |
+
+O `/admin/` do Django perde o CSS sem o `runserver`: não há `STATIC_ROOT` nem whitenoise.
 
 ### Conta admin padrão
 

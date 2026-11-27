@@ -138,10 +138,10 @@ services:
         condition: service_healthy
 
   backend-core:
-    build:
+    build: &backend-core-build
       context: .
       dockerfile: backend-core/Dockerfile
-    volumes:
+    volumes: &backend-core-volumes
       - ./backend-core:/app
       - ./contracts:/contracts:ro
       - ./shared:/shared:ro
@@ -151,9 +151,13 @@ services:
       - "8000:8000"
     env_file:
       - .env
-    environment:
+    environment: &backend-core-env
       USE_TELEMETRY: ${USE_TELEMETRY:-true}
       OTEL_SERVICE_NAME: backend-core
+      # Migrations e seed rodam no serviço backend-core-release (AR-04).
+      DOCUPARSE_MIGRATE_ON_BOOT: "false"
+      # gunicorn recarrega ao editar o código montado em /app (só em dev).
+      GUNICORN_CMD_ARGS: --reload
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       BACKEND_OCR_URL: http://backend-ocr:8080
@@ -192,6 +196,8 @@ services:
     networks:
       - docuparse-network
     depends_on:
+      backend-core-release:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -204,6 +210,25 @@ services:
         condition: service_started
       backend-com:
         condition: service_started
+
+  # Migrations (public e tenants) + seed_data, uma vez por `up`, antes do
+  # backend-core (AR-04). Mesma imagem, volumes e env (âncoras YAML); só muda o
+  # comando. DOCUPARSE_MIGRATE_ON_BOOT e GUNICORN_CMD_ARGS não afetam o release.
+  backend-core-release:
+    build: *backend-core-build
+    command: ["release"]
+    volumes: *backend-core-volumes
+    env_file:
+      - .env
+    environment: *backend-core-env
+    networks:
+      - docuparse-network
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
 
   backend-com:
     build:

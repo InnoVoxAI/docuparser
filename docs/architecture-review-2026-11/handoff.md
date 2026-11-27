@@ -47,30 +47,29 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 2ª sessão)
+## Próxima sessão (estado em 2026-11-27, 3ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
 AR-01, AR-02, AR-04 (imagem e compose) e AR-20 já estão em `dev` (PRs #67, #68, #69 e #71).
-Na 2ª sessão de 2026-11-27 foi feito o **AR-24**, em branch local ainda sem PR:
+O AR-24 foi mergeado em `dev` localmente (merge 6872daea); `dev` está 4 commits à frente de
+`origin/dev`, sem push. Na 3ª sessão de 2026-11-27 foi feito o **AR-25**, em branch local sem PR:
 
 | Branch | Commit | Tarefa |
 |---|---|---|
-| `fix/ar-24-erp-dispatch-fresh-connection` | ec58d281 | AR-24 |
+| `chore/ar-25-remove-ocr-thread` | cbf04ce6 | AR-25 |
 
-Detalhes em [work_in_progress.md](work_in_progress.md). Docs desta pasta e `memories/` seguem
-alterados e **não commitados** na árvore de trabalho, junto com mudanças do próprio usuário
-(`.gitignore`, `CLAUDE.md`, `decisions-pending.md`).
+Detalhes em [work_in_progress.md](work_in_progress.md).
 
 Por onde continuar, em ordem:
-1. O usuário dá push e abre o PR do AR-24 para `dev`.
+1. O usuário dá push de `dev` (AR-24) e abre o PR do AR-25 para `dev`.
 2. AR-04 no repo k8s (**perguntar antes**): initContainer com `args: ["release"]` e
    `DOCUPARSE_MIGRATE_ON_BOOT=false` no container web, em hml e depois em prod. Até isso
    existir, a imagem continua migrando no boot (padrão `true`).
 3. AR-03 e AR-05 (repo k8s e prod, **perguntar antes**). No AR-03, corrigir junto
    `DEBUG = os.environ.get("DEBUG", True)` em `core/settings.py`: a string "False" conta como
    verdadeira.
-4. Fase 1, uma por sessão: AR-25 e AR-23 são as menores; depois AR-21 (build depende do AR-20),
+4. Fase 1, uma por sessão: AR-23 é a menor; depois AR-21 (build depende do AR-20),
    AR-26, AR-27 e a limpeza (AR-10..AR-14).
    As decisões D-01, D-02 e D-03 já foram tomadas (ver [decisions-pending.md](decisions-pending.md)),
    então as fases 2 e 3 também estão destravadas.

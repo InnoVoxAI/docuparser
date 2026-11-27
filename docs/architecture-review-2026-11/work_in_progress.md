@@ -8,6 +8,7 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 | 2026-11-26 | Claude (revisão) | Varredura completa e criação desta pasta. Nenhum código alterado. |
 | 2026-11-27 | Claude | AR-01, AR-02, AR-04 (parte da imagem) e AR-20, uma branch local por tarefa a partir de `dev`. Sem push: o container não tem chave SSH do GitHub, e o `gh` não está instalado. Ver "Próxima sessão" no handoff. |
 | 2026-11-27 (2ª) | Claude | PRs #67, #68, #69 e #71 já mergeados em `dev`. AR-24 em `fix/ar-24-erp-dispatch-fresh-connection` @ ec58d281 (uma AR por sessão, a pedido do usuário). |
+| 2026-11-27 (3ª) | Claude | AR-24 já mergeado em `dev` local (merge 6872daea, `dev` 4 commits à frente de `origin/dev`). AR-25 em `chore/ar-25-remove-ocr-thread` @ cbf04ce6. |
 
 ## Estado das tarefas
 
@@ -31,8 +32,8 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 | AR-21 | Build depende dos testes | todo | depende de AR-20 |
 | AR-22 | Tags imutáveis | todo | |
 | AR-23 | Corrigir ci.yaml:18 | todo | |
-| AR-24 | Conexões nas threads restantes | done (`fix/ar-24-erp-dispatch-fresh-connection` @ ec58d281, falta PR) | O langextract já usava `_with_fresh_connection`; faltava só `submit_erp_dispatch`. Teste novo em `test_processing_queue.py`; `test_processing_queue` e `test_erp_flow`: 44 passed. |
-| AR-25 | Remover start_document_ocr_thread | todo | |
+| AR-24 | Conexões nas threads restantes | done (mergeado em `dev` local, 6872daea; falta push) | O langextract já usava `_with_fresh_connection`; faltava só `submit_erp_dispatch`. Teste novo em `test_processing_queue.py`; `test_processing_queue` e `test_erp_flow`: 44 passed. |
+| AR-25 | Remover start_document_ocr_thread | done (`chore/ar-25-remove-ocr-thread` @ cbf04ce6, falta PR) | Sem chamadores (grep). Saíram também `_run_ocr_safely`, o `_tracer` do módulo e 3 imports órfãos. `manage.py check` ok; test_classification_pipeline, test_processing_queue, test_tracing_propagation e test_api: 43 passed. |
 | AR-26 | Ampliar e agendar o sweeper | todo | paliativo |
 | AR-27 | Retry classificado | todo | |
 | AR-30..36 | Fila durável | todo | D-01 = A (Postgres) |

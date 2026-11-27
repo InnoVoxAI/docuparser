@@ -100,6 +100,8 @@ Estado de cada tarefa: [work_in_progress.md](work_in_progress.md).
   `.pyc`, não versionados). Perguntar ao usuário sobre `backend-core/not-used-with-s3/`.
   Remover o volume `docuparse-events` se D-04 = a. Limpar as dependências do
   `pyproject.toml` da raiz. Perguntar sobre `/docuparser/scripts/docker-compose.yml` (OLMOCR).
+  Perguntar se `tests/load/simulate_module_load.py` é consertado ou apagado: já estava
+  quebrado em `dev` (importa `backend_com` de `backend-com/src`; visto no AR-12).
 
 ### AR-15 · Reescrever `docs/architecture.md`
 - **Origem:** X1. Usar [findings.md §1](findings.md) e, depois das decisões, o diagrama-alvo.

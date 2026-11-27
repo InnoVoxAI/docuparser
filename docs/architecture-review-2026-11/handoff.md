@@ -45,17 +45,31 @@
 - A tag de imagem em hml e prod é a 0.0.15 (`main` @ `b497651d`), que **já** não tem os
   workers de eventos (conferido no AR-11). Não há tags git: compare o commit do CI Bot no repo
   k8s ("Updating the image tag") com o `git log origin/main`.
+- Os testes do backend-com **falham com 401 quando rodados pelo `run_script.sh`**: o `.env`
+  injeta credenciais que ativam a autenticação. Rode-os com `uv run --frozen --all-extras
+  pytest -q`, sem o `.env`, como faz o CI (22 passed em 2026-11-27).
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 10ª sessão)
+## Próxima sessão (estado em 2026-11-27, 11ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
-AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79) e AR-10 (código, #80).
-**AR-11** não teve mudança de código: só o repo k8s (`chore/docuparser-worker-flags-off` @
-ac61b87, sem push) e os docs, em `docs/ar-11-worker-flags` (a partir de `dev`, aguardando o PR).
+AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79), AR-10 (código, #80) e AR-11 (docs, #81; o k8s segue em
+`chore/docuparser-worker-flags-off` @ ac61b87, sem push).
+**AR-12** em `chore/ar-12-dead-contracts` @ a51fd3ea (a partir de `dev`, aguardando o PR).
+
+Como ficou o AR-12 (opções escolhidas pelo usuário): saíram os quatro contratos mortos
+(`ocr.completed`, `ocr.failed`, `layout.classified`, `extraction.completed`), o exemplo JSON
+deles, os dois scripts fake do shared e os três cenários mock do simulador de carga que
+publicavam esses eventos. O `EventBus` agora só tem `publish`, e o `RedisStreamEventBus` não
+lê mais nada (para depurar, `XRANGE` no redis-cli). **O `LocalJsonlEventBus` mantém
+`consume`/`consume_entries` de propósito**: os testes do com, do core e do shared conferem os
+eventos publicados com ele. Não remover sem trocar esses testes por outro helper.
+Pendência fora do escopo: `tests/load/simulate_module_load.py` já estava quebrado em `dev`
+(importa `backend_com` de `backend-com/src`, mas o com é flat). Ninguém o roda, nem o CI.
+Consertar ou apagar com o usuário de acordo (cabe no AR-14).
 
 Como ficou o AR-11: a 0.0.15 (hml e prod) saiu de `main` @ `b497651d`, depois da remoção dos
 workers (#66). Nada em `dev` lê `DOCUPARSE_OCR_WORKER_ENABLED` /
@@ -94,9 +108,7 @@ agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. Fase 1, uma AR por sessão: faltam AR-12, AR-13 e AR-14.
-   No AR-12, `shared/consume_fake_event.py` e `publish_fake_event.py` são os únicos
-   usuários de `consume`/`consume_entries`.
+1. Fase 1, uma AR por sessão: faltam AR-13 e AR-14.
 2. AR-05 (probes e resources) e o CronJob do sweeper (parte do AR-70), ambos no repo k8s e
    **perguntando antes**. Podem ser preparados em branch sem push e ir junto no deploy final.
 3. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações

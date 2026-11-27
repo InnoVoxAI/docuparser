@@ -51,13 +51,9 @@
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
-AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75), AR-20, AR-24 e
-AR-25 já estão em `dev`. Commitados, aguardando o PR do usuário:
-- **AR-23** (output `SKIP` morto removido de `ci.yaml`), em `ci/ar-23-remove-skip-output`;
-- **AR-21** (o build de imagem depende dos testes de backend), em
-  `ci/ar-21-build-needs-tests`. Essa branch também traz as atualizações de docs do AR-23,
-  para os dois PRs não entrarem em conflito. No `ci.yaml` os dois mexem em linhas
-  diferentes.
+AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75), AR-20, AR-24,
+AR-25 e AR-23 (#76) já estão em `dev`. Commitado, aguardando o PR do usuário: **AR-21** (o build
+de imagem depende dos testes de backend), em `ci/ar-21-build-needs-tests`.
 
 Como ficou o AR-21: o `ci.yaml` chama o `backend-ci.yaml` (`workflow_call`) no job
 `backend-tests`, e o `pre-deploy` tem `needs` nele. O push do `backend-ci.yaml` só dispara em

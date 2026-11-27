@@ -39,3 +39,7 @@ Notas: [[AR-01 - rota POST /api/ocr/process removida]], [[AR-02 - token interno 
 ## Atualização (2026-11-27, 5ª sessão)
 
 AR-24, AR-25 (#72), AR-03 no código (#73) e AR-07 (#75, `/admin/` removido) já estão em `dev`. AR-23: o output `SKIP` do job `pre-deploy` em `.github/workflows/ci.yaml` apontava para um step `check_version` que não existe mais e ninguém o lia. A linha foi removida na branch `ci/ar-23-remove-skip-output`, sem efeito no deploy. Falta no repo k8s (perguntar antes): o deploy conjunto de AR-03 e AR-04 (ConfigMap `DEBUG: "False"` e initContainer `release`), que só funciona com uma tag gerada depois desses merges, e o AR-05.
+
+## Atualização (2026-11-27, 6ª sessão)
+
+AR-21 em `ci/ar-21-build-needs-tests`, a partir de `dev` e commitado (o usuário abre o PR). O `ci.yaml` chama o `backend-ci.yaml` via `workflow_call`, e o build e o deploy só rodam com os testes verdes. Em emergência, `workflow_dispatch` com `skip_tests`. AR-23 já em `dev` (#76). Próxima: AR-26. Ver [[AR-21 - build de imagem depende dos testes de backend]].

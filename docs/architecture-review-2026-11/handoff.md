@@ -47,13 +47,21 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 5ª sessão)
+## Próxima sessão (estado em 2026-11-27, 6ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
-AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75), AR-20, AR-24 e
-AR-25 já estão em `dev`. Na 5ª sessão foi feito o **AR-23** (output `SKIP` morto removido
-de `ci.yaml`), em `ci/ar-23-remove-skip-output`, a partir de `dev`, commitado; o usuário abre o PR.
+AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75), AR-20, AR-24,
+AR-25 e AR-23 (#76) já estão em `dev`. Commitado, aguardando o PR do usuário: **AR-21** (o build
+de imagem depende dos testes de backend), em `ci/ar-21-build-needs-tests`.
+
+Como ficou o AR-21: o `ci.yaml` chama o `backend-ci.yaml` (`workflow_call`) no job
+`backend-tests`, e o `pre-deploy` tem `needs` nele. O push do `backend-ci.yaml` só dispara em
+`dev`, porque em main e staging ele roda dentro do `ci.yaml`. Válvula de escape:
+`workflow_dispatch` do `ci.yaml` com `skip_tests=true` (só main/staging), para quando o CI
+quebrar por causa do runner. **O Backend CI ainda não passou no runner.** O PR do AR-21 o
+dispara, porque mexe em `backend-ci.yaml`. Se o job do core falhar por falta de env var,
+conserte o `env:` do job `test-core` antes de mergear.
 
 Pendentes no repo k8s, sem push: `chore/docuparser-debug-off` @ ceebf26 (AR-03) e
 `chore/docuparser-core-release` (AR-04).
@@ -63,15 +71,15 @@ agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. Fase 1, uma por sessão: **AR-21** (o build depende dos testes do AR-20), AR-26, AR-27 e
-   a limpeza (AR-10..AR-14). As decisões D-01, D-02 e D-03 já foram tomadas (ver
+1. Fase 1, uma por sessão: **AR-26** (ampliar o sweeper e agendá-lo), AR-27 e a limpeza (AR-10..AR-14). As decisões D-01, D-02 e D-03 já foram tomadas (ver
    [decisions-pending.md](decisions-pending.md)), então as fases 2 e 3 também estão
    destravadas.
 2. AR-05 (probes e resources, repo k8s, **perguntar antes**). Pode ser preparado em branch
    sem push e ir junto no deploy final.
 3. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
    acabaram:
-   a. gerar a tag a partir de `dev`;
+   a. gerar a tag a partir de `dev`. Desde o AR-21 o push em main/staging só faz o build
+      se o Backend CI passar; em emergência use `workflow_dispatch` com `skip_tests`;
    b. com essa tag em hml, mergear `chore/docuparser-core-release` (AR-04: initContainer
       `args: ["release"]`, que quebra na 0.0.15 por falta de ENTRYPOINT) e
       `chore/docuparser-debug-off` (AR-03). Na 0.0.15 a string `"False"` ainda conta como

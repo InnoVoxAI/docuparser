@@ -4,8 +4,13 @@ name: "Backend CI"
 # no CI. Este workflow roda ruff, pytest de cada serviço e
 # `makemigrations --check` no core. As env vars espelham o run_script.sh
 # (PYTHONPATH com contracts e shared).
+#
+# AR-21: também é um workflow reutilizável. O ci.yaml o chama antes do build de
+# imagem, nos pushes para main e staging. Por isso o push aqui só dispara em `dev`:
+# em main e staging os testes rodam dentro do ci.yaml, uma vez só.
 
 on:
+  workflow_call:
   pull_request:
     paths:
       - "docuparse-project/**"
@@ -14,8 +19,6 @@ on:
       - ".github/workflows/backend-ci.yaml"
   push:
     branches:
-      - main
-      - staging
       - dev
     paths:
       - "docuparse-project/**"
@@ -23,8 +26,10 @@ on:
       - "ruff.toml"
       - ".github/workflows/backend-ci.yaml"
 
+# Quando chamado pelo ci.yaml, github.workflow é "CI" (o nome do chamador). O nome
+# no grupo impede que um run cancele o outro no mesmo ref.
 concurrency:
-  group: backend-ci-${{ github.ref }}
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:

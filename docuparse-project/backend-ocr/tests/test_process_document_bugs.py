@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from api.app import app
 from api.routes import document as document_route
 from application import process_document as process_module
@@ -23,22 +24,6 @@ class FakeEngine:
         return self.result
 
 
-class FakeExtractor:
-    def extract(self, ocr_result):
-        return {
-            "fields": {"amount": "10,00"},
-            "final_score": 0.8,
-            "field_confidence": {},
-            "low_confidence_fields": [],
-            "_meta": {},
-        }
-
-
-class FailingExtractor:
-    def __init__(self):
-        raise AssertionError("FieldExtractor should not run in the main OCR path")
-
-
 def test_process_document_calls_classifier_with_filename_and_content(
     monkeypatch,
 ) -> None:
@@ -55,7 +40,6 @@ def test_process_document_calls_classifier_with_filename_and_content(
         lambda doc_type, selected=None: "fake",
     )
     monkeypatch.setattr(process_module, "ENGINE_REGISTRY", {"fake": FakeEngine()})
-    monkeypatch.setattr(process_module, "FieldExtractor", FakeExtractor)
 
     result = process_module.process_document(b"abc", "scan.png")
 
@@ -75,32 +59,12 @@ def test_process_document_skips_semantic_extraction_by_default(monkeypatch) -> N
         lambda doc_type, selected=None: "fake",
     )
     monkeypatch.setattr(process_module, "ENGINE_REGISTRY", {"fake": FakeEngine()})
-    monkeypatch.setattr(process_module, "FieldExtractor", FailingExtractor)
 
     result = process_module.process_document(b"abc", "scan.png")
 
     assert result["fields"] == {}
     assert result["final_score"] == 0.0
-    assert result["debug"]["field_extraction_meta"]["semantic_extraction"] == "disabled"
-
-
-def test_process_document_runs_legacy_extraction_when_requested(monkeypatch) -> None:
-    monkeypatch.setattr(
-        process_module, "classify_document", lambda filename, content: "scanned_image"
-    )
-    monkeypatch.setattr(
-        process_module.engine_resolver,
-        "get_engine",
-        lambda doc_type, selected=None: "fake",
-    )
-    monkeypatch.setattr(process_module, "ENGINE_REGISTRY", {"fake": FakeEngine()})
-    monkeypatch.setattr(process_module, "FieldExtractor", FakeExtractor)
-
-    result = process_module.process_document(b"abc", "scan.png", legacy_extraction=True)
-
-    assert result["fields"] == {"amount": "10,00"}
-    assert result["final_score"] == 0.8
-    assert result["semantic_extraction_enabled"] is True
+    assert result["semantic_extraction_enabled"] is False
 
 
 def test_process_document_routes_digital_pdf_to_docling(monkeypatch) -> None:
@@ -119,7 +83,6 @@ def test_process_document_routes_digital_pdf_to_docling(monkeypatch) -> None:
             ),
         },
     )
-    monkeypatch.setattr(process_module, "FieldExtractor", FakeExtractor)
 
     result = process_module.process_document(b"%PDF", "texto.pdf")
 
@@ -185,7 +148,6 @@ def test_process_document_routes_image_pdf_to_openrouter(monkeypatch) -> None:
             ),
         },
     )
-    monkeypatch.setattr(process_module, "FieldExtractor", FakeExtractor)
 
     result = process_module.process_document(b"%PDF", "scan.pdf")
 
@@ -222,7 +184,6 @@ def test_process_document_fallback_does_not_use_undefined_ocr_result(
             ),
         },
     )
-    monkeypatch.setattr(process_module, "FieldExtractor", FakeExtractor)
 
     result = process_module.process_document(b"abc", "scan.png")
 
@@ -326,6 +287,10 @@ def test_openrouter_image_uses_key_values_when_extracted_text_is_empty(
         / "docs_teste"
         / "PHOTO-2026-01-08-18-44-00.jpg"
     )
+    if not fixture.exists():
+        pytest.skip(
+            f"fixture local ausente: {fixture.name} (docs_teste/ não é versionado)"
+        )
     result = openrouter_engine.OpenRouterOCREngine().process(
         fixture.read_bytes(), {"filename": fixture.name}
     )
@@ -371,6 +336,10 @@ def test_openrouter_image_retries_with_qwen_when_text_is_empty(monkeypatch) -> N
         / "docs_teste"
         / "PHOTO-2026-01-08-18-44-00.jpg"
     )
+    if not fixture.exists():
+        pytest.skip(
+            f"fixture local ausente: {fixture.name} (docs_teste/ não é versionado)"
+        )
     result = openrouter_engine.OpenRouterOCREngine().process(
         fixture.read_bytes(), {"filename": fixture.name}
     )

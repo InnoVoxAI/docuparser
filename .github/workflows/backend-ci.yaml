@@ -1,0 +1,116 @@
+name: "Backend CI"
+
+# AR-20 (revisão de arquitetura 2026-11): até aqui nenhum teste de backend rodava
+# no CI. Este workflow roda ruff, pytest de cada serviço e
+# `makemigrations --check` no core. As env vars espelham o run_script.sh
+# (PYTHONPATH com contracts e shared).
+
+on:
+  pull_request:
+    paths:
+      - "docuparse-project/**"
+      - "!docuparse-project/frontend/**"
+      - "ruff.toml"
+      - ".github/workflows/backend-ci.yaml"
+  push:
+    branches:
+      - main
+      - staging
+      - dev
+    paths:
+      - "docuparse-project/**"
+      - "!docuparse-project/frontend/**"
+      - "ruff.toml"
+      - ".github/workflows/backend-ci.yaml"
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONPATH: ${{ github.workspace }}/docuparse-project/contracts:${{ github.workspace }}/docuparse-project/shared
+  # Telemetria desligada nos testes: não há collector no runner.
+  USE_TELEMETRY: "false"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: ruff check
+        # Versão fixa para o resultado não mudar sozinho; ruff.toml na raiz.
+        # tests/load fica de fora: é script de carga, com imports depois do setup.
+        working-directory: docuparse-project
+        run: >-
+          uvx ruff@0.17.6 check
+          backend-core backend-com backend-ocr langextract-service shared contracts
+
+  test-core:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: docuparse
+          POSTGRES_USER: docuparse
+          POSTGRES_PASSWORD: docuparse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U docuparse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: docuparse
+      POSTGRES_USER: docuparse
+      POSTGRES_PASSWORD: docuparse
+      DOCUPARSE_REQUIRE_POSTGRES: "true"
+      DOCUPARSE_STORAGE_BACKEND: local
+      DOCUPARSE_EVENT_BUS: local
+      DEPLOYMENT_ENVIRONMENT: test
+      SECRET_KEY: ci-only-secret-key-not-used-anywhere-else
+    defaults:
+      run:
+        working-directory: docuparse-project/backend-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: docuparse-project/backend-core/uv.lock
+      - name: uv sync
+        run: uv sync --frozen
+      - name: Migrations em dia com os models
+        run: uv run --frozen python manage.py makemigrations --check --dry-run
+      - name: pytest (backend-core)
+        run: uv run --frozen pytest -q
+      - name: pytest (shared e contracts, com o venv do core)
+        working-directory: docuparse-project
+        run: |
+          backend-core/.venv/bin/python -m pytest -q -p no:django shared/tests
+          backend-core/.venv/bin/python -m pytest -q -p no:django contracts/tests
+
+  test-services:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend-com, backend-ocr, langextract-service]
+    defaults:
+      run:
+        working-directory: docuparse-project/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: docuparse-project/${{ matrix.service }}/uv.lock
+      - name: uv sync
+        # --all-extras: o backend-com tem o httpx do TestClient no extra `test`.
+        run: uv sync --frozen --all-extras
+      - name: pytest
+        run: uv run --frozen --all-extras pytest -q

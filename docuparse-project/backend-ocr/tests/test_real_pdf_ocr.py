@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from application.process_document import process_document
 
 REAL_PDF = (
     Path(__file__).resolve().parents[3] / "docs_teste" / "AnyScanner_12_09_2025.pdf"
+)
+pytestmark = pytest.mark.skipif(
+    not REAL_PDF.exists(),
+    reason="fixture local ausente: docs_teste/ não é versionado",
 )
 
 

@@ -10,7 +10,10 @@ from opentelemetry import trace
 from tenacity import Retrying, stop_after_attempt, wait_exponential
 
 from docuparse_orchestrator._run_context import current_run_errors, current_run_id
-from docuparse_orchestrator.persistence import TaskExecutionWriter, default_django_writer
+from docuparse_orchestrator.persistence import (
+    TaskExecutionWriter,
+    default_django_writer,
+)
 from docuparse_orchestrator.results import TaskError, TaskResult
 
 _tracer = trace.get_tracer(__name__)

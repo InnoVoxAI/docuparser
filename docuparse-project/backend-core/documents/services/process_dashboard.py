@@ -19,9 +19,9 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from orchestrator.models import OrchestrationRun, TaskExecution
 
 from documents.models import Document
-from orchestrator.models import OrchestrationRun, TaskExecution
 
 STEP_ORDER = ["ocr", "extraction", "validation_decision"]
 STEP_LABELS = {

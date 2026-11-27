@@ -51,14 +51,21 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 11ª sessão)
+## Próxima sessão (estado em 2026-11-27, 12ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
-AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79), AR-10 (código, #80) e AR-11 (docs, #81; o k8s segue em
-`chore/docuparser-worker-flags-off` @ ac61b87, sem push).
-**AR-12** em `chore/ar-12-dead-contracts` @ a51fd3ea (a partir de `dev`, aguardando o PR).
+AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79), AR-10 (código, #80), AR-11 (docs, #81; o k8s segue em
+`chore/docuparser-worker-flags-off` @ ac61b87, sem push) e AR-12 (#82).
+**AR-13** em `chore/ar-13-rename-pyprojects` @ 1b354b6d (a partir de `dev`, aguardando o PR).
+
+Como ficou o AR-13 (opções escolhidas pelo usuário: nome = nome do diretório e incluir o
+core): os pyprojects agora se chamam `backend-ocr`, `langextract-service` e `backend-core`
+(o core também era `atoms`), com descrições corretas. Nada dependia do nome (grep em
+Dockerfiles, compose, CI, `run_script.sh`, docs e repo k8s). Os `uv.lock` só mudaram o nome,
+sem upgrades. O `pyproject.toml` da raiz (`name = "docuparser"`, descrição "Add your
+description here") não foi mexido: a limpeza dele cabe no AR-14.
 
 Como ficou o AR-12 (opções escolhidas pelo usuário): saíram os quatro contratos mortos
 (`ocr.completed`, `ocr.failed`, `layout.classified`, `extraction.completed`), o exemplo JSON
@@ -108,7 +115,7 @@ agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. Fase 1, uma AR por sessão: faltam AR-13 e AR-14.
+1. Fase 1, uma AR por sessão: falta o AR-14.
 2. AR-05 (probes e resources) e o CronJob do sweeper (parte do AR-70), ambos no repo k8s e
    **perguntando antes**. Podem ser preparados em branch sem push e ir junto no deploy final.
 3. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
@@ -129,7 +136,7 @@ Por onde continuar, em ordem:
 
 Notas práticas:
 - A suíte inteira do backend-core leva cerca de 30 min. Rode o teste específico e os módulos
-  afetados, e deixe a suíte inteira para o CI. A do backend-ocr leva uns 4–5 min.
+  afetados, e deixe a suíte inteira para o CI. A do backend-ocr leva uns 20 s (16 passed, 4 skipped no AR-13).
 - O hook `ruff format` do pre-commit reformata arquivos inteiros. Se ele mexer em trecho não
   relacionado, descarte essa parte e use `--no-verify` (foi o caso do commit do AR-20).
 - `docker compose config` precisa de um `.env` em `docuparse-project/` (que não existe no

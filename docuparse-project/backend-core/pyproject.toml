@@ -1,7 +1,7 @@
 [project]
-name = "atoms"
+name = "backend-core"
 version = "0.1.0"
-description = "Mini tools for building big things"
+description = "DocuParser Core (Django API and document pipeline)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [

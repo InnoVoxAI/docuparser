@@ -1,7 +1,7 @@
 [project]
-name = "atoms"
+name = "backend-ocr"
 version = "0.1.0"
-description = "Backend Core"
+description = "DocuParser OCR service"
 readme = "README.md"
 license = { text = "MIT" }
 authors = []

@@ -844,6 +844,9 @@ removidos em 11/2026.
 
 O barramento (Redis Streams, com fallback para arquivos locais em desenvolvimento) continua recebendo
 os eventos abaixo. Os eventos de ERP também são usados como mensagens dentro do próprio core.
+Só o backend-core e o backend-com publicam; o backend-ocr e o langextract-service não usam Redis.
+Nenhum serviço lê as streams. Cada `XADD` usa `MAXLEN ~ N` (aproximado), e assim a stream guarda só os
+eventos recentes (N = `DOCUPARSE_EVENT_STREAM_MAXLEN`, padrão 10000; `0` desliga o corte).
 
 ### Eventos disponíveis
 
@@ -962,7 +965,8 @@ Arquivo: `docuparse-project/.env`
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `REDIS_URL` | `redis://redis:6379/0` | URL de conexão |
+| `REDIS_URL` | `redis://redis:6379/0` | URL de conexão (só backend-core e backend-com) |
+| `DOCUPARSE_EVENT_STREAM_MAXLEN` | `10000` | Teto aproximado de cada stream (`XADD MAXLEN ~`). `0` desliga o corte |
 
 ### MinIO (Object Storage)
 

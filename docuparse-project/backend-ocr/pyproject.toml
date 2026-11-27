@@ -18,13 +18,11 @@ dependencies = [
     "pypdfium2>=5.12.1",
     "pytesseract>=0.3.13",
     "python-multipart>=0.0.32",
-    "redis>=8.0.1",
     "requests>=2.34.2",
     "uvicorn[standard]>=0.51.0",
     "opentelemetry-sdk>=1.44.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.44.0",
     "opentelemetry-instrumentation-fastapi>=0.65b0",
-    "opentelemetry-instrumentation-redis>=0.65b0",
     "opencv-python>=5.0.0.93",
 ]
 

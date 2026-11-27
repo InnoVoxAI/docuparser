@@ -8,7 +8,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.instrumentation.redis import RedisInstrumentor
 
 from api.schemas import ExtractRequest, ExtractResponse
 
@@ -17,7 +16,6 @@ logger = logging.getLogger(__name__)
 configure_tracing("langextract-service")
 if is_telemetry_enabled():
     HTTPXClientInstrumentor().instrument()
-    RedisInstrumentor().instrument()
 
 
 app = FastAPI(

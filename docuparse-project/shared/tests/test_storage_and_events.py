@@ -7,9 +7,11 @@ from uuid import uuid4
 import boto3
 import pytest
 from docuparse_events import (
+    DEFAULT_STREAM_MAXLEN,
     LocalJsonlEventBus,
     RedisStreamEventBus,
     event_bus_from_env,
+    stream_maxlen_from_env,
 )
 from docuparse_observability import log_event
 from docuparse_storage import (
@@ -109,6 +111,63 @@ def test_redis_stream_event_bus_publish_and_consume() -> None:
     assert entries[0].payload == event
 
 
+def test_redis_stream_event_bus_trims_streams_approximately() -> None:
+    client = FakeRedisStreams()
+
+    RedisStreamEventBus(client).publish("erp.sent", {"event_type": "erp.sent"})
+    RedisStreamEventBus(client, maxlen=500).publish("erp.sent", {})
+
+    assert client.xadd_kwargs == [
+        {"maxlen": DEFAULT_STREAM_MAXLEN, "approximate": True},
+        {"maxlen": 500, "approximate": True},
+    ]
+
+
+def test_redis_stream_event_bus_without_maxlen_does_not_trim() -> None:
+    client = FakeRedisStreams()
+
+    RedisStreamEventBus(client, maxlen=None).publish("erp.sent", {})
+    RedisStreamEventBus(client, maxlen=0).publish("erp.sent", {})
+
+    assert client.xadd_kwargs == [{}, {}]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, DEFAULT_STREAM_MAXLEN),
+        ("", DEFAULT_STREAM_MAXLEN),
+        ("2500", 2500),
+        ("0", None),
+        ("-1", None),
+        ("abc", DEFAULT_STREAM_MAXLEN),
+    ],
+)
+def test_stream_maxlen_from_env(monkeypatch, raw, expected) -> None:
+    if raw is None:
+        monkeypatch.delenv("DOCUPARSE_EVENT_STREAM_MAXLEN", raising=False)
+    else:
+        monkeypatch.setenv("DOCUPARSE_EVENT_STREAM_MAXLEN", raw)
+
+    assert stream_maxlen_from_env() == expected
+
+
+def test_event_bus_from_env_passes_maxlen_to_redis(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_from_url(url: str, maxlen: int | None = None) -> str:
+        captured.update(url=url, maxlen=maxlen)
+        return "bus"
+
+    monkeypatch.setenv("DOCUPARSE_EVENT_BUS", "redis")
+    monkeypatch.setenv("REDIS_URL", "redis://example:6379/0")
+    monkeypatch.setenv("DOCUPARSE_EVENT_STREAM_MAXLEN", "1234")
+    monkeypatch.setattr(RedisStreamEventBus, "from_url", staticmethod(fake_from_url))
+
+    assert event_bus_from_env() == "bus"
+    assert captured == {"url": "redis://example:6379/0", "maxlen": 1234}
+
+
 def test_log_event_emits_trace_context(caplog) -> None:
     logger = logging.getLogger("docuparse-test")
 
@@ -132,8 +191,10 @@ def test_log_event_emits_trace_context(caplog) -> None:
 class FakeRedisStreams:
     def __init__(self) -> None:
         self.streams: dict[str, list[tuple[str, dict[bytes, bytes]]]] = {}
+        self.xadd_kwargs: list[dict[str, object]] = []
 
-    def xadd(self, stream: str, fields: dict[str, str]) -> bytes:
+    def xadd(self, stream: str, fields: dict[str, str], **kwargs: object) -> bytes:
+        self.xadd_kwargs.append(kwargs)
         messages = self.streams.setdefault(stream, [])
         message_id = f"{len(messages) + 1}-0"
         encoded_fields = {

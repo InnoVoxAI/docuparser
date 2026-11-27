@@ -26,7 +26,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.redis import RedisInstrumentor
 
 
 def _load_project_env() -> None:
@@ -47,8 +46,6 @@ def _load_project_env() -> None:
 _load_project_env()
 
 configure_tracing("backend-ocr")
-if is_telemetry_enabled():
-    RedisInstrumentor().instrument()
 
 from domain.engine_resolver import ENGINE_DEFAULTS  # noqa: E402
 

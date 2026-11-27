@@ -300,10 +300,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
-      DOCUPARSE_EVENT_BUS: redis
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
-      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
       # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
       # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
       DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
@@ -321,8 +318,6 @@ services:
     networks:
       - docuparse-network
     depends_on:
-      redis:
-        condition: service_healthy
       minio:
         condition: service_healthy
 
@@ -336,7 +331,6 @@ services:
       - ./contracts:/contracts:ro
       - ./shared:/shared:ro
       - docuparse-storage:/data/storage
-      - docuparse-events:/data/events
     ports:
       - "8091:8091"
     environment:
@@ -345,10 +339,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-development}
       PYTHONPATH: /app:/contracts:/shared
-      DOCUPARSE_EVENT_BUS: redis
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DOCUPARSE_LOCAL_STORAGE_DIR: /data/storage
-      DOCUPARSE_LOCAL_EVENT_DIR: /data/events
       # Storage compartilhado S3/MinIO (feature 011). Default s3 para exercer a
       # feature; troque DOCUPARSE_STORAGE_BACKEND=local no .env para o modo antigo.
       DOCUPARSE_STORAGE_BACKEND: ${DOCUPARSE_STORAGE_BACKEND:-s3}
@@ -375,8 +366,6 @@ services:
     networks:
       - docuparse-network
     depends_on:
-      redis:
-        condition: service_healthy
       minio:
         condition: service_healthy
 

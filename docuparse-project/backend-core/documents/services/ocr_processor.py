@@ -9,13 +9,10 @@ from io import BytesIO
 from accounting.services import run_classification_safely
 from catalog.models import LayoutConfig, SchemaConfig
 from django.conf import settings
-from django.db import connection
 from django.utils import timezone
-from docuparse_observability.tracing import capture_current_span_link
 from docuparse_orchestrator.decorators import task
 from docuparse_storage import document_ocr_raw_text_key, get_storage
 from models.classifier import classify
-from opentelemetry import trace
 
 from documents.models import Document, ExtractionResult
 from documents.services.langextract_client import LangExtractClient
@@ -439,38 +436,3 @@ def _resolve_schema_for_extraction(
             return cfg.schema_config
 
     return None
-
-
-_tracer = trace.get_tracer(__name__)
-
-
-def start_document_ocr_thread(document_id) -> None:
-    import threading
-
-    # threading.Thread não herda contextvars — sem capturar/propagar o Link
-    # aqui, o processamento em background perde a associação com o trace de
-    # origem (mesmo motivo de processing_queue.py, FR-007).
-    link = capture_current_span_link()
-    thread = threading.Thread(
-        target=_run_ocr_safely, args=(document_id, link), daemon=True
-    )
-    thread.start()
-
-
-def _run_ocr_safely(document_id, link: trace.Link | None = None) -> None:
-    with _tracer.start_as_current_span(
-        "document.ocr_processing", links=[link] if link else []
-    ) as span:
-        try:
-            process_document_ocr(document_id)
-        except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(trace.StatusCode.ERROR, str(exc))
-            logger.warning(
-                "automatic_ocr_failed",
-                extra={"document_id": str(document_id), "error": str(exc)},
-            )
-        finally:
-            # Thread nova a cada chamada: sem fechar, a conexão dela fica aberta
-            # no Postgres até o processo morrer.
-            connection.close()

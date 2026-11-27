@@ -14,6 +14,7 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 | 2026-11-27 (6ª) | Claude | AR-21 em `ci/ar-21-build-needs-tests`, a partir de `dev`. AR-23 já em `dev` (#76). |
 | 2026-11-27 (7ª) | Claude | AR-21 já em `dev` (#77). AR-26 (código) em `fix/ar-26-sweeper-extraction`, a partir de `dev`. |
 | 2026-11-27 (8ª) | Claude | AR-26 já em `dev` (#78). AR-27 em `fix/ar-27-retry-classificado`, a partir de `dev`. |
+| 2026-11-27 (9ª) | Claude | AR-27 já em `dev` (#79). AR-10 em `chore/ar-10-redis-ocr-langextract`, a partir de `dev`; k8s em `chore/docuparser-events-config` @ eae066f (sem push). |
 
 ## Estado das tarefas
 
@@ -26,7 +27,7 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 | AR-05 | Probes e resources ⚠️ | todo | repo k8s |
 | AR-06 | Segredos versionados (usuário) | dropped (D-06: ignorar) | |
 | AR-07 | Destino do `/admin/` ⚠️ | done (PR #75) | Opção (a), escolhida pelo usuário: saem a rota e o app `django.contrib.admin`. Nenhuma migration depende dele (`makemigrations --check`: sem mudanças); a tabela `django_admin_log` fica órfã no schema public, inofensiva. Teste em `documents/tests/test_removed_routes.py`; users, tenants e core: 91 passed. |
-| AR-10 | Redis/barramento fora de ocr e langextract + MAXLEN | todo | |
+| AR-10 | Redis/barramento fora de ocr e langextract + MAXLEN | doing (código em `chore/ar-10-redis-ocr-langextract`, commitado, falta PR; k8s em `chore/docuparser-events-config` @ eae066f, sem push) | Ninguém lê as streams em produção: o único leitor é `shared/consume_fake_event.py`, que sai no AR-12. Publicam o com (`document.received`) e o core (`erp.integration.requested`, `erp.sent`, `erp.failed`). Opções escolhidas pelo usuário: **`MAXLEN ~` 10000, por env var** `DOCUPARSE_EVENT_STREAM_MAXLEN` (`0` desliga o corte; valor inválido cai no padrão com aviso, porque o publish do com fica fora de try/except) e **separar a ConfigMap no k8s** (`docuparser-events-config`, só core e com, com `DOCUPARSE_EVENT_BUS` e o MAXLEN). O `REDIS_URL` segue no Secret compartilhado, que não editamos. ocr e langextract: saíram o `RedisInstrumentor`, `redis` e `opentelemetry-instrumentation-redis` (uv.lock regenerado só com essas remoções) e, no compose, `DOCUPARSE_EVENT_BUS`, `REDIS_URL`, `DOCUPARSE_LOCAL_EVENT_DIR`, o `depends_on: redis` e o volume `docuparse-events` no langextract. Docs: `docs/TECHNICAL.md` e `.env.example`. Testes: test_storage_and_events, 16 passed; shared/tests, 72 passed; backend-ocr, 16 passed e 4 skipped; langextract, 3 passed; ruff ok. `docker compose config` validado (cópia com o `.env` local). `compose up` não testado. |
 | AR-11 | Flags de worker no ConfigMap ⚠️ | todo | conferir a tag em prod |
 | AR-12 | Contratos e scripts mortos | todo | |
 | AR-13 | Renomear pyprojects `atoms` | todo | |

@@ -47,66 +47,72 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 8ª sessão)
+## Próxima sessão (estado em 2026-11-27, 9ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
-AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25 e AR-26 (código do sweeper, #78). Commitado e
-aguardando o PR do usuário: **AR-27** (retry classificado), em `fix/ar-27-retry-classificado`.
+AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78) e AR-27 (#79).
+Commitado e aguardando o PR do usuário: **AR-10**, em `chore/ar-10-redis-ocr-langextract`.
 
-Como ficou o AR-27 (opções A + 2 + padrão vazio, escolhidas pelo usuário):
-- `@task(..., retry_on=(...))`: o retry é opt-in e o padrão `()` não repete nada. Só o
-  `ocr_task` e o `extraction_task` declaram `retry_on=(TransientServiceError,)`.
-- A classificação fica nos clientes do core: `documents/services/service_errors.py`
-  (`request_json`). São transitórios `ConnectTimeout`, `ConnectionError`, 429, 502, 503 e
-  504. O resto é permanente, **inclusive o 500 e o `ReadTimeout`**. O backend-ocr transforma
-  qualquer erro do OpenRouter (até 400/401) em 500, e um `ReadTimeout` quer dizer que o OCR
-  pago provavelmente já rodou. **Não "conserte" o 500 para transitório** sem antes fazer o
-  backend-ocr repassar o status real (é uma melhoria possível, sem AR aberta).
-- No `TaskExecution` e no `metadata.extraction`, o `error_type` passa a ser
-  `TransientServiceError` ou `PermanentServiceError`, e a mensagem traz o serviço e o status
-  HTTP.
+Como ficou o AR-10 (opções escolhidas pelo usuário: `MAXLEN ~` 10000 por env var e ConfigMap
+separada no k8s):
+- ocr e langextract não têm mais Redis: saíram o `RedisInstrumentor`, as dependências e, no
+  compose, as env vars do barramento e o `depends_on: redis`.
+- `RedisStreamEventBus.publish` usa `xadd(..., maxlen=N, approximate=True)`, com
+  N = `DOCUPARSE_EVENT_STREAM_MAXLEN` (padrão 10000; `0` desliga o corte). **Ninguém lê as
+  streams**: elas só guardam um histórico recente até o D-04 decidir se o publish sai.
+- No k8s, `chore/docuparser-events-config` @ eae066f (sem push) cria a ConfigMap
+  `docuparser-events-config`, só para core e com. **Mergear junto com a tag nova** no deploy
+  final: com a imagem antiga o MAXLEN é ignorado, mas não quebra nada.
 
-Como ficou o AR-26: `sweep_stuck_processing` também fecha a extração parada em
-`metadata.extraction.state="running"`. **Falta agendar**: é o CronJob a cada 10 min no repo
-k8s (AR-70, perguntar antes), com o manifesto de exemplo em `docuparse-project/docs/TECHNICAL.md`
+Como ficou o AR-27: o retry é opt-in (`@task(..., retry_on=...)`). Só `ocr_task` e
+`extraction_task` repetem `TransientServiceError` (`ConnectTimeout`, `ConnectionError`, 429,
+502, 503 e 504). O 500 e o `ReadTimeout` são permanentes: **não "conserte" o 500** sem antes
+fazer o backend-ocr repassar o status real do OpenRouter.
+
+Como ficou o AR-26: `sweep_stuck_processing` também fecha a extração presa em
+`metadata.extraction.state="running"`. **Falta agendar** o CronJob a cada 10 min no repo k8s
+(AR-70, perguntar antes). O manifesto de exemplo está em `docuparse-project/docs/TECHNICAL.md`
 (`args: ["uv", "run", "--frozen", "python", "manage.py", "sweep_stuck_documents", ...]`).
-Agende junto com a tag nova do deploy final (que leva o AR-04 e o AR-26).
 
-O Backend CI no runner (AR-20/AR-21): confira no GitHub se o run do PR #77 passou. Se o job
-do core falhou por falta de env var, conserte o `env:` do job `test-core`.
-
-Pendentes no repo k8s, sem push: `chore/docuparser-debug-off` @ ceebf26 (AR-03) e
-`chore/docuparser-core-release` (AR-04).
+Pendentes no repo k8s, sem push: `chore/docuparser-debug-off` @ ceebf26 (AR-03),
+`chore/docuparser-core-release` (AR-04) e `chore/docuparser-events-config` @ eae066f (AR-10).
 
 **Deploy só no final** (pedido do usuário em 2026-11-27): nada vai para hml a cada AR. O
 agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim da sessão,
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. Fase 1, uma por sessão: a limpeza (AR-10..AR-14), começando pelo **AR-10**. As decisões D-01, D-02 e D-03 já foram tomadas (ver
-   [decisions-pending.md](decisions-pending.md)), então as fases 2 e 3 também estão
-   destravadas.
+1. Fase 1, uma AR por sessão: falta a limpeza **AR-11** (⚠️ flags de worker na ConfigMap:
+   confirmar antes que a tag em prod já não tem os workers), depois AR-12, AR-13 e AR-14.
+   No AR-12, `shared/consume_fake_event.py` e `publish_fake_event.py` são os únicos
+   usuários de `consume`/`consume_entries`.
 2. AR-05 (probes e resources) e o CronJob do sweeper (parte do AR-70), ambos no repo k8s e
    **perguntando antes**. Podem ser preparados em branch sem push e ir junto no deploy final.
 3. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
    acabaram:
-   a. gerar a tag a partir de `dev`. Desde o AR-21 o push em main/staging só faz o build
-      se o Backend CI passar; em emergência use `workflow_dispatch` com `skip_tests`;
+   a. gerar a tag a partir de `dev`. Desde o AR-21, o push em main/staging só faz o build
+      se o Backend CI passar. Em emergência, use `workflow_dispatch` com `skip_tests`;
    b. com essa tag em hml, mergear `chore/docuparser-core-release` (AR-04: initContainer
-      `args: ["release"]`, que quebra na 0.0.15 por falta de ENTRYPOINT) e
-      `chore/docuparser-debug-off` (AR-03). Na 0.0.15 a string `"False"` ainda conta como
-      verdadeira, então a ConfigMap só vale com a tag nova;
-   c. smoke em hml (login, upload, validação, `/admin/` com 404;
-      `kubectl logs <pod> -c docuparser-core-release`), depois prod.
+      `args: ["release"]`, que quebra na 0.0.15 por falta de ENTRYPOINT),
+      `chore/docuparser-debug-off` (AR-03) e `chore/docuparser-events-config` (AR-10). Na
+      0.0.15 a string `"False"` ainda conta como verdadeira, então a ConfigMap do DEBUG só
+      vale com a tag nova. O AR-04 e o AR-10 mexem no `envFrom`/deployment do core: confira
+      os conflitos no merge;
+   c. smoke em hml (login, upload, validação, `/admin/` com 404,
+      `kubectl logs <pod> -c docuparser-core-release`, `XLEN document.received` no Redis
+      parando perto de 10000), depois prod.
    A tabela `django_admin_log` ficou órfã: só apagar com migration e com o usuário de acordo.
 
 Notas práticas:
 - A suíte inteira do backend-core leva cerca de 30 min. Rode o teste específico e os módulos
-  afetados, e deixe a suíte inteira para o CI.
+  afetados, e deixe a suíte inteira para o CI. A do backend-ocr leva uns 4–5 min.
 - O hook `ruff format` do pre-commit reformata arquivos inteiros. Se ele mexer em trecho não
   relacionado, descarte essa parte e use `--no-verify` (foi o caso do commit do AR-20).
+- `docker compose config` precisa de um `.env` em `docuparse-project/` (que não existe no
+  container). Valide com uma cópia do compose no scratchpad mais o `/docuparser/.env`, e use
+  `-p docuparse` (o `COMPOSE_PROJECT_NAME` do `.env` tem maiúscula).
 
 ## Sugestão de primeira sessão
 Se o usuário mandar começar: faça a **fase 0** (AR-01, AR-02 no código do core, AR-04 no

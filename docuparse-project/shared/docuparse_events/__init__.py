@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,13 @@ from typing import Any, Protocol
 
 from opentelemetry import propagate, trace
 from opentelemetry.trace import Link
+
+logger = logging.getLogger(__name__)
+
+# Teto aproximado de cada stream do Redis (AR-10). Ninguém consome as streams hoje:
+# elas só guardam um histórico recente para inspeção com XRANGE até a decisão D-04.
+DEFAULT_STREAM_MAXLEN = 10_000
+STREAM_MAXLEN_ENV = "DOCUPARSE_EVENT_STREAM_MAXLEN"
 
 
 @dataclass(frozen=True)
@@ -75,24 +83,35 @@ class LocalJsonlEventBus:
 class RedisStreamEventBus:
     """Redis Streams adapter used by the integrated docker environment."""
 
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, maxlen: int | None = DEFAULT_STREAM_MAXLEN) -> None:
         self.client = client
+        # None (ou <= 0) desliga o corte; senão o XADD usa `MAXLEN ~ maxlen`.
+        self.maxlen = maxlen if maxlen and maxlen > 0 else None
 
     @classmethod
-    def from_url(cls, url: str) -> RedisStreamEventBus:
+    def from_url(
+        cls, url: str, maxlen: int | None = DEFAULT_STREAM_MAXLEN
+    ) -> RedisStreamEventBus:
         try:
             import redis
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "Redis event bus requires the 'redis' Python package"
             ) from exc
-        return cls(redis.Redis.from_url(url))
+        return cls(redis.Redis.from_url(url), maxlen=maxlen)
 
     def publish(self, stream: str, event: dict[str, Any]) -> str:
         validate_stream_name(stream)
         event = inject_trace_context(event)
         payload = json.dumps(event, separators=(",", ":"), default=str)
-        event_id = self.client.xadd(stream, {"payload": payload})
+        if self.maxlen is None:
+            event_id = self.client.xadd(stream, {"payload": payload})
+        else:
+            # Aproximado (`~`): o Redis apara por nó inteiro, o que é bem mais barato
+            # que o corte exato e mantém a stream perto de `maxlen`.
+            event_id = self.client.xadd(
+                stream, {"payload": payload}, maxlen=self.maxlen, approximate=True
+            )
         return _decode(event_id)
 
     def consume(
@@ -130,11 +149,30 @@ def event_bus_from_env(local_root: str | Path | None = None) -> EventBus:
     mode = os.environ.get("DOCUPARSE_EVENT_BUS", "local").strip().lower()
     if mode in {"redis", "redis-streams", "redis_streams"}:
         redis_url = os.environ.get("REDIS_URL", "redis://redis:6379/0").strip()
-        return RedisStreamEventBus.from_url(redis_url)
+        return RedisStreamEventBus.from_url(redis_url, maxlen=stream_maxlen_from_env())
     root = local_root or os.environ.get(
         "DOCUPARSE_LOCAL_EVENT_DIR", ".docuparse-events"
     )
     return LocalJsonlEventBus(root)
+
+
+def stream_maxlen_from_env() -> int | None:
+    """Lê `DOCUPARSE_EVENT_STREAM_MAXLEN`. Vazio usa o padrão; `0` desliga o corte.
+
+    Um valor inválido não pode derrubar o publish (o ingest do com publica fora de
+    try/except), então cai no padrão e registra um aviso.
+    """
+    raw = os.environ.get(STREAM_MAXLEN_ENV, "").strip()
+    if not raw:
+        return DEFAULT_STREAM_MAXLEN
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "%s=%r inválido; usando %d", STREAM_MAXLEN_ENV, raw, DEFAULT_STREAM_MAXLEN
+        )
+        return DEFAULT_STREAM_MAXLEN
+    return value if value > 0 else None
 
 
 def inject_trace_context(event: dict[str, Any]) -> dict[str, Any]:

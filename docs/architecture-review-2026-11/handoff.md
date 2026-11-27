@@ -47,28 +47,33 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 3ª sessão)
+## Próxima sessão (estado em 2026-11-27, 4ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
-AR-01, AR-02, AR-04 (imagem e compose) e AR-20 já estão em `dev` (PRs #67, #68, #69 e #71).
-O AR-24 foi mergeado em `dev` localmente (merge 6872daea); `dev` está 4 commits à frente de
-`origin/dev`, sem push. Na 3ª sessão de 2026-11-27 foi feito o **AR-25**, em branch local sem PR:
+AR-01, AR-02, AR-04 (imagem e compose), AR-20, AR-24 e AR-25 já estão em `dev`. Na 4ª sessão
+de 2026-11-27 foi feito o **AR-03**, em duas branches sem PR:
 
-| Branch | Commit | Tarefa |
-|---|---|---|
-| `chore/ar-25-remove-ocr-thread` | cbf04ce6 | AR-25 |
+| Repo | Branch | Commit | Conteúdo |
+|---|---|---|---|
+| docuparser | `fix/ar-03-debug-bool` | dda55d1c | `DEBUG` lido como booleano, desligado por padrão |
+| k8s | `chore/docuparser-debug-off` | ceebf26 | `DEBUG: "False"` em hml e prod (sem push) |
 
 Detalhes em [work_in_progress.md](work_in_progress.md).
 
 Por onde continuar, em ordem:
-1. O usuário dá push de `dev` (AR-24) e abre o PR do AR-25 para `dev`.
-2. AR-04 no repo k8s (**perguntar antes**): initContainer com `args: ["release"]` e
-   `DOCUPARSE_MIGRATE_ON_BOOT=false` no container web, em hml e depois em prod. Até isso
-   existir, a imagem continua migrando no boot (padrão `true`).
-3. AR-03 e AR-05 (repo k8s e prod, **perguntar antes**). No AR-03, corrigir junto
-   `DEBUG = os.environ.get("DEBUG", True)` em `core/settings.py`: a string "False" conta como
-   verdadeira.
+1. **Ordem de deploy do AR-03 com o AR-04.** Na 0.0.15 a string `"False"` ainda conta como
+   verdadeira: a ConfigMap nova não muda nada até a imagem ter o fix. Então:
+   a. mergear `fix/ar-03-debug-bool` em `dev` **antes de gerar a próxima tag**, para que a
+      tag do AR-04 já traga o AR-03 (um rollout só);
+   b. com essa tag em hml, mergear `chore/docuparser-core-release` (AR-04 k8s: initContainer
+      `args: ["release"]`, que quebra na 0.0.15 por falta de ENTRYPOINT) e
+      `chore/docuparser-debug-off` (independentes, sem conflito);
+   c. smoke em hml (login, upload, validação; `kubectl logs <pod> -c docuparser-core-release`),
+      depois prod.
+2. **AR-07 (`/admin/`)**: pedir a decisão ao usuário. Exposto em prod, sem uso aparente, perde
+   o CSS sob gunicorn e o login provavelmente falha por CSRF atrás do Traefik.
+3. AR-05 (repo k8s e prod, **perguntar antes**).
 4. Fase 1, uma por sessão: AR-23 é a menor; depois AR-21 (build depende do AR-20),
    AR-26, AR-27 e a limpeza (AR-10..AR-14).
    As decisões D-01, D-02 e D-03 já foram tomadas (ver [decisions-pending.md](decisions-pending.md)),

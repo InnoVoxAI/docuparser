@@ -9,6 +9,7 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 | 2026-11-27 | Claude | AR-01, AR-02, AR-04 (parte da imagem) e AR-20, uma branch local por tarefa a partir de `dev`. Sem push: o container não tem chave SSH do GitHub, e o `gh` não está instalado. Ver "Próxima sessão" no handoff. |
 | 2026-11-27 (2ª) | Claude | PRs #67, #68, #69 e #71 já mergeados em `dev`. AR-24 em `fix/ar-24-erp-dispatch-fresh-connection` @ ec58d281 (uma AR por sessão, a pedido do usuário). |
 | 2026-11-27 (3ª) | Claude | AR-24 já mergeado em `dev` local (merge 6872daea, `dev` 4 commits à frente de `origin/dev`). AR-25 em `chore/ar-25-remove-ocr-thread` @ cbf04ce6. |
+| 2026-11-27 (4ª) | Claude | AR-25 já em `dev` (PR #72). AR-03: código em `fix/ar-03-debug-bool` @ dda55d1c; k8s em `chore/docuparser-debug-off` @ ceebf26 (a partir de `origin/main`). Aberto o AR-07 (`/admin/`). |
 
 ## Estado das tarefas
 
@@ -16,10 +17,11 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 |---|---|---|---|
 | AR-01 | Fechar `POST /api/ocr/process` | done (PR #67) | Nenhum cliente usava: rota removida. Teste `documents/tests/test_removed_routes.py`. Suíte do core: 569 passed. |
 | AR-02 | Token interno falhando fechado | done (PR #68) | Sem token: aberto só com `DEPLOYMENT_ENVIRONMENT` dev; fora disso, anônimo recebe 503 e o boot loga erro. JWT e service token como antes. "teste456" removido. hml e prod já têm o token. Testes: gate em `test_api.py` e `test_startup_config.py`; documents, users, catalog, accounting e tenants: 443 passed. |
-| AR-03 | DEBUG=False em prod ⚠️ | todo | repo k8s |
+| AR-03 | DEBUG=False em prod ⚠️ | doing (código: `fix/ar-03-debug-bool` @ dda55d1c, falta PR; k8s: `chore/docuparser-debug-off` @ ceebf26, sem push) | `core/env.py:env_flag`; `DEBUG` desligado por padrão, só `1/true/yes/on` ligam. Teste `core/tests/test_debug_setting.py` (18 passed, inclui import real do settings). ConfigMap hml e prod com `DEBUG: "False"`, **sem efeito até a imagem ter o fix** (na 0.0.15 "False" é verdadeiro). Nada depende de DEBUG=True além do CSS do `/admin/` (ver AR-07). Falta: smoke em hml. |
 | AR-04 | gunicorn + migrations fora do boot ⚠️ | doing (imagem e compose: PR #69; falta o k8s) | gunicorn 1 worker/4 threads; entrypoint `web`/`release`; compose com `backend-core-release`. `DOCUPARSE_MIGRATE_ON_BOOT=true` por padrão porque o CI grava a tag no k8s sozinho. **Falta (repo k8s, perguntar):** initContainer `release` + `DOCUPARSE_MIGRATE_ON_BOOT=false`. Testado: imagem contra Postgres descartável e `docker compose config`; `compose up` completo não testado. |
 | AR-05 | Probes e resources ⚠️ | todo | repo k8s |
 | AR-06 | Segredos versionados (usuário) | dropped (D-06: ignorar) | |
+| AR-07 | Destino do `/admin/` ⚠️ | todo (decisão do usuário) | Aberto no AR-03. Exposto em prod, sem uso aparente; sob gunicorn perde o CSS. |
 | AR-10 | Redis/barramento fora de ocr e langextract + MAXLEN | todo | |
 | AR-11 | Flags de worker no ConfigMap ⚠️ | todo | conferir a tag em prod |
 | AR-12 | Contratos e scripts mortos | todo | |

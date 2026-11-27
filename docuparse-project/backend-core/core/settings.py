@@ -13,7 +13,11 @@ for local_package_dir in (PROJECT_DIR / "contracts", PROJECT_DIR / "shared"):
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-test-key")
 
-DEBUG = os.environ.get("DEBUG", True)
+from core.env import env_flag  # noqa: E402
+
+# AR-03: antes era `os.environ.get("DEBUG", True)`, que tratava a string "False"
+# como verdadeira. Sem a variável, DEBUG fica desligado.
+DEBUG = env_flag("DEBUG", default=False)
 
 ALLOWED_HOSTS = ["*"]
 
@@ -269,8 +273,8 @@ DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get(
 DEPLOYMENT_ENVIRONMENT = os.environ.get("DEPLOYMENT_ENVIRONMENT", "").strip().lower()
 # AR-02: sem DOCUPARSE_INTERNAL_SERVICE_TOKEN, os endpoints internos só ficam
 # abertos a chamadas anônimas quando o ambiente se declara dev. Ambiente ausente
-# conta como produção, porque o k8s não define DEPLOYMENT_ENVIRONMENT e prod roda
-# com DEBUG=True: nenhum dos dois serve para detectar prod.
+# conta como produção, porque o k8s não define DEPLOYMENT_ENVIRONMENT e DEBUG
+# não serve para detectar prod (prod rodou com DEBUG=True até o AR-03).
 INTERNAL_ENDPOINTS_OPEN_WITHOUT_TOKEN = DEPLOYMENT_ENVIRONMENT in {
     "development",
     "dev",

@@ -52,6 +52,21 @@ Estado de cada tarefa: [work_in_progress.md](work_in_progress.md).
 - **Origem:** A6, D-06. Agentes **não** editam segredos (guardrail do CLAUDE.md). Apenas
   lembrar o usuário.
 
+### AR-07 · Destino do `/admin/` do Django ⚠️
+- **Origem:** levantamento do AR-03 (2026-11-27). **Arquivos:** `backend-core/core/urls.py`,
+  `core/settings.py`, `backend-core/Dockerfile`.
+- **Contexto:** `/admin/` está exposto em prod (`docuparser-core.innovox.ai/admin/login/`
+  responde 200). O CSS só aparece porque a 0.0.15 roda `runserver` com `DEBUG=True`. Não há
+  `STATIC_ROOT` nem whitenoise, então sob gunicorn (AR-04) o admin fica sem estilo, com DEBUG
+  ligado ou não. Nenhum app registra modelo no admin (só os padrões de `auth` e
+  `token_blacklist`), e nada no front ou na documentação aponta para ele. Provavelmente o
+  login também falha: o Traefik termina o TLS e não há `SECURE_PROXY_SSL_HEADER` nem
+  `CSRF_TRUSTED_ORIGINS` (não testado com POST).
+- **Fazer:** decidir com o usuário. (a) Tirar a rota `/admin/` (recomendado se ninguém usa),
+  ou (b) mantê-la: whitenoise, `STATIC_ROOT`, `collectstatic` no Dockerfile,
+  `SECURE_PROXY_SSL_HEADER` e `CSRF_TRUSTED_ORIGINS`.
+- **Aceite:** em (a), `/admin/` responde 404. Em (b), login no admin de hml funciona e com CSS.
+
 ---
 
 ## Fase 1 — Limpeza e rede de segurança

@@ -2,6 +2,7 @@
 
 Feito para rodar periodicamente (CronJob no k3s, ex.: a cada 10 min). Ver
 `documents/services/processing_recovery.py` para o critério de "parado".
+Idempotente: rodar de novo sem novos travamentos não altera nada.
 Sai com código 1 se algum tenant falhar, para o CronJob registrar o erro.
 """
 
@@ -20,8 +21,9 @@ logger = logging.getLogger(__name__)
 
 class Command(BaseCommand):
     help = (
-        "Fecha runs RUNNING antigos e marca como OCR_FAILED os documentos parados "
-        "em RECEIVED, para poderem ser reprocessados."
+        "Fecha runs RUNNING antigos, marca como OCR_FAILED os documentos parados "
+        "em RECEIVED e como falha as extrações paradas em 'running', para poderem "
+        "ser reprocessados."
     )
 
     def add_arguments(self, parser) -> None:
@@ -71,20 +73,24 @@ class Command(BaseCommand):
                 failed_tenants.append(tenant.slug)
                 continue
 
-            if result.stale_run_ids or result.stuck_document_ids:
+            if result.changed:
                 logger.warning(
-                    "sweep_stuck_documents | tenant=%s | dry_run=%s | stale_runs=%s | stuck_documents=%s",
+                    "sweep_stuck_documents | tenant=%s | dry_run=%s | stale_runs=%s | stuck_documents=%s | stuck_extractions=%s",
                     tenant.slug,
                     dry_run,
                     result.stale_run_ids,
                     result.stuck_document_ids,
+                    result.stuck_extraction_ids,
                 )
             self.stdout.write(
                 f"{prefix}{tenant.slug}: {len(result.stale_run_ids)} run(s) fechados, "
-                f"{len(result.stuck_document_ids)} documento(s) marcados como falhos"
+                f"{len(result.stuck_document_ids)} documento(s) marcados como falhos, "
+                f"{len(result.stuck_extraction_ids)} extração(ões) marcadas como falhas"
             )
             for document_id in result.stuck_document_ids:
                 self.stdout.write(f"  documento {document_id}")
+            for document_id in result.stuck_extraction_ids:
+                self.stdout.write(f"  extração {document_id}")
 
         if failed_tenants:
             raise CommandError(

@@ -47,21 +47,28 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 6ª sessão)
+## Próxima sessão (estado em 2026-11-27, 7ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
-AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75), AR-20, AR-24,
-AR-25 e AR-23 (#76) já estão em `dev`. Commitado, aguardando o PR do usuário: **AR-21** (o build
-de imagem depende dos testes de backend), em `ci/ar-21-build-needs-tests`.
+AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75), AR-20, AR-21 (#77),
+AR-23 (#76), AR-24 e AR-25 já estão em `dev`. Commitado, aguardando o PR do usuário:
+**AR-26** (código do sweeper), em `fix/ar-26-sweeper-extraction`.
 
-Como ficou o AR-21: o `ci.yaml` chama o `backend-ci.yaml` (`workflow_call`) no job
-`backend-tests`, e o `pre-deploy` tem `needs` nele. O push do `backend-ci.yaml` só dispara em
-`dev`, porque em main e staging ele roda dentro do `ci.yaml`. Válvula de escape:
-`workflow_dispatch` do `ci.yaml` com `skip_tests=true` (só main/staging), para quando o CI
-quebrar por causa do runner. **O Backend CI ainda não passou no runner.** O PR do AR-21 o
-dispara, porque mexe em `backend-ci.yaml`. Se o job do core falhar por falta de env var,
-conserte o `env:` do job `test-core` antes de mergear.
+Como ficou o AR-26: `sweep_stuck_processing` agora também fecha a extração parada em
+`metadata.extraction.state="running"`, em qualquer status (automática em OCR_COMPLETED ou
+manual em qualquer outro). Ela vira `state="failed"` com `error_type=StuckInQueue`, e o status
+do documento não muda, igual a uma falha real. Há um só limite (`--older-than-minutes`, 30).
+Os runs RUNNING de qualquer etapa já eram fechados. **Falta agendar**: é o CronJob a cada
+10 min no repo k8s (AR-70, perguntar antes). O manifesto de exemplo em
+`docuparse-project/docs/TECHNICAL.md` foi corrigido para `args: ["uv", "run", "--frozen",
+"python", "manage.py", "sweep_stuck_documents", ...]`, porque `command: ["python", ...]` pula
+o entrypoint e o `python` do sistema não tem Django. Agende o CronJob junto com a tag
+nova do deploy final (com AR-04 e AR-26). Com a 0.0.15 ele não foi testado e não teria a
+parte da extração.
+
+O Backend CI no runner (AR-20/AR-21): confira no GitHub se o run do PR #77 passou. Se o job
+do core falhou por falta de env var, conserte o `env:` do job `test-core`.
 
 Pendentes no repo k8s, sem push: `chore/docuparser-debug-off` @ ceebf26 (AR-03) e
 `chore/docuparser-core-release` (AR-04).
@@ -71,11 +78,11 @@ agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. Fase 1, uma por sessão: **AR-26** (ampliar o sweeper e agendá-lo), AR-27 e a limpeza (AR-10..AR-14). As decisões D-01, D-02 e D-03 já foram tomadas (ver
+1. Fase 1, uma por sessão: **AR-27** (retry classificado) e a limpeza (AR-10..AR-14). As decisões D-01, D-02 e D-03 já foram tomadas (ver
    [decisions-pending.md](decisions-pending.md)), então as fases 2 e 3 também estão
    destravadas.
-2. AR-05 (probes e resources, repo k8s, **perguntar antes**). Pode ser preparado em branch
-   sem push e ir junto no deploy final.
+2. AR-05 (probes e resources) e o CronJob do sweeper (parte do AR-70), ambos no repo k8s e
+   **perguntando antes**. Podem ser preparados em branch sem push e ir junto no deploy final.
 3. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
    acabaram:
    a. gerar a tag a partir de `dev`. Desde o AR-21 o push em main/staging só faz o build

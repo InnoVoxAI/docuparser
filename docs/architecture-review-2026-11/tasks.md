@@ -145,6 +145,9 @@ Estado de cada tarefa: [work_in_progress.md](work_in_progress.md).
 - **Origem:** P2. `processing_recovery.py`: cobrir extração presa (OCR_COMPLETED +
   `metadata.extraction.state="running"`) e runs RUNNING órfãos de qualquer etapa. Agendar
   via CronJob (ver AR-70).
+- **Feito (código):** extração presa em qualquer status vira `state="failed"`
+  (`StuckInQueue`), com status inalterado; um só limite (30 min); comando idempotente. Falta o
+  CronJob (AR-70, repo k8s); o manifesto de exemplo está em `docuparse-project/docs/TECHNICAL.md`.
 
 ### AR-27 · Retry classificado no orquestrador
 - **Origem:** P3. `shared/docuparse_orchestrator/decorators.py`: aceitar `retry_on`

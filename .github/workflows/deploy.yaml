@@ -78,13 +78,16 @@ jobs:
           fi
 
       - name: Update Image Tag in Deployment
+        # Todos os YAMLs da pasta do serviço: o deployment.yaml (container web e
+        # initContainer) e manifestos com a mesma imagem, como o cronjob.yaml do core
+        # (sweep_stuck_documents, AR-70). Os que não têm `image:` não mudam.
         run: |
-          sed -i "s|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:.*|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}|" k8s-deployments/apps/docuparser/${{ env.DEPLOY_FOLDER }}/${{ inputs.ENVIRONMENT }}/deployment.yaml
+          sed -i "s|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:.*|image: registry.innovox.ai/${{ inputs.IMAGE_NAME }}:${{ inputs.IMAGE_VERSION }}|" k8s-deployments/apps/docuparser/${{ env.DEPLOY_FOLDER }}/${{ inputs.ENVIRONMENT }}/*.yaml
 
       - name: Commit and Push Changes
         run: |
           cd k8s-deployments
-          git add apps/docuparser/${{ env.DEPLOY_FOLDER }}/${{ inputs.ENVIRONMENT }}/deployment.yaml
+          git add apps/docuparser/${{ env.DEPLOY_FOLDER }}/${{ inputs.ENVIRONMENT }}/*.yaml
           if git diff --cached --quiet; then
             echo "No changes to commit — image tag already up to date"
           else

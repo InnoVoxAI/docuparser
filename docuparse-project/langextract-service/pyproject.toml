@@ -1,7 +1,7 @@
 [project]
-name = "atoms"
+name = "langextract-service"
 version = "0.1.0"
-description = "Backend Core"
+description = "DocuParser LangExtract extraction service"
 readme = "README.md"
 license = { text = "MIT" }
 authors = []

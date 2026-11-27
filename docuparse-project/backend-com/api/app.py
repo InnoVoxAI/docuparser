@@ -35,6 +35,7 @@ from services.twilio_polling import (
     poll_configured_twilio_once,
 )
 from services.whatsapp_capture import process_whatsapp_media
+from starlette.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,9 @@ def _validate_internal_service_token(authorization: str | None) -> None:
     raise HTTPException(status_code=401, detail="invalid internal service token")
 
 
+# /health e /ready são as probes do k8s (liveness e readiness). Rotas `async def`
+# não podem chamar I/O bloqueante direto (urllib, imaplib, boto3): isso para o event
+# loop e as probes deixam de responder. Use `await run_in_threadpool(...)`.
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": settings.service_name}
@@ -160,7 +164,8 @@ async def manual_document_upload(
         if not isinstance(metadata, dict):
             raise ValueError("metadata_json must decode to an object")
         content = await file.read()
-        return process_manual_upload(
+        return await run_in_threadpool(
+            process_manual_upload,
             tenant_id=tenant_id,
             tenant_slug=tenant_slug,
             filename=file.filename or "",
@@ -221,7 +226,7 @@ async def poll_email_messages(
 ):
     _authenticate_caller(authorization)
     try:
-        return poll_configured_imap_once(tenant_id=tenant_id)
+        return await run_in_threadpool(poll_configured_imap_once, tenant_id=tenant_id)
     except ImapPollingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
@@ -253,7 +258,8 @@ async def _process_email_files(
             "subject": subject or "",
             "attachments": [p["filename"] for p in attachment_payloads],
         }
-        result = process_email_attachments(
+        result = await run_in_threadpool(
+            process_email_attachments,
             tenant_id=tenant_id,
             attachments=attachment_payloads,
             sender=sender,
@@ -347,15 +353,22 @@ async def whatsapp_webhook(
         to_number = str(form.get("To") or "").replace("whatsapp:", "")
         body = str(form.get("Body") or "")
         num_media = int(str(form.get("NumMedia") or "0"))
-        media_items = [_media_item_from_form(form, index) for index in range(num_media)]
-        documents = process_whatsapp_media(
-            tenant_id=tenant_id,
-            media_items=media_items,
-            sender=sender,
-            message_sid=message_sid,
-            body=body,
-            to_number=to_number,
-        )
+
+        def _ingest() -> list[dict]:
+            # Baixa a mídia da Twilio e entrega ao core: I/O bloqueante.
+            media_items = [
+                _media_item_from_form(form, index) for index in range(num_media)
+            ]
+            return process_whatsapp_media(
+                tenant_id=tenant_id,
+                media_items=media_items,
+                sender=sender,
+                message_sid=message_sid,
+                body=body,
+                to_number=to_number,
+            )
+
+        documents = await run_in_threadpool(_ingest)
         return {
             "accepted_count": len(documents),
             "documents": documents,
@@ -371,7 +384,7 @@ async def poll_whatsapp_messages(
 ):
     _authenticate_caller(authorization)
     try:
-        return poll_configured_twilio_once(tenant_id=tenant_id)
+        return await run_in_threadpool(poll_configured_twilio_once, tenant_id=tenant_id)
     except TwilioPollingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:

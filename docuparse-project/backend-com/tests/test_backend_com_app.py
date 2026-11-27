@@ -644,3 +644,43 @@ class FakeImapClient:
 
     def logout(self):
         return "OK", [b"logged out"]
+
+
+def test_health_responds_while_email_poll_blocks(monkeypatch) -> None:
+    """O poll de IMAP é bloqueante (imaplib e a entrega ao core). Ele precisa rodar
+    fora do event loop, senão /health para e a liveness do k8s mata o pod."""
+    import asyncio
+    import threading
+
+    import httpx
+    from api import app as app_module
+
+    started = threading.Event()
+    release = threading.Event()
+    released_in_time: list[bool] = []
+
+    def slow_poll(**kwargs) -> dict:
+        started.set()
+        released_in_time.append(release.wait(3))
+        return {"accepted_count": 0, "documents": []}
+
+    monkeypatch.setattr(app_module.settings, "internal_service_token", "")
+    monkeypatch.setattr(app_module, "poll_configured_imap_once", slow_poll)
+
+    async def scenario() -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://com") as c:
+            work = asyncio.create_task(c.post("/api/v1/email/poll"))
+            for _ in range(300):
+                if started.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            health = await asyncio.wait_for(c.get("/health"), timeout=2)
+            release.set()
+            assert (await work).status_code == 200
+            return health
+
+    health = asyncio.run(scenario())
+
+    assert health.status_code == 200
+    assert released_in_time == [True]

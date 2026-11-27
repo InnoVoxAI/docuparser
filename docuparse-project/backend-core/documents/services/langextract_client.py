@@ -1,7 +1,10 @@
 from typing import Any
 
-import requests
 from django.conf import settings
+
+from documents.services.service_errors import request_json
+
+SERVICE_NAME = "langextract-service"
 
 
 class LangExtractClient:
@@ -17,7 +20,10 @@ class LangExtractClient:
         layout: str = "generic",
         document_type: str = "unknown",
     ) -> dict[str, Any]:
-        """Call the langextract-service LLM extraction endpoint synchronously."""
+        """Call the langextract-service LLM extraction endpoint synchronously.
+
+        Raises TransientServiceError / PermanentServiceError (ver service_errors).
+        """
         url = f"{self.base_url}/api/v1/extract"
         payload = {
             "raw_text": raw_text,
@@ -25,6 +31,4 @@ class LangExtractClient:
             "document_type": document_type,
             "schema_definition": schema_definition,
         }
-        response = requests.post(url, json=payload, timeout=120)
-        response.raise_for_status()
-        return response.json()
+        return request_json(SERVICE_NAME, "POST", url, json=payload, timeout=120)

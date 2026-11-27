@@ -4,10 +4,16 @@ import functools
 import time
 import traceback as traceback_module
 import uuid
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from opentelemetry import trace
-from tenacity import Retrying, stop_after_attempt, wait_exponential
+from tenacity import (
+    Retrying,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from docuparse_orchestrator._run_context import current_run_errors, current_run_id
 from docuparse_orchestrator.persistence import (
@@ -25,13 +31,22 @@ def task(
     name: str | None = None,
     *,
     max_attempts: int = 3,
+    retry_on: tuple[type[BaseException], ...] = (),
     writer: TaskExecutionWriter = default_django_writer,
 ) -> Callable[[F], F]:
     """Envolve `func` como uma task rastreável: span por execução, retry com
     backoff exponencial via `tenacity`, e um `TaskExecution` gravado por
-    tentativa final (sucesso ou esgotamento de retries) — nunca por tentativa
-    intermediária. Nunca levanta: quem decide se a cadeia continua é o
-    orquestrador, inspecionando `TaskResult.status`, não o decorator."""
+    tentativa final (sucesso, erro permanente ou esgotamento de retries) —
+    nunca por tentativa intermediária. Nunca levanta: quem decide se a cadeia
+    continua é o orquestrador, inspecionando `TaskResult.status`, não o
+    decorator.
+
+    Retry é opt-in (AR-27): só exceções de um dos tipos em `retry_on` são
+    repetidas, até `max_attempts`. Qualquer outra exceção encerra na primeira
+    tentativa. O padrão `()` não repete nada, porque repetir a função inteira
+    refaz efeitos colaterais (chamada paga de OCR/LLM, gravações não
+    idempotentes). Quem declara `retry_on` é o call site, com os tipos
+    transitórios que os seus clientes levantam."""
 
     def decorator(func: F) -> F:
         task_name = name or func.__name__
@@ -54,6 +69,7 @@ def task(
                     payload: Any = None
                     for attempt_state in Retrying(
                         stop=stop_after_attempt(max_attempts),
+                        retry=retry_if_exception_type(retry_on),
                         wait=wait_exponential(multiplier=0.1, max=5),
                         reraise=True,
                     ):

@@ -18,6 +18,7 @@ from documents.models import Document, ExtractionResult
 from documents.services.langextract_client import LangExtractClient
 from documents.services.ocr_client import OCRClient
 from documents.services.payment_matching import run_payment_matching_safely
+from documents.services.service_errors import TransientServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +164,10 @@ def _ocr_task_body(document_id, tenant_slug: str | None = None) -> dict:
 # Wrapper decorado usado pelo orquestrador (processing_queue.py) — retry +
 # tracing + persistência em cima da mesma lógica de `process_document_ocr`,
 # que continua chamável diretamente (sem retry) pelos endpoints de
-# reprocessamento manual em views.py.
-ocr_task = task("ocr")(_ocr_task_body)
+# reprocessamento manual em views.py. Só repete TransientServiceError (AR-27):
+# cada tentativa chama de novo o OCR pago, então erro permanente, storage e
+# banco encerram na primeira tentativa.
+ocr_task = task("ocr", retry_on=(TransientServiceError,))(_ocr_task_body)
 
 
 def _record_extraction(document: Document, state: str, **details) -> None:
@@ -312,8 +315,11 @@ def _extraction_task_body(document_id) -> dict:
 
 
 # Wrapper decorado usado pelo orquestrador (processing_queue.py) — mesma
-# lógica de `auto_extract_after_ocr`, com retry + tracing + persistência.
-extraction_task = task("extraction")(_extraction_task_body)
+# lógica de `auto_extract_after_ocr`, com retry + tracing + persistência. Mesma
+# regra do ocr_task: só repete TransientServiceError (a chamada ao LLM é paga).
+extraction_task = task("extraction", retry_on=(TransientServiceError,))(
+    _extraction_task_body
+)
 
 
 def run_langextract_for_document(document_id, schema_config_id) -> dict:

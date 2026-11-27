@@ -280,7 +280,6 @@ O backend-core é organizado em dois apps Django:
 | `POST` | `/api/ocr/documents/<uuid>/erp/confirm` | O analista confirma o envio ao ERP (permissão `erp.send`) |
 | `POST` | `/api/ocr/documents/<uuid>/erp/retry` | Reenvio de uma falha retentável, com espera crescente (permissão `erp.send`) |
 | `POST` | `/api/ocr/classify-text` | Classificar texto (heurística) |
-| `POST` | `/api/ocr/process` | Processar documento (legado) |
 
 #### Configurações
 

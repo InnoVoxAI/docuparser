@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from starlette.concurrency import run_in_threadpool
 
 from api.schemas import ExtractRequest, ExtractResponse
 
@@ -57,7 +58,11 @@ async def readiness_check():
 
 @app.post("/api/v1/extract", response_model=ExtractResponse)
 async def extract_endpoint(request: ExtractRequest) -> ExtractResponse:
-    extracted = extract_with_llm(
+    # extract_with_llm faz chamadas HTTP bloqueantes ao LLM: roda no threadpool
+    # para não parar o event loop (senão /health e /ready param de responder e a
+    # liveness do k8s reinicia o pod no meio da extração).
+    extracted = await run_in_threadpool(
+        extract_with_llm,
         request.raw_text,
         request.schema_definition,
         tenant_id=str(request.metadata.get("tenant_id", "unknown")),

@@ -22,6 +22,7 @@ import os
 from application.process_document import ENGINE_REGISTRY, process_document
 from domain.engine_resolver import resolver as engine_resolver
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from starlette.concurrency import run_in_threadpool
 
 from api.schemas.ocr_schema import (
     EngineInfo,
@@ -70,8 +71,12 @@ async def process_document_endpoint(
         # Log do processamento
         logger.info(f"Recebido arquivo: {file.filename} ({len(file_bytes)} bytes)")
 
-        # Chamar serviço de aplicação
-        result = process_document(
+        # Chamar serviço de aplicação. process_document é bloqueante (requests ao
+        # OpenRouter, Tesseract, PyMuPDF) e pode levar minutos: roda no threadpool
+        # para não parar o event loop, senão /health e /ready deixam de responder
+        # e a liveness do k8s reinicia o pod no meio do OCR.
+        result = await run_in_threadpool(
+            process_document,
             file_bytes=file_bytes,
             filename=file.filename,
             selected_engine=selected_engine,

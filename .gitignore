@@ -260,3 +260,4 @@ node_modules/
 # tasks.json
 # tasks/
 docuparse-project/backend-core/not-used-with-s3/
+innovox-kubernetes-deployments

@@ -9,8 +9,7 @@ from django.db.models.functions import Cast
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.clickjacking import xframe_options_exempt
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET
 from docuparse_orchestrator.context import orchestration_run
 from docuparse_orchestrator.decorators import task
 from docuparse_storage import get_storage
@@ -178,28 +177,6 @@ def classify_text_view(request):
     if not text:
         return Response({"schema_id": None})
     return Response({"schema_id": classify(text)})
-
-
-@csrf_exempt
-@require_POST
-def process_document_view(request):
-    # Accept file + selected engine, then orchestrate backend-ocr processing.
-    uploaded_file = request.FILES.get("file")
-    engine = request.POST.get("engine")
-
-    if uploaded_file is None:
-        return JsonResponse({"error": "Field 'file' is required"}, status=400)
-
-    try:
-        client = OCRClient()
-        result = client.process_document(
-            file_obj=uploaded_file.file,
-            filename=uploaded_file.name,
-            engine=engine,
-        )
-        return JsonResponse(result)
-    except Exception as exc:
-        return JsonResponse({"error": str(exc)}, status=502)
 
 
 # Rótulos amigáveis de status mapeados para os valores reais (busca por texto).

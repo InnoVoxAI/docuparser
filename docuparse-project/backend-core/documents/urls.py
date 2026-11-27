@@ -35,7 +35,6 @@ from .views import (
     integration_settings_view,
     list_engines_view,
     ocr_settings_view,
-    process_document_view,
     process_stats_view,
     processes_dashboard_view,
     ready_view,
@@ -47,7 +46,6 @@ urlpatterns = [
     path("diagnostics", diagnostics_view, name="backend-core-diagnostics"),
     path("ready", ready_view, name="backend-core-ready"),
     path("engines", list_engines_view, name="ocr-engines"),
-    path("process", process_document_view, name="ocr-process"),
     path("documents", documents_inbox_view, name="documents-inbox"),
     path(
         "events/document-received",

@@ -51,6 +51,7 @@ def log_startup_config() -> None:
         "S3_REGION": settings.S3_REGION,
         "DOCUPARSE_AUTO_PROCESS_OCR": settings.DOCUPARSE_AUTO_PROCESS_OCR,
         "DOCUPARSE_AUTO_PROCESS_EXTRACTION": settings.DOCUPARSE_AUTO_PROCESS_EXTRACTION,
+        "DEPLOYMENT_ENVIRONMENT": settings.DEPLOYMENT_ENVIRONMENT,
         "DOCUPARSE_EVENT_BUS": os.environ.get("DOCUPARSE_EVENT_BUS", ""),
         "REDIS_URL": _mask_url_credentials(os.environ.get("REDIS_URL", "")),
     }
@@ -62,3 +63,12 @@ def log_startup_config() -> None:
         state = "[SET]" if os.environ.get(key, "").strip() else "[EMPTY]"
         logger.info("startup: config %s = %s", key, state)
     logger.info("startup: ========================================")
+    if (
+        not settings.DOCUPARSE_INTERNAL_SERVICE_TOKEN
+        and not settings.INTERNAL_ENDPOINTS_OPEN_WITHOUT_TOKEN
+    ):
+        logger.error(
+            "startup: DOCUPARSE_INTERNAL_SERVICE_TOKEN ausente e DEPLOYMENT_ENVIRONMENT=%r "
+            "não é dev: os endpoints internos vão recusar chamadas anônimas (503)",
+            settings.DEPLOYMENT_ENVIRONMENT,
+        )

@@ -137,21 +137,26 @@ def _internal_token_error(request):
       - token interno  -> ``request.auth == "service_token"`` (caller serviço↔serviço)
       - JWT do usuário -> ``request.user.is_authenticated``    (caller do frontend)
 
-    Quando ``DOCUPARSE_INTERNAL_SERVICE_TOKEN`` não está configurado (dev/local),
-    o acesso permanece aberto, preservando o comportamento histórico. Só retorna
-    401 quando o token está configurado e a requisição não traz nenhuma das duas
-    credenciais válidas.
+    Sem ``DOCUPARSE_INTERNAL_SERVICE_TOKEN`` configurado, a chamada anônima só
+    passa em ambiente declarado como dev (``INTERNAL_ENDPOINTS_OPEN_WITHOUT_TOKEN``).
+    Fora de dev, ela recebe 503: falha fechada, porque o token ausente é erro de
+    configuração do deploy (AR-02). Com o token configurado, a requisição sem
+    nenhuma das duas credenciais válidas recebe 401.
     """
-    token = settings.DOCUPARSE_INTERNAL_SERVICE_TOKEN
-    if not token:
-        return None
     if getattr(request, "auth", None) == "service_token":
         return None
     user = getattr(request, "user", None)
     if user is not None and user.is_authenticated:
         return None
+    if not settings.DOCUPARSE_INTERNAL_SERVICE_TOKEN:
+        if settings.INTERNAL_ENDPOINTS_OPEN_WITHOUT_TOKEN:
+            return None
+        return Response(
+            {"detail": "internal service token not configured"},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     return Response(
-        {"detail": "invalid internal service token teste456"},
+        {"detail": "invalid internal service token"},
         status=status.HTTP_401_UNAUTHORIZED,
     )
 

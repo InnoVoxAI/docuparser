@@ -264,6 +264,19 @@ DOCUPARSE_APPROVED_EXPORT_DIR = os.environ.get(
 DOCUPARSE_INTERNAL_SERVICE_TOKEN = os.environ.get(
     "DOCUPARSE_INTERNAL_SERVICE_TOKEN", ""
 ).strip()
+# Ambiente declarado do deploy (a mesma variável alimenta `deployment.environment`
+# no tracing). O compose define "development" por padrão.
+DEPLOYMENT_ENVIRONMENT = os.environ.get("DEPLOYMENT_ENVIRONMENT", "").strip().lower()
+# AR-02: sem DOCUPARSE_INTERNAL_SERVICE_TOKEN, os endpoints internos só ficam
+# abertos a chamadas anônimas quando o ambiente se declara dev. Ambiente ausente
+# conta como produção, porque o k8s não define DEPLOYMENT_ENVIRONMENT e prod roda
+# com DEBUG=True: nenhum dos dois serve para detectar prod.
+INTERNAL_ENDPOINTS_OPEN_WITHOUT_TOKEN = DEPLOYMENT_ENVIRONMENT in {
+    "development",
+    "dev",
+    "local",
+    "test",
+}
 DOCUPARSE_AUTO_PROCESS_OCR = os.environ.get(
     "DOCUPARSE_AUTO_PROCESS_OCR", "true"
 ).strip().lower() not in {"0", "false", "no"}

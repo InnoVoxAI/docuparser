@@ -10,7 +10,7 @@ Responda aqui mesmo, editando a linha **Decisão:**, ou registre no basic-memory
   LOCKED) · B) Celery + Redis · C) manter o ThreadPool e só endurecer.
 - **Recomendação:** A. Detalhes em [target-architecture.md §3](target-architecture.md).
 - **Destrava:** AR-30..AR-36 e a decisão sobre o Redis (AR-40).
-- **Decisão:** _pendente_
+- **Decisão:** opção A.
 
 ## D-02 — Fundir o langextract-service no backend-ocr?
 - **Opções:** a) fundir no backend-ocr como `/api/v1/extract` · b) fundir no backend-core
@@ -18,14 +18,14 @@ Responda aqui mesmo, editando a linha **Decisão:**, ou registre no basic-memory
 - **Recomendação:** a. Mantém o core sem chamadas de LLM e concentra rate limit e custo
   num lugar só.
 - **Destrava:** AR-50..AR-53.
-- **Decisão:** _pendente_
+- **Decisão:** opção A.
 
 ## D-03 — Entrega backend-com → core
 - **Opções:** a) retry com backoff + reconciliação · b) o com envia os bytes ao core, e o
   core grava no storage e cria o documento numa transação.
 - **Recomendação:** a já (paliativo) e b depois.
 - **Destrava:** AR-60..AR-62.
-- **Decisão:** _pendente_
+- **Decisão:** como recomendação
 
 ## D-04 — O que fazer com o publish no barramento (`docuparse_events`)
 - **Contexto:** com a fila durável (D-01 = A), o publish no Redis não tem leitor nem
@@ -50,7 +50,7 @@ Responda aqui mesmo, editando a linha **Decisão:**, ou registre no basic-memory
   arquivos e limpar o histórico (`git filter-repo`), ou ao menos rotacionar. **Só o usuário**
   pode decidir, porque envolve credenciais de produção, e o CLAUDE.md proíbe agentes de
   editar segredos.
-- **Decisão:** _pendente_
+- **Decisão:** ignorar, está dentro de repo de referência para deploy, adicionado no gitgnore (usar repo como indica em CLAUDE.md)
 
 ## D-07 — Unificação dos classificadores de tipo de documento
 - **Contexto:** `backend-ocr/domain/classifier.py` (tipo de arquivo e imagem),

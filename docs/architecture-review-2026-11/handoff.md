@@ -63,9 +63,12 @@ Detalhes em [work_in_progress.md](work_in_progress.md).
 
 Por onde continuar, em ordem:
 1. O usuário dá push de `dev` (AR-24) e abre o PR do AR-25 para `dev`.
-2. AR-04 no repo k8s (**perguntar antes**): initContainer com `args: ["release"]` e
-   `DOCUPARSE_MIGRATE_ON_BOOT=false` no container web, em hml e depois em prod. Até isso
-   existir, a imagem continua migrando no boot (padrão `true`).
+2. AR-04 no repo k8s: **pronto na branch local `chore/docuparser-core-release`** do repo
+   k8s (commit 7cdddc4, com push, aguardando merge), com initContainer `args: ["release"]` e
+   `DOCUPARSE_MIGRATE_ON_BOOT=false` em hml e prod. **Só fazer o merge depois que a tag com
+   AR-04 estiver em hml**: a 0.0.15 não tem ENTRYPOINT, e o initContainer quebraria o pod
+   (`Init:CrashLoopBackOff`). O usuário aceitou o risco em prod, que ainda não tem usuários.
+   Depois do merge: `kubectl logs <pod> -c docuparser-core-release`.
 3. AR-03 e AR-05 (repo k8s e prod, **perguntar antes**). No AR-03, corrigir junto
    `DEBUG = os.environ.get("DEBUG", True)` em `core/settings.py`: a string "False" conta como
    verdadeira.

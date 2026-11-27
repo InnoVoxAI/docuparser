@@ -22,7 +22,9 @@ Branch `chore/ar-04-gunicorn` (commit dcef9f9d, a partir de `dev`), 2026-11-27.
 ## Decisões
 - [decisao] 1 worker até a fila durável: cada worker do gunicorn criaria o próprio `ThreadPoolExecutor` de processamento.
 - [decisao] `DOCUPARSE_MIGRATE_ON_BOOT` vem **true** por padrão. Motivo: o `deploy.yaml` grava a tag nova no repo k8s sozinho em push para main/staging, e o k8s ainda não tem initContainer. Com o padrão false, prod subiria sem migrations. #deploy
-- [pendente] No repo k8s: initContainer (ou Job) com `args: ["release"]` e `DOCUPARSE_MIGRATE_ON_BOOT=false` no container web. Pedir confirmação ao usuário antes.
+- [k8s] Branch `chore/docuparser-core-release` no repo k8s (commit 7cdddc4, com push, aguardando merge): initContainer `docuparser-core-release` com `args: ["release"]` e `DOCUPARSE_MIGRATE_ON_BOOT=false` no web, hml e prod numa branch só (escolha do usuário).
+- [decisao] initContainer e não Job: com 1 réplica dá no mesmo, não precisa de hook do ArgoCD, e o `sed` do `deploy.yaml` atualiza as duas linhas `image:` juntas.
+- [armadilha] Imagens anteriores ao AR-04 (ex.: 0.0.15) não têm ENTRYPOINT. Com elas, `args: ["release"]` vira o comando `release`, que não existe, e o pod trava em `Init:CrashLoopBackOff`. O merge no k8s só vale depois que a tag com AR-04 estiver no ambiente. O ArgoCD faz auto-sync do `main`.
 
 ## Fatos corrigidos da revisão
 - [fato] O `entrypoint.sh` antigo **não era usado** por nada: compose e k8s executavam o CMD do Dockerfile.

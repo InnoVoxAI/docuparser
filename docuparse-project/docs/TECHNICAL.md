@@ -346,7 +346,7 @@ python manage.py seed_admin           # Criar usuário admin
 python manage.py erp_live_writes --tenant <slug> --enable --confirm <slug>  # Habilitar o envio real ao Superlógica (por tenant)
 python manage.py import_legacy_sqlite # Importar dados legados
 python manage.py sweep_stuck_documents [--older-than-minutes 30] [--tenant <slug>] [--dry-run]
-                                      # Marca como falhos documentos parados no processamento
+                                      # Marca como falhos documentos e extrações parados no processamento
 ```
 
 ### Processamento em segundo plano e conexão com o banco
@@ -364,10 +364,21 @@ Regras para qualquer thread de fundo que usa o ORM:
   motivo em `metadata.processing_error`, e pode ser reprocessado.
 
 **Varredura de documentos parados.** Se o pod morrer no meio do processamento, o documento
-fica em `RECEIVED` e o run do orquestrador fica `RUNNING`. Um run `RUNNING` faz o retry
-manual do dashboard recusar a operação. O comando `sweep_stuck_documents` corrige os dois:
-fecha como `FAILED` os runs `RUNNING` mais antigos que o limite e marca como `OCR_FAILED`
-os documentos em `RECEIVED` sem alteração nesse período e sem run recente. Agende-o no k3s:
+fica em `RECEIVED` (ou, se morreu na extração, com `metadata.extraction.state="running"`) e o
+run do orquestrador fica `RUNNING`. Um run `RUNNING` faz o retry manual do dashboard recusar a
+operação. O comando `sweep_stuck_documents` corrige os três casos, num só limite de tempo:
+
+- fecha como `FAILED` os runs `RUNNING` de qualquer etapa (`document_processing`,
+  `retry_ocr`, `retry_extraction`, `document_validation`) iniciados antes do limite;
+- marca como `OCR_FAILED` os documentos em `RECEIVED` sem alteração nesse período e sem run
+  recente;
+- marca como `failed` (`error_type=StuckInQueue`) a extração parada em `running`, em
+  qualquer status (a automática roda em `OCR_COMPLETED`; a manual, em qualquer um). O status
+  do documento não muda, igual a uma falha real de extração, e o retry de "extraction" no
+  dashboard fica liberado.
+
+Não mexe em `ERP_INTEGRATION_REQUESTED`: com `SuperlogicaMode.DISABLED` o documento fica
+nesse status de propósito. O comando é idempotente. Agende-o no k3s (AR-70):
 
 ```yaml
 apiVersion: batch/v1
@@ -387,7 +398,8 @@ spec:
             - name: sweep
               image: <mesma imagem do docuparser-core>
               envFrom: [<mesmo env/secrets do docuparser-core>]
-              command: ["python", "manage.py", "sweep_stuck_documents", "--older-than-minutes", "30"]
+              # Passa pelo entrypoint.sh (caso `*`); `python` puro não enxerga o .venv do uv.
+              args: ["uv", "run", "--frozen", "python", "manage.py", "sweep_stuck_documents", "--older-than-minutes", "30"]
 ```
 
 O limite precisa ser maior que o tempo normal de um documento na fila mais o tempo de

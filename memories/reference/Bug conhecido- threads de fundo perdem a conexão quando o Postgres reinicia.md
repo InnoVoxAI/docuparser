@@ -54,6 +54,26 @@ para sempre. As telas continuavam funcionando.
 - O probe `/ready` não passou a checar o banco: este bug não seria detectado por
   ele (cada requisição abre uma conexão nova), e o `/diagnostics` já testa o banco.
 
+## AR-26: extração presa (2026-11-27, branch `fix/ar-26-sweeper-extraction`)
+
+- `sweep_stuck_processing` também fecha a extração parada em
+  `metadata.extraction.state="running"`, **em qualquer status**. A automática roda em
+  OCR_COMPLETED; a manual (`run_langextract_for_document`), em qualquer um.
+- Destino: `state="failed"`, `error_type=StuckInQueue`, e o status do documento **não muda**,
+  igual a uma falha real (não existe EXTRACTION_FAILED; mover para OCR_FAILED faria o retry
+  pagar o OCR de novo). Função: `mark_stuck_extraction_failed`, que confere de novo sob
+  `select_for_update` que o doc continua parado.
+- Um só limite (`--older-than-minutes`, 30). Toda gravação de `_record_extraction` atualiza
+  `Document.updated_at`, então o corte por `updated_at` basta.
+- OCR_COMPLETED sem `metadata.extraction` é legítimo (auto-extração desligada): não é tocado.
+  ERP_INTEGRATION_REQUESTED também não (SuperlogicaMode.DISABLED, de propósito).
+- Runs RUNNING de qualquer etapa já eram fechados (o filtro não olha `name`).
+- `SweepResult.stuck_extraction_ids` e `SweepResult.changed`. O comando é idempotente.
+- Agendamento: CronJob a cada 10 min (AR-70, repo k8s, ainda não feito). Use
+  `args: ["uv","run","--frozen","python","manage.py","sweep_stuck_documents",...]`, porque
+  `command: ["python",...]` pula o entrypoint e o python do sistema não tem Django.
+  Exemplo em `docuparse-project/docs/TECHNICAL.md`.
+
 ## Regra para código novo
 
 Toda thread de fundo que usa o ORM precisa: `close_old_connections()` no início,

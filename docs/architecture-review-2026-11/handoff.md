@@ -51,21 +51,34 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 12ª sessão)
+## Próxima sessão (estado em 2026-11-27, 13ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
 AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79), AR-10 (código, #80), AR-11 (docs, #81; o k8s segue em
-`chore/docuparser-worker-flags-off` @ ac61b87, sem push) e AR-12 (#82).
-**AR-13** em `chore/ar-13-rename-pyprojects` @ 1b354b6d (a partir de `dev`, aguardando o PR).
+`chore/docuparser-worker-flags-off` @ ac61b87, sem push), AR-12 (#82) e AR-13 (#83).
+**AR-14** em `chore/ar-14-unused-files` @ 8344c41b (a partir de `dev`, aguardando o PR). Com ele, a
+**fase 1 está encerrada** no código.
 
-Como ficou o AR-13 (opções escolhidas pelo usuário: nome = nome do diretório e incluir o
+Como ficou o AR-14 (opções escolhidas pelo usuário):
+- `camunda-workers/` e `layout-service/` apagados do disco (só `.pyc`, nunca versionados).
+- `backend-core/not-used-with-s3/` **fica**: é a saída do `approved_exporter` nos testes
+  locais (o `/docuparser/.env` aponta `DOCUPARSE_APPROVED_EXPORT_DIR` para ele) e está no
+  `.gitignore`. Não apagar.
+- `/docuparser/scripts/` saiu inteiro (experimentos de OCR, incluindo o compose do OLMOCR).
+- `tests/load/simulate_module_load.py` foi consertado e roda no venv do com
+  (`cd backend-com && uv run --frozen --all-extras python ../tests/load/simulate_module_load.py`).
+- O `pyproject.toml` da raiz ficou sem dependências. **Não apagar o arquivo nem o
+  `version`**: o `ci.yaml` lê a tag da imagem dali.
+- O volume `docuparse-events` continua no compose até o D-04 ser decidido.
+
+Como ficou o AR-13 (#83; opções escolhidas pelo usuário: nome = nome do diretório e incluir o
 core): os pyprojects agora se chamam `backend-ocr`, `langextract-service` e `backend-core`
 (o core também era `atoms`), com descrições corretas. Nada dependia do nome (grep em
 Dockerfiles, compose, CI, `run_script.sh`, docs e repo k8s). Os `uv.lock` só mudaram o nome,
 sem upgrades. O `pyproject.toml` da raiz (`name = "docuparser"`, descrição "Add your
-description here") não foi mexido: a limpeza dele cabe no AR-14.
+description here") foi limpo no AR-14.
 
 Como ficou o AR-12 (opções escolhidas pelo usuário): saíram os quatro contratos mortos
 (`ocr.completed`, `ocr.failed`, `layout.classified`, `extraction.completed`), o exemplo JSON
@@ -74,9 +87,7 @@ publicavam esses eventos. O `EventBus` agora só tem `publish`, e o `RedisStream
 lê mais nada (para depurar, `XRANGE` no redis-cli). **O `LocalJsonlEventBus` mantém
 `consume`/`consume_entries` de propósito**: os testes do com, do core e do shared conferem os
 eventos publicados com ele. Não remover sem trocar esses testes por outro helper.
-Pendência fora do escopo: `tests/load/simulate_module_load.py` já estava quebrado em `dev`
-(importa `backend_com` de `backend-com/src`, mas o com é flat). Ninguém o roda, nem o CI.
-Consertar ou apagar com o usuário de acordo (cabe no AR-14).
+O `simulate_module_load.py`, que já estava quebrado, foi consertado no AR-14.
 
 Como ficou o AR-11: a 0.0.15 (hml e prod) saiu de `main` @ `b497651d`, depois da remoção dos
 workers (#66). Nada em `dev` lê `DOCUPARSE_OCR_WORKER_ENABLED` /
@@ -115,7 +126,7 @@ agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. Fase 1, uma AR por sessão: falta o AR-14.
+1. Fase 1: encerrada (o AR-14 aguarda o PR).
 2. AR-05 (probes e resources) e o CronJob do sweeper (parte do AR-70), ambos no repo k8s e
    **perguntando antes**. Podem ser preparados em branch sem push e ir junto no deploy final.
 3. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações

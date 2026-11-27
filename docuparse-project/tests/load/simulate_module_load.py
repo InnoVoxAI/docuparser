@@ -1,3 +1,13 @@
+"""Simulador de carga local: mede as funções de captura do backend-com em processo.
+
+Não sobe HTTP nem banco. Usa storage e eventos locais num diretório temporário.
+Rode no venv do backend-com (o com é flat: `config` e `services` na raiz):
+
+    cd docuparse-project/backend-com
+    uv run --frozen --all-extras python ../tests/load/simulate_module_load.py \
+        --scenario all --iterations 100 --concurrency 8
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -15,7 +25,7 @@ from uuid import uuid4
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 for path in (
-    PROJECT_DIR / "backend-com" / "src",
+    PROJECT_DIR / "backend-com",
     PROJECT_DIR / "backend-core",
     PROJECT_DIR / "contracts",
     PROJECT_DIR / "shared",
@@ -24,14 +34,14 @@ for path in (
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
-from backend_com import config as backend_com_config
-from backend_com.services import document_ingest
-from backend_com.services.email_capture import process_email_attachments
-from backend_com.services.manual_upload import process_manual_upload
-from backend_com.services.whatsapp_capture import process_whatsapp_media
+import config as backend_com_config
 from documents.services.erp_mock import handle_erp_integration_requested_event
 from docuparse_events import LocalJsonlEventBus
 from events import ERPIntegrationRequestedEvent
+from services import document_ingest
+from services.email_capture import process_email_attachments
+from services.manual_upload import process_manual_upload
+from services.whatsapp_capture import process_whatsapp_media
 
 Scenario = Callable[[int], None]
 

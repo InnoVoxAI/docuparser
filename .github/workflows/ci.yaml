@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       IMAGE_VERSION: ${{ steps.extract_version.outputs.IMAGE_VERSION }}
-      SKIP: ${{ steps.check_version.outputs.SKIP }}
 
     steps:
       - name: Checkout Repository

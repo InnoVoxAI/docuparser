@@ -10,6 +10,7 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 | 2026-11-27 (2ª) | Claude | PRs #67, #68, #69 e #71 já mergeados em `dev`. AR-24 em `fix/ar-24-erp-dispatch-fresh-connection` @ ec58d281 (uma AR por sessão, a pedido do usuário). |
 | 2026-11-27 (3ª) | Claude | AR-24 já mergeado em `dev` local (merge 6872daea, `dev` 4 commits à frente de `origin/dev`). AR-25 em `chore/ar-25-remove-ocr-thread` @ cbf04ce6. |
 | 2026-11-27 (4ª) | Claude | AR-25 já em `dev` (PR #72). AR-03: código em `fix/ar-03-debug-bool` @ dda55d1c; k8s em `chore/docuparser-debug-off` @ ceebf26 (a partir de `origin/main`). AR-07 (`/admin/` removido) em `chore/ar-07-remove-admin` @ 094ed6cd. |
+| 2026-11-27 (5ª) | Claude | AR-03 e AR-07 já em `dev` (#73, #75). AR-23 em `ci/ar-23-remove-skip-output`. |
 
 ## Estado das tarefas
 
@@ -17,11 +18,11 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 |---|---|---|---|
 | AR-01 | Fechar `POST /api/ocr/process` | done (PR #67) | Nenhum cliente usava: rota removida. Teste `documents/tests/test_removed_routes.py`. Suíte do core: 569 passed. |
 | AR-02 | Token interno falhando fechado | done (PR #68) | Sem token: aberto só com `DEPLOYMENT_ENVIRONMENT` dev; fora disso, anônimo recebe 503 e o boot loga erro. JWT e service token como antes. "teste456" removido. hml e prod já têm o token. Testes: gate em `test_api.py` e `test_startup_config.py`; documents, users, catalog, accounting e tenants: 443 passed. |
-| AR-03 | DEBUG=False em prod ⚠️ | doing (código: `fix/ar-03-debug-bool` @ dda55d1c, falta PR; k8s: `chore/docuparser-debug-off` @ ceebf26, sem push) | `core/env.py:env_flag`; `DEBUG` desligado por padrão, só `1/true/yes/on` ligam. Teste `core/tests/test_debug_setting.py` (18 passed, inclui import real do settings). ConfigMap hml e prod com `DEBUG: "False"`, **sem efeito até a imagem ter o fix** (na 0.0.15 "False" é verdadeiro). Nada depende de DEBUG=True além do CSS do `/admin/` (ver AR-07). Falta: smoke em hml. |
+| AR-03 | DEBUG=False em prod ⚠️ | doing (código: PR #73 em `dev`; k8s: `chore/docuparser-debug-off` @ ceebf26, sem push) | `core/env.py:env_flag`; `DEBUG` desligado por padrão, só `1/true/yes/on` ligam. Teste `core/tests/test_debug_setting.py` (18 passed, inclui import real do settings). ConfigMap hml e prod com `DEBUG: "False"`, **sem efeito até a imagem ter o fix** (na 0.0.15 "False" é verdadeiro). Nada depende de DEBUG=True além do CSS do `/admin/` (ver AR-07). Falta: smoke em hml. |
 | AR-04 | gunicorn + migrations fora do boot ⚠️ | doing (imagem e compose: PR #69; falta o k8s) | gunicorn 1 worker/4 threads; entrypoint `web`/`release`; compose com `backend-core-release`. `DOCUPARSE_MIGRATE_ON_BOOT=true` por padrão porque o CI grava a tag no k8s sozinho. **Falta (repo k8s, perguntar):** initContainer `release` + `DOCUPARSE_MIGRATE_ON_BOOT=false`. Testado: imagem contra Postgres descartável e `docker compose config`; `compose up` completo não testado. |
 | AR-05 | Probes e resources ⚠️ | todo | repo k8s |
 | AR-06 | Segredos versionados (usuário) | dropped (D-06: ignorar) | |
-| AR-07 | Destino do `/admin/` ⚠️ | done (`chore/ar-07-remove-admin` @ 094ed6cd, a partir de `dev`, falta PR) | Opção (a), escolhida pelo usuário: saem a rota e o app `django.contrib.admin`. Nenhuma migration depende dele (`makemigrations --check`: sem mudanças); a tabela `django_admin_log` fica órfã no schema public, inofensiva. Teste em `documents/tests/test_removed_routes.py`; users, tenants e core: 91 passed. |
+| AR-07 | Destino do `/admin/` ⚠️ | done (PR #75) | Opção (a), escolhida pelo usuário: saem a rota e o app `django.contrib.admin`. Nenhuma migration depende dele (`makemigrations --check`: sem mudanças); a tabela `django_admin_log` fica órfã no schema public, inofensiva. Teste em `documents/tests/test_removed_routes.py`; users, tenants e core: 91 passed. |
 | AR-10 | Redis/barramento fora de ocr e langextract + MAXLEN | todo | |
 | AR-11 | Flags de worker no ConfigMap ⚠️ | todo | conferir a tag em prod |
 | AR-12 | Contratos e scripts mortos | todo | |
@@ -33,7 +34,7 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 | AR-20 | CI de backend | done (PR #71) | `.github/workflows/backend-ci.yaml`: ruff, pytest por serviço, `makemigrations --check` com Postgres. Corrigiu testes desatualizados de com e ocr. **Não validado no runner**: a simulação em ambiente limpo foi interrompida pelo reinício da máquina. O primeiro run no PR é a validação; o mais provável de falhar é o job do core (env vars que o `.env` local fornece). |
 | AR-21 | Build depende dos testes | todo | depende de AR-20 |
 | AR-22 | Tags imutáveis | todo | |
-| AR-23 | Corrigir ci.yaml:18 | todo | |
+| AR-23 | Corrigir ci.yaml:18 | done (`ci/ar-23-remove-skip-output`, commitado, falta PR) | Linha removida: o output `SKIP` apontava para o step `check_version`, que não existe mais, e nenhum job o lia (grep em `.github/`). YAML validado; o comportamento do deploy não muda. |
 | AR-24 | Conexões nas threads restantes | done (mergeado em `dev` local, 6872daea; falta push) | O langextract já usava `_with_fresh_connection`; faltava só `submit_erp_dispatch`. Teste novo em `test_processing_queue.py`; `test_processing_queue` e `test_erp_flow`: 44 passed. |
 | AR-25 | Remover start_document_ocr_thread | done (`chore/ar-25-remove-ocr-thread` @ cbf04ce6, falta PR) | Sem chamadores (grep). Saíram também `_run_ocr_safely`, o `_tracer` do módulo e 3 imports órfãos. `manage.py check` ok; test_classification_pipeline, test_processing_queue, test_tracing_propagation e test_api: 43 passed. |
 | AR-26 | Ampliar e agendar o sweeper | todo | paliativo |

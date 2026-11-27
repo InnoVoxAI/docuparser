@@ -58,7 +58,7 @@
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
 AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79), AR-10 (código, #80), AR-11 (docs, #81; o k8s segue em
 `chore/docuparser-worker-flags-off` @ ac61b87, sem push), AR-12 (#82) e AR-13 (#83).
-**AR-14** em `chore/ar-14-unused-files` (a partir de `dev`, aguardando o PR). Com ele, a
+**AR-14** em `chore/ar-14-unused-files` @ 8344c41b (a partir de `dev`, aguardando o PR). Com ele, a
 **fase 1 está encerrada** no código.
 
 Como ficou o AR-14 (opções escolhidas pelo usuário):

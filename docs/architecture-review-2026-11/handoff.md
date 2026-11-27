@@ -52,12 +52,13 @@
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
 AR-01, AR-02, AR-04 (imagem e compose), AR-20, AR-24 e AR-25 já estão em `dev`. Na 4ª sessão
-de 2026-11-27 foi feito o **AR-03**, em duas branches sem PR:
+de 2026-11-27 foi feito o **AR-03** (e, a pedido, o AR-07), em branches sem PR:
 
 | Repo | Branch | Commit | Conteúdo |
 |---|---|---|---|
 | docuparser | `fix/ar-03-debug-bool` | dda55d1c | `DEBUG` lido como booleano, desligado por padrão |
 | k8s | `chore/docuparser-debug-off` | ceebf26 | `DEBUG: "False"` em hml e prod (sem push) |
+| docuparser | `chore/ar-07-remove-admin` | 094ed6cd | rota e app `django.contrib.admin` removidos |
 
 Detalhes em [work_in_progress.md](work_in_progress.md).
 
@@ -71,8 +72,9 @@ Por onde continuar, em ordem:
       `chore/docuparser-debug-off` (independentes, sem conflito);
    c. smoke em hml (login, upload, validação; `kubectl logs <pod> -c docuparser-core-release`),
       depois prod.
-2. **AR-07 (`/admin/`)**: pedir a decisão ao usuário. Exposto em prod, sem uso aparente, perde
-   o CSS sob gunicorn e o login provavelmente falha por CSRF atrás do Traefik.
+2. **AR-07 (`/admin/` removido)**: em `chore/ar-07-remove-admin` @ 094ed6cd, a partir de
+   `dev`, falta PR. Independente do AR-03; pode ir na mesma tag. A tabela
+   `django_admin_log` fica órfã: só apagar com migration e com o usuário de acordo.
 3. AR-05 (repo k8s e prod, **perguntar antes**).
 4. Fase 1, uma por sessão: AR-23 é a menor; depois AR-21 (build depende do AR-20),
    AR-26, AR-27 e a limpeza (AR-10..AR-14).

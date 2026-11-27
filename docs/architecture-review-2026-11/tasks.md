@@ -66,6 +66,7 @@ Estado de cada tarefa: [work_in_progress.md](work_in_progress.md).
   ou (b) mantê-la: whitenoise, `STATIC_ROOT`, `collectstatic` no Dockerfile,
   `SECURE_PROXY_SSL_HEADER` e `CSRF_TRUSTED_ORIGINS`.
 - **Aceite:** em (a), `/admin/` responde 404. Em (b), login no admin de hml funciona e com CSS.
+- **Decisão (2026-11-27):** opção (a).
 
 ---
 

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import requests
 from catalog.models import LayoutConfig, SchemaConfig
 from django.contrib.auth import get_user_model
 from django.db import connection
@@ -109,7 +110,91 @@ class DocumentPipelineIntegrationTests(TestCase):
 
         assert TaskExecution.objects.count() == 3
 
-    def test_ocr_failure_retries_skips_extraction_and_marks_run_failed(self) -> None:
+    def _run_with_ocr_http(self, side_effect) -> MagicMock:
+        """Roda o pipeline com o OCRClient real e o HTTP simulado em
+        `requests.request` (service_errors.request_json). Devolve o mock para
+        contar quantas chamadas ao OCR (pago) foram feitas."""
+        with (
+            tempfile.TemporaryDirectory() as storage_dir,
+            patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
+            self.settings(DOCUPARSE_LOCAL_STORAGE_DIR=storage_dir),
+        ):
+            self._store_original_file(storage_dir)
+            with patch(
+                "documents.services.service_errors.requests.request",
+                side_effect=side_effect,
+            ) as http_request:
+                _run_document_processing(self.document.id, self.tenant, None)
+        return http_request
+
+    def _assert_ocr_failed(self, *, attempt: int, error_type: str) -> None:
+        processing_run = OrchestrationRun.objects.get(name="document_processing")
+        assert processing_run.status == OrchestrationRun.Status.FAILED
+
+        tasks = list(processing_run.task_executions.all())
+        assert len(tasks) == 1
+        assert tasks[0].task_name == "ocr"
+        assert tasks[0].status == "ERROR"
+        assert tasks[0].attempt == attempt
+        assert tasks[0].error_type == error_type
+
+        self.document.refresh_from_db()
+        assert self.document.status != Document.Status.VALIDATION_PENDING
+
+    def test_ocr_http_400_is_permanent_and_calls_ocr_once(self) -> None:
+        """AR-27 (aceite): um 400 do OCR não faz retry — 1 chamada paga."""
+        http_request = self._run_with_ocr_http(
+            [_http_response(400, "arquivo inválido")]
+        )
+
+        assert http_request.call_count == 1
+        self._assert_ocr_failed(attempt=1, error_type="PermanentServiceError")
+
+    def test_ocr_timeout_is_transient_and_calls_ocr_three_times(self) -> None:
+        """AR-27 (aceite): timeout de conexão faz retry até max_attempts (3)."""
+        http_request = self._run_with_ocr_http(
+            requests.ConnectTimeout("connect timeout")
+        )
+
+        assert http_request.call_count == 3
+        self._assert_ocr_failed(attempt=3, error_type="TransientServiceError")
+
+    def test_ocr_http_500_and_read_timeout_are_permanent(self) -> None:
+        """O backend-ocr devolve 500 para qualquer erro do OpenRouter (até
+        400/401), e um ReadTimeout quer dizer que o OCR provavelmente rodou —
+        nenhum dos dois pode cobrar de novo."""
+        http_request = self._run_with_ocr_http([_http_response(500, "Erro interno")])
+        assert http_request.call_count == 1
+        self._assert_ocr_failed(attempt=1, error_type="PermanentServiceError")
+
+        OrchestrationRun.objects.all().delete()
+        http_request = self._run_with_ocr_http(requests.ReadTimeout("read timeout"))
+        assert http_request.call_count == 1
+        self._assert_ocr_failed(attempt=1, error_type="PermanentServiceError")
+
+    def test_ocr_transient_then_success_continues_pipeline(self) -> None:
+        """503 seguido de sucesso: a task fica OK com attempt=2."""
+        http_request = self._run_with_ocr_http(
+            [
+                _http_response(503, "indisponível"),
+                _http_response(
+                    200,
+                    json_body={"raw_text": "texto", "document_type": "boleto"},
+                ),
+                # langextract-service
+                _http_response(200, json_body={"fields": {"valor": "10"}}),
+            ]
+        )
+
+        assert http_request.call_count == 3
+        processing_run = OrchestrationRun.objects.get(name="document_processing")
+        ocr_execution = processing_run.task_executions.get(task_name="ocr")
+        assert ocr_execution.status == "OK"
+        assert ocr_execution.attempt == 2
+
+    def test_non_http_ocr_failure_is_not_retried(self) -> None:
+        """Erro que não é TransientServiceError (aqui um RuntimeError genérico)
+        encerra na primeira tentativa e marca o run como FAILED."""
         with (
             tempfile.TemporaryDirectory() as storage_dir,
             patch.dict(os.environ, {"DOCUPARSE_LOCAL_STORAGE_DIR": storage_dir}),
@@ -126,14 +211,18 @@ class DocumentPipelineIntegrationTests(TestCase):
 
                 _run_document_processing(self.document.id, self.tenant, None)
 
-        processing_run = OrchestrationRun.objects.get(name="document_processing")
-        assert processing_run.status == OrchestrationRun.Status.FAILED
+        assert ocr_client_class.return_value.process_document.call_count == 1
+        self._assert_ocr_failed(attempt=1, error_type="RuntimeError")
 
-        tasks = list(processing_run.task_executions.all())
-        assert len(tasks) == 1
-        assert tasks[0].task_name == "ocr"
-        assert tasks[0].status == "ERROR"
-        assert tasks[0].attempt > 1
 
-        self.document.refresh_from_db()
-        assert self.document.status != Document.Status.VALIDATION_PENDING
+def _http_response(
+    status_code: int, text: str = "", *, json_body: dict | None = None
+) -> MagicMock:
+    response = MagicMock()
+    response.status_code = status_code
+    response.text = text
+    if json_body is None:
+        response.json.side_effect = ValueError("no json")
+    else:
+        response.json.return_value = json_body
+    return response

@@ -1,8 +1,11 @@
 import mimetypes
 from typing import Any
 
-import requests
 from django.conf import settings
+
+from documents.services.service_errors import request_json
+
+SERVICE_NAME = "backend-ocr"
 
 
 class OCRClient:
@@ -14,10 +17,7 @@ class OCRClient:
         Retrieves available OCR engines from backend-ocr.
         """
         url = f"{self.base_url}/api/v1/engines"
-
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        return response.json()
+        return request_json(SERVICE_NAME, "GET", url, timeout=30)
 
     def process_document(
         self,
@@ -29,6 +29,8 @@ class OCRClient:
     ) -> dict[str, Any]:
         """
         Sends the file to backend-ocr for processing.
+
+        Raises TransientServiceError / PermanentServiceError (ver service_errors).
         """
         url = f"{self.base_url}/api/v1/process"
         mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
@@ -37,11 +39,6 @@ class OCRClient:
         if engine:
             data["selected_engine"] = engine
 
-        try:
-            response = requests.post(url, files=files, data=data, timeout=300)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            # Log error
-            print(f"Error communicating with OCR backend: {e}")
-            raise
+        return request_json(
+            SERVICE_NAME, "POST", url, files=files, data=data, timeout=300
+        )

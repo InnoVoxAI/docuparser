@@ -47,25 +47,32 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 7ª sessão)
+## Próxima sessão (estado em 2026-11-27, 8ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
-AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75), AR-20, AR-21 (#77),
-AR-23 (#76), AR-24 e AR-25 já estão em `dev`. Commitado, aguardando o PR do usuário:
-**AR-26** (código do sweeper), em `fix/ar-26-sweeper-extraction`.
+Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
+AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25 e AR-26 (código do sweeper, #78). Commitado e
+aguardando o PR do usuário: **AR-27** (retry classificado), em `fix/ar-27-retry-classificado`.
 
-Como ficou o AR-26: `sweep_stuck_processing` agora também fecha a extração parada em
-`metadata.extraction.state="running"`, em qualquer status (automática em OCR_COMPLETED ou
-manual em qualquer outro). Ela vira `state="failed"` com `error_type=StuckInQueue`, e o status
-do documento não muda, igual a uma falha real. Há um só limite (`--older-than-minutes`, 30).
-Os runs RUNNING de qualquer etapa já eram fechados. **Falta agendar**: é o CronJob a cada
-10 min no repo k8s (AR-70, perguntar antes). O manifesto de exemplo em
-`docuparse-project/docs/TECHNICAL.md` foi corrigido para `args: ["uv", "run", "--frozen",
-"python", "manage.py", "sweep_stuck_documents", ...]`, porque `command: ["python", ...]` pula
-o entrypoint e o `python` do sistema não tem Django. Agende o CronJob junto com a tag
-nova do deploy final (com AR-04 e AR-26). Com a 0.0.15 ele não foi testado e não teria a
-parte da extração.
+Como ficou o AR-27 (opções A + 2 + padrão vazio, escolhidas pelo usuário):
+- `@task(..., retry_on=(...))`: o retry é opt-in e o padrão `()` não repete nada. Só o
+  `ocr_task` e o `extraction_task` declaram `retry_on=(TransientServiceError,)`.
+- A classificação fica nos clientes do core: `documents/services/service_errors.py`
+  (`request_json`). São transitórios `ConnectTimeout`, `ConnectionError`, 429, 502, 503 e
+  504. O resto é permanente, **inclusive o 500 e o `ReadTimeout`**. O backend-ocr transforma
+  qualquer erro do OpenRouter (até 400/401) em 500, e um `ReadTimeout` quer dizer que o OCR
+  pago provavelmente já rodou. **Não "conserte" o 500 para transitório** sem antes fazer o
+  backend-ocr repassar o status real (é uma melhoria possível, sem AR aberta).
+- No `TaskExecution` e no `metadata.extraction`, o `error_type` passa a ser
+  `TransientServiceError` ou `PermanentServiceError`, e a mensagem traz o serviço e o status
+  HTTP.
+
+Como ficou o AR-26: `sweep_stuck_processing` também fecha a extração parada em
+`metadata.extraction.state="running"`. **Falta agendar**: é o CronJob a cada 10 min no repo
+k8s (AR-70, perguntar antes), com o manifesto de exemplo em `docuparse-project/docs/TECHNICAL.md`
+(`args: ["uv", "run", "--frozen", "python", "manage.py", "sweep_stuck_documents", ...]`).
+Agende junto com a tag nova do deploy final (que leva o AR-04 e o AR-26).
 
 O Backend CI no runner (AR-20/AR-21): confira no GitHub se o run do PR #77 passou. Se o job
 do core falhou por falta de env var, conserte o `env:` do job `test-core`.
@@ -78,7 +85,7 @@ agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. Fase 1, uma por sessão: **AR-27** (retry classificado) e a limpeza (AR-10..AR-14). As decisões D-01, D-02 e D-03 já foram tomadas (ver
+1. Fase 1, uma por sessão: a limpeza (AR-10..AR-14), começando pelo **AR-10**. As decisões D-01, D-02 e D-03 já foram tomadas (ver
    [decisions-pending.md](decisions-pending.md)), então as fases 2 e 3 também estão
    destravadas.
 2. AR-05 (probes e resources) e o CronJob do sweeper (parte do AR-70), ambos no repo k8s e

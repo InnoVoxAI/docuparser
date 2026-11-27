@@ -51,7 +51,7 @@ def test_task_retries_then_succeeds(in_memory_tracer, fake_writer):
     calls, writer = fake_writer
     attempts_made = {"count": 0}
 
-    @task("flaky", max_attempts=3, writer=writer)
+    @task("flaky", max_attempts=3, retry_on=(ValueError,), writer=writer)
     def flaky() -> dict:
         attempts_made["count"] += 1
         if attempts_made["count"] < 2:
@@ -69,7 +69,7 @@ def test_task_retries_then_succeeds(in_memory_tracer, fake_writer):
 def test_task_exhausts_retries_and_returns_error(in_memory_tracer, fake_writer):
     calls, writer = fake_writer
 
-    @task("always_fails", max_attempts=2, writer=writer)
+    @task("always_fails", max_attempts=2, retry_on=(ValueError,), writer=writer)
     def always_fails() -> dict:
         raise ValueError("permanent failure")
 
@@ -84,7 +84,90 @@ def test_task_exhausts_retries_and_returns_error(in_memory_tracer, fake_writer):
     assert len(calls) == 1
 
 
-def test_task_without_active_run_generates_standalone_run_id(in_memory_tracer, fake_writer):
+class _TransientError(Exception):
+    pass
+
+
+class _PermanentError(Exception):
+    pass
+
+
+def test_task_does_not_retry_exception_outside_retry_on(in_memory_tracer, fake_writer):
+    """AR-27: erro permanente encerra na 1ª tentativa, mesmo com max_attempts=3."""
+    calls, writer = fake_writer
+    attempts_made = {"count": 0}
+
+    @task("permanent", max_attempts=3, retry_on=(_TransientError,), writer=writer)
+    def permanent() -> dict:
+        attempts_made["count"] += 1
+        raise _PermanentError("HTTP 400")
+
+    result = permanent()
+
+    assert attempts_made["count"] == 1
+    assert result.status == "error"
+    assert result.attempt == 1
+    assert result.error.type == "_PermanentError"
+    assert len(calls) == 1
+
+
+def test_task_retries_exception_in_retry_on_until_max_attempts(
+    in_memory_tracer, fake_writer
+):
+    calls, writer = fake_writer
+    attempts_made = {"count": 0}
+
+    @task("transient", max_attempts=3, retry_on=(_TransientError,), writer=writer)
+    def transient() -> dict:
+        attempts_made["count"] += 1
+        raise _TransientError("timeout")
+
+    result = transient()
+
+    assert attempts_made["count"] == 3
+    assert result.status == "error"
+    assert result.attempt == 3
+    assert len(calls) == 1
+
+
+def test_task_retry_on_matches_subclasses(in_memory_tracer, fake_writer):
+    _, writer = fake_writer
+    attempts_made = {"count": 0}
+
+    class _Timeout(_TransientError):
+        pass
+
+    @task("subclass", max_attempts=2, retry_on=(_TransientError,), writer=writer)
+    def subclass() -> dict:
+        attempts_made["count"] += 1
+        raise _Timeout("connect timeout")
+
+    subclass()
+
+    assert attempts_made["count"] == 2
+
+
+def test_task_without_retry_on_never_retries(in_memory_tracer, fake_writer):
+    """Padrão `retry_on=()`: retry é opt-in, nenhuma exceção é repetida."""
+    calls, writer = fake_writer
+    attempts_made = {"count": 0}
+
+    @task("default", writer=writer)
+    def default() -> dict:
+        attempts_made["count"] += 1
+        raise ValueError("boom")
+
+    result = default()
+
+    assert attempts_made["count"] == 1
+    assert result.status == "error"
+    assert result.attempt == 1
+    assert len(calls) == 1
+
+
+def test_task_without_active_run_generates_standalone_run_id(
+    in_memory_tracer, fake_writer
+):
     _, writer = fake_writer
 
     @task("standalone", writer=writer)

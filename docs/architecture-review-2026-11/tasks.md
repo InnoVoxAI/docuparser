@@ -224,6 +224,13 @@ comportamento.
 - **Testes:** `jobqueue/tests/test_models.py` (constraint parcial: duplicado ativo falha, e
   duplicado com `done`/`failed` passa; tabela ausente nos schemas de tenant).
 - **Depende de:** nada. Perguntar antes de rodar a migration em hml.
+- **Como ficou (2026-11-27, `feat/ar-30-processingjob`):** duas mudanças em relação ao escopo acima,
+  decididas pelo usuário. O índice de recuperação é **parcial**, `(heartbeat_at) WHERE status='running'`
+  (`jobqueue_recovery_idx`). Entraram três CheckConstraints (`jobqueue_valid_step`, `jobqueue_valid_status`
+  e `jobqueue_attempts_within_max`), porque o worker escreve por SQL cru. Os valores dos choices são
+  minúsculos e `max_attempts` não tem default (o enqueue do AR-31 copia de `policy_for(step)`). Nomes
+  para usar no AR-31: a constraint do `ON CONFLICT` é `jobqueue_one_active_job_per_step`, e o índice do
+  claim, `jobqueue_claim_idx`.
 
 ### AR-31 · `enqueue` transacional e rotas que enfileiram
 - **Escopo:**

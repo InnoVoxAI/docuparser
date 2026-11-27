@@ -37,6 +37,9 @@ SHARED_APPS = [
     # tabelas únicas em `public`, lidas por qualquer tenant via search_path.
     # NÃO pertence a TENANT_APPS (ver spec 018).
     "catalog",
+    # Fila durável de processamento (fase 2): uma fila global em `public`, com
+    # a coluna `tenant_schema`. NÃO pertence a TENANT_APPS.
+    "jobqueue",
 ]
 
 TENANT_APPS = [

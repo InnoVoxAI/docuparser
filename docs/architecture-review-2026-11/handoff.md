@@ -51,18 +51,39 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 15ª sessão)
+## Próxima sessão (estado em 2026-11-27, 16ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
 AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79), AR-10 (código, #80), AR-11 (docs, #81; o k8s segue em
-`chore/docuparser-worker-flags-off` @ ac61b87, sem push), AR-12 (#82), AR-13 (#83) e AR-14 (#84).
+`chore/docuparser-worker-flags-off` @ ac61b87, sem push), AR-12 (#82), AR-13 (#83), AR-14 (#84) e AR-30 (#86).
 **A fase 1 está encerrada.** Aguardando PR: AR-05 (k8s, `chore/docuparser-probes-resources` @ 59d1aab,
 sobre o `core-release`) e o CronJob do sweeper (AR-70: k8s em `chore/docuparser-sweep-cronjob` @ f4df0d8,
 e o sed da tag em `ci/ar-70-cronjob-image-tag`, neste repo).
 
-**AR-30 feito (15ª sessão)** em `feat/ar-30-processingjob`, a partir de `dev`, aguardando PR. O app
+**AR-32 feito (16ª sessão)** em `feat/ar-32-run-worker`, a partir de `dev`, aguardando PR.
+`manage.py run_worker` (e `entrypoint.sh worker`) existe, mas **nada enfileira jobs** até o AR-31 ligar
+as rotas com a flag em `queue`, então o comportamento não muda. O que o AR-31 precisa saber:
+- `jobqueue/services.py:enqueue(document, step, *, triggered_by, payload, run_after,
+  orchestration_run_id, tenant_schema)` **já existe** e devolve `(job, created)`. Lê o tenant de
+  `connection` se `tenant_schema` não vier, e recusa o schema `public`. Use-o nas rotas.
+- O worker abre sempre o run `document_processing` (`jobqueue/dispatch.py:DOCUMENT_RUN_NAME`). Para o
+  retry de etapa manter `retry_<step>` no dashboard, o nome do run tem de ir no job (sugestão:
+  `payload["run_name"]`, lido no `dispatch`).
+- Cada job fecha o run ao terminar, e o próximo o reabre (`orchestration_run(resume=True)`). Não deixe
+  um run `RUNNING` esperando na fila: o sweeper o fecharia.
+- **Armadilhas do worker:** o `payload` (jsonb) lido por SQL cru chega como **texto** (o Django desliga
+  a decodificação do psycopg2), então faça `json.loads`. Compare `run_after` com o relógio do Python e
+  não com `now()`, que numa transação (e nos `TestCase`) é o horário do BEGIN. O `uv run` repassa os
+  sinais: um SIGTERM ao grupo chega duas vezes ao python.
+- Nos testes, `close_old_connections()` dentro de um `TestCase` **fecha** a conexão do teste (o
+  autocommit está desligado). Separe o que fecha conexão (o loop) do que é testável (`run_job`,
+  `claim_next`, `heartbeat_tick`).
+- Falha intermitente conhecida: `test_process_dashboard_api.py::test_ordering_by_filename_status_and_last_update`
+  (ordena por `updated_at`). Passa sozinho; não tem relação com a fila.
+
+**AR-30 feito (15ª sessão)**, já em `dev` (#86). O app
 `jobqueue` está em `SHARED_APPS`, com o modelo `ProcessingJob`, `jobqueue/policy.py` e a migration
 `jobqueue/0001_initial`. Ela é nova e **não foi rodada em hml**: sobe com a tag da fase 2, pelo
 initContainer `release`. Nada usa a tabela ainda, então o comportamento não muda. Mudanças em relação ao
@@ -153,9 +174,9 @@ agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. **AR-31 ou AR-32** (o AR-30 está em `feat/ar-30-processingjob`), uma por sessão, conforme o
-   tasks.md. A sugestão é começar pelo AR-32 (worker): ele não muda nenhuma rota e dá para testá-lo
-   enfileirando direto. O deploy da fase 2 segue a ordem do AR-35.
+1. **AR-31** (`enqueue` nas rotas + flag `DOCUPARSE_PROCESSING_MODE`), depois AR-33, AR-34 e AR-35,
+   uma por sessão, conforme o tasks.md. O AR-32 está em `feat/ar-32-run-worker`; se ainda não estiver
+   em `dev`, parta dela. O deploy da fase 2 segue a ordem do AR-35.
 2. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
    acabaram:
    a. gerar a tag a partir de `dev`. Desde o AR-21, o push em main/staging só faz o build

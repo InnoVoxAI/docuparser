@@ -3,6 +3,7 @@
 #
 #   entrypoint.sh web      (padrão) sobe o gunicorn
 #   entrypoint.sh release  migrations (public e tenants) + seed_data, e sai
+#   entrypoint.sh worker [args]  worker da fila durável (manage.py run_worker [args])
 #   entrypoint.sh <cmd>    executa <cmd> (ex.: uv run python manage.py shell)
 #
 # `release` deve rodar uma vez por deploy, antes do `web`: no compose é o serviço
@@ -46,6 +47,13 @@ case "${1:-web}" in
             --threads "${GUNICORN_THREADS:-4}" \
             --timeout "${GUNICORN_TIMEOUT:-120}" \
             --access-logfile -
+        ;;
+    worker)
+        # Fila durável (fase 2). Não roda migrations: espera a tabela, que o
+        # `release` cria. Args extras vão para o run_worker (ex.: --concurrency 4).
+        shift
+        echo "[entrypoint] Starting queue worker..."
+        exec uv run --frozen python manage.py run_worker "$@"
         ;;
     *)
         exec "$@"

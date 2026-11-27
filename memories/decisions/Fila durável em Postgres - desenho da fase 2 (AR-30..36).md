@@ -34,6 +34,18 @@ Detalhamento em `docs/architecture-review-2026-11/tasks.md` (fase 2, em `dev` de
 - [bug] O `pytest.ini` do core só coleta classes `Test*`. Cinco classes `tenant_db` simples nunca rodaram (TenantIsolationTests, TenantSchemaIsolationTests, NewTenantGlobalCatalogRegressionTests, CatalogGlobalityTests, CheckCatalogDivergenceTenantTests). Não corrigido.
 - [fato] Testes: `jobqueue/tests/test_models.py`, 15 passed contra Postgres (inclui a tabela ausente no schema de um tenant real).
 
+## AR-32 implementado (2026-11-27, `feat/ar-32-run-worker`)
+- [fato] `manage.py run_worker [--concurrency 2] [--poll-interval 2] [--steps …]` e `entrypoint.sh worker`. Arquivos: `jobqueue/{worker,dispatch,backoff,services}.py`. Nada enfileira em produção até o AR-31.
+- [decisao] O `enqueue` (`jobqueue/services.py`, devolve `(job, created)`, aceita `tenant_schema` e `orchestration_run_id`) nasceu no AR-32 para o encadeamento ocr → extraction, feito na mesma transação do `done`. O AR-31 só o liga às rotas.
+- [decisao] Contrato `@task` ↔ worker: `TaskError.retryable` (True se a exceção está em `retry_on`); tasks da fila `ocr_job_task`/`extraction_job_task` com `max_attempts=1`; `current_attempt_override` faz o `TaskExecution.attempt` gravar a tentativa do job.
+- [decisao] Cada job fecha o run `document_processing` e o próximo o reabre (`orchestration_run(resume=True)`, `DjangoOrchestrationRunWriter.resume`). Run aberto durante o backoff seria fechado pelo sweeper.
+- [decisao] `erp_dispatch` sem run nem `@task`, como o pool. Erro fora do `@task` = transitório; tenant inexistente = permanente (`TenantNotFound`). Liveness `/tmp/worker-alive` depende só das threads vivas.
+- [bug] O Django desliga a decodificação de jsonb do psycopg2: num cursor cru, o `payload` chega como texto. O worker faz `json.loads`.
+- [fato] O `now()` do Postgres numa transação (e em `TestCase`) é o horário do BEGIN: o claim compara `run_after` com o relógio do Python, o mesmo do enqueue.
+- [fato] `uv run` repassa sinais ao python: um SIGTERM ao grupo chega duas vezes. Um segundo sinal só força a saída se vier mais de 2 s depois do primeiro.
+- [fato] `close_old_connections()` dentro de um `TestCase` fecha a conexão do teste (autocommit desligado). Por isso o loop fica separado de `claim_next`/`run_job`/`heartbeat_tick`.
+- [fato] Testes: `jobqueue/tests/test_worker.py` 42 passed (jobqueue 57), shared 81. Intermitente sem relação: `test_process_dashboard_api::test_ordering_by_filename_status_and_last_update`.
+
 ## Plano
 Ordem: AR-30 → (AR-31 ∥ AR-32) → AR-33 → AR-34 → AR-35; AR-36 no fim. Flag `DOCUPARSE_PROCESSING_MODE=thread|queue` até o AR-34, que remove o pool, libera gunicorn com mais de 1 worker e muda o CronJob do sweeper para 30 min / `--older-than-minutes 60`. O AR-35 cria `docuparser-core-worker` (args worker, liveness por exec em `/tmp/worker-alive`, grace de 360 s, resources iguais ao web do AR-05) em `docuparser-core/`, para pegar o sed da tag.
 

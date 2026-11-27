@@ -9,6 +9,10 @@ class TaskError:
     type: str
     message: str
     traceback: str
+    # True quando a exceção é de um dos tipos em `retry_on` do @task, ou seja,
+    # transitória. A fila durável (jobqueue) lê isso para decidir entre
+    # reagendar e falhar, já que o decorator nunca levanta exceção.
+    retryable: bool = False
 
 
 @dataclass

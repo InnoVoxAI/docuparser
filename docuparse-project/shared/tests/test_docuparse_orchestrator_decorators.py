@@ -180,3 +180,84 @@ def test_task_without_active_run_generates_standalone_run_id(
     assert result_a.run_id
     assert result_b.run_id
     assert result_a.run_id != result_b.run_id
+
+
+# --- Contrato com a fila durável (AR-32) ---------------------------------
+
+
+def test_error_in_retry_on_is_marked_retryable(in_memory_tracer, fake_writer):
+    _, writer = fake_writer
+
+    @task("ocr", max_attempts=1, retry_on=(_TransientError,), writer=writer)
+    def flaky() -> dict:
+        raise _TransientError("503")
+
+    result = flaky()
+
+    assert result.status == "error"
+    assert result.error.retryable is True
+    assert result.error.type == "_TransientError"
+    assert result.attempt == 1
+
+
+def test_error_outside_retry_on_is_not_retryable(in_memory_tracer, fake_writer):
+    _, writer = fake_writer
+
+    @task("ocr", max_attempts=1, retry_on=(_TransientError,), writer=writer)
+    def broken() -> dict:
+        raise _PermanentError("400")
+
+    result = broken()
+
+    assert result.status == "error"
+    assert result.error.retryable is False
+
+
+def test_error_without_retry_on_is_not_retryable(in_memory_tracer, fake_writer):
+    _, writer = fake_writer
+
+    @task("ocr", max_attempts=1, writer=writer)
+    def broken() -> dict:
+        raise _TransientError("503")
+
+    assert broken().error.retryable is False
+
+
+def test_retryable_subclass_is_marked_retryable(in_memory_tracer, fake_writer):
+    _, writer = fake_writer
+
+    class _Timeout(_TransientError):
+        pass
+
+    @task("ocr", max_attempts=1, retry_on=(_TransientError,), writer=writer)
+    def flaky() -> dict:
+        raise _Timeout("connect timeout")
+
+    assert flaky().error.retryable is True
+
+
+def test_attempt_override_is_recorded_on_success_and_error(
+    in_memory_tracer, fake_writer
+):
+    from docuparse_orchestrator._run_context import current_attempt_override
+
+    calls, writer = fake_writer
+
+    @task("ok", max_attempts=1, writer=writer)
+    def ok() -> dict:
+        return {}
+
+    @task("fails", max_attempts=1, writer=writer)
+    def fails() -> dict:
+        raise _PermanentError("boom")
+
+    token = current_attempt_override.set(3)
+    try:
+        assert ok().attempt == 3
+        assert fails().attempt == 3
+    finally:
+        current_attempt_override.reset(token)
+
+    assert [result.attempt for result in calls] == [3, 3]
+    # Sem override, volta a ser a tentativa do tenacity.
+    assert ok().attempt == 1

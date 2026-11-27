@@ -42,18 +42,26 @@
   `connection.close()` no fim e `logger.exception`. Use `_with_fresh_connection`.
 - Ao trocar para gunicorn (AR-04) antes da fila durável: **cada worker do gunicorn cria seu
   próprio pool de processamento.** Use 1 worker com threads até a fase 2.
-- A tag de imagem em prod (0.0.14) pode ser anterior à remoção dos workers. Confira antes de
-  tirar as flags `*_WORKER_ENABLED` (AR-11).
+- A tag de imagem em hml e prod é a 0.0.15 (`main` @ `b497651d`), que **já** não tem os
+  workers de eventos (conferido no AR-11). Não há tags git: compare o commit do CI Bot no repo
+  k8s ("Updating the image tag") com o `git log origin/main`.
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 9ª sessão)
+## Próxima sessão (estado em 2026-11-27, 10ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
-AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78) e AR-27 (#79).
-Commitado e aguardando o PR do usuário: **AR-10**, em `chore/ar-10-redis-ocr-langextract`.
+AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79) e AR-10 (código, #80).
+**AR-11** não teve mudança de código: só o repo k8s (`chore/docuparser-worker-flags-off` @
+ac61b87, sem push) e os docs, em `docs/ar-11-worker-flags` (a partir de `dev`, aguardando o PR).
+
+Como ficou o AR-11: a 0.0.15 (hml e prod) saiu de `main` @ `b497651d`, depois da remoção dos
+workers (#66). Nada em `dev` lê `DOCUPARSE_OCR_WORKER_ENABLED` /
+`DOCUPARSE_EXTRACTION_WORKER_ENABLED`. A branch k8s tira as duas flags e o comentário de hml e
+prod. Vale com a 0.0.15, mas vai junto no deploy final. Merge simulado com as outras três
+branches k8s: sem conflito.
 
 Como ficou o AR-10 (opções escolhidas pelo usuário: `MAXLEN ~` 10000 por env var e ConfigMap
 separada no k8s):
@@ -77,15 +85,16 @@ Como ficou o AR-26: `sweep_stuck_processing` também fecha a extração presa em
 (`args: ["uv", "run", "--frozen", "python", "manage.py", "sweep_stuck_documents", ...]`).
 
 Pendentes no repo k8s, sem push: `chore/docuparser-debug-off` @ ceebf26 (AR-03),
-`chore/docuparser-core-release` (AR-04) e `chore/docuparser-events-config` @ eae066f (AR-10).
+`chore/docuparser-core-release` (AR-04), `chore/docuparser-events-config` @ eae066f (AR-10) e
+`chore/docuparser-worker-flags-off` @ ac61b87 (AR-11). As quatro mexem na `config-map.yaml` ou
+no deployment do core; o merge em sequência foi simulado sem conflito.
 
 **Deploy só no final** (pedido do usuário em 2026-11-27): nada vai para hml a cada AR. O
 agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim da sessão,
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. Fase 1, uma AR por sessão: falta a limpeza **AR-11** (⚠️ flags de worker na ConfigMap:
-   confirmar antes que a tag em prod já não tem os workers), depois AR-12, AR-13 e AR-14.
+1. Fase 1, uma AR por sessão: faltam AR-12, AR-13 e AR-14.
    No AR-12, `shared/consume_fake_event.py` e `publish_fake_event.py` são os únicos
    usuários de `consume`/`consume_entries`.
 2. AR-05 (probes e resources) e o CronJob do sweeper (parte do AR-70), ambos no repo k8s e
@@ -96,7 +105,8 @@ Por onde continuar, em ordem:
       se o Backend CI passar. Em emergência, use `workflow_dispatch` com `skip_tests`;
    b. com essa tag em hml, mergear `chore/docuparser-core-release` (AR-04: initContainer
       `args: ["release"]`, que quebra na 0.0.15 por falta de ENTRYPOINT),
-      `chore/docuparser-debug-off` (AR-03) e `chore/docuparser-events-config` (AR-10). Na
+      `chore/docuparser-debug-off` (AR-03), `chore/docuparser-events-config` (AR-10) e
+      `chore/docuparser-worker-flags-off` (AR-11, este independe da tag). Na
       0.0.15 a string `"False"` ainda conta como verdadeira, então a ConfigMap do DEBUG só
       vale com a tag nova. O AR-04 e o AR-10 mexem no `envFrom`/deployment do core: confira
       os conflitos no merge;

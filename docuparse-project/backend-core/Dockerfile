@@ -37,4 +37,8 @@ RUN uv sync --frozen
 # Expose the port that the application listens on
 EXPOSE 8000
 
-CMD ["sh", "-c", "uv run python manage.py migrate --noinput && uv run python manage.py seed_data && uv run python manage.py runserver 0.0.0.0:8000"]
+# `web` sobe o gunicorn; `release` roda migrations e seed (ver entrypoint.sh).
+# `sh` explícito: o compose monta ./backend-core em /app e o bit de execução do
+# host pode não vir junto.
+ENTRYPOINT ["sh", "/app/entrypoint.sh"]
+CMD ["web"]

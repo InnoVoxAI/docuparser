@@ -28,6 +28,7 @@ dependencies = [
     "opentelemetry-instrumentation-redis>=0.65b0",
     "tenacity>=9.1.4",
     "cryptography>=49.0.0",
+    "gunicorn>=23",
 ]
 
 # ------------------------------

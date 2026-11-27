@@ -51,7 +51,7 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 14ª sessão)
+## Próxima sessão (estado em 2026-11-27, 15ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
@@ -62,8 +62,20 @@ AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), 
 sobre o `core-release`) e o CronJob do sweeper (AR-70: k8s em `chore/docuparser-sweep-cronjob` @ f4df0d8,
 e o sed da tag em `ci/ar-70-cronjob-image-tag`, neste repo).
 
-**Fase 2 detalhada (14ª sessão)** em [tasks.md](tasks.md), na branch `docs/fase-2-fila-duravel`.
-Nada foi implementado. Decisões do usuário: tabela nova `ProcessingJob` (o `OrchestrationRun` fica
+**AR-30 feito (15ª sessão)** em `feat/ar-30-processingjob`, a partir de `dev`, aguardando PR. O app
+`jobqueue` está em `SHARED_APPS`, com o modelo `ProcessingJob`, `jobqueue/policy.py` e a migration
+`jobqueue/0001_initial`. Ela é nova e **não foi rodada em hml**: sobe com a tag da fase 2, pelo
+initContainer `release`. Nada usa a tabela ainda, então o comportamento não muda. Mudanças em relação ao
+tasks.md, aprovadas pelo usuário: índice de recuperação parcial (`WHERE status='running'`), três
+CheckConstraints (step, status e `attempts <= max_attempts`), choices em minúsculas e `max_attempts`
+sem default. Os detalhes estão em "Como ficou" no AR-30 do tasks.md.
+**Achado do AR-30 (não corrigido):** o `pytest.ini` só coleta classes `Test*`. Cinco classes
+`tenant_db` simples **nunca rodaram**: `TenantIsolationTests`, `TenantSchemaIsolationTests`,
+`NewTenantGlobalCatalogRegressionTests`, `CatalogGlobalityTests` e `CheckCatalogDivergenceTenantTests`.
+Renomear e consertar o que falhar é uma tarefa à parte (perguntar ao usuário). Ao escrever testes
+novos que não herdem de `TestCase`, use o prefixo `Test`.
+
+**Fase 2 detalhada (14ª sessão)** em [tasks.md](tasks.md) (já em `dev`, #85). Decisões do usuário: tabela nova `ProcessingJob` (o `OrchestrationRun` fica
 como auditoria), tabela própria com SKIP LOCKED (sem lib), fila global no `public` com
 `tenant_schema`, 5 tentativas reagendadas por `run_after` (30 s, 2 min, 8 min, 30 min, com jitter),
 backfill `enqueue_pending_documents` no deploy, retry de etapa e reprocess na fila (202) e, no AR-33,
@@ -141,8 +153,9 @@ agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. **AR-30** (modelo `ProcessingJob`, app `jobqueue`, migration nova ⚠️). Depois AR-31 ou AR-32,
-   uma por sessão, conforme o tasks.md. O deploy da fase 2 segue a ordem do AR-35.
+1. **AR-31 ou AR-32** (o AR-30 está em `feat/ar-30-processingjob`), uma por sessão, conforme o
+   tasks.md. A sugestão é começar pelo AR-32 (worker): ele não muda nenhuma rota e dá para testá-lo
+   enfileirando direto. O deploy da fase 2 segue a ordem do AR-35.
 2. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
    acabaram:
    a. gerar a tag a partir de `dev`. Desde o AR-21, o push em main/staging só faz o build

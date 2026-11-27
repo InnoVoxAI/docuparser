@@ -9,7 +9,7 @@ tags:
 - decisao
 ---
 
-Detalhamento em `docs/architecture-review-2026-11/tasks.md` (fase 2), branch `docs/fase-2-fila-duravel`, 2026-11-27. Nada implementado.
+Detalhamento em `docs/architecture-review-2026-11/tasks.md` (fase 2, em `dev` desde o #85), 2026-11-27. AR-30 implementado (ver abaixo).
 
 ## Decisões do usuário
 - [decisao] Tabela nova `ProcessingJob` num app novo `jobqueue` em SHARED_APPS (schema public), com `tenant_schema` e `document_id` sem FK. `OrchestrationRun`/`TaskExecution` continuam como auditoria e dashboard; o job guarda o `run_id`.
@@ -24,6 +24,15 @@ Detalhamento em `docs/architecture-review-2026-11/tasks.md` (fase 2), branch `do
 - [bug] O `@task` nunca levanta exceção: uma falha de OCR ou extração deixa o documento em RECEIVED com o run FAILED. O AR-33 corrige.
 - [bug] O duplicado é detectado por `original_filename`, check-then-insert, sem trava.
 - [fato] `submit_document_langextract` é código morto. `retry_step` confere o run RUNNING sem trava.
+
+## AR-30 implementado (2026-11-27, `feat/ar-30-processingjob`)
+- [fato] App `backend-core/jobqueue` em SHARED_APPS: `models.py` (`ProcessingJob`), `policy.py` (`StepPolicy`, `STEP_POLICIES`, `policy_for`) e `migrations/0001_initial.py`, gerada por makemigrations e sem dependências. Nenhuma migration existente mudou. **Não rodada em hml**: sobe com a tag da fase 2.
+- [decisao] Choices em minúsculas (`queued`/`running`/`done`/`failed`/`cancelled`; `ocr`/`extraction`/`erp_dispatch`), porque o worker usa SQL cru. O `OrchestrationRun` usa maiúsculas.
+- [decisao] Nomes que o AR-31 e o AR-32 usam: unique parcial `jobqueue_one_active_job_per_step` (alvo do ON CONFLICT), índice de claim `jobqueue_claim_idx` `(run_after, id) WHERE status='queued'` e índice de recuperação **parcial** `jobqueue_recovery_idx` `(heartbeat_at) WHERE status='running'`.
+- [decisao] CheckConstraints no banco: `jobqueue_valid_step`, `jobqueue_valid_status` e `jobqueue_attempts_within_max`. Ou seja, o claim (`attempts+1`) nunca pode passar de `max_attempts`.
+- [decisao] `max_attempts` sem default: o enqueue copia de `policy_for(step)`.
+- [bug] O `pytest.ini` do core só coleta classes `Test*`. Cinco classes `tenant_db` simples nunca rodaram (TenantIsolationTests, TenantSchemaIsolationTests, NewTenantGlobalCatalogRegressionTests, CatalogGlobalityTests, CheckCatalogDivergenceTenantTests). Não corrigido.
+- [fato] Testes: `jobqueue/tests/test_models.py`, 15 passed contra Postgres (inclui a tabela ausente no schema de um tenant real).
 
 ## Plano
 Ordem: AR-30 → (AR-31 ∥ AR-32) → AR-33 → AR-34 → AR-35; AR-36 no fim. Flag `DOCUPARSE_PROCESSING_MODE=thread|queue` até o AR-34, que remove o pool, libera gunicorn com mais de 1 worker e muda o CronJob do sweeper para 30 min / `--older-than-minutes 60`. O AR-35 cria `docuparser-core-worker` (args worker, liveness por exec em `/tmp/worker-alive`, grace de 360 s, resources iguais ao web do AR-05) em `docuparser-core/`, para pegar o sed da tag.

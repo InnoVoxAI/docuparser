@@ -93,7 +93,7 @@ def test_event_bus_from_env_defaults_to_local(monkeypatch, tmp_path) -> None:
     assert isinstance(bus, LocalJsonlEventBus)
 
 
-def test_redis_stream_event_bus_publish_and_consume() -> None:
+def test_redis_stream_event_bus_publish_writes_payload() -> None:
     client = FakeRedisStreams()
     bus = RedisStreamEventBus(client)
     event = {
@@ -102,13 +102,11 @@ def test_redis_stream_event_bus_publish_and_consume() -> None:
     }
 
     event_id = bus.publish("document.received.fake", event)
-    consumed = bus.consume("document.received.fake")
-    entries = bus.consume_entries("document.received.fake")
 
     assert event_id == "1-0"
-    assert consumed == [event]
-    assert entries[0].id == "1-0"
-    assert entries[0].payload == event
+    [(message_id, fields)] = client.streams["document.received.fake"]
+    assert message_id == "1-0"
+    assert json.loads(fields[b"payload"]) == event
 
 
 def test_redis_stream_event_bus_trims_streams_approximately() -> None:
@@ -202,33 +200,3 @@ class FakeRedisStreams:
         }
         messages.append((message_id, encoded_fields))
         return message_id.encode("utf-8")
-
-    def xread(
-        self, streams: dict[str, str], count: int | None = None
-    ) -> list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]:
-        output = []
-        for stream, offset in streams.items():
-            messages = [
-                (message_id.encode("utf-8"), fields)
-                for message_id, fields in self.streams.get(stream, [])
-                if _redis_id_gt(message_id, offset)
-            ]
-            if count is not None:
-                messages = messages[:count]
-            if messages:
-                output.append((stream.encode("utf-8"), messages))
-        return output
-
-    def xrevrange(
-        self, stream: str, count: int | None = None
-    ) -> list[tuple[bytes, dict[bytes, bytes]]]:
-        messages = list(reversed(self.streams.get(stream, [])))
-        if count is not None:
-            messages = messages[:count]
-        return [(message_id.encode("utf-8"), fields) for message_id, fields in messages]
-
-
-def _redis_id_gt(left: str, right: str) -> bool:
-    left_ms, left_seq = (int(part) for part in left.split("-", 1))
-    right_ms, right_seq = (int(part) for part in right.split("-", 1))
-    return (left_ms, left_seq) > (right_ms, right_seq)

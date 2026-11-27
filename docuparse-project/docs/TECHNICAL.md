@@ -179,7 +179,7 @@ docuparse-project/
 │   └── api/app.py             # Endpoint /api/v1/classify-layout
 │
 ├── contracts/                 # Schemas de eventos compartilhados
-│   └── events/schemas.py      # Pydantic: DocumentReceivedEvent, OCRCompletedEvent, etc.
+│   └── events/schemas.py      # Pydantic: DocumentReceivedEvent, ERP*Event, etc.
 │
 ├── shared/                    # Utilitários compartilhados
 │   ├── docuparse_storage/     # Abstração de storage local

@@ -12,10 +12,6 @@ EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "events" / "examples"
 def test_known_event_models_cover_required_contracts() -> None:
     assert set(EVENT_MODELS) == {
         "document.received",
-        "ocr.completed",
-        "ocr.failed",
-        "layout.classified",
-        "extraction.completed",
         "document.classified",
         "document.condominium_identified",
         "payment_process.confirmed",

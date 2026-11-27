@@ -12,8 +12,9 @@ from opentelemetry.trace import Link
 
 logger = logging.getLogger(__name__)
 
-# Teto aproximado de cada stream do Redis (AR-10). Ninguém consome as streams hoje:
-# elas só guardam um histórico recente para inspeção com XRANGE até a decisão D-04.
+# Teto aproximado de cada stream do Redis (AR-10). Ninguém consome as streams: elas só
+# guardam um histórico recente para inspeção com `XRANGE` no redis-cli até a decisão
+# D-04. A leitura saiu do barramento no AR-12.
 DEFAULT_STREAM_MAXLEN = 10_000
 STREAM_MAXLEN_ENV = "DOCUPARSE_EVENT_STREAM_MAXLEN"
 
@@ -25,17 +26,17 @@ class EventMessage:
 
 
 class EventBus(Protocol):
+    """Só publica. Nada em produção lê as streams (AR-12)."""
+
     def publish(self, stream: str, event: dict[str, Any]) -> int | str: ...
-
-    def consume(self, stream: str, offset: int | str = 0) -> list[dict[str, Any]]: ...
-
-    def consume_entries(
-        self, stream: str, offset: int | str = 0, count: int | None = None
-    ) -> list[EventMessage]: ...
 
 
 class LocalJsonlEventBus:
-    """Small test adapter that mimics append-only event streams on disk."""
+    """Adapter de teste e de dev local: grava cada stream num JSONL append-only.
+
+    `consume`/`consume_entries` existem só para os testes conferirem o que foi
+    publicado. Não fazem parte do `EventBus`.
+    """
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
@@ -114,36 +115,6 @@ class RedisStreamEventBus:
             )
         return _decode(event_id)
 
-    def consume(
-        self, stream: str, offset: int | str = "0-0", count: int | None = None
-    ) -> list[dict[str, Any]]:
-        return [entry.payload for entry in self.consume_entries(stream, offset, count)]
-
-    def consume_entries(
-        self, stream: str, offset: int | str = "0-0", count: int | None = None
-    ) -> list[EventMessage]:
-        validate_stream_name(stream)
-        redis_offset = "0-0" if offset == 0 else str(offset)
-        response = self.client.xread({stream: redis_offset}, count=count)
-        events: list[EventMessage] = []
-        for _stream_name, messages in response:
-            for message_id, fields in messages:
-                payload = _field(fields, "payload")
-                if payload:
-                    events.append(
-                        EventMessage(
-                            id=_decode(message_id), payload=json.loads(payload)
-                        )
-                    )
-        return events
-
-    def latest_id(self, stream: str) -> str:
-        validate_stream_name(stream)
-        response = self.client.xrevrange(stream, count=1)
-        if not response:
-            return "0-0"
-        return _decode(response[0][0])
-
 
 def event_bus_from_env(local_root: str | Path | None = None) -> EventBus:
     mode = os.environ.get("DOCUPARSE_EVENT_BUS", "local").strip().lower()
@@ -218,10 +189,3 @@ def _decode(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8")
     return str(value)
-
-
-def _field(fields: dict[Any, Any], name: str) -> str:
-    value = fields.get(name)
-    if value is None:
-        value = fields.get(name.encode("utf-8"))
-    return _decode(value) if value is not None else ""

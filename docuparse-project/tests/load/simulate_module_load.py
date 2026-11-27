@@ -10,7 +10,6 @@ import tempfile
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -32,12 +31,7 @@ from backend_com.services.manual_upload import process_manual_upload
 from backend_com.services.whatsapp_capture import process_whatsapp_media
 from documents.services.erp_mock import handle_erp_integration_requested_event
 from docuparse_events import LocalJsonlEventBus
-from events import (
-    ERPIntegrationRequestedEvent,
-    ExtractionCompletedEvent,
-    LayoutClassifiedEvent,
-    OCRCompletedEvent,
-)
+from events import ERPIntegrationRequestedEvent
 
 Scenario = Callable[[int], None]
 
@@ -202,67 +196,6 @@ def whatsapp_capture_scenario(_: LocalJsonlEventBus) -> Scenario:
     return run
 
 
-def ocr_mock_scenario(bus: LocalJsonlEventBus) -> Scenario:
-    def run(_: int) -> None:
-        event = OCRCompletedEvent(
-            tenant_id="tenant-demo",
-            document_id=uuid4(),
-            correlation_id=uuid4(),
-            source="load-test",
-            data={
-                "raw_text_uri": "local://mock/raw_text.json",
-                "raw_text_preview": "valor R$ 123,45",
-                "document_type": "digital_pdf",
-                "engine_used": "mock",
-                "confidence": 0.9,
-                "processing_time_seconds": 0.01,
-            },
-        ).model_dump(mode="json")
-        bus.publish("ocr.completed", event)
-
-    return run
-
-
-def layout_mock_scenario(bus: LocalJsonlEventBus) -> Scenario:
-    def run(_: int) -> None:
-        event = LayoutClassifiedEvent(
-            tenant_id="tenant-demo",
-            document_id=uuid4(),
-            correlation_id=uuid4(),
-            source="load-test",
-            data={
-                "layout": "boleto_bb",
-                "confidence": 0.9,
-                "document_type": "digital_pdf",
-                "requires_human_validation": False,
-            },
-        ).model_dump(mode="json")
-        bus.publish("layout.classified", event)
-
-    return run
-
-
-def langextract_mock_scenario(bus: LocalJsonlEventBus) -> Scenario:
-    def run(_: int) -> None:
-        event = ExtractionCompletedEvent(
-            tenant_id="tenant-demo",
-            document_id=uuid4(),
-            correlation_id=uuid4(),
-            source="load-test",
-            occurred_at=datetime.now(timezone.utc),
-            data={
-                "schema_id": "boleto",
-                "schema_version": "v1",
-                "fields": {"valor": "R$ 123,45"},
-                "confidence": 0.9,
-                "requires_human_validation": True,
-            },
-        ).model_dump(mode="json")
-        bus.publish("extraction.completed", event)
-
-    return run
-
-
 def erp_mock_scenario(bus: LocalJsonlEventBus) -> Scenario:
     def run(_: int) -> None:
         event = ERPIntegrationRequestedEvent(
@@ -285,9 +218,6 @@ SCENARIOS: dict[str, Callable[[LocalJsonlEventBus], Scenario]] = {
     "manual_upload": manual_upload_scenario,
     "email_capture": email_capture_scenario,
     "whatsapp_capture": whatsapp_capture_scenario,
-    "ocr_mock": ocr_mock_scenario,
-    "layout_mock": layout_mock_scenario,
-    "langextract_mock": langextract_mock_scenario,
     "erp_mock": erp_mock_scenario,
 }
 

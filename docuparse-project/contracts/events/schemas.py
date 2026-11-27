@@ -56,63 +56,6 @@ class DocumentReceivedEvent(BaseEvent):
     data: DocumentReceivedData
 
 
-class OCRCompletedData(EventModel):
-    raw_text_uri: str = Field(min_length=1)
-    raw_text_preview: str = ""
-    document_type: Literal[
-        "digital_pdf", "scanned_image", "handwritten_complex", "unknown"
-    ]
-    engine_used: str = Field(min_length=1)
-    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
-    processing_time_seconds: float = Field(ge=0.0)
-    artifacts: dict[str, str] = Field(default_factory=dict)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class OCRCompletedEvent(BaseEvent):
-    event_type: Literal["ocr.completed"] = "ocr.completed"
-    data: OCRCompletedData
-
-
-class OCRFailedData(EventModel):
-    reason: str = Field(min_length=1)
-    retryable: bool = True
-    engine_used: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class OCRFailedEvent(BaseEvent):
-    event_type: Literal["ocr.failed"] = "ocr.failed"
-    data: OCRFailedData
-
-
-class LayoutClassifiedData(EventModel):
-    layout: str = Field(min_length=1)
-    confidence: float = Field(ge=0.0, le=1.0)
-    document_type: str = Field(min_length=1)
-    requires_human_validation: bool = False
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class LayoutClassifiedEvent(BaseEvent):
-    event_type: Literal["layout.classified"] = "layout.classified"
-    data: LayoutClassifiedData
-
-
-class ExtractionCompletedData(EventModel):
-    schema_id: str = Field(min_length=1)
-    schema_version: str = Field(min_length=1)
-    fields: dict[str, Any]
-    confidence: float = Field(ge=0.0, le=1.0)
-    requires_human_validation: bool
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ExtractionCompletedEvent(BaseEvent):
-    event_type: Literal["extraction.completed"] = "extraction.completed"
-    data: ExtractionCompletedData
-
-
 class LedgerAccountRef(EventModel):
     """Conta do plano de contas como estava quando o evento foi emitido."""
 
@@ -261,10 +204,6 @@ class ERPDryRunEvent(BaseEvent):
 
 EVENT_MODELS = {
     "document.received": DocumentReceivedEvent,
-    "ocr.completed": OCRCompletedEvent,
-    "ocr.failed": OCRFailedEvent,
-    "layout.classified": LayoutClassifiedEvent,
-    "extraction.completed": ExtractionCompletedEvent,
     "document.classified": DocumentClassifiedEvent,
     "document.condominium_identified": CondominiumIdentifiedEvent,
     "payment_process.confirmed": PaymentProcessConfirmedEvent,

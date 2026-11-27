@@ -6,6 +6,7 @@
 - Antes de editar, checar o `git status` atual e preservar mudanças não relacionadas do usuário.
 - Quando a tarefa envolver comportamento de API, rodar primeiro o teste mais específico, depois a suíte mais ampla se necessário.
 - Sempre que finalizar uma tarefa lembre-se de documentar.
+- Ignorar a pasta innovox-kubernetes-deployments pois ela é um repo diferente deste projeto. É o repo utilizado para fazer deploy no cluster k3s. Use apenas quando precisar veerificar o deploy do docuparser, que está na pasta innovox-kubernetes-deployments/apps/docuparser e innovox-kubernetes-deployments/secrets/innovox_services_scrts/docuparser, se necessário pode modificar estas pastas.
 
 ## Projetos
 Existem 4 backends nas seguintes pastas:

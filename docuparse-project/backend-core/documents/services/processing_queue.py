@@ -174,7 +174,9 @@ def submit_erp_dispatch(event_payload: dict) -> None:
     """Roda o conector do ERP fora da requisição: ele faz chamadas de rede ao Superlógica."""
     tenant = _tenant_from_connection()
     link = capture_current_span_link()
-    _executor.submit(_run_erp_dispatch, event_payload, tenant, link)
+    _executor.submit(
+        _with_fresh_connection, _run_erp_dispatch, event_payload, tenant, link
+    )
 
 
 def _run_erp_dispatch(

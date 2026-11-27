@@ -80,6 +80,24 @@ class SubmitTests(SimpleTestCase):
             None,
         )
 
+    def test_erp_dispatch_runs_inside_fresh_connection_wrapper(self) -> None:
+        tenant = MagicMock(slug="t")
+        payload = {"document_id": 42}
+        with (
+            patch(f"{MODULE}._tenant_from_connection", return_value=tenant),
+            patch(f"{MODULE}.capture_current_span_link", return_value=None),
+            patch(f"{MODULE}._executor") as executor,
+        ):
+            processing_queue.submit_erp_dispatch(payload)
+
+        executor.submit.assert_called_once_with(
+            processing_queue._with_fresh_connection,
+            processing_queue._run_erp_dispatch,
+            payload,
+            tenant,
+            None,
+        )
+
 
 class RunDocumentProcessingSafelyTests(TestCase):
     def setUp(self) -> None:

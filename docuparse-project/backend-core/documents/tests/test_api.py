@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import uuid
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from catalog.models import LayoutConfig, SchemaConfig
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
@@ -27,6 +30,7 @@ from documents.models import (
     OCRSettings,
     ValidationDecision,
 )
+from documents.views import _internal_token_error
 
 
 def _jwt_for(user, tenant) -> str:
@@ -735,3 +739,45 @@ class InternalServiceTokenGateTests(TestCase):
             self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.jwt}")
             response = self.client.get(reverse("schema-configs"))
         assert response.status_code == 200
+
+    # AR-02: sem token, o gate falha fechado fora de dev. `document-delete` só é
+    # protegido pelo gate; com um UUID inexistente, passar pelo gate dá 404.
+
+    def _delete_missing_document(self, **extra):
+        return self.client.delete(
+            reverse("document-delete", args=[uuid.uuid4()]), **extra
+        )
+
+    def test_token_missing_outside_dev_rejects_anonymous_with_503(self) -> None:
+        with self.settings(
+            DOCUPARSE_INTERNAL_SERVICE_TOKEN="",
+            INTERNAL_ENDPOINTS_OPEN_WITHOUT_TOKEN=False,
+        ):
+            response = self._delete_missing_document()
+        assert response.status_code == 503
+        assert response.json() == {"detail": "internal service token not configured"}
+
+    def test_token_missing_outside_dev_still_accepts_user_jwt(self) -> None:
+        with self.settings(
+            DOCUPARSE_INTERNAL_SERVICE_TOKEN="",
+            INTERNAL_ENDPOINTS_OPEN_WITHOUT_TOKEN=False,
+        ):
+            self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.jwt}")
+            response = self._delete_missing_document()
+        assert response.status_code == 404
+
+    def test_token_missing_in_dev_keeps_anonymous_access_open(self) -> None:
+        # Chama o gate direto: a requisição anônima sem tenant cairia no schema
+        # public depois do gate, o que não tem relação com o que se testa aqui.
+        anonymous = SimpleNamespace(auth=None, user=AnonymousUser())
+        with self.settings(
+            DOCUPARSE_INTERNAL_SERVICE_TOKEN="",
+            INTERNAL_ENDPOINTS_OPEN_WITHOUT_TOKEN=True,
+        ):
+            assert _internal_token_error(anonymous) is None
+
+    def test_rejection_message_does_not_leak_debug_text(self) -> None:
+        with self.settings(DOCUPARSE_INTERNAL_SERVICE_TOKEN=self.TOKEN):
+            response = self._delete_missing_document()
+        assert response.status_code == 401
+        assert response.json() == {"detail": "invalid internal service token"}

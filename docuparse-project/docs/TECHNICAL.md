@@ -882,7 +882,7 @@ O Collector aplica `tailsamplingprocessor` (`otel-collector-config.yaml`) com du
 | `USE_TELEMETRY` | Todos os serviços (exceto `otel-collector`) | Liga/desliga o tracing (`configure_tracing()` e as instrumentações de biblioteca). Padrão `false` — só ativa exportação/instrumentação quando setada como `true`/`1`/`yes`/`on`. Permite rodar sem um Collector disponível (ex.: servidores onde ele ainda não foi instalado). O `docker-compose.yml` local seta `true` por padrão, já que sobe o `otel-collector` junto |
 | `OTEL_SERVICE_NAME` | Todos os serviços | Nome do serviço no atributo de resource `service.name` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Todos os serviços | Endpoint do Collector (padrão `http://otel-collector:4317`) |
-| `DEPLOYMENT_ENVIRONMENT` | Todos os serviços | Popula `deployment.environment` (dev/staging/production) |
+| `DEPLOYMENT_ENVIRONMENT` | Todos os serviços | Popula `deployment.environment` (dev/staging/production). No backend-core, `development`/`dev`/`local`/`test` também libera os endpoints internos sem `DOCUPARSE_INTERNAL_SERVICE_TOKEN`. Ausente conta como produção |
 | `OTEL_TAIL_SAMPLING_PERCENTAGE` | `otel-collector` | % de traces sem erro retidos pelo tail sampling (padrão `100`) |
 
 Ver `docs/specs/020-opentelemetry-tracing/quickstart.md` para o passo a passo completo de validação local (subir o stack, disparar uma requisição, localizar o trace no Jaeger, validar resiliência e ausência de dados sensíveis).
@@ -1008,7 +1008,7 @@ envio se perder, a próxima tentativa acha a despesa no ERP e marca como enviada
 
 | Variável | Padrão | Descrição |
 |---|---|---|
-| `DOCUPARSE_INTERNAL_SERVICE_TOKEN` | — | Token Bearer para comunicação entre serviços |
+| `DOCUPARSE_INTERNAL_SERVICE_TOKEN` | — | Token Bearer para comunicação entre serviços. Obrigatório fora de dev: sem ele, os endpoints internos recusam chamadas anônimas com 503 (usuário com JWT continua passando) e o boot registra um erro. Só fica aberto quando `DEPLOYMENT_ENVIRONMENT` é `development`, `dev`, `local` ou `test` |
 | `DOCUPARSE_EMAIL_WEBHOOK_TOKEN` | — | Token para validar webhooks de e-mail |
 | `DOCUPARSE_WHATSAPP_WEBHOOK_TOKEN` | — | Token para validar webhooks WhatsApp |
 

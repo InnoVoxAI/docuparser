@@ -58,7 +58,7 @@
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
 AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79), AR-10 (código, #80), AR-11 (docs, #81; o k8s segue em
 `chore/docuparser-worker-flags-off` @ ac61b87, sem push) e AR-12 (#82).
-**AR-13** em `chore/ar-13-rename-pyprojects` (a partir de `dev`, aguardando o PR).
+**AR-13** em `chore/ar-13-rename-pyprojects` @ 1b354b6d (a partir de `dev`, aguardando o PR).
 
 Como ficou o AR-13 (opções escolhidas pelo usuário: nome = nome do diretório e incluir o
 core): os pyprojects agora se chamam `backend-ocr`, `langextract-service` e `backend-core`

@@ -17,7 +17,7 @@ Atualize a cada sessão. Estados: `todo` · `doing` · `blocked (motivo)` · `do
 | 2026-11-27 (9ª) | Claude | AR-27 já em `dev` (#79). AR-10 em `chore/ar-10-redis-ocr-langextract`, a partir de `dev`; k8s em `chore/docuparser-events-config` @ eae066f (sem push). |
 | 2026-11-27 (10ª) | Claude | AR-10 já em `dev` (#80). AR-11: só k8s, em `chore/docuparser-worker-flags-off` @ ac61b87 (sem push); docs em `docs/ar-11-worker-flags`, a partir de `dev`. |
 | 2026-11-27 (11ª) | Claude | AR-11 (docs) já em `dev` (#81). AR-12 em `chore/ar-12-dead-contracts` @ a51fd3ea, a partir de `dev`. |
-| 2026-11-27 (12ª) | Claude | AR-12 já em `dev` (#82). AR-13 em `chore/ar-13-rename-pyprojects`, a partir de `dev`. |
+| 2026-11-27 (12ª) | Claude | AR-12 já em `dev` (#82). AR-13 em `chore/ar-13-rename-pyprojects` @ 1b354b6d, a partir de `dev`. |
 
 ## Estado das tarefas
 

@@ -16,6 +16,7 @@
 12. [Observabilidade e Rastreamento Distribuído](#observabilidade-e-rastreamento-distribuído)
 13. [Autenticação e Permissões](#autenticação-e-permissões)
 14. [Variáveis de Ambiente](#variáveis-de-ambiente)
+15. [Probes e resources no k3s](#probes-e-resources-no-k3s)
 
 ---
 
@@ -380,29 +381,15 @@ operação. O comando `sweep_stuck_documents` corrige os três casos, num só li
   dashboard fica liberado.
 
 Não mexe em `ERP_INTEGRATION_REQUESTED`: com `SuperlogicaMode.DISABLED` o documento fica
-nesse status de propósito. O comando é idempotente. Agende-o no k3s (AR-70):
-
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: docuparser-core-sweep-stuck
-spec:
-  schedule: "*/10 * * * *"
-  concurrencyPolicy: Forbid
-  jobTemplate:
-    spec:
-      backoffLimit: 0
-      template:
-        spec:
-          restartPolicy: Never
-          containers:
-            - name: sweep
-              image: <mesma imagem do docuparser-core>
-              envFrom: [<mesmo env/secrets do docuparser-core>]
-              # Passa pelo entrypoint.sh (caso `*`); `python` puro não enxerga o .venv do uv.
-              args: ["uv", "run", "--frozen", "python", "manage.py", "sweep_stuck_documents", "--older-than-minutes", "30"]
-```
+nesse status de propósito. O comando é idempotente. No k3s, ele roda num CronJob a
+cada 10 min, em hml e em prod (AR-70): `apps/docuparser/{hml,prod}/docuparser-core/cronjob.yaml`
+no repo `innovox-kubernetes-deployments`. O CronJob usa `concurrencyPolicy: Forbid`,
+`backoffLimit: 0`, `activeDeadlineSeconds: 300` e `--older-than-minutes 30`, com a mesma
+imagem, ConfigMap e Secret do core. Os argumentos são
+`["uv", "run", "--frozen", "python", "manage.py", "sweep_stuck_documents", ...]`, que passam
+pelo `entrypoint.sh` (caso `*`). Um `command: ["python", ...]` não funciona: pula o entrypoint,
+e o `python` do sistema não enxerga o `.venv` do uv. O `deploy.yaml` do CI troca a tag da imagem
+em todos os YAMLs da pasta do serviço, então a do CronJob acompanha a do deployment.
 
 O limite precisa ser maior que o tempo normal de um documento na fila mais o tempo de
 processamento. Se houver muitos uploads de uma vez e só 2 workers, aumente o limite.
@@ -1094,3 +1081,36 @@ envio se perder, a próxima tentativa acha a despesa no ERP e marca como enviada
 | `TWILIO_AUTH_TOKEN` | Auth Token do Twilio |
 | `TWILIO_API_KEY_SID` | API Key SID |
 | `TWILIO_API_KEY_SECRET` | API Key Secret |
+
+---
+
+## Probes e resources no k3s
+
+Manifestos em `apps/docuparser/{hml,prod}/docuparser-*/deployment.yaml`, no repo
+`innovox-kubernetes-deployments` (AR-05). O frontend não roda no cluster (Cloudflare Pages).
+
+| Serviço | Liveness | Readiness | Requests (CPU / memória) | Limite de memória |
+|---|---|---|---|---|
+| core | `GET /api/ocr/health` | `GET /api/ocr/ready` | 100m / 384Mi | 1Gi |
+| core (initContainer `release`) | — | — | 100m / 384Mi | 1Gi |
+| com | `GET /health` | `GET /ready` | 50m / 128Mi | 512Mi |
+| ocr | `GET /health` | `GET /ready` | 100m / 256Mi | 1536Mi |
+| langextract | `GET /health` | `GET /ready` | 50m / 128Mi | 512Mi |
+| CronJob do sweep | — | — | 50m / 256Mi | 512Mi |
+
+- Os endpoints de health são estáticos e não pedem autenticação. No core, `/api/ocr/health`
+  está liberado no `TenantMiddleware`, e `/api/ocr/ready` passa porque a requisição chega
+  sem credencial. Não use `/api/ocr/diagnostics` como probe: ele consulta o banco e os outros
+  serviços.
+- Liveness: period 20 s, timeout 5 s, failure 3. Readiness: period 10 s, timeout 3 s,
+  failure 3. O core tem também uma `startupProbe` de até 3 min (5 s × 36), para o caso de
+  `DOCUPARSE_MIGRATE_ON_BOOT` ficar ligado. Com o initContainer `release`, as migrations
+  terminam antes de o web subir.
+- Não há limite de CPU, como no cortex: um limite estrangularia o pod nos picos. Os valores
+  são estimativas. Ajuste com `kubectl top pods -n docuparser --containers`.
+- **Rotas `async def` não podem chamar I/O bloqueante** (requests, urllib, imaplib, boto3,
+  Tesseract). Isso para o event loop do uvicorn, o `/health` deixa de responder e a liveness
+  reinicia o pod no meio do trabalho. Use `await run_in_threadpool(...)`, como no
+  `/api/v1/process` do ocr, no `/api/v1/extract` do langextract e nas rotas de ingestão e de
+  poll do com. Cada serviço tem um teste que confere que o `/health` responde enquanto a rota
+  de trabalho está bloqueada.

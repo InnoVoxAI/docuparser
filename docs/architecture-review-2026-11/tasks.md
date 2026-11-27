@@ -47,6 +47,10 @@ Estado de cada tarefa: [work_in_progress.md](work_in_progress.md).
 - **Fazer:** descomentar liveness (`/health`) e readiness (`/ready`). Definir requests e
   limits (o backend-ocr precisa de mais memória). Ver também AR-72 (`/ready` real).
 - **Aceite:** os pods passam a ficar Ready via probe em hml antes de ir para prod.
+- **Feito (2026-11-27, falta deploy):** k8s em `chore/docuparser-probes-resources` (empilhada no
+  `core-release`); código em `fix/ar-05-blocking-routes` (rotas de trabalho de ocr, langextract e com
+  no threadpool, senão o `/health` trava durante o OCR). Endpoints reais do core:
+  `/api/ocr/health` e `/api/ocr/ready`. Detalhes em `work_in_progress.md`.
 
 ### AR-06 · Segredos versionados no repo de deploy ⚠️ (usuário)
 - **Origem:** A6, D-06. Agentes **não** editam segredos (guardrail do CLAUDE.md). Apenas
@@ -473,6 +477,8 @@ comportamento.
 
 - **AR-70** CronJobs: `sweep_stuck_documents`, polls do backend-com (descobrir quem chama
   `/poll` hoje: B3), `reconcile_storage`.
+  **Sweeper feito (falta deploy):** `chore/docuparser-sweep-cronjob` (k8s) e `ci/ar-70-cronjob-image-tag`
+  (sed do CI em `docuparser-core/*.yaml`).
 - **AR-71** Métricas: pipeline de métricas no otel-collector e métricas de negócio
   (documentos por estado, idade do mais antigo em processamento, erros por etapa, 429s).
 - **AR-72** `/ready` real: o core checa o banco, e o backend-ocr checa se há pelo menos 1

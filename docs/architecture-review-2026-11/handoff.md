@@ -57,10 +57,29 @@
 
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
 AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79), AR-10 (código, #80), AR-11 (docs, #81; o k8s segue em
-`chore/docuparser-worker-flags-off` @ ac61b87, sem push), AR-12 (#82), AR-13 (#83), AR-14 (#84) e AR-30 (#86).
-**A fase 1 está encerrada.** Aguardando PR: AR-05 (k8s, `chore/docuparser-probes-resources` @ 59d1aab,
-sobre o `core-release`) e o CronJob do sweeper (AR-70: k8s em `chore/docuparser-sweep-cronjob` @ f4df0d8,
-e o sed da tag em `ci/ar-70-cronjob-image-tag`, neste repo).
+`chore/docuparser-worker-flags-off` @ ac61b87, sem push), AR-12 (#82), AR-13 (#83), AR-14 (#84), AR-30 (#86),
+AR-32 (#87), AR-05 (código, #88) e AR-70 (sed da tag no CI, #89).
+**A fase 1 está encerrada.**
+
+**AR-05 e o CronJob do sweeper (AR-70).** O código e o CI já estão em `dev`; falta o repo k8s:
+- `fix/ar-05-blocking-routes` (#88): ocr, langextract e com chamavam I/O bloqueante
+  (OpenRouter/LLM com até 120–300 s, imaplib, urllib, boto3) dentro de `async def`. O event loop
+  parava e o `/health` não respondia, e a liveness mataria o pod no meio de um OCR pago. Agora
+  essas chamadas rodam com `run_in_threadpool`, e há um teste por serviço que confere que o
+  `/health` responde durante a chamada.
+- `ci/ar-70-cronjob-image-tag` (#89): o sed e o `git add` do `deploy.yaml` passam a valer para
+  `docuparser-<svc>/*.yaml`, e não só para o `deployment.yaml`.
+- `chore/docuparser-probes-resources` @ 59d1aab (repo k8s, **empilhada em
+  `chore/docuparser-core-release`**, escolha do usuário: a partir de `origin/main` conflitava com
+  o `env:` do AR-04 e não tinha o initContainer). Liveness `/api/ocr/health` (core) ou `/health`;
+  readiness `/api/ocr/ready` ou `/ready`; `startupProbe` só no core. Os resources têm request de
+  CPU e só limite de memória (core e init 1Gi, com 512Mi, ocr 1536Mi, langextract 512Mi). São
+  **estimativas**: ajuste com `kubectl top pods --containers` depois do smoke.
+- `chore/docuparser-sweep-cronjob` @ f4df0d8 (repo k8s, a partir de `origin/main`):
+  `docuparser-core/cronjob.yaml` em hml e prod, `*/10`, `Forbid`, `activeDeadlineSeconds: 300`,
+  `--older-than-minutes 30`.
+Valores e motivos em `work_in_progress.md` (AR-05 e AR-70) e em `docs/TECHNICAL.md` ("Probes
+e resources no k3s").
 
 **AR-32 feito (16ª sessão)** em `feat/ar-32-run-worker`, a partir de `dev`, aguardando PR.
 `manage.py run_worker` (e `entrypoint.sh worker`) existe, mas **nada enfileira jobs** até o AR-31 ligar
@@ -160,14 +179,14 @@ Como ficou o AR-27: o retry é opt-in (`@task(..., retry_on=...)`). Só `ocr_tas
 fazer o backend-ocr repassar o status real do OpenRouter.
 
 Como ficou o AR-26: `sweep_stuck_processing` também fecha a extração presa em
-`metadata.extraction.state="running"`. **Falta agendar** o CronJob a cada 10 min no repo k8s
-(AR-70, perguntar antes). O manifesto de exemplo está em `docuparse-project/docs/TECHNICAL.md`
-(`args: ["uv", "run", "--frozen", "python", "manage.py", "sweep_stuck_documents", ...]`).
+`metadata.extraction.state="running"`. O CronJob está em `chore/docuparser-sweep-cronjob` (acima).
 
 Pendentes no repo k8s, sem push: `chore/docuparser-debug-off` @ ceebf26 (AR-03),
 `chore/docuparser-core-release` (AR-04), `chore/docuparser-events-config` @ eae066f (AR-10) e
-`chore/docuparser-worker-flags-off` @ ac61b87 (AR-11). As quatro mexem na `config-map.yaml` ou
-no deployment do core; o merge em sequência foi simulado sem conflito.
+`chore/docuparser-worker-flags-off` @ ac61b87 (AR-11), `chore/docuparser-probes-resources` @ 59d1aab
+(AR-05, sobre o `core-release`) e `chore/docuparser-sweep-cronjob` @ f4df0d8 (AR-70).
+`debug-off` e `core-release` já estão no origin. O merge das seis, em sequência, foi simulado
+sem conflito, e os 36 documentos YAML de `apps/docuparser` resultantes são válidos.
 
 **Deploy só no final** (pedido do usuário em 2026-11-27): nada vai para hml a cada AR. O
 agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim da sessão,
@@ -179,18 +198,28 @@ Por onde continuar, em ordem:
    em `dev`, parta dela. O deploy da fase 2 segue a ordem do AR-35.
 2. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
    acabaram:
-   a. gerar a tag a partir de `dev`. Desde o AR-21, o push em main/staging só faz o build
+   a. gerar a tag a partir de `dev` (já com o AR-05, #88, e o AR-70, #89). Desde o AR-21, o push em main/staging só faz o build
       se o Backend CI passar. Em emergência, use `workflow_dispatch` com `skip_tests`;
    b. com essa tag em hml, mergear `chore/docuparser-core-release` (AR-04: initContainer
       `args: ["release"]`, que quebra na 0.0.15 por falta de ENTRYPOINT),
       `chore/docuparser-debug-off` (AR-03), `chore/docuparser-events-config` (AR-10) e
       `chore/docuparser-worker-flags-off` (AR-11, este independe da tag). Na
       0.0.15 a string `"False"` ainda conta como verdadeira, então a ConfigMap do DEBUG só
-      vale com a tag nova. O AR-04 e o AR-10 mexem no `envFrom`/deployment do core: confira
-      os conflitos no merge;
+      vale com a tag nova. Depois, `chore/docuparser-probes-resources` (AR-05; com a 0.0.15 um
+      OCR longo derruba a liveness) e `chore/docuparser-sweep-cronjob` (AR-70). A ordem
+      simulada sem conflito foi: debug-off, core-release, events-config, worker-flags-off,
+      probes-resources, sweep-cronjob.
+      **Atenção à tag:** o sed do CI só roda no build. O initContainer do `core-release` e o
+      `cronjob.yaml` chegam com `image: ...:0.0.15` e ficariam nela até o próximo build. Na
+      0.0.15, o `args: ["release"]` quebra, porque ela não tem ENTRYPOINT. Antes de mergear,
+      troque nessas branches todas as linhas `image: registry.innovox.ai/docuparser-core:` para
+      a tag nova (`grep -rn "docuparser-core:" apps/docuparser`). O ArgoCD sincroniza `main`
+      sozinho;
    c. smoke em hml (login, upload, validação, `/admin/` com 404,
       `kubectl logs <pod> -c docuparser-core-release`, `XLEN document.received` no Redis
-      parando perto de 10000), depois prod.
+      parando perto de 10000, pods Ready pelas probes, um OCR longo sem restart do pod
+      (`kubectl get pods` sem RESTARTS), `kubectl get cronjob,jobs` com o sweep rodando a cada
+      10 min e `kubectl top pods --containers` para recalibrar os resources), depois prod.
    A tabela `django_admin_log` ficou órfã: só apagar com migration e com o usuário de acordo.
 
 Notas práticas:

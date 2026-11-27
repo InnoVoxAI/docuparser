@@ -47,39 +47,38 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 4ª sessão)
+## Próxima sessão (estado em 2026-11-27, 5ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
-AR-01, AR-02, AR-04 (imagem e compose), AR-20, AR-24 e AR-25 já estão em `dev`. Na 4ª sessão
-de 2026-11-27 foi feito o **AR-03** (e, a pedido, o AR-07), em branches sem PR:
+AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75), AR-20, AR-24 e
+AR-25 já estão em `dev`. Na 5ª sessão foi feito o **AR-23** (output `SKIP` morto removido
+de `ci.yaml`), em `ci/ar-23-remove-skip-output`, a partir de `dev`, commitado; o usuário abre o PR.
 
-| Repo | Branch | Commit | Conteúdo |
-|---|---|---|---|
-| docuparser | `fix/ar-03-debug-bool` | dda55d1c | `DEBUG` lido como booleano, desligado por padrão |
-| k8s | `chore/docuparser-debug-off` | ceebf26 | `DEBUG: "False"` em hml e prod (sem push) |
-| docuparser | `chore/ar-07-remove-admin` | 094ed6cd | rota e app `django.contrib.admin` removidos |
+Pendentes no repo k8s, sem push: `chore/docuparser-debug-off` @ ceebf26 (AR-03) e
+`chore/docuparser-core-release` (AR-04).
 
-Detalhes em [work_in_progress.md](work_in_progress.md).
+**Deploy só no final** (pedido do usuário em 2026-11-27): nada vai para hml a cada AR. O
+agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim da sessão,
+entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. **Ordem de deploy do AR-03 com o AR-04.** Na 0.0.15 a string `"False"` ainda conta como
-   verdadeira: a ConfigMap nova não muda nada até a imagem ter o fix. Então:
-   a. mergear `fix/ar-03-debug-bool` em `dev` **antes de gerar a próxima tag**, para que a
-      tag do AR-04 já traga o AR-03 (um rollout só);
-   b. com essa tag em hml, mergear `chore/docuparser-core-release` (AR-04 k8s: initContainer
+1. Fase 1, uma por sessão: **AR-21** (o build depende dos testes do AR-20), AR-26, AR-27 e
+   a limpeza (AR-10..AR-14). As decisões D-01, D-02 e D-03 já foram tomadas (ver
+   [decisions-pending.md](decisions-pending.md)), então as fases 2 e 3 também estão
+   destravadas.
+2. AR-05 (probes e resources, repo k8s, **perguntar antes**). Pode ser preparado em branch
+   sem push e ir junto no deploy final.
+3. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
+   acabaram:
+   a. gerar a tag a partir de `dev`;
+   b. com essa tag em hml, mergear `chore/docuparser-core-release` (AR-04: initContainer
       `args: ["release"]`, que quebra na 0.0.15 por falta de ENTRYPOINT) e
-      `chore/docuparser-debug-off` (independentes, sem conflito);
-   c. smoke em hml (login, upload, validação; `kubectl logs <pod> -c docuparser-core-release`),
-      depois prod.
-2. **AR-07 (`/admin/` removido)**: em `chore/ar-07-remove-admin` @ 094ed6cd, a partir de
-   `dev`, falta PR. Independente do AR-03; pode ir na mesma tag. A tabela
-   `django_admin_log` fica órfã: só apagar com migration e com o usuário de acordo.
-3. AR-05 (repo k8s e prod, **perguntar antes**).
-4. Fase 1, uma por sessão: AR-23 é a menor; depois AR-21 (build depende do AR-20),
-   AR-26, AR-27 e a limpeza (AR-10..AR-14).
-   As decisões D-01, D-02 e D-03 já foram tomadas (ver [decisions-pending.md](decisions-pending.md)),
-   então as fases 2 e 3 também estão destravadas.
+      `chore/docuparser-debug-off` (AR-03). Na 0.0.15 a string `"False"` ainda conta como
+      verdadeira, então a ConfigMap só vale com a tag nova;
+   c. smoke em hml (login, upload, validação, `/admin/` com 404;
+      `kubectl logs <pod> -c docuparser-core-release`), depois prod.
+   A tabela `django_admin_log` ficou órfã: só apagar com migration e com o usuário de acordo.
 
 Notas práticas:
 - A suíte inteira do backend-core leva cerca de 30 min. Rode o teste específico e os módulos

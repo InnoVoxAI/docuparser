@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from docuparse_observability.redaction import is_denied
+
 from docuparse_orchestrator.results import TaskResult
 
 
@@ -56,7 +57,6 @@ class DjangoOrchestrationRunWriter:
         triggered_by: str | None = None,
     ) -> None:
         from django.utils import timezone
-
         from orchestrator.models import OrchestrationRun
 
         OrchestrationRun.objects.create(
@@ -70,7 +70,6 @@ class DjangoOrchestrationRunWriter:
 
     def finish(self, run_id: str, *, status: str) -> None:
         from django.utils import timezone
-
         from orchestrator.models import OrchestrationRun
 
         OrchestrationRun.objects.filter(run_id=run_id).update(

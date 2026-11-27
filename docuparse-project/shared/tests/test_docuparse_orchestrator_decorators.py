@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import docuparse_orchestrator.decorators as decorators_module
 import pytest
+from docuparse_orchestrator.decorators import task
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
-
-import docuparse_orchestrator.decorators as decorators_module
-from docuparse_orchestrator.decorators import task
 
 
 @pytest.fixture()

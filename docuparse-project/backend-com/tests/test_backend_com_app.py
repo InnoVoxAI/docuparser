@@ -195,7 +195,11 @@ def test_email_webhook_with_zero_attachments_generates_no_events(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"accepted_count": 0, "documents": []}
+    assert response.json() == {
+        "accepted_count": 0,
+        "duplicate_count": 0,
+        "documents": [],
+    }
     assert LocalJsonlEventBus(tmp_path / "events").consume("document.received") == []
 
 
@@ -385,7 +389,8 @@ def test_imap_poll_requires_password() -> None:
             client_factory=lambda host, port: FakeImapClient([]),
         )
     except ValueError as exc:
-        assert "DOCUPARSE_IMAP_PASSWORD" in str(exc)
+        # A senha vem do EmailSettings do tenant (imap_reader_password), não da env.
+        assert "imap_reader_password is required" in str(exc)
     else:
         raise AssertionError("expected ValueError")
 

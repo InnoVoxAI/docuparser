@@ -15,7 +15,11 @@ from tenacity import (
     wait_exponential,
 )
 
-from docuparse_orchestrator._run_context import current_run_errors, current_run_id
+from docuparse_orchestrator._run_context import (
+    current_attempt_override,
+    current_run_errors,
+    current_run_id,
+)
 from docuparse_orchestrator.persistence import (
     TaskExecutionWriter,
     default_django_writer,
@@ -46,7 +50,13 @@ def task(
     tentativa. O padrão `()` não repete nada, porque repetir a função inteira
     refaz efeitos colaterais (chamada paga de OCR/LLM, gravações não
     idempotentes). Quem declara `retry_on` é o call site, com os tipos
-    transitórios que os seus clientes levantam."""
+    transitórios que os seus clientes levantam.
+
+    Contrato com a fila durável (AR-32): o erro sai em `TaskResult.error` com
+    `retryable=True` quando a exceção é de um tipo em `retry_on`. O worker roda
+    a task com `max_attempts=1` (quem repete é a fila) e usa esse campo para
+    reagendar ou falhar. Com `current_attempt_override` definido, o
+    `TaskExecution.attempt` grava a tentativa do job, não a do tenacity."""
 
     def decorator(func: F) -> F:
         task_name = name or func.__name__
@@ -84,7 +94,7 @@ def task(
                         task_name=task_name,
                         task_id=str(uuid.uuid4()),
                         run_id=run_id,
-                        attempt=attempt,
+                        attempt=current_attempt_override.get() or attempt,
                         duration_ms=int((time.monotonic() - started) * 1000),
                     )
                 except Exception as exc:
@@ -95,11 +105,12 @@ def task(
                             type=type(exc).__name__,
                             message=str(exc),
                             traceback=traceback_module.format_exc(),
+                            retryable=bool(retry_on) and isinstance(exc, retry_on),
                         ),
                         task_name=task_name,
                         task_id=str(uuid.uuid4()),
                         run_id=run_id,
-                        attempt=attempt or 1,
+                        attempt=current_attempt_override.get() or attempt or 1,
                         duration_ms=int((time.monotonic() - started) * 1000),
                     )
 

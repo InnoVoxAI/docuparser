@@ -54,7 +54,9 @@ def test_orchestration_run_marks_failed_on_exception():
 def test_orchestration_run_accepts_explicit_run_id():
     writer = FakeRunWriter()
 
-    with orchestration_run("document_validation", run_id="fixed-id", writer=writer) as run_id:
+    with orchestration_run(
+        "document_validation", run_id="fixed-id", writer=writer
+    ) as run_id:
         assert run_id == "fixed-id"
 
     assert writer.started == [("fixed-id", "document_validation")]
@@ -118,3 +120,81 @@ def test_orchestration_run_resets_error_list_between_runs():
 
     assert writer.finished[0][1] == "FAILED"
     assert writer.finished[1] == (run_id, "COMPLETED")
+
+
+# --- Retomada de run (AR-32) ---------------------------------------------
+
+
+class ResumableRunWriter(FakeRunWriter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.resumed: list[tuple[str, str]] = []
+
+    def resume(
+        self,
+        run_id: str,
+        name: str,
+        *,
+        document_id: str | None = None,
+        triggered_by: str | None = None,
+    ) -> None:
+        self.resumed.append((run_id, name))
+        self.started_document_ids.append(document_id)
+        self.started_triggered_by.append(triggered_by)
+
+
+def test_resume_reopens_existing_run_instead_of_starting():
+    writer = ResumableRunWriter()
+
+    with orchestration_run(
+        "document_processing",
+        run_id="run-1",
+        resume=True,
+        document_id="doc-1",
+        triggered_by="alice",
+        writer=writer,
+    ) as run_id:
+        assert run_id == "run-1"
+        assert current_run_id.get() == "run-1"
+
+    assert writer.started == []
+    assert writer.resumed == [("run-1", "document_processing")]
+    assert writer.started_document_ids == ["doc-1"]
+    assert writer.started_triggered_by == ["alice"]
+    assert writer.finished == [("run-1", "COMPLETED")]
+
+
+def test_resumed_run_tracks_its_own_task_errors():
+    """Cada retomada fecha o run pelo resultado dela: uma tentativa que falhou
+    não contamina a seguinte."""
+    writer = ResumableRunWriter()
+
+    @task("ocr", max_attempts=1, writer=lambda result: None)
+    def fails() -> dict:
+        raise ValueError("boom")
+
+    with orchestration_run("p", run_id="run-1", resume=True, writer=writer):
+        fails()
+    with orchestration_run("p", run_id="run-1", resume=True, writer=writer):
+        pass
+
+    assert writer.finished == [("run-1", "FAILED"), ("run-1", "COMPLETED")]
+
+
+def test_resume_requires_run_id():
+    with pytest.raises(ValueError):
+        with orchestration_run("p", resume=True, writer=ResumableRunWriter()):
+            pass
+
+
+def test_start_failure_does_not_leak_context():
+    class BrokenWriter(FakeRunWriter):
+        def start(self, *args, **kwargs) -> None:
+            raise RuntimeError("db down")
+
+    with pytest.raises(RuntimeError):
+        with orchestration_run("p", writer=BrokenWriter()):
+            pass
+
+    assert current_run_id.get() is None
+    assert current_run_errors.get() is None

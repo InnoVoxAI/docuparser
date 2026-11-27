@@ -46,6 +46,17 @@ class OrchestrationRunWriter(Protocol):
 
     def finish(self, run_id: str, *, status: str) -> None: ...
 
+    # Usado só com orchestration_run(resume=True). Writers que nunca retomam
+    # runs (ex.: os fakes dos testes antigos) não precisam implementá-lo.
+    def resume(
+        self,
+        run_id: str,
+        name: str,
+        *,
+        document_id: str | None = None,
+        triggered_by: str | None = None,
+    ) -> None: ...
+
 
 class DjangoOrchestrationRunWriter:
     def start(
@@ -67,6 +78,30 @@ class DjangoOrchestrationRunWriter:
             document_id=document_id,
             triggered_by=triggered_by or "",
         )
+
+    def resume(
+        self,
+        run_id: str,
+        name: str,
+        *,
+        document_id: str | None = None,
+        triggered_by: str | None = None,
+    ) -> None:
+        from django.utils import timezone
+        from orchestrator.models import OrchestrationRun
+
+        reopened = OrchestrationRun.objects.filter(run_id=run_id).update(
+            status=OrchestrationRun.Status.RUNNING, finished_at=None
+        )
+        if not reopened:
+            OrchestrationRun.objects.create(
+                run_id=run_id,
+                name=name,
+                status=OrchestrationRun.Status.RUNNING,
+                started_at=timezone.now(),
+                document_id=document_id,
+                triggered_by=triggered_by or "",
+            )
 
     def finish(self, run_id: str, *, status: str) -> None:
         from django.utils import timezone

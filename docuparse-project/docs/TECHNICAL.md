@@ -347,6 +347,8 @@ python manage.py erp_live_writes --tenant <slug> --enable --confirm <slug>  # Ha
 python manage.py import_legacy_sqlite # Importar dados legados
 python manage.py sweep_stuck_documents [--older-than-minutes 30] [--tenant <slug>] [--dry-run]
                                       # Marca como falhos documentos e extrações parados no processamento
+python manage.py run_worker [--concurrency 2] [--poll-interval 2] [--steps ocr,extraction,erp_dispatch]
+                                      # Worker da fila durável (fase 2; ver "Fila durável" abaixo)
 ```
 
 ### Processamento em segundo plano e conexão com o banco
@@ -404,6 +406,41 @@ spec:
 
 O limite precisa ser maior que o tempo normal de um documento na fila mais o tempo de
 processamento. Se houver muitos uploads de uma vez e só 2 workers, aumente o limite.
+
+### Fila durável (`jobqueue`, fase 2 da revisão de arquitetura)
+
+Em construção, por trás de `DOCUPARSE_PROCESSING_MODE` (AR-31; padrão `thread`, que é o pool
+descrito acima). Até o AR-34, **nada enfileira jobs em produção**: o worker existe, mas a fila
+fica vazia.
+
+- Tabela `public.jobqueue_processingjob` (`ProcessingJob`): um job por `(tenant_schema,
+  document_id, step)` ativo, com `step` em `ocr` · `extraction` · `erp_dispatch` e `status` em
+  `queued` · `running` · `done` · `failed` · `cancelled`.
+- `jobqueue/services.py:enqueue` faz `INSERT … ON CONFLICT DO NOTHING` sobre o índice único
+  parcial e devolve o job ativo se ele já existir. Usa a transação corrente.
+- `manage.py run_worker` (ou `entrypoint.sh worker [args]`) roda N threads de trabalho e uma de
+  heartbeat:
+  - **claim**: `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)` por
+    `run_after, id`. Dois workers nunca pegam o mesmo job;
+  - **execução**: troca para o tenant de `tenant_schema` e chama `ocr_job_task`,
+    `extraction_job_task` (as tasks de hoje com `max_attempts=1`) ou
+    `consume_erp_integration_requested`. O OCR e a extração rodam no run
+    `document_processing` do documento, retomado pelo `orchestration_run_id` do job: cada job
+    fecha o run ao terminar, e a tentativa seguinte (ou a extração) o reabre;
+  - **resultado**: sucesso → `done` (o `ocr` enfileira a `extraction` na mesma transação);
+    erro transitório (`TransientServiceError`, ou erro fora da task) com tentativas sobrando →
+    `queued` com espera de 30 s, 2 min, 8 min e 30 min (±20%); permanente ou esgotado →
+    `failed`. Por enquanto, a falha definitiva não muda o documento (AR-33). `erp_dispatch` tem
+    uma tentativa só;
+  - **heartbeat**: a cada 15 s, atualiza `heartbeat_at` dos jobs do processo e grava
+    `/tmp/worker-alive` (liveness) se as threads de trabalho estiverem vivas;
+  - **parada**: SIGTERM/SIGINT param os claims e esperam os jobs em curso até
+    `DOCUPARSE_WORKER_SHUTDOWN_GRACE` (padrão 330 s; o OCR tem timeout de 300 s). O que não
+    terminou fica `running` e volta pela recuperação por heartbeat (AR-34). Um segundo sinal,
+    mais de 2 s depois do primeiro, sai na hora;
+  - **tabela ausente** (worker subindo antes da migration): loga e tenta de novo a cada 10 s.
+- O `@task` continua sem levantar exceção. O worker lê `TaskResult.error.retryable`, que é
+  `True` quando a exceção é de um tipo em `retry_on`.
 
 ---
 

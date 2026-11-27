@@ -261,6 +261,11 @@ comportamento.
   (hoje faz patch de `submit_document_processing`), `test_erp_flow.py:129` e
   `test_process_dashboard_api.py`.
 - **Depende de:** AR-30.
+- **Nota do AR-32:** o `enqueue` já existe (`jobqueue/services.py`, devolve `(job, created)` e aceita
+  `tenant_schema` e `orchestration_run_id`). O worker abre sempre o run `document_processing`
+  (`jobqueue/dispatch.py:DOCUMENT_RUN_NAME`); para o retry de etapa manter o nome `retry_<step>` no
+  dashboard, o AR-31 precisa passar o nome do run pelo job (por exemplo, `payload["run_name"]`) e
+  ajustar o `dispatch`.
 
 ### AR-32 · Comando `run_worker`
 - **Escopo:** `manage.py run_worker [--concurrency 2] [--poll-interval 2] [--steps ocr,extraction,erp_dispatch]`.
@@ -298,6 +303,26 @@ comportamento.
   `TransactionTestCase`, backoff, classificação do erro, troca de schema, SIGTERM simulado
   com `threading.Event`); `shared/tests` para o decorator e o run retomado.
 - **Depende de:** AR-30 (não depende do AR-31: dá para testar enfileirando direto).
+- **Como ficou (2026-11-27, `feat/ar-32-run-worker`):** desenho aprovado pelo usuário, com as seis
+  recomendações. (1) O AR-32 já criou `jobqueue/services.py:enqueue(document, step, *, triggered_by,
+  payload, run_after, orchestration_run_id, tenant_schema) -> (job, created)`, usado no encadeamento
+  ocr → extraction; o AR-31 só o liga às rotas. (2) O `TaskExecution.attempt` grava a tentativa do job,
+  via contextvar `current_attempt_override`. (3) Cada job fecha o run `document_processing` ao terminar,
+  e a tentativa seguinte (ou a extração) o reabre com `orchestration_run(..., resume=True)`; deixar o run
+  aberto durante o backoff faria o sweeper fechá-lo. (4) `erp_dispatch` chama
+  `consume_erp_integration_requested(job.payload)` sem run nem `@task`, como o pool. (5) A liveness
+  (`/tmp/worker-alive`) só depende das threads vivas, não do banco. (6) Erro fora do `@task` conta como
+  transitório; tenant inexistente é permanente (`TenantNotFound`).
+  Outras escolhas: o `TaskError` ganhou `retryable` (True quando a exceção está em `retry_on`); as tasks
+  da fila são `ocr_job_task`/`extraction_job_task` (`max_attempts=1`), e `ocr_task`/`extraction_task`
+  não mudaram; o `run_id` nasce no claim do `ocr` (um `CASE` no próprio UPDATE); o claim filtra
+  `attempts < max_attempts` (sem isso, um job fora da regra violaria a CHECK a cada claim) e compara
+  `run_after` com o relógio do Python, o mesmo do enqueue, porque o `now()` do Postgres numa transação é
+  o horário do BEGIN; a finalização confere `status='running' AND locked_by=<eu>` e não sobrescreve
+  nem encadeia se a recuperação já tiver mexido no job. Achados no caminho: o Django desliga a
+  decodificação de jsonb do psycopg2, então o `payload` lido por SQL cru chega como texto (o worker faz
+  `json.loads`); e o `uv run` repassa o sinal ao python, então um SIGTERM ao grupo chega duas vezes.
+  Por isso, um segundo sinal só força a saída se vier mais de 2 s depois do primeiro.
 
 ### AR-33 · Idempotência por `(documento, etapa)` e efeito no documento
 - **Escopo:**

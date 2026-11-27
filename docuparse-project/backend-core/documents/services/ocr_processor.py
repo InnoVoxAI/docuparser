@@ -321,6 +321,17 @@ extraction_task = task("extraction", retry_on=(TransientServiceError,))(
     _extraction_task_body
 )
 
+# Variantes para a fila durável (jobqueue, AR-32): mesma lógica, mas com
+# max_attempts=1, porque quem repete é a fila (reagendando por `run_after`), não
+# o tenacity. O `retry_on` continua declarado só para marcar o erro como
+# `retryable` no TaskResult, que é o que o worker lê para reagendar ou falhar.
+ocr_job_task = task("ocr", max_attempts=1, retry_on=(TransientServiceError,))(
+    _ocr_task_body
+)
+extraction_job_task = task(
+    "extraction", max_attempts=1, retry_on=(TransientServiceError,)
+)(_extraction_task_body)
+
 
 def run_langextract_for_document(document_id, schema_config_id) -> dict:
     """On-demand LLM extraction for a chosen SchemaConfig.

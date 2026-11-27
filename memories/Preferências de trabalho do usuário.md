@@ -19,3 +19,7 @@ tags:
   (ver [[docuparser/reference/docs-por-plano-de-contas-dataset-de-documentos-reais]]).
   **Por quê:** em 2026-10-04 o usuário corrigiu uma análise do motor de regras
   feita sobre o DARF da raiz.
+- Revisão de arquitetura 2026-11: uma AR-* por sessão. O agente faz o commit na branch e o
+  usuário abre o PR. **Deploy em hml só no final de todas as modificações**, não a cada
+  AR. **Por quê:** pedido do usuário em 2026-11-27, depois do AR-23. Ao fim de cada
+  sessão, entregar um prompt pronto para a próxima tarefa.

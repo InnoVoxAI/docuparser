@@ -35,3 +35,11 @@ Relacionado: [[Remoção do pipeline por eventos e do Camunda]],
 AR-01, AR-02, AR-04 (imagem e compose) e AR-20 estão em `dev` (PRs #67, #68, #69, #71). AR-24 (despacho do ERP com `_with_fresh_connection`; o langextract já tinha) está mergeado em `dev` local, sem push. AR-25 (remoção de `start_document_ocr_thread`, `_run_ocr_safely` e imports órfãos em `ocr_processor.py`) está na branch local `chore/ar-25-remove-ocr-thread`, sem PR. O usuário pediu **uma AR-* por sessão**, não fases inteiras. Estado e próximos passos: seção "Próxima sessão" do `handoff.md` e `work_in_progress.md`. Decisões tomadas pelo usuário: D-01 = fila em Postgres, D-02 = fundir o langextract no backend-ocr, D-03 = retry agora e bytes ao core depois, D-06 = ignorar.
 
 Notas: [[AR-01 - rota POST /api/ocr/process removida]], [[AR-02 - token interno falha fechado fora de dev]], [[AR-04 - gunicorn e modo release no backend-core]], [[AR-20 - CI de backend]].
+
+## Atualização (2026-11-27, 5ª sessão)
+
+AR-24, AR-25 (#72), AR-03 no código (#73) e AR-07 (#75, `/admin/` removido) já estão em `dev`. AR-23: o output `SKIP` do job `pre-deploy` em `.github/workflows/ci.yaml` apontava para um step `check_version` que não existe mais e ninguém o lia. A linha foi removida na branch `ci/ar-23-remove-skip-output`, sem efeito no deploy. Falta no repo k8s (perguntar antes): o deploy conjunto de AR-03 e AR-04 (ConfigMap `DEBUG: "False"` e initContainer `release`), que só funciona com uma tag gerada depois desses merges, e o AR-05.
+
+## Atualização (2026-11-27, 6ª sessão)
+
+AR-21 em `ci/ar-21-build-needs-tests`, a partir de `dev` e commitado (o usuário abre o PR). O `ci.yaml` chama o `backend-ci.yaml` via `workflow_call`, e o build e o deploy só rodam com os testes verdes. Em emergência, `workflow_dispatch` com `skip_tests`. Essa branch também traz os docs do AR-23, para não haver conflito. Próxima: AR-26. Ver [[AR-21 - build de imagem depende dos testes de backend]].

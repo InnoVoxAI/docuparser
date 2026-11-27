@@ -9,9 +9,33 @@ on:
       - "docuparse-project/**"
       - "pyproject.toml"
       - "!docuparse-project/frontend/**"
+  # Válvula de escape (AR-21): disparo manual na aba Actions, só em main ou staging.
+  # Com skip_tests=true o deploy sai sem os testes de backend. Use só em
+  # emergência, por exemplo se o Backend CI quebrar por causa do runner e não do código.
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: "Pular os testes de backend (emergência)"
+        type: boolean
+        default: false
 
 jobs:
+  # AR-21: o build de imagem só roda depois dos testes de backend (AR-20).
+  backend-tests:
+    if: ${{ !inputs.skip_tests }}
+    uses: ./.github/workflows/backend-ci.yaml
+
   pre-deploy:
+    needs: backend-tests
+    # !cancelled() porque backend-tests fica "skipped" quando skip_tests=true. Sem
+    # uma função de status, o pre-deploy seria pulado junto. Testes falhos ou
+    # cancelados barram o deploy. O ref é checado porque o disparo manual aceita
+    # qualquer branch.
+    if: >-
+      ${{ !cancelled()
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging')
+      && (needs.backend-tests.result == 'success'
+      || (needs.backend-tests.result == 'skipped' && inputs.skip_tests)) }}
     runs-on: ubuntu-latest
     outputs:
       IMAGE_VERSION: ${{ steps.extract_version.outputs.IMAGE_VERSION }}
@@ -36,8 +60,11 @@ jobs:
           VERSION=$(pyproject-info project.version | tr -d '"')
           echo "IMAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
 
+  # Os deploys têm `if` explícito: com backend-tests "skipped", o padrão (success())
+  # pularia todos, porque o skip de um ancestral se propaga.
   deploy-core:
     needs: pre-deploy
+    if: ${{ !cancelled() && needs.pre-deploy.result == 'success' }}
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-core
@@ -53,6 +80,7 @@ jobs:
   # Runs after deploy-core to avoid concurrent pushes to the gitops branch
   deploy-com:
     needs: [pre-deploy, deploy-core]
+    if: ${{ !cancelled() && needs.deploy-core.result == 'success' }}
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-com
@@ -67,6 +95,7 @@ jobs:
 
   deploy-ocr:
     needs: [pre-deploy, deploy-com]
+    if: ${{ !cancelled() && needs.deploy-com.result == 'success' }}
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-ocr
@@ -81,6 +110,7 @@ jobs:
 
   deploy-langextract:
     needs: [pre-deploy, deploy-ocr]
+    if: ${{ !cancelled() && needs.deploy-ocr.result == 'success' }}
     uses: ./.github/workflows/deploy.yaml
     with:
       IMAGE_NAME: docuparser-langextract

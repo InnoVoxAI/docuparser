@@ -51,15 +51,30 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
-## Próxima sessão (estado em 2026-11-27, 13ª sessão)
+## Próxima sessão (estado em 2026-11-27, 14ª sessão)
 
 **Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
 
 Já estão em `dev`: AR-01, AR-02, AR-03 (código, #73), AR-04 (imagem e compose), AR-07 (#75),
 AR-20, AR-21 (#77), AR-23 (#76), AR-24, AR-25, AR-26 (código do sweeper, #78), AR-27 (#79), AR-10 (código, #80), AR-11 (docs, #81; o k8s segue em
-`chore/docuparser-worker-flags-off` @ ac61b87, sem push), AR-12 (#82) e AR-13 (#83).
-**AR-14** em `chore/ar-14-unused-files` @ 8344c41b (a partir de `dev`, aguardando o PR). Com ele, a
-**fase 1 está encerrada** no código.
+`chore/docuparser-worker-flags-off` @ ac61b87, sem push), AR-12 (#82), AR-13 (#83) e AR-14 (#84).
+**A fase 1 está encerrada.** Aguardando PR: AR-05 (k8s, `chore/docuparser-probes-resources` @ 59d1aab,
+sobre o `core-release`) e o CronJob do sweeper (AR-70: k8s em `chore/docuparser-sweep-cronjob` @ f4df0d8,
+e o sed da tag em `ci/ar-70-cronjob-image-tag`, neste repo).
+
+**Fase 2 detalhada (14ª sessão)** em [tasks.md](tasks.md), na branch `docs/fase-2-fila-duravel`.
+Nada foi implementado. Decisões do usuário: tabela nova `ProcessingJob` (o `OrchestrationRun` fica
+como auditoria), tabela própria com SKIP LOCKED (sem lib), fila global no `public` com
+`tenant_schema`, 5 tentativas reagendadas por `run_after` (30 s, 2 min, 8 min, 30 min, com jitter),
+backfill `enqueue_pending_documents` no deploy, retry de etapa e reprocess na fila (202) e, no AR-33,
+o status na falha definitiva e o duplicado por sha256 (advisory lock, **sem** índice único).
+Ordem: AR-30 → (AR-31 ∥ AR-32) → AR-33 → AR-34 → AR-35; AR-36 no fim. Até o AR-34, tudo fica
+atrás de `DOCUPARSE_PROCESSING_MODE=thread|queue` (padrão `thread`).
+Achados da sessão, que o AR-33 resolve: (1) o `@task` nunca levanta exceção, então uma falha de
+OCR ou de extração deixa o documento em `RECEIVED` com o run `FAILED`; (2) o duplicado é detectado
+pelo nome do arquivo, sem trava. `submit_document_langextract` é código morto (sai no AR-34).
+**O `erp_dispatch` nunca volta para a fila sozinho** (`max_attempts=1`; heartbeat perdido →
+`ERP_FAILED`).
 
 Como ficou o AR-14 (opções escolhidas pelo usuário):
 - `camunda-workers/` e `layout-service/` apagados do disco (só `.pyc`, nunca versionados).
@@ -126,10 +141,9 @@ agente faz o commit na branch, a partir de `dev`, e o usuário abre o PR. Ao fim
 entregar um prompt pronto para a próxima tarefa.
 
 Por onde continuar, em ordem:
-1. Fase 1: encerrada (o AR-14 aguarda o PR).
-2. AR-05 (probes e resources) e o CronJob do sweeper (parte do AR-70), ambos no repo k8s e
-   **perguntando antes**. Podem ser preparados em branch sem push e ir junto no deploy final.
-3. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
+1. **AR-30** (modelo `ProcessingJob`, app `jobqueue`, migration nova ⚠️). Depois AR-31 ou AR-32,
+   uma por sessão, conforme o tasks.md. O deploy da fase 2 segue a ordem do AR-35.
+2. **Deploy final em hml** (perguntar antes), quando o usuário disser que as modificações
    acabaram:
    a. gerar a tag a partir de `dev`. Desde o AR-21, o push em main/staging só faz o build
       se o Backend CI passar. Em emergência, use `workflow_dispatch` com `skip_tests`;

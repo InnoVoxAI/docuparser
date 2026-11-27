@@ -11,6 +11,11 @@ Responda aqui mesmo, editando a linha **Decisão:**, ou registre no basic-memory
 - **Recomendação:** A. Detalhes em [target-architecture.md §3](target-architecture.md).
 - **Destrava:** AR-30..AR-36 e a decisão sobre o Redis (AR-40).
 - **Decisão:** opção A.
+- **Desenho (2026-11-27):** tabela nova `ProcessingJob` (o `OrchestrationRun` fica como auditoria);
+  tabela própria com SKIP LOCKED, sem lib; fila global no `public` com `tenant_schema`; 5 tentativas
+  reagendadas por `run_after` (30 s, 2 min, 8 min, 30 min, com jitter), e o permanente vai direto
+  para `failed`; backfill por comando no deploy; retry de etapa e reprocess na fila. Ver
+  [tasks.md, fase 2](tasks.md).
 
 ## D-02 — Fundir o langextract-service no backend-ocr?
 - **Opções:** a) fundir no backend-ocr como `/api/v1/extract` · b) fundir no backend-core

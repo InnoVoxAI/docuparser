@@ -29,3 +29,9 @@ decisões pendentes (D-01..D-07), handoff e work_in_progress. Feita em 2026-11-2
 
 Relacionado: [[Remoção do pipeline por eventos e do Camunda]],
 [[Bug conhecido: threads de fundo perdem a conexão quando o Postgres reinicia]].
+
+## Implementação (2026-11-27)
+
+AR-01, AR-02, AR-04 (imagem e compose) e AR-20 estão em `dev` (PRs #67, #68, #69, #71). AR-24 (despacho do ERP com `_with_fresh_connection`; o langextract já tinha) está na branch local `fix/ar-24-erp-dispatch-fresh-connection`, sem PR. O usuário pediu **uma AR-* por sessão**, não fases inteiras. Estado e próximos passos: seção "Próxima sessão" do `handoff.md` e `work_in_progress.md`. Decisões tomadas pelo usuário: D-01 = fila em Postgres, D-02 = fundir o langextract no backend-ocr, D-03 = retry agora e bytes ao core depois, D-06 = ignorar.
+
+Notas: [[AR-01 - rota POST /api/ocr/process removida]], [[AR-02 - token interno falha fechado fora de dev]], [[AR-04 - gunicorn e modo release no backend-core]], [[AR-20 - CI de backend]].

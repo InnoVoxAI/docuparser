@@ -70,3 +70,7 @@ do `Future` do executor.
   [[Remoção do pipeline por eventos e do Camunda]].
 
 Relacionado: [[Bugs pré-existentes na suíte de testes (encontrados na impl. 018)]].
+
+## Atualização 2026-11-27 (AR-24)
+
+As três tarefas do pool em `documents/services/processing_queue.py` (processamento, langextract e despacho do ERP) agora passam por `_with_fresh_connection`. O despacho do ERP era a última que faltava (branch `fix/ar-24-erp-dispatch-fresh-connection`). Relacionado: [[Revisão de arquitetura 2026-11]].

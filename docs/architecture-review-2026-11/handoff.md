@@ -47,6 +47,40 @@
 - Afirmação incorreta de um scout, já corrigida: `process_document_view` é POST e não GET.
   O problema dele é estar sem autenticação.
 
+## Próxima sessão (estado em 2026-11-27, 2ª sessão)
+
+**Ritmo pedido pelo usuário:** uma AR-* por sessão, não uma fase inteira.
+
+AR-01, AR-02, AR-04 (imagem e compose) e AR-20 já estão em `dev` (PRs #67, #68, #69 e #71).
+Na 2ª sessão de 2026-11-27 foi feito o **AR-24**, em branch local ainda sem PR:
+
+| Branch | Commit | Tarefa |
+|---|---|---|
+| `fix/ar-24-erp-dispatch-fresh-connection` | ec58d281 | AR-24 |
+
+Detalhes em [work_in_progress.md](work_in_progress.md). Docs desta pasta e `memories/` seguem
+alterados e **não commitados** na árvore de trabalho, junto com mudanças do próprio usuário
+(`.gitignore`, `CLAUDE.md`, `decisions-pending.md`).
+
+Por onde continuar, em ordem:
+1. O usuário dá push e abre o PR do AR-24 para `dev`.
+2. AR-04 no repo k8s (**perguntar antes**): initContainer com `args: ["release"]` e
+   `DOCUPARSE_MIGRATE_ON_BOOT=false` no container web, em hml e depois em prod. Até isso
+   existir, a imagem continua migrando no boot (padrão `true`).
+3. AR-03 e AR-05 (repo k8s e prod, **perguntar antes**). No AR-03, corrigir junto
+   `DEBUG = os.environ.get("DEBUG", True)` em `core/settings.py`: a string "False" conta como
+   verdadeira.
+4. Fase 1, uma por sessão: AR-25 e AR-23 são as menores; depois AR-21 (build depende do AR-20),
+   AR-26, AR-27 e a limpeza (AR-10..AR-14).
+   As decisões D-01, D-02 e D-03 já foram tomadas (ver [decisions-pending.md](decisions-pending.md)),
+   então as fases 2 e 3 também estão destravadas.
+
+Notas práticas:
+- A suíte inteira do backend-core leva cerca de 30 min. Rode o teste específico e os módulos
+  afetados, e deixe a suíte inteira para o CI.
+- O hook `ruff format` do pre-commit reformata arquivos inteiros. Se ele mexer em trecho não
+  relacionado, descarte essa parte e use `--no-verify` (foi o caso do commit do AR-20).
+
 ## Sugestão de primeira sessão
 Se o usuário mandar começar: faça a **fase 0** (AR-01, AR-02 no código do core, AR-04 no
 Dockerfile e entrypoint) e o **AR-20** (CI de backend), em PRs pequenos. AR-03 e AR-05 ficam

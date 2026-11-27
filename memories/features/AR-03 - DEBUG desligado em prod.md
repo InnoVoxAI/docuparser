@@ -25,6 +25,8 @@ Estado em 2026-11-27: código em `fix/ar-03-debug-bool` @ dda55d1c (sem PR); rep
 - [finding] `/admin/` exposto em prod (login 200 em 2026-11-27), nenhum modelo registrado; login provavelmente falha por CSRF atrás do Traefik (sem `SECURE_PROXY_SSL_HEADER`/`CSRF_TRUSTED_ORIGINS`) #admin
 - [finding] A ConfigMap `docuparser-config` é compartilhada pelos 4 deployments, mas só o core lê `DEBUG` #k8s
 
+- [decision] AR-07 (2026-11-27): usuário escolheu remover o `/admin/`. Rota e app `django.contrib.admin` saíram em `chore/ar-07-remove-admin` @ 094ed6cd; nenhuma migration depende dele; tabela `django_admin_log` fica órfã (só apagar com migration e aval do usuário) #admin
+
 ## Relations
 - part_of [[Revisão de arquitetura 2026-11]]
 - depends_on [[AR-04 - gunicorn e modo release no backend-core]]

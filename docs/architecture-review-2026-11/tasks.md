@@ -159,26 +159,259 @@ Estado de cada tarefa: [work_in_progress.md](work_in_progress.md).
 
 ---
 
-## Fase 2 — Processamento durável (depende de D-01)
+## Fase 2 — Processamento durável (D-01 = A, detalhada em 2026-11-27)
 
-> Detalhar só depois da decisão D-01. Esqueleto para a opção A (fila em Postgres):
+### Decisões de desenho (usuário, 2026-11-27)
+| Tema | Escolha |
+|---|---|
+| Estado do job | **Tabela nova** `ProcessingJob`. `OrchestrationRun`/`TaskExecution` continuam como trilha de auditoria e dashboard; o job aponta para o `run_id`. |
+| Mecanismo | **Tabela própria + `SELECT … FOR UPDATE SKIP LOCKED`**. Sem lib nova (procrastinate exige psycopg3; nenhuma conhece django-tenants). |
+| Escopo | **Fila global no schema `public`** (app em `SHARED_APPS`), com a coluna `tenant_schema`. |
+| Retry transitório | **5 tentativas**, reagendadas por `run_after` (sem `sleep` na thread): 30 s, 2 min, 8 min e 30 min, com ±20% de jitter. Erro permanente vai direto para `failed`. Perder o heartbeat conta como tentativa. |
+| Documentos em processamento na troca | **Comando de backfill** `enqueue_pending_documents`, idempotente, que roda uma vez no deploy. |
+| Rotas síncronas | **Retry de etapa e reprocess de OCR passam para a fila** (202). O OCR manual e o langextract manual continuam síncronos. |
+| Bugs incluídos | Status do documento na falha definitiva, e duplicado por sha256. |
 
-- **AR-30** Modelo e lib da fila (por tenant: o job guarda `tenant_schema`). Migration nova
-  ⚠️ (nova, não alteração de existente). Avaliar reaproveitar `orchestrator.OrchestrationRun`.
-- **AR-31** `enqueue` transacional no ponto onde hoje há `submit_document_processing`
-  (`documents/views.py:305`, `processing_queue.py`).
-- **AR-32** Comando `run_worker` (SKIP LOCKED, troca de schema, heartbeat, encerramento
-  gracioso no SIGTERM).
-- **AR-33** Idempotência por `(document_id, step)`: o OCR reaproveita o texto salvo, e a
-  transição de estado usa `select_for_update` (P4). Duplicado por sha256, não por nome.
-- **AR-34** Recuperação: o job com heartbeat vencido volta para a fila. Remover o pool em
-  memória.
-- **AR-35** Deployment `docuparser-core-worker` (mesma imagem, outro comando) em compose e
-  k8s.
-- **AR-36** Testes: restart no meio do processamento, envio duplo, erro permanente versus
-  transitório.
-- **AR-40** Redis: remover do compose e do k8s (se D-01 = A e D-04 = a), junto com o
-  `docuparse_events`.
+### Estado atual (dev @ 904ab330, conferido em 2026-11-27)
+- `documents/services/processing_queue.py`: um `ThreadPoolExecutor` (`DOCUPARSE_PROCESSING_WORKERS`, padrão 2).
+  `submit_document_processing` roda `ocr_task` e `extraction_task` **na mesma thread**, dentro de um
+  `orchestration_run("document_processing")`. `submit_erp_dispatch` chama `consume_erp_integration_requested`.
+  `submit_document_langextract` não tem chamador fora dos testes (código morto).
+- Quem chama: `views.py:287` (`document_received_event_view`, fora de `atomic`, depois do commit de
+  `consume_document_received`) e `erp_publisher.py:89`.
+- **Bug:** o `@task` nunca levanta exceção. Quando o OCR ou a extração falham, o documento fica em
+  `RECEIVED` com o run `FAILED` (`_mark_document_failed` só roda para erros de antes das tasks).
+- **Bug:** o duplicado é detectado por `original_filename` (`event_consumers.py:65`), sem trava. O
+  `sha256` vem do backend-com e já tem índice (`models.py:57`), mas não é usado.
+- `retry_step` (`process_dashboard.py:576`) é síncrono e confere "já existe run RUNNING" sem trava (`:600`).
+- `transition_to` (`models.py:84`) é um `save` simples. Não existe tratamento de SIGTERM em lugar nenhum
+  do core. O gunicorn roda com 1 worker por causa do pool (`entrypoint.sh`).
+- O comentário em `settings.py:207-208` ("threads renovam a conexão sozinhas") está errado.
+
+### Ordem e dependências
+```
+AR-30 ──┬─► AR-31 ─┐
+        └─► AR-32 ─┴─► AR-33 ─► AR-34 ─► AR-35 (código + k8s) ─► deploy
+AR-36: testes de ponta a ponta, escritos depois de AR-34 (cada AR traz os seus testes unitários)
+```
+AR-31 e AR-32 são independentes entre si. Uma AR por sessão. Até o AR-34, tudo fica atrás da flag
+`DOCUPARSE_PROCESSING_MODE=thread|queue` (padrão `thread`), para dar para mergear em `dev` sem mudar o
+comportamento.
+
+---
+
+### AR-30 · Modelo `ProcessingJob` e app `jobqueue` ⚠️ (migration nova)
+- **Escopo:** um app novo `jobqueue` em `SHARED_APPS` (as tabelas ficam só no `public`). Modelo
+  `ProcessingJob`:
+  - `id` (BigAutoField), `tenant_schema` (CharField 63), `document_id` (UUID, sem FK: o documento
+    fica em outro schema), `step` (`ocr` · `extraction` · `erp_dispatch`), `status` (`queued` ·
+    `running` · `done` · `failed` · `cancelled`);
+  - `attempts`, `max_attempts`, `run_after`, `locked_by`, `locked_at`, `heartbeat_at`, `finished_at`;
+  - `last_error_type`, `last_error_message`, `orchestration_run_id` (CharField 36, o `run_id` do
+    orchestrator), `triggered_by`, `payload` (JSON: por exemplo, o evento do ERP), `created_at` e `updated_at`.
+  - Restrições: `UniqueConstraint(tenant_schema, document_id, step, condition=status IN (queued, running))`,
+    que dá a idempotência do enqueue. Índice parcial `(run_after, id) WHERE status='queued'`
+    (claim) e índice `(status, heartbeat_at)` (recuperação).
+  - Política por etapa, num dicionário em código (não no banco): `ocr` e `extraction` com
+    `max_attempts=5`; `erp_dispatch` com `max_attempts=1` (**nunca reenviar à Superlógica
+    automaticamente**).
+- **Arquivos:** `backend-core/jobqueue/{__init__,apps,models,policy}.py`,
+  `jobqueue/migrations/0001_initial.py` (**só criar**; nenhuma migration existente muda), `core/settings.py`
+  (`SHARED_APPS`).
+- **Aceite:** `migrate_schemas --shared` cria a tabela só no `public`; `migrate_schemas` (tenants)
+  não cria nada; `makemigrations --check` limpo; um segundo job ativo para o mesmo
+  `(tenant, documento, etapa)` viola a constraint.
+- **Testes:** `jobqueue/tests/test_models.py` (constraint parcial: duplicado ativo falha, e
+  duplicado com `done`/`failed` passa; tabela ausente nos schemas de tenant).
+- **Depende de:** nada. Perguntar antes de rodar a migration em hml.
+
+### AR-31 · `enqueue` transacional e rotas que enfileiram
+- **Escopo:**
+  - `jobqueue/services.py:enqueue(document, step, *, triggered_by, payload=None, run_after=None)`.
+    Lê o tenant de `connection.tenant` e faz `INSERT … ON CONFLICT DO NOTHING` sobre a constraint
+    parcial, devolvendo o job ativo existente. Usa a conexão e a transação correntes: o
+    `search_path` do django-tenants inclui o `public`, então o job e o documento entram no mesmo commit.
+  - `document_received_event_view`: o enqueue de `ocr` vai para **dentro** do `atomic` de
+    `consume_document_received` (o job só existe se o documento existir, e vice-versa).
+  - `publish_erp_integration_requested`: troca `submit_erp_dispatch` por `enqueue(step="erp_dispatch",
+    payload=event)` na mesma transação do `transition_to(ERP_INTEGRATION_REQUESTED)`. Com
+    `SuperlogicaMode.DISABLED` continua sem enfileirar (armadilha conhecida, não mudar).
+  - `retry_step` e `document_reprocess_ocr_view`: enfileiram e respondem **202** com o `job_id`.
+    O `RetryAlreadyRunningError` passa a sair da constraint (job ativo já existe → 409), sem a
+    checagem por run RUNNING. O OCR manual (`document_process_ocr_view`) e o langextract manual
+    continuam síncronos.
+  - Flag `DOCUPARSE_PROCESSING_MODE` (`thread` | `queue`, padrão `thread`): em `thread`, tudo
+    segue como hoje. Ela some no AR-34.
+- **Arquivos:** `jobqueue/services.py`, `documents/views.py` (`:269-287`, `:373`, `:953`),
+  `documents/services/erp_publisher.py:89`, `documents/services/process_dashboard.py:576-600`,
+  `core/env.py` (flag), `.env.example`, `docs/TECHNICAL.md`.
+- **Aceite:** com a flag em `queue`, um evento document-received gera exatamente 1 documento e 1
+  job `ocr` numa transação (um rollback forçado não deixa nenhum dos dois); evento repetido não
+  duplica o job; o retry de uma etapa com job ativo responde 409; o frontend aceita o 202 do retry
+  e do reprocess (conferir `modules/processes` e a tela do documento: hoje esperam o resultado
+  síncrono?).
+- **Testes:** `jobqueue/tests/test_enqueue.py`; ajustes em `documents/tests/test_api.py:133`
+  (hoje faz patch de `submit_document_processing`), `test_erp_flow.py:129` e
+  `test_process_dashboard_api.py`.
+- **Depende de:** AR-30.
+
+### AR-32 · Comando `run_worker`
+- **Escopo:** `manage.py run_worker [--concurrency 2] [--poll-interval 2] [--steps ocr,extraction,erp_dispatch]`.
+  - **Claim** no `public`: `UPDATE … SET status='running', attempts=attempts+1, locked_by=<host:pid:thread>,
+    locked_at=now(), heartbeat_at=now() WHERE id = (SELECT id … WHERE status='queued' AND run_after<=now()
+    ORDER BY run_after, id FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING …`.
+  - **Execução:** `connection.set_tenant(<Tenant de tenant_schema>)` e despacho por `step` para as
+    funções de hoje (`process_document_ocr`, `auto_extract_after_ocr`,
+    `consume_erp_integration_requested`) via `ocr_task`/`extraction_task` com `max_attempts=1`: quem
+    repete é a fila, não o tenacity. O `@task` precisa expor a classe do erro (transitório,
+    permanente ou nenhum) ao worker, sem deixar de nunca levantar. Ajustar em
+    `shared/docuparse_orchestrator/decorators.py` e em `context.py`, que precisa **retomar** um
+    run existente (a etapa `extraction` continua o run aberto pelo `ocr`).
+  - **Encadeamento:** o `ocr` concluído com sucesso grava o resultado e enfileira `extraction` na
+    mesma transação. A `extraction` não enfileira nada (o documento fica em `VALIDATION_PENDING`).
+  - **Resultado:** sucesso → `done`; transitório com `attempts < max_attempts` → `queued` com
+    `run_after = now() + backoff(attempts)`; permanente ou esgotado → `failed` (o efeito no documento
+    vem no AR-33).
+  - **Heartbeat:** uma thread atualiza `heartbeat_at` a cada 15 s para os jobs deste processo. Ela
+    também grava `/tmp/worker-alive` (para a liveness do AR-35).
+  - **SIGTERM/SIGINT:** para de fazer claims, espera os jobs em curso até
+    `DOCUPARSE_WORKER_SHUTDOWN_GRACE` (padrão 330 s: o OCR tem timeout de 300 s,
+    `ocr_client.py:43`) e sai com 0. O job que não terminou fica `running` sem heartbeat e
+    volta pela recuperação do AR-34.
+  - **Conexões:** cada thread usa a própria conexão, com `close_old_connections()` antes de cada
+    job e `connection.close()` no fim (mesma regra de `_with_fresh_connection`), e `logger.exception`.
+    Uma tabela inexistente (worker subindo antes da migration) gera log e espera, não crash.
+  - Entrypoint: novo modo `worker` em `entrypoint.sh` (`uv run python manage.py run_worker "$@"`).
+- **Arquivos:** `jobqueue/worker.py`, `jobqueue/backoff.py`, `jobqueue/management/commands/run_worker.py`,
+  `shared/docuparse_orchestrator/{decorators,context}.py`, `entrypoint.sh`.
+- **Aceite:** dois workers em paralelo nunca pegam o mesmo job; um 503 reagenda com o backoff
+  certo; um 400 vai para `failed` com 1 tentativa; com SIGTERM no meio de um job, o worker termina
+  o job e sai; o tenant certo é usado (o job do tenant A não enxerga o B).
+- **Testes:** `jobqueue/tests/test_worker.py` (claim concorrente com duas conexões em
+  `TransactionTestCase`, backoff, classificação do erro, troca de schema, SIGTERM simulado
+  com `threading.Event`); `shared/tests` para o decorator e o run retomado.
+- **Depende de:** AR-30 (não depende do AR-31: dá para testar enfileirando direto).
+
+### AR-33 · Idempotência por `(documento, etapa)` e efeito no documento
+- **Escopo:**
+  - **OCR idempotente:** se `raw_text_uri` existe e o objeto está no storage, o job `ocr` não chama
+    o backend-ocr; só garante `OCR_COMPLETED` e enfileira `extraction`. Exceção: o reprocess
+    explícito, que passa `payload={"force": true}`.
+  - **Extração idempotente:** se `metadata.extraction.state == "completed"` e não houver `force`,
+    o job termina `done` sem chamar o LLM.
+  - **Transições com trava:** `transition_to` ganha uma variante `transition_locked(expected_from=…)`
+    com `select_for_update`, e o worker a usa. Se o status mudou (alguém aprovou ou rejeitou no meio
+    do caminho), o job termina `cancelled` com motivo, sem sobrescrever.
+  - **Falha definitiva** (permanente ou esgotada): `ocr` → documento `OCR_FAILED`, com `error_type`
+    e mensagem no metadata; `extraction` → `metadata.extraction.state="failed"`, status inalterado
+    (como faz o sweeper); `erp_dispatch` → o caminho de `ERP_FAILED` que já existe. Isso fecha o bug
+    do documento parado em `RECEIVED`.
+  - **Duplicado por sha256:** em `consume_document_received`, `pg_advisory_xact_lock(hashtext(schema
+    || ':' || sha256))` seguido de `exists(sha256=…)`. Quando o sha256 vier vazio, cai para a checagem
+    por nome. **Sem índice único** (seria migration em tabela existente, e prod pode já ter
+    duplicados). Mudança de comportamento: o mesmo arquivo com outro nome passa a ser duplicado, e
+    arquivos diferentes com o mesmo nome deixam de ser. Validar com o usuário na implementação.
+- **Arquivos:** `documents/services/ocr_processor.py` (`:64`, `:138`, `:192`, `:270`),
+  `documents/models.py:84`, `documents/services/event_consumers.py:55-80`, `jobqueue/worker.py`.
+- **Aceite:** um job `ocr` repetido depois do sucesso não chama o backend-ocr (mock com 0
+  chamadas); dois envios concorrentes do mesmo arquivo criam 1 documento; um erro permanente deixa
+  o documento em `OCR_FAILED`; uma aprovação durante a extração não é sobrescrita.
+- **Testes:** `jobqueue/tests/test_idempotency.py`, `documents/tests/test_duplicate_sha256.py`
+  (duas conexões), ajustes em `test_classification_pipeline.py`.
+- **Depende de:** AR-32.
+
+### AR-34 · Recuperação por heartbeat, backfill e remoção do pool
+- **Escopo:**
+  - **Reaper** no próprio worker, a cada 30 s: jobs `running` com `heartbeat_at < now() - lease`
+    (`DOCUPARSE_JOB_LEASE_SECONDS`, padrão 120) voltam a `queued` com backoff se `attempts <
+    max_attempts`; se não, vão a `failed` (`error_type=HeartbeatLost`) com o efeito do AR-33. O
+    `erp_dispatch` **nunca** volta para a fila: vai para `failed`/`ERP_FAILED`, porque não se sabe se
+    a Superlógica recebeu; o reenvio é o manual que já existe. O reaper usa `SKIP LOCKED`, então
+    vários workers não brigam.
+  - **Backfill** `manage.py enqueue_pending_documents [--tenant] [--dry-run]`: por tenant, fecha os
+    runs `RUNNING` sem job ativo, enfileira `ocr` para documentos `RECEIVED` sem `raw_text_uri` e
+    enfileira `extraction` para `metadata.extraction.state="running"` ou para `OCR_COMPLETED` sem
+    extração. É idempotente (a constraint barra o repetido) e sai com 1 se algum tenant falhar.
+  - **Remover o pool:** sai `processing_queue.py` inteiro (`submit_*`, `_executor`,
+    `_with_fresh_connection`, o morto `submit_document_langextract`) e a flag
+    `DOCUPARSE_PROCESSING_MODE`. Corrigir o comentário de `settings.py:207-208`. O gunicorn pode
+    passar a ter mais de 1 worker (`GUNICORN_WORKERS`, padrão 2), e sai o comentário do
+    `entrypoint.sh`.
+  - **Sweeper** (`processing_recovery.py`): passa a ignorar documentos com job ativo e runs ligados a
+    um job `running`. Continua como defesa para o que ficar fora da fila (documento sem job) e para
+    a extração presa. Ganha a métrica e o log "job queued mais antigo há X min" (base do alerta do AR-73).
+  - **CronJob do sweeper:** fica, mas a cada 30 min em vez de 10, com `--older-than-minutes 60` (o
+    reaper cobre os jobs em 2 min). Reavaliar a remoção depois de um ciclo de release sem
+    achados. A mudança é só no `schedule`/`args` de `cronjob.yaml` (branch k8s do AR-35).
+- **Arquivos:** `jobqueue/reaper.py`, `jobqueue/management/commands/enqueue_pending_documents.py`,
+  remoção de `documents/services/processing_queue.py` e `documents/tests/test_processing_queue.py`
+  (os casos úteis migram para `jobqueue/tests`), `documents/services/processing_recovery.py`,
+  `core/settings.py`, `entrypoint.sh`, `docs/TECHNICAL.md`, `docs/architecture.md` (AR-15 se ainda
+  não estiver feito).
+- **Aceite:** um worker morto com `kill -9` no meio de um job → outro worker retoma em até lease
+  + 30 s, e `attempts` sobe; `erp_dispatch` órfão vira `ERP_FAILED`, não reenvio; o backfill rodado
+  duas vezes enfileira uma vez só; `grep -r submit_document_processing` vazio.
+- **Testes:** `jobqueue/tests/test_reaper.py`, `jobqueue/tests/test_backfill.py`, ajustes em
+  `documents/tests/test_processing_recovery.py`.
+- **Depende de:** AR-31, AR-32 e AR-33.
+
+### AR-35 · Deployment `docuparser-core-worker` (compose e k8s) ⚠️
+- **Compose:** serviço `backend-core-worker` com a mesma imagem e `command: ["worker"]`, o mesmo
+  env do `backend-core` e `depends_on: backend-core-release (service_completed_successfully)`.
+  Sem porta.
+- **k8s** (repo `innovox-kubernetes-deployments`, branch nova a partir de `main`, depois de
+  `chore/docuparser-probes-resources` e `chore/docuparser-core-release`):
+  `apps/docuparser/{hml,prod}/docuparser-core/worker-deployment.yaml`. Fica em `docuparser-core/`
+  para pegar o `sed` da tag (`ci/ar-70-cronjob-image-tag` estende o sed a `docuparser-core/*.yaml`).
+  - `replicas: 1` (escala depois; a fila aguenta N), mesma imagem, `args: ["worker"]`, `envFrom`
+    igual ao do web (`docuparser-config`, `docuparser-secrets` e `docuparser-events-config`,
+    enquanto existir). Sem Service nem Ingress e sem initContainer: a migration fica no
+    initContainer do web, e o worker espera a tabela (AR-32).
+  - `terminationGracePeriodSeconds: 360` (o grace de 330 s do worker + folga). O kubelet manda
+    SIGTERM, o worker termina o job em curso e sai.
+  - **Probes:** sem HTTP. `livenessProbe` por `exec`, que confere se `/tmp/worker-alive` foi tocado
+    há menos de 90 s (`periodSeconds: 30`, `failureThreshold: 3`). `startupProbe` com o mesmo comando
+    e até 3 min. Sem readiness (o worker não recebe tráfego).
+  - **Resources:** mesmo padrão do AR-05 — `requests: cpu 100m, memory 384Mi`, `limits: memory 1Gi`,
+    sem limite de CPU. O worker segura arquivos e o texto do OCR em memória: medir com `kubectl top`
+    depois de uma semana.
+  - Web: a env `GUNICORN_WORKERS` (2) entra na ConfigMap junto com esta branch.
+  - CronJob: ajuste de schedule e args do AR-34.
+- **Ordem do deploy** (tag com AR-30..34): (1) o web sobe; o initContainer migra o `public` e cria
+  `jobqueue_processingjob`; (2) o worker sobe; (3) roda uma vez `kubectl exec deploy/docuparser-core-worker --
+  uv run python manage.py enqueue_pending_documents --dry-run`, depois sem `--dry-run`. Se houver
+  documentos em thread no pod web antigo durante o rollout, eles ficam `RECEIVED` sem job e o
+  backfill os pega. Smoke: upload → job `ocr` → `extraction` → `VALIDATION_PENDING`;
+  `kubectl delete pod` do worker no meio de um OCR → o job volta e termina.
+- **Rollback:** voltar a tag do web e escalar o worker a 0. Os jobs ficam no banco; o sweeper
+  marca os documentos presos.
+- **Arquivos:** `docuparse-project/docker-compose.yml`, os dois `worker-deployment.yaml`, os dois
+  `cronjob.yaml`, `config-map.yaml` (hml e prod), `docs/TECHNICAL.md`.
+- **Aceite:** YAML válido (pyyaml e `kubectl apply --dry-run=client` se houver acesso); `docker
+  compose config` validado no scratchpad com `-p docuparse`; merge simulado com as branches k8s
+  pendentes sem conflito.
+- **Depende de:** AR-34, AR-05 (`chore/docuparser-probes-resources`) e AR-04 (`chore/docuparser-core-release`).
+
+### AR-36 · Testes de ponta a ponta da fila
+- **Escopo:** `jobqueue/tests/test_durable_pipeline.py`, com backend-ocr e langextract mockados, Postgres real e
+  dois tenants:
+  1. **Restart no meio:** o worker A pega um `ocr`, morre (sem heartbeat), o reaper devolve o
+     job, o worker B conclui; o documento chega a `VALIDATION_PENDING` com 1 chamada de OCR
+     cobrada por tentativa e nenhuma depois do sucesso.
+  2. **Envio duplo:** o mesmo evento document-received duas vezes em paralelo → 1 documento e 1
+     job; o mesmo arquivo com outro nome → duplicado.
+  3. **Permanente versus transitório:** 400 → 1 chamada e `OCR_FAILED`; 503 ×2 e depois 200 →
+     3 chamadas, `done`, com `run_after` respeitando o backoff (com relógio congelado); 503 ×5 →
+     `failed`.
+  4. **ERP:** heartbeat perdido em `erp_dispatch` → `ERP_FAILED`, 0 reenvios.
+  5. **Isolamento:** o job do tenant A nunca lê nem escreve no schema do B.
+  6. **Retry manual:** depois de `failed`, o retry do dashboard cria um job novo (`attempts`
+     zerado), e o retry duplicado responde 409.
+- **Aceite:** a suíte roda no CI do backend (AR-20) em menos de 2 min.
+- **Depende de:** AR-31 a AR-34.
+
+### AR-40 · Redis: remover do compose e do k8s
+- Só se D-04 = a: junto com o `docuparse_events`. Bloqueada até D-04.
 
 ## Fase 3 — Fronteiras
 
